@@ -18,6 +18,7 @@ fn create_test_config(
         timeout: Duration::from_secs(30),
         format,
         no_color: true, // Disable colors for testing
+        no_header: false,
     }
 }
 
@@ -80,7 +81,8 @@ async fn test_metrics_list_empty() {
     let client = create_test_client(server.url()).await;
     let config = create_test_config(server.url(), rotel_cli::config::OutputFormat::Json);
 
-    let result = rotel_cli::commands::metrics::handle_list(&client, &config, None, None, vec![]).await;
+    let result =
+        rotel_cli::commands::metrics::handle_list(&client, &config, None, None, vec![]).await;
 
     mock.assert_async().await;
     assert!(result.is_ok());
@@ -91,9 +93,10 @@ async fn test_metrics_list_with_name_filter() {
     let mut server = Server::new_async().await;
     let mock = server
         .mock("GET", "/api/metrics")
-        .match_query(mockito::Matcher::AllOf(vec![
-            mockito::Matcher::UrlEncoded("name".into(), "http_requests_total".into()),
-        ]))
+        .match_query(mockito::Matcher::AllOf(vec![mockito::Matcher::UrlEncoded(
+            "name".into(),
+            "http_requests_total".into(),
+        )]))
         .with_status(200)
         .with_header("content-type", "application/json")
         .with_body(
@@ -190,9 +193,10 @@ async fn test_metrics_list_with_label_filter() {
     let mut server = Server::new_async().await;
     let mock = server
         .mock("GET", "/api/metrics")
-        .match_query(mockito::Matcher::AllOf(vec![
-            mockito::Matcher::UrlEncoded("label".into(), "method=GET".into()),
-        ]))
+        .match_query(mockito::Matcher::AllOf(vec![mockito::Matcher::UrlEncoded(
+            "label".into(),
+            "method=GET".into(),
+        )]))
         .with_status(200)
         .with_header("content-type", "application/json")
         .with_body(
@@ -274,9 +278,10 @@ async fn test_metrics_get_with_label_filter() {
     let mut server = Server::new_async().await;
     let mock = server
         .mock("GET", "/api/metrics/http_requests_total")
-        .match_query(mockito::Matcher::AllOf(vec![
-            mockito::Matcher::UrlEncoded("label".into(), "method=GET".into()),
-        ]))
+        .match_query(mockito::Matcher::AllOf(vec![mockito::Matcher::UrlEncoded(
+            "label".into(),
+            "method=GET".into(),
+        )]))
         .with_status(200)
         .with_header("content-type", "application/json")
         .with_body(
@@ -430,7 +435,8 @@ async fn test_metrics_json_output_format() {
     let client = create_test_client(server.url()).await;
     let config = create_test_config(server.url(), rotel_cli::config::OutputFormat::Json);
 
-    let result = rotel_cli::commands::metrics::handle_list(&client, &config, None, None, vec![]).await;
+    let result =
+        rotel_cli::commands::metrics::handle_list(&client, &config, None, None, vec![]).await;
 
     mock.assert_async().await;
     assert!(result.is_ok());

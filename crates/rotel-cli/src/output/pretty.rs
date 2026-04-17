@@ -4,7 +4,7 @@ use crate::api::models::{LogEntry, Metric, SpanNode, Trace};
 use comfy_table::{presets::UTF8_FULL, Cell, Color, ContentArrangement, Table};
 
 /// Print logs in a pretty table format
-pub fn print_logs_table(logs: &[LogEntry], no_color: bool) {
+pub fn print_logs_table(logs: &[LogEntry], no_color: bool, no_header: bool) {
     if logs.is_empty() {
         println!("No logs found");
         return;
@@ -15,8 +15,10 @@ pub fn print_logs_table(logs: &[LogEntry], no_color: bool) {
         .load_preset(UTF8_FULL)
         .set_content_arrangement(ContentArrangement::Dynamic);
 
-    // Add header
-    table.set_header(vec!["ID", "Timestamp", "Severity", "Message"]);
+    // Add header (unless disabled)
+    if !no_header {
+        table.set_header(vec!["ID", "Timestamp", "Severity", "Message"]);
+    }
 
     // Add rows
     for log in logs {
@@ -73,7 +75,7 @@ pub fn print_log_details(log: &LogEntry, no_color: bool) {
 }
 
 /// Print traces in a pretty table format
-pub fn print_traces_table(traces: &[Trace], no_color: bool) {
+pub fn print_traces_table(traces: &[Trace], no_color: bool, no_header: bool) {
     if traces.is_empty() {
         println!("No traces found");
         return;
@@ -84,8 +86,10 @@ pub fn print_traces_table(traces: &[Trace], no_color: bool) {
         .load_preset(UTF8_FULL)
         .set_content_arrangement(ContentArrangement::Dynamic);
 
-    // Add header
-    table.set_header(vec!["ID", "Root Span", "Duration", "Status", "Spans"]);
+    // Add header (unless disabled)
+    if !no_header {
+        table.set_header(vec!["ID", "Root Span", "Duration", "Status", "Spans"]);
+    }
 
     // Add rows
     for trace in traces {
@@ -140,7 +144,7 @@ fn print_span_node(node: &SpanNode, depth: usize) {
 }
 
 /// Print metrics in a pretty table format
-pub fn print_metrics_table(metrics: &[Metric], no_color: bool) {
+pub fn print_metrics_table(metrics: &[Metric], no_color: bool, no_header: bool) {
     if metrics.is_empty() {
         println!("No metrics found");
         return;
@@ -151,8 +155,10 @@ pub fn print_metrics_table(metrics: &[Metric], no_color: bool) {
         .load_preset(UTF8_FULL)
         .set_content_arrangement(ContentArrangement::Dynamic);
 
-    // Add header
-    table.set_header(vec!["Name", "Type", "Value", "Timestamp"]);
+    // Add header (unless disabled)
+    if !no_header {
+        table.set_header(vec!["Name", "Type", "Value", "Timestamp"]);
+    }
 
     // Add rows
     for metric in metrics {
@@ -215,21 +221,21 @@ mod tests {
     fn test_print_logs_table_empty() {
         let logs: Vec<LogEntry> = vec![];
         // Should not panic
-        print_logs_table(&logs, true);
+        print_logs_table(&logs, true, false);
     }
 
     #[test]
     fn test_print_traces_table_empty() {
         let traces: Vec<Trace> = vec![];
         // Should not panic
-        print_traces_table(&traces, true);
+        print_traces_table(&traces, true, false);
     }
 
     #[test]
     fn test_print_metrics_table_empty() {
         let metrics: Vec<Metric> = vec![];
         // Should not panic
-        print_metrics_table(&metrics, true);
+        print_metrics_table(&metrics, true, false);
     }
 
     // T017: Unit test for logs pretty-print formatter
@@ -272,8 +278,8 @@ mod tests {
             },
         ];
         // Should not panic and should handle different severity levels
-        print_logs_table(&logs, true);
-        print_logs_table(&logs, false); // Test without colors
+        print_logs_table(&logs, true, false);
+        print_logs_table(&logs, false, false); // Test without colors
     }
 
     #[test]
@@ -289,7 +295,7 @@ mod tests {
                 attributes: HashMap::new(),
             }];
             // Should not panic for any severity level
-            print_logs_table(&logs, true);
+            print_logs_table(&logs, true, false);
         }
     }
 
@@ -320,7 +326,7 @@ mod tests {
             attributes: HashMap::new(),
         }];
         // Should not panic and should truncate long messages
-        print_logs_table(&logs, true);
+        print_logs_table(&logs, true, false);
     }
 
     // T040: Unit test for traces pretty-print formatter
@@ -343,7 +349,7 @@ mod tests {
             },
         ];
         // Should not panic
-        print_traces_table(&traces, true);
+        print_traces_table(&traces, true, false);
     }
 
     #[test]
@@ -356,7 +362,7 @@ mod tests {
             spans: vec![],
         }];
         // Should not panic with color enabled
-        print_traces_table(&traces, false);
+        print_traces_table(&traces, false, false);
     }
 
     // T041: Unit test for span tree formatter
@@ -509,8 +515,8 @@ mod tests {
             },
         ];
         // Should not panic and should handle different metric types
-        print_metrics_table(&metrics, true);
-        print_metrics_table(&metrics, false); // Test with colors
+        print_metrics_table(&metrics, true, false);
+        print_metrics_table(&metrics, false, false); // Test with colors
     }
 
     #[test]

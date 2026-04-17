@@ -32,7 +32,7 @@ pub async fn handle_list(
 
     match config.format {
         crate::config::OutputFormat::Pretty => {
-            pretty::print_traces_table(&traces, config.no_color);
+            pretty::print_traces_table(&traces, config.no_color, config.no_header);
         },
         crate::config::OutputFormat::Json => {
             json::print_traces_json(&traces)?;

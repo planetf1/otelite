@@ -34,3 +34,5 @@ rotel-storage = { path = "../rotel-storage" }
 
 [dev-dependencies]
 mockito = "1.2"
+assert_cmd = "2.0"
+predicates = "3.0"

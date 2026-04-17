@@ -127,6 +127,58 @@ rotel-tui --config ~/.config/rotel/tui.toml
 
 See [`docs/tui-quickstart.md`](docs/tui-quickstart.md) for detailed TUI documentation.
 
+### Command-Line Interface (CLI)
+
+Rotel includes a powerful CLI for querying telemetry data from your terminal or scripts.
+
+**Installation**:
+```bash
+cargo install rotel-cli
+```
+
+**Quick Examples**:
+```bash
+# Query logs
+rotel-cli logs list --severity ERROR --since 1h
+rotel-cli logs search "database timeout"
+rotel-cli logs show log-123
+
+# Query traces
+rotel-cli traces list --min-duration 1s --status ERROR
+rotel-cli traces show trace-456
+
+# Query metrics
+rotel-cli metrics list --name "http_*"
+rotel-cli metrics get response_time_ms --label "endpoint=/api/users"
+
+# JSON output for scripting
+rotel-cli --format json logs list | jq '.[] | select(.severity == "ERROR")'
+
+# Use in shell scripts
+ERROR_COUNT=$(rotel-cli --format json logs list --severity ERROR | jq 'length')
+if [ "$ERROR_COUNT" -gt 0 ]; then
+  echo "Found $ERROR_COUNT errors"
+fi
+```
+
+**Key Features**:
+- 🚀 **Fast**: <100ms cold start, <1s queries
+- 📊 **Multiple Formats**: Pretty tables or JSON output
+- 🔧 **Scriptable**: Exit codes, pipeable output, jq-friendly JSON
+- 🎨 **Flexible**: Color/header control, custom endpoints, timeouts
+- 🌍 **Unix-Friendly**: Follows Unix conventions (stdout/stderr, exit codes)
+
+**Global Flags**:
+```bash
+--endpoint <URL>        # Backend URL (or ROTEL_ENDPOINT env var)
+--format <pretty|json>  # Output format
+--no-color              # Disable colors
+--no-header             # Disable table headers
+--timeout <SECONDS>     # Request timeout
+```
+
+See [`specs/004-cli/quickstart.md`](specs/004-cli/quickstart.md) for detailed CLI documentation and scripting examples.
+
 ## Configuration
 
 Rotel uses sensible defaults but can be customized via `rotel.toml`:

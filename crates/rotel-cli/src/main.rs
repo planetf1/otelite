@@ -35,6 +35,10 @@ struct Cli {
     #[arg(long, global = true)]
     no_color: bool,
 
+    /// Disable table headers in output
+    #[arg(long, global = true)]
+    no_header: bool,
+
     /// Request timeout in seconds
     #[arg(long, default_value = "30", global = true)]
     timeout: u64,
@@ -163,7 +167,17 @@ enum MetricsCommands {
 }
 
 #[tokio::main]
-async fn main() -> Result<()> {
+async fn main() {
+    // Run the CLI and handle errors with proper exit codes
+    if let Err(e) = run_cli().await {
+        // Write error to stderr with user-friendly message
+        eprintln!("{}", e.user_message());
+        // Exit with appropriate code
+        std::process::exit(e.exit_code());
+    }
+}
+
+async fn run_cli() -> Result<()> {
     let cli = Cli::parse();
 
     // Initialize tracing
@@ -186,6 +200,7 @@ async fn main() -> Result<()> {
         timeout: std::time::Duration::from_secs(cli.timeout),
         format: cli.format.unwrap_or_default(),
         no_color: cli.no_color,
+        no_header: cli.no_header,
     };
 
     // Handle commands

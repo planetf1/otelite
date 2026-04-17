@@ -38,7 +38,7 @@ pub async fn handle_list(
     // Output based on format
     match config.format {
         OutputFormat::Pretty => {
-            pretty::print_logs_table(&filtered_logs, !config.no_color);
+            pretty::print_logs_table(&filtered_logs, !config.no_color, config.no_header);
         },
         OutputFormat::Json => {
             json::print_logs_json(&filtered_logs)?;
@@ -74,7 +74,7 @@ pub async fn handle_search(
     // Output based on format
     match config.format {
         OutputFormat::Pretty => {
-            pretty::print_logs_table(&filtered_logs, !config.no_color);
+            pretty::print_logs_table(&filtered_logs, !config.no_color, config.no_header);
         },
         OutputFormat::Json => {
             json::print_logs_json(&filtered_logs)?;

@@ -18,6 +18,7 @@ fn create_test_config(
         timeout: Duration::from_secs(30),
         format,
         no_color: true, // Disable colors for testing
+        no_header: false,
     }
 }
 

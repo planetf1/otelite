@@ -33,7 +33,7 @@ pub async fn handle_list(
 
     match config.format {
         crate::config::OutputFormat::Pretty => {
-            pretty::print_metrics_table(&metrics, config.no_color);
+            pretty::print_metrics_table(&metrics, config.no_color, config.no_header);
         },
         crate::config::OutputFormat::Json => {
             json::print_metrics_json(&metrics)?;
@@ -68,7 +68,7 @@ pub async fn handle_get(
                 pretty::print_metric_details(&metrics[0], config.no_color);
             } else {
                 // Multiple metrics with same name but different labels
-                pretty::print_metrics_table(&metrics, config.no_color);
+                pretty::print_metrics_table(&metrics, config.no_color, config.no_header);
             }
         },
         crate::config::OutputFormat::Json => {

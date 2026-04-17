@@ -38,6 +38,8 @@ pub struct Config {
     pub format: OutputFormat,
     /// Disable color output
     pub no_color: bool,
+    /// Disable table headers
+    pub no_header: bool,
 }
 
 impl Default for Config {
@@ -47,18 +49,20 @@ impl Default for Config {
             timeout: Duration::from_secs(30),
             format: OutputFormat::Pretty,
             no_color: false,
+            no_header: false,
         }
     }
 }
 
 impl Config {
     /// Create a new configuration with custom values
-    pub fn new(endpoint: String, timeout: Duration, format: OutputFormat, no_color: bool) -> Self {
+    pub fn new(endpoint: String, timeout: Duration, format: OutputFormat, no_color: bool, no_header: bool) -> Self {
         Self {
             endpoint,
             timeout,
             format,
             no_color,
+            no_header,
         }
     }
 
@@ -94,6 +98,7 @@ mod tests {
         assert_eq!(config.timeout, Duration::from_secs(30));
         assert_eq!(config.format, OutputFormat::Pretty);
         assert!(!config.no_color);
+        assert!(!config.no_header);
     }
 
     #[test]
@@ -103,11 +108,13 @@ mod tests {
             Duration::from_secs(60),
             OutputFormat::Json,
             true,
+            true,
         );
         assert_eq!(config.endpoint, "http://example.com:9090");
         assert_eq!(config.timeout, Duration::from_secs(60));
         assert_eq!(config.format, OutputFormat::Json);
         assert!(config.no_color);
+        assert!(config.no_header);
     }
 }
 
