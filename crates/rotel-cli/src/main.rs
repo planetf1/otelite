@@ -139,26 +139,26 @@ enum TracesCommands {
 enum MetricsCommands {
     /// List available metrics
     List {
-        /// Filter by metric type
+        /// Maximum number of results
+        #[arg(long, short = 'n')]
+        limit: Option<u32>,
+
+        /// Filter by metric name pattern
         #[arg(long)]
-        type_: Option<String>,
+        name: Option<String>,
+
+        /// Filter by label (key=value, can be specified multiple times)
+        #[arg(long)]
+        label: Vec<String>,
     },
-    /// Get metric values
+    /// Get metric values by name
     Get {
         /// Metric name
         name: String,
 
-        /// Filter by time range (e.g., 1h, 30m, 5s)
+        /// Filter by label (key=value, can be specified multiple times)
         #[arg(long)]
-        since: Option<String>,
-
-        /// Filter by label (key=value)
-        #[arg(long)]
-        label: Option<String>,
-
-        /// Maximum number of data points
-        #[arg(long, short = 'n')]
-        limit: Option<usize>,
+        label: Vec<String>,
     },
 }
 
@@ -297,12 +297,22 @@ async fn handle_traces_command(command: TracesCommands, config: &Config) -> Resu
     Ok(())
 }
 
-async fn handle_metrics_command(_command: MetricsCommands, _config: &Config) -> Result<()> {
-    // Placeholder - will be implemented in Phase 5
-    eprintln!("Metrics commands not yet implemented");
-    Err(Error::InvalidArgument(
-        "Metrics commands not yet implemented".to_string(),
-    ))
+async fn handle_metrics_command(command: MetricsCommands, config: &Config) -> Result<()> {
+    use api::client::ApiClient;
+    use commands::metrics;
+
+    let client = ApiClient::new(config.endpoint.clone(), config.timeout)?;
+
+    match command {
+        MetricsCommands::List { limit, name, label } => {
+            metrics::handle_list(&client, config, limit, name, label).await?;
+        },
+        MetricsCommands::Get { name, label } => {
+            metrics::handle_get(&client, config, &name, label).await?;
+        },
+    }
+
+    Ok(())
 }
 
 // Made with Bob
