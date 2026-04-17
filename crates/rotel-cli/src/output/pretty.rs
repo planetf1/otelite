@@ -471,6 +471,83 @@ mod tests {
         // Should not panic and should show deep hierarchy
         print_trace_tree(&trace, true);
     }
+
+    // T063: Unit test for metrics pretty-print formatter
+    #[test]
+    fn test_print_metrics_table_with_data() {
+        let metrics = vec![
+            Metric {
+                name: "http_requests_total".to_string(),
+                type_: "counter".to_string(),
+                value: 1234.0,
+                timestamp: Utc::now(),
+                labels: HashMap::from([
+                    ("method".to_string(), "GET".to_string()),
+                    ("status".to_string(), "200".to_string()),
+                ]),
+                percentiles: None,
+            },
+            Metric {
+                name: "response_time_ms".to_string(),
+                type_: "histogram".to_string(),
+                value: 150.5,
+                timestamp: Utc::now(),
+                labels: HashMap::new(),
+                percentiles: Some(HashMap::from([
+                    ("p50".to_string(), 100.0),
+                    ("p95".to_string(), 200.0),
+                    ("p99".to_string(), 300.0),
+                ])),
+            },
+            Metric {
+                name: "memory_usage_bytes".to_string(),
+                type_: "gauge".to_string(),
+                value: 1048576.0,
+                timestamp: Utc::now(),
+                labels: HashMap::from([("host".to_string(), "server1".to_string())]),
+                percentiles: None,
+            },
+        ];
+        // Should not panic and should handle different metric types
+        print_metrics_table(&metrics, true);
+        print_metrics_table(&metrics, false); // Test with colors
+    }
+
+    #[test]
+    fn test_print_metric_details_with_percentiles() {
+        let metric = Metric {
+            name: "response_time_ms".to_string(),
+            type_: "histogram".to_string(),
+            value: 150.5,
+            timestamp: Utc::now(),
+            labels: HashMap::from([
+                ("endpoint".to_string(), "/api/users".to_string()),
+                ("method".to_string(), "GET".to_string()),
+            ]),
+            percentiles: Some(HashMap::from([
+                ("p50".to_string(), 100.0),
+                ("p95".to_string(), 200.0),
+                ("p99".to_string(), 300.0),
+                ("p99.9".to_string(), 500.0),
+            ])),
+        };
+        // Should not panic and should display percentiles
+        print_metric_details(&metric, true);
+    }
+
+    #[test]
+    fn test_print_metric_details_without_percentiles() {
+        let metric = Metric {
+            name: "http_requests_total".to_string(),
+            type_: "counter".to_string(),
+            value: 1234.0,
+            timestamp: Utc::now(),
+            labels: HashMap::from([("status".to_string(), "200".to_string())]),
+            percentiles: None,
+        };
+        // Should not panic even without percentiles
+        print_metric_details(&metric, true);
+    }
 }
 
 // Made with Bob

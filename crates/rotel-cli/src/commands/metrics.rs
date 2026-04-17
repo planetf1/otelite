@@ -1,0 +1,397 @@
+//! Metrics command handlers
+
+use crate::api::client::ApiClient;
+use crate::api::models::Metric;
+use crate::config::Config;
+use crate::error::Result;
+use crate::output::{json, pretty};
+
+/// Handle metrics list command
+pub async fn handle_list(
+    client: &ApiClient,
+    config: &Config,
+    limit: Option<u32>,
+    name: Option<String>,
+    labels: Vec<String>,
+) -> Result<()> {
+    let mut params = Vec::new();
+
+    if let Some(limit) = limit {
+        params.push(("limit", limit.to_string()));
+    }
+
+    if let Some(name) = name {
+        params.push(("name", name));
+    }
+
+    // Add label filters as query parameters
+    for label in labels {
+        params.push(("label", label));
+    }
+
+    let metrics = client.fetch_metrics(params).await?;
+
+    match config.format {
+        crate::config::OutputFormat::Pretty => {
+            pretty::print_metrics_table(&metrics, config.no_color);
+        }
+        crate::config::OutputFormat::Json => {
+            json::print_metrics_json(&metrics)?;
+        }
+    }
+
+    Ok(())
+}
+
+/// Handle metrics get command
+pub async fn handle_get(
+    client: &ApiClient,
+    config: &Config,
+    name: &str,
+    labels: Vec<String>,
+) -> Result<()> {
+    let mut params = Vec::new();
+
+    // Add label filters as query parameters
+    for label in labels {
+        params.push(("label", label));
+    }
+
+    let metrics = client.fetch_metric_by_name(name, params).await?;
+
+    // Display all matching metrics (may be multiple with different label combinations)
+    match config.format {
+        crate::config::OutputFormat::Pretty => {
+            if metrics.is_empty() {
+                println!("No metrics found with name '{}'", name);
+            } else if metrics.len() == 1 {
+                pretty::print_metric_details(&metrics[0], config.no_color);
+            } else {
+                // Multiple metrics with same name but different labels
+                pretty::print_metrics_table(&metrics, config.no_color);
+            }
+        }
+        crate::config::OutputFormat::Json => {
+            if metrics.len() == 1 {
+                json::print_metric_json(&metrics[0])?;
+            } else {
+                json::print_metrics_json(&metrics)?;
+            }
+        }
+    }
+
+    Ok(())
+}
+
+/// Filter metrics by label key-value pairs (client-side filtering)
+/// Labels should be in format "key=value"
+pub fn filter_by_labels(metrics: Vec<Metric>, label_filters: &[String]) -> Vec<Metric> {
+    if label_filters.is_empty() {
+        return metrics;
+    }
+
+    // Parse label filters into key-value pairs
+    let filters: Vec<(&str, &str)> = label_filters
+        .iter()
+        .filter_map(|filter| {
+            let parts: Vec<&str> = filter.splitn(2, '=').collect();
+            if parts.len() == 2 {
+                Some((parts[0], parts[1]))
+            } else {
+                None
+            }
+        })
+        .collect();
+
+    metrics
+        .into_iter()
+        .filter(|metric| {
+            // Metric must match ALL label filters
+            filters.iter().all(|(key, value)| {
+                metric
+                    .labels
+                    .get(*key)
+                    .map(|v| v == value)
+                    .unwrap_or(false)
+            })
+        })
+        .collect()
+}
+
+/// Filter metrics by name pattern (client-side filtering)
+pub fn filter_by_name(metrics: Vec<Metric>, name_pattern: &str) -> Vec<Metric> {
+    metrics
+        .into_iter()
+        .filter(|metric| metric.name.contains(name_pattern))
+        .collect()
+}
+
+/// Filter metrics by type (client-side filtering)
+pub fn filter_by_type(metrics: Vec<Metric>, metric_type: &str) -> Vec<Metric> {
+    metrics
+        .into_iter()
+        .filter(|metric| metric.type_.eq_ignore_ascii_case(metric_type))
+        .collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use chrono::Utc;
+    use std::collections::HashMap;
+
+    // T065: Unit tests for label filtering logic
+    #[test]
+    fn test_filter_by_labels_single_label() {
+        let metrics = vec![
+            Metric {
+                name: "http_requests_total".to_string(),
+                type_: "counter".to_string(),
+                value: 100.0,
+                timestamp: Utc::now(),
+                labels: HashMap::from([("method".to_string(), "GET".to_string())]),
+                percentiles: None,
+            },
+            Metric {
+                name: "http_requests_total".to_string(),
+                type_: "counter".to_string(),
+                value: 50.0,
+                timestamp: Utc::now(),
+                labels: HashMap::from([("method".to_string(), "POST".to_string())]),
+                percentiles: None,
+            },
+            Metric {
+                name: "http_requests_total".to_string(),
+                type_: "counter".to_string(),
+                value: 25.0,
+                timestamp: Utc::now(),
+                labels: HashMap::from([("method".to_string(), "DELETE".to_string())]),
+                percentiles: None,
+            },
+        ];
+
+        let filters = vec!["method=GET".to_string()];
+        let filtered = filter_by_labels(metrics, &filters);
+        assert_eq!(filtered.len(), 1);
+        assert_eq!(filtered[0].value, 100.0);
+    }
+
+    #[test]
+    fn test_filter_by_labels_multiple_labels() {
+        let metrics = vec![
+            Metric {
+                name: "http_requests_total".to_string(),
+                type_: "counter".to_string(),
+                value: 100.0,
+                timestamp: Utc::now(),
+                labels: HashMap::from([
+                    ("method".to_string(), "GET".to_string()),
+                    ("status".to_string(), "200".to_string()),
+                ]),
+                percentiles: None,
+            },
+            Metric {
+                name: "http_requests_total".to_string(),
+                type_: "counter".to_string(),
+                value: 50.0,
+                timestamp: Utc::now(),
+                labels: HashMap::from([
+                    ("method".to_string(), "GET".to_string()),
+                    ("status".to_string(), "404".to_string()),
+                ]),
+                percentiles: None,
+            },
+            Metric {
+                name: "http_requests_total".to_string(),
+                type_: "counter".to_string(),
+                value: 25.0,
+                timestamp: Utc::now(),
+                labels: HashMap::from([
+                    ("method".to_string(), "POST".to_string()),
+                    ("status".to_string(), "200".to_string()),
+                ]),
+                percentiles: None,
+            },
+        ];
+
+        // Filter for GET requests with 200 status
+        let filters = vec!["method=GET".to_string(), "status=200".to_string()];
+        let filtered = filter_by_labels(metrics, &filters);
+        assert_eq!(filtered.len(), 1);
+        assert_eq!(filtered[0].value, 100.0);
+    }
+
+    #[test]
+    fn test_filter_by_labels_no_match() {
+        let metrics = vec![Metric {
+            name: "http_requests_total".to_string(),
+            type_: "counter".to_string(),
+            value: 100.0,
+            timestamp: Utc::now(),
+            labels: HashMap::from([("method".to_string(), "GET".to_string())]),
+            percentiles: None,
+        }];
+
+        let filters = vec!["method=POST".to_string()];
+        let filtered = filter_by_labels(metrics, &filters);
+        assert_eq!(filtered.len(), 0);
+    }
+
+    #[test]
+    fn test_filter_by_labels_empty_filters() {
+        let metrics = vec![
+            Metric {
+                name: "metric1".to_string(),
+                type_: "counter".to_string(),
+                value: 100.0,
+                timestamp: Utc::now(),
+                labels: HashMap::new(),
+                percentiles: None,
+            },
+            Metric {
+                name: "metric2".to_string(),
+                type_: "gauge".to_string(),
+                value: 50.0,
+                timestamp: Utc::now(),
+                labels: HashMap::new(),
+                percentiles: None,
+            },
+        ];
+
+        let filters: Vec<String> = vec![];
+        let filtered = filter_by_labels(metrics.clone(), &filters);
+        assert_eq!(filtered.len(), 2);
+    }
+
+    #[test]
+    fn test_filter_by_labels_invalid_format() {
+        let metrics = vec![Metric {
+            name: "http_requests_total".to_string(),
+            type_: "counter".to_string(),
+            value: 100.0,
+            timestamp: Utc::now(),
+            labels: HashMap::from([("method".to_string(), "GET".to_string())]),
+            percentiles: None,
+        }];
+
+        // Invalid filter format (no '=')
+        let filters = vec!["method".to_string()];
+        let filtered = filter_by_labels(metrics.clone(), &filters);
+        // Should return all metrics since filter is invalid
+        assert_eq!(filtered.len(), 1);
+    }
+
+    #[test]
+    fn test_filter_by_labels_partial_match() {
+        let metrics = vec![Metric {
+            name: "http_requests_total".to_string(),
+            type_: "counter".to_string(),
+            value: 100.0,
+            timestamp: Utc::now(),
+            labels: HashMap::from([
+                ("method".to_string(), "GET".to_string()),
+                ("status".to_string(), "200".to_string()),
+            ]),
+            percentiles: None,
+        }];
+
+        // Filter requires both labels, but metric only matches one
+        let filters = vec!["method=GET".to_string(), "endpoint=/api".to_string()];
+        let filtered = filter_by_labels(metrics, &filters);
+        assert_eq!(filtered.len(), 0);
+    }
+
+    #[test]
+    fn test_filter_by_name() {
+        let metrics = vec![
+            Metric {
+                name: "http_requests_total".to_string(),
+                type_: "counter".to_string(),
+                value: 100.0,
+                timestamp: Utc::now(),
+                labels: HashMap::new(),
+                percentiles: None,
+            },
+            Metric {
+                name: "http_response_time_ms".to_string(),
+                type_: "histogram".to_string(),
+                value: 150.0,
+                timestamp: Utc::now(),
+                labels: HashMap::new(),
+                percentiles: None,
+            },
+            Metric {
+                name: "cpu_usage_percent".to_string(),
+                type_: "gauge".to_string(),
+                value: 45.0,
+                timestamp: Utc::now(),
+                labels: HashMap::new(),
+                percentiles: None,
+            },
+        ];
+
+        // Filter for metrics with "http" in name
+        let filtered = filter_by_name(metrics.clone(), "http");
+        assert_eq!(filtered.len(), 2);
+
+        // Filter for metrics with "cpu" in name
+        let filtered = filter_by_name(metrics.clone(), "cpu");
+        assert_eq!(filtered.len(), 1);
+        assert_eq!(filtered[0].name, "cpu_usage_percent");
+
+        // Filter for metrics with "memory" in name (no match)
+        let filtered = filter_by_name(metrics, "memory");
+        assert_eq!(filtered.len(), 0);
+    }
+
+    #[test]
+    fn test_filter_by_type() {
+        let metrics = vec![
+            Metric {
+                name: "requests_total".to_string(),
+                type_: "counter".to_string(),
+                value: 100.0,
+                timestamp: Utc::now(),
+                labels: HashMap::new(),
+                percentiles: None,
+            },
+            Metric {
+                name: "cpu_usage".to_string(),
+                type_: "gauge".to_string(),
+                value: 45.0,
+                timestamp: Utc::now(),
+                labels: HashMap::new(),
+                percentiles: None,
+            },
+            Metric {
+                name: "response_time".to_string(),
+                type_: "histogram".to_string(),
+                value: 150.0,
+                timestamp: Utc::now(),
+                labels: HashMap::new(),
+                percentiles: None,
+            },
+        ];
+
+        // Filter for counters
+        let filtered = filter_by_type(metrics.clone(), "counter");
+        assert_eq!(filtered.len(), 1);
+        assert_eq!(filtered[0].name, "requests_total");
+
+        // Filter for gauges (case insensitive)
+        let filtered = filter_by_type(metrics.clone(), "GAUGE");
+        assert_eq!(filtered.len(), 1);
+        assert_eq!(filtered[0].name, "cpu_usage");
+
+        // Filter for histograms
+        let filtered = filter_by_type(metrics.clone(), "histogram");
+        assert_eq!(filtered.len(), 1);
+        assert_eq!(filtered[0].name, "response_time");
+
+        // Filter for summary (no match)
+        let filtered = filter_by_type(metrics, "summary");
+        assert_eq!(filtered.len(), 0);
+    }
+}
+
+// Made with Bob

@@ -326,6 +326,117 @@ mod tests {
         let parsed: Trace = serde_json::from_str(&json_str).unwrap();
         assert_eq!(parsed.spans[0].attributes.len(), 2);
     }
+
+    // T064: Unit test for metrics JSON formatter
+    #[test]
+    fn test_print_metrics_json_with_labels() {
+        let metrics = vec![
+            Metric {
+                name: "http_requests_total".to_string(),
+                type_: "counter".to_string(),
+                value: 1234.0,
+                timestamp: Utc::now(),
+                labels: HashMap::from([
+                    ("method".to_string(), "GET".to_string()),
+                    ("status".to_string(), "200".to_string()),
+                ]),
+                percentiles: None,
+            },
+            Metric {
+                name: "http_requests_total".to_string(),
+                type_: "counter".to_string(),
+                value: 567.0,
+                timestamp: Utc::now(),
+                labels: HashMap::from([
+                    ("method".to_string(), "POST".to_string()),
+                    ("status".to_string(), "201".to_string()),
+                ]),
+                percentiles: None,
+            },
+        ];
+        let result = print_metrics_json(&metrics);
+        assert!(result.is_ok());
+
+        // Verify labels are preserved in JSON
+        let json_str = serde_json::to_string(&metrics).unwrap();
+        let parsed: Vec<Metric> = serde_json::from_str(&json_str).unwrap();
+        assert_eq!(parsed[0].labels.len(), 2);
+        assert_eq!(parsed[1].labels.len(), 2);
+    }
+
+    #[test]
+    fn test_print_metric_json_with_percentiles() {
+        let metric = Metric {
+            name: "response_time_ms".to_string(),
+            type_: "histogram".to_string(),
+            value: 150.5,
+            timestamp: Utc::now(),
+            labels: HashMap::from([("endpoint".to_string(), "/api/users".to_string())]),
+            percentiles: Some(HashMap::from([
+                ("p50".to_string(), 100.0),
+                ("p95".to_string(), 200.0),
+                ("p99".to_string(), 300.0),
+                ("p99.9".to_string(), 500.0),
+            ])),
+        };
+        let result = print_metric_json(&metric);
+        assert!(result.is_ok());
+
+        // Verify percentiles are preserved in JSON
+        let json_str = serde_json::to_string(&metric).unwrap();
+        let parsed: Metric = serde_json::from_str(&json_str).unwrap();
+        assert!(parsed.percentiles.is_some());
+        assert_eq!(parsed.percentiles.as_ref().unwrap().len(), 4);
+    }
+
+    #[test]
+    fn test_print_metrics_json_empty() {
+        let metrics: Vec<Metric> = vec![];
+        let result = print_metrics_json(&metrics);
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_metrics_json_time_series() {
+        // Test time-series data (multiple data points for same metric)
+        let now = Utc::now();
+        let metrics = vec![
+            Metric {
+                name: "cpu_usage_percent".to_string(),
+                type_: "gauge".to_string(),
+                value: 45.2,
+                timestamp: now - chrono::Duration::minutes(2),
+                labels: HashMap::from([("host".to_string(), "server1".to_string())]),
+                percentiles: None,
+            },
+            Metric {
+                name: "cpu_usage_percent".to_string(),
+                type_: "gauge".to_string(),
+                value: 52.8,
+                timestamp: now - chrono::Duration::minutes(1),
+                labels: HashMap::from([("host".to_string(), "server1".to_string())]),
+                percentiles: None,
+            },
+            Metric {
+                name: "cpu_usage_percent".to_string(),
+                type_: "gauge".to_string(),
+                value: 48.5,
+                timestamp: now,
+                labels: HashMap::from([("host".to_string(), "server1".to_string())]),
+                percentiles: None,
+            },
+        ];
+        let result = print_metrics_json(&metrics);
+        assert!(result.is_ok());
+
+        // Verify time-series structure is preserved
+        let json_str = serde_json::to_string(&metrics).unwrap();
+        let parsed: Vec<Metric> = serde_json::from_str(&json_str).unwrap();
+        assert_eq!(parsed.len(), 3);
+        assert_eq!(parsed[0].name, "cpu_usage_percent");
+        assert_eq!(parsed[1].name, "cpu_usage_percent");
+        assert_eq!(parsed[2].name, "cpu_usage_percent");
+    }
 }
 
 // Made with Bob

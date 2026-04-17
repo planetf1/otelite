@@ -577,6 +577,178 @@ mod tests {
             _ => panic!("Expected ApiError"),
         }
     }
+    // T061: Unit test for ApiClient::fetch_metrics
+    #[tokio::test]
+    async fn test_fetch_metrics_success() {
+        let mut server = Server::new_async().await;
+        let mock = server
+            .mock("GET", "/api/metrics")
+            .match_query(mockito::Matcher::Any)
+            .with_status(200)
+            .with_header("content-type", "application/json")
+            .with_body(
+                r#"[
+                {
+                    "name": "http_requests_total",
+                    "type": "counter",
+                    "value": 1234.0,
+                    "timestamp": "2024-01-15T10:30:00Z",
+                    "labels": {"method": "GET", "status": "200"}
+                },
+                {
+                    "name": "response_time_ms",
+                    "type": "histogram",
+                    "value": 150.5,
+                    "timestamp": "2024-01-15T10:30:00Z",
+                    "labels": {},
+                    "percentiles": {"p50": 100.0, "p95": 200.0, "p99": 300.0}
+                }
+            ]"#,
+            )
+            .create_async()
+            .await;
+
+        let client = ApiClient::new(server.url(), Duration::from_secs(30)).unwrap();
+        let params = vec![("limit", "10".to_string())];
+        let result = client.fetch_metrics(params).await;
+
+        mock.assert_async().await;
+        assert!(result.is_ok());
+        let metrics = result.unwrap();
+        assert_eq!(metrics.len(), 2);
+        assert_eq!(metrics[0].name, "http_requests_total");
+        assert_eq!(metrics[0].type_, "counter");
+        assert_eq!(metrics[0].value, 1234.0);
+        assert_eq!(metrics[1].name, "response_time_ms");
+        assert_eq!(metrics[1].type_, "histogram");
+        assert!(metrics[1].percentiles.is_some());
+    }
+
+    #[tokio::test]
+    async fn test_fetch_metrics_empty_response() {
+        let mut server = Server::new_async().await;
+        let mock = server
+            .mock("GET", "/api/metrics")
+            .with_status(200)
+            .with_header("content-type", "application/json")
+            .with_body(r#"[]"#)
+            .create_async()
+            .await;
+
+        let client = ApiClient::new(server.url(), Duration::from_secs(30)).unwrap();
+        let result = client.fetch_metrics(vec![]).await;
+
+        mock.assert_async().await;
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap().len(), 0);
+    }
+
+    #[tokio::test]
+    async fn test_fetch_metrics_error() {
+        let mut server = Server::new_async().await;
+        let mock = server
+            .mock("GET", "/api/metrics")
+            .with_status(500)
+            .create_async()
+            .await;
+
+        let client = ApiClient::new(server.url(), Duration::from_secs(30)).unwrap();
+        let result = client.fetch_metrics(vec![]).await;
+
+        mock.assert_async().await;
+        assert!(result.is_err());
+        match result {
+            Err(Error::ApiError(msg)) => assert!(msg.contains("500")),
+            _ => panic!("Expected ApiError"),
+        }
+    }
+
+    // T062: Unit test for ApiClient::fetch_metric_by_name
+    #[tokio::test]
+    async fn test_fetch_metric_by_name_success() {
+        let mut server = Server::new_async().await;
+        let mock = server
+            .mock("GET", "/api/metrics/http_requests_total")
+            .with_status(200)
+            .with_header("content-type", "application/json")
+            .with_body(
+                r#"[
+                {
+                    "name": "http_requests_total",
+                    "type": "counter",
+                    "value": 1234.0,
+                    "timestamp": "2024-01-15T10:30:00Z",
+                    "labels": {"method": "GET", "status": "200"}
+                },
+                {
+                    "name": "http_requests_total",
+                    "type": "counter",
+                    "value": 567.0,
+                    "timestamp": "2024-01-15T10:29:00Z",
+                    "labels": {"method": "POST", "status": "201"}
+                }
+            ]"#,
+            )
+            .create_async()
+            .await;
+
+        let client = ApiClient::new(server.url(), Duration::from_secs(30)).unwrap();
+        let result = client.fetch_metric_by_name("http_requests_total", vec![]).await;
+
+        mock.assert_async().await;
+        assert!(result.is_ok());
+        let metrics = result.unwrap();
+        assert_eq!(metrics.len(), 2);
+        assert_eq!(metrics[0].name, "http_requests_total");
+        assert_eq!(metrics[0].value, 1234.0);
+        assert_eq!(metrics[1].value, 567.0);
+    }
+
+    #[tokio::test]
+    async fn test_fetch_metric_by_name_not_found() {
+        let mut server = Server::new_async().await;
+        let mock = server
+            .mock("GET", "/api/metrics/nonexistent_metric")
+            .with_status(404)
+            .create_async()
+            .await;
+
+        let client = ApiClient::new(server.url(), Duration::from_secs(30)).unwrap();
+        let result = client.fetch_metric_by_name("nonexistent_metric", vec![]).await;
+
+        mock.assert_async().await;
+        assert!(result.is_err());
+        match result {
+            Err(Error::NotFound(msg)) => assert!(msg.contains("nonexistent_metric")),
+            _ => panic!("Expected NotFound error"),
+        }
+    }
+
+    #[tokio::test]
+    async fn test_fetch_metric_by_name_with_filters() {
+        let mut server = Server::new_async().await;
+        let mock = server
+            .mock("GET", "/api/metrics/response_time_ms")
+            .match_query(mockito::Matcher::AllOf(vec![
+                mockito::Matcher::UrlEncoded("since".into(), "1h".into()),
+                mockito::Matcher::UrlEncoded("label".into(), "method=GET".into()),
+            ]))
+            .with_status(200)
+            .with_header("content-type", "application/json")
+            .with_body(r#"[]"#)
+            .create_async()
+            .await;
+
+        let client = ApiClient::new(server.url(), Duration::from_secs(30)).unwrap();
+        let params = vec![
+            ("since", "1h".to_string()),
+            ("label", "method=GET".to_string()),
+        ];
+        let result = client.fetch_metric_by_name("response_time_ms", params).await;
+
+        mock.assert_async().await;
+        assert!(result.is_ok());
+    }
 }
 
 // Made with Bob
