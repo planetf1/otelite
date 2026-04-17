@@ -1,0 +1,116 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Rotel Dashboard</title>
+    <link rel="stylesheet" href="/css/styles.css">
+</head>
+<body>
+    <div id="app">
+        <!-- Header -->
+        <header class="header">
+            <div class="header-content">
+                <h1 class="logo">Rotel Dashboard</h1>
+                <nav class="nav">
+                    <button class="nav-btn active" data-view="logs">Logs</button>
+                    <button class="nav-btn" data-view="traces">Traces</button>
+                    <button class="nav-btn" data-view="metrics">Metrics</button>
+                </nav>
+                <div class="connection-status">
+                    <span class="status-indicator" id="status-indicator"></span>
+                    <span class="status-text" id="status-text">Connected</span>
+                </div>
+            </div>
+        </header>
+
+        <!-- Main Content Area -->
+        <main class="main-content">
+            <!-- Logs View -->
+            <div id="logs-view" class="view active">
+                <div class="view-header">
+                    <h2>Logs</h2>
+                    <div class="controls">
+                        <input type="text" id="log-search" class="search-input" placeholder="Search logs...">
+                        <select id="severity-filter" class="filter-select">
+                            <option value="">All Severities</option>
+                            <option value="ERROR">Error</option>
+                            <option value="WARN">Warning</option>
+                            <option value="INFO">Info</option>
+                            <option value="DEBUG">Debug</option>
+                            <option value="TRACE">Trace</option>
+                        </select>
+                        <button id="export-logs" class="btn-secondary">Export</button>
+                    </div>
+                </div>
+                <div id="logs-container" class="logs-container">
+                    <div class="empty-state">
+                        <p>No logs available</p>
+                        <p class="empty-state-hint">Logs will appear here as they are received</p>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Traces View -->
+            <div id="traces-view" class="view">
+                <div class="view-header">
+                    <h2>Traces</h2>
+                    <div class="controls">
+                        <select id="trace-status-filter" class="filter-select">
+                            <option value="">All Statuses</option>
+                            <option value="ok">OK</option>
+                            <option value="error">Error</option>
+                        </select>
+                    </div>
+                </div>
+                <div id="traces-container" class="traces-container">
+                    <div class="empty-state">
+                        <p>No traces available</p>
+                        <p class="empty-state-hint">Traces will appear here as they are received</p>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Metrics View -->
+            <div id="metrics-view" class="view">
+                <div class="view-header">
+                    <h2>Metrics</h2>
+                    <div class="controls">
+                        <select id="time-range" class="filter-select">
+                            <option value="300">Last 5 minutes</option>
+                            <option value="3600">Last 1 hour</option>
+                            <option value="21600">Last 6 hours</option>
+                            <option value="86400">Last 24 hours</option>
+                        </select>
+                    </div>
+                </div>
+                <div class="metrics-layout">
+                    <div id="metrics-list" class="metrics-list">
+                        <div class="empty-state">
+                            <p>No metrics available</p>
+                            <p class="empty-state-hint">Metrics will appear here as they are received</p>
+                        </div>
+                    </div>
+                    <div id="metrics-graph" class="metrics-graph">
+                        <div class="empty-state">
+                            <p>Select a metric to view</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <!-- Loading Overlay -->
+    <div id="loading-overlay" class="loading-overlay hidden">
+        <div class="spinner"></div>
+    </div>
+
+    <!-- Scripts -->
+    <script type="module" src="/js/api.js"></script>
+    <script type="module" src="/js/logs.js"></script>
+    <script type="module" src="/js/traces.js"></script>
+    <script type="module" src="/js/metrics.js"></script>
+    <script type="module" src="/js/app.js"></script>
+</body>
+</html>
