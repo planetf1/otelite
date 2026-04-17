@@ -9,3 +9,39 @@ repository.workspace = true
 homepage.workspace = true
 
 [dependencies]
+# Async runtime
+tokio = { workspace = true }
+
+# gRPC server
+tonic = "0.11"
+prost = "0.12"
+
+# HTTP server
+axum = "0.7"
+hyper = "1.0"
+tower = { version = "0.4", features = ["limit", "timeout"] }
+
+# OTLP protocol definitions
+opentelemetry-proto = { version = "0.5", features = ["gen-tonic", "metrics", "logs", "trace"] }
+
+# Serialization
+serde = { workspace = true }
+serde_json = { workspace = true }
+
+# Logging
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }
+
+# Error handling
+thiserror = "1.0"
+anyhow = "1.0"
+
+# Compression
+flate2 = "1.0"
+async-compression = { version = "0.4", features = ["tokio", "gzip", "deflate"] }
+
+[dev-dependencies]
+tokio-test = "0.4"
+pretty_assertions = { workspace = true }
+tempfile = { workspace = true }
+reqwest = { version = "0.11", features = ["json"] }

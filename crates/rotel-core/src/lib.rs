@@ -1,40 +1,13 @@
 //! Rotel Core Library
 //!
-//! This crate provides core functionality for the Rotel OpenTelemetry receiver.
-//!
-//! # Examples
-//!
-//! Basic usage of the core library:
-//!
-//! ```
-//! use rotel_core::{Config, add, divide};
-//!
-//! // Simple arithmetic
-//! let sum = add(2, 3);
-//! assert_eq!(sum, 5);
-//!
-//! // Error handling
-//! let result = divide(10.0, 2.0);
-//! assert!(result.is_ok());
-//! assert_eq!(result.unwrap(), 5.0);
-//!
-//! // Configuration
-//! let config = Config::new("my-service".to_string(), 8080);
-//! assert!(config.is_valid());
-//! ```
-//!
-//! # Error Handling
-//!
-//! Functions that can fail return `Result` types:
-//!
-//! ```
-//! use rotel_core::divide;
-//!
-//! // This will return an error
-//! let result = divide(10.0, 0.0);
-//! assert!(result.is_err());
-//! assert_eq!(result.unwrap_err(), "Division by zero");
-//! ```
+//! This crate provides core functionality for the Rotel OpenTelemetry receiver,
+//! including telemetry data types for metrics, logs, and traces.
+
+// Telemetry data types
+pub mod telemetry;
+
+// Re-exports for convenience
+pub use telemetry::{LogRecord, Metric, Resource, Span, Trace};
 
 pub fn add(left: u64, right: u64) -> u64 {
     left + right
