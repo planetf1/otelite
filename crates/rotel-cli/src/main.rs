@@ -280,8 +280,14 @@ async fn handle_traces_command(command: TracesCommands, config: &Config) -> Resu
                 None
             };
 
-            traces::handle_list(&client, config, limit.map(|l| l as u32), min_duration_ms, status)
-                .await?;
+            traces::handle_list(
+                &client,
+                config,
+                limit.map(|l| l as u32),
+                min_duration_ms,
+                status,
+            )
+            .await?;
         },
         TracesCommands::Show { id } => {
             traces::handle_show(&client, config, &id).await?;

@@ -204,7 +204,10 @@ async fn test_traces_list_with_status_filter() {
     let mut server = Server::new_async().await;
     let mock = server
         .mock("GET", "/api/traces")
-        .match_query(mockito::Matcher::UrlEncoded("status".into(), "ERROR".into()))
+        .match_query(mockito::Matcher::UrlEncoded(
+            "status".into(),
+            "ERROR".into(),
+        ))
         .with_status(200)
         .with_header("content-type", "application/json")
         .with_body(

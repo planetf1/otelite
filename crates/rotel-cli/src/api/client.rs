@@ -693,7 +693,9 @@ mod tests {
             .await;
 
         let client = ApiClient::new(server.url(), Duration::from_secs(30)).unwrap();
-        let result = client.fetch_metric_by_name("http_requests_total", vec![]).await;
+        let result = client
+            .fetch_metric_by_name("http_requests_total", vec![])
+            .await;
 
         mock.assert_async().await;
         assert!(result.is_ok());
@@ -714,7 +716,9 @@ mod tests {
             .await;
 
         let client = ApiClient::new(server.url(), Duration::from_secs(30)).unwrap();
-        let result = client.fetch_metric_by_name("nonexistent_metric", vec![]).await;
+        let result = client
+            .fetch_metric_by_name("nonexistent_metric", vec![])
+            .await;
 
         mock.assert_async().await;
         assert!(result.is_err());
@@ -744,7 +748,9 @@ mod tests {
             ("since", "1h".to_string()),
             ("label", "method=GET".to_string()),
         ];
-        let result = client.fetch_metric_by_name("response_time_ms", params).await;
+        let result = client
+            .fetch_metric_by_name("response_time_ms", params)
+            .await;
 
         mock.assert_async().await;
         assert!(result.is_ok());

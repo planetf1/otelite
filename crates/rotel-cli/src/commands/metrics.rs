@@ -34,10 +34,10 @@ pub async fn handle_list(
     match config.format {
         crate::config::OutputFormat::Pretty => {
             pretty::print_metrics_table(&metrics, config.no_color);
-        }
+        },
         crate::config::OutputFormat::Json => {
             json::print_metrics_json(&metrics)?;
-        }
+        },
     }
 
     Ok(())
@@ -70,14 +70,14 @@ pub async fn handle_get(
                 // Multiple metrics with same name but different labels
                 pretty::print_metrics_table(&metrics, config.no_color);
             }
-        }
+        },
         crate::config::OutputFormat::Json => {
             if metrics.len() == 1 {
                 json::print_metric_json(&metrics[0])?;
             } else {
                 json::print_metrics_json(&metrics)?;
             }
-        }
+        },
     }
 
     Ok(())
@@ -107,13 +107,9 @@ pub fn filter_by_labels(metrics: Vec<Metric>, label_filters: &[String]) -> Vec<M
         .into_iter()
         .filter(|metric| {
             // Metric must match ALL label filters
-            filters.iter().all(|(key, value)| {
-                metric
-                    .labels
-                    .get(*key)
-                    .map(|v| v == value)
-                    .unwrap_or(false)
-            })
+            filters
+                .iter()
+                .all(|(key, value)| metric.labels.get(*key).map(|v| v == value).unwrap_or(false))
         })
         .collect()
 }
