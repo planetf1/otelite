@@ -87,6 +87,46 @@ trace.get_tracer_provider().add_span_processor(
 
 Open `http://localhost:8080` in your browser to view metrics, logs, and traces.
 
+### Terminal User Interface (TUI)
+
+Rotel includes a powerful terminal-based interface for viewing telemetry data directly in your terminal.
+
+**Installation**:
+```bash
+cargo install rotel-tui
+```
+
+**Usage**:
+```bash
+# Start TUI (connects to localhost:8080 by default)
+rotel-tui
+
+# Connect to custom API endpoint
+rotel-tui --api-url http://localhost:8080
+
+# Use custom configuration
+rotel-tui --config ~/.config/rotel/tui.toml
+```
+
+**Key Features**:
+- 📊 **Logs View** (`l` key) - Real-time log streaming with severity filtering and search
+- 🔍 **Traces View** (`t` key) - Span waterfall visualization with critical path highlighting
+- 📈 **Metrics View** (`m` key) - Time series charts with zoom and navigation
+- ⌨️ **Keyboard-Driven** - Complete keyboard navigation, no mouse required
+- 🎨 **Color-Coded** - Severity levels, error states, and performance indicators
+- 🚀 **Lightweight** - <20MB memory, <1% CPU idle
+
+**Quick Navigation**:
+- `l` - Switch to logs view
+- `t` - Switch to traces view
+- `m` - Switch to metrics view
+- `/` - Search within current view
+- `f` - Apply filters
+- `?` or `h` - Show help screen
+- `q` - Quit
+
+See [`docs/tui-quickstart.md`](docs/tui-quickstart.md) for detailed TUI documentation.
+
 ## Configuration
 
 Rotel uses sensible defaults but can be customized via `rotel.toml`:
@@ -112,6 +152,9 @@ See [`docs/configuration.md`](docs/configuration.md) for full configuration opti
 ## Documentation
 
 - [**Quick Start Guide**](docs/quickstart.md) - Get up and running in 5 minutes
+- [**TUI Quick Start**](docs/tui-quickstart.md) - Terminal UI guide
+- [**TUI Keyboard Shortcuts**](docs/tui-shortcuts.md) - Complete shortcuts reference
+- [**TUI Troubleshooting**](docs/tui-troubleshooting.md) - TUI-specific issues and solutions
 - [**Architecture Overview**](ARCHITECTURE.md) - System design and components
 - [**Testing Guide**](docs/testing.md) - Running and writing tests
 - [**Contributing Guide**](CONTRIBUTING.md) - How to contribute
