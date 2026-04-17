@@ -244,24 +244,51 @@ async fn handle_logs_command(command: LogsCommands, config: &Config) -> Result<(
             since,
         } => {
             logs::handle_list(&client, config, limit, severity, since).await?;
-        }
+        },
         LogsCommands::Search { query, limit } => {
             logs::handle_search(&client, config, &query, limit, None).await?;
-        }
+        },
         LogsCommands::Show { id } => {
             logs::handle_show(&client, config, &id).await?;
-        }
+        },
     }
 
     Ok(())
 }
 
-async fn handle_traces_command(_command: TracesCommands, _config: &Config) -> Result<()> {
-    // Placeholder - will be implemented in Phase 4
-    eprintln!("Traces commands not yet implemented");
-    Err(Error::InvalidArgument(
-        "Traces commands not yet implemented".to_string(),
-    ))
+async fn handle_traces_command(command: TracesCommands, config: &Config) -> Result<()> {
+    use api::client::ApiClient;
+    use commands::traces;
+    use output::parse_duration;
+
+    let client = ApiClient::new(config.endpoint.clone(), config.timeout)?;
+
+    match command {
+        TracesCommands::List {
+            limit,
+            min_duration,
+            status,
+            since: _,
+        } => {
+            // Parse min_duration string to milliseconds if provided
+            let min_duration_ms = if let Some(duration_str) = min_duration {
+                Some(
+                    parse_duration(&duration_str)
+                        .map_err(|e| Error::InvalidArgument(format!("Invalid duration: {}", e)))?,
+                )
+            } else {
+                None
+            };
+
+            traces::handle_list(&client, config, limit.map(|l| l as u32), min_duration_ms, status)
+                .await?;
+        },
+        TracesCommands::Show { id } => {
+            traces::handle_show(&client, config, &id).await?;
+        },
+    }
+
+    Ok(())
 }
 
 async fn handle_metrics_command(_command: MetricsCommands, _config: &Config) -> Result<()> {

@@ -1,6 +1,6 @@
 //! Integration tests for logs commands
 
-use mockito::{Mock, Server};
+use mockito::Server;
 use std::time::Duration;
 
 // Helper to create a mock API client
