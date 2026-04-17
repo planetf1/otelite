@@ -1,0 +1,43 @@
+[package]
+name = "rotel-tui"
+version = "0.1.0"
+edition = "2021"
+authors = ["Rotel Contributors"]
+license = "Apache-2.0"
+description = "Terminal User Interface for Rotel OpenTelemetry receiver"
+repository = "https://github.com/planetf1/rotel"
+
+[[bin]]
+name = "rotel-tui"
+path = "src/main.rs"
+
+[lib]
+name = "rotel_tui"
+path = "src/lib.rs"
+
+[dependencies]
+# TUI framework
+ratatui = "0.26"
+crossterm = "0.27"
+
+# Async runtime
+tokio = { version = "1.35", features = ["full"] }
+
+# HTTP client
+reqwest = { version = "0.11", features = ["json"] }
+
+# Serialization
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+
+# Time handling
+chrono = "0.4"
+
+# Error handling
+anyhow = "1.0"
+
+# CLI parsing
+clap = { version = "4.4", features = ["derive"] }
+
+[dev-dependencies]
+mockito = "1.2"
