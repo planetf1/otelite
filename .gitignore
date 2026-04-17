@@ -1,0 +1,52 @@
+# Rust-specific patterns
+target/
+debug/
+release/
+*.rs.bk
+*.rlib
+*.prof*
+Cargo.lock  # For applications; libraries should commit this
+
+# Environment variables
+.env
+.env.local
+.env.*.local
+
+# IDE and editor files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+*.iml
+
+# Build output
+bin/
+dist/
+build/
+*.log
+
+# Test cache
+.cache/
+
+# Temporary files
+tmp/
+temp/
+*.tmp
+
+# Coverage reports
+coverage/
+*.cover
+*.coverprofile
+target/llvm-cov/
+lcov.info
+*.profdata
+*.profraw
+
+# OS-specific
+Thumbs.db
+
+# Rust-specific IDE files
+*.rs.bk
+**/*.rs.bk
