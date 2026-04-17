@@ -1,0 +1,49 @@
+[
+  {
+    "name": "http_requests_total",
+    "type": "counter",
+    "value": 1234.0,
+    "timestamp": "2026-04-17T20:00:00Z",
+    "labels": {
+      "service": "api-server",
+      "method": "GET",
+      "status": "200"
+    }
+  },
+  {
+    "name": "http_request_duration_seconds",
+    "type": "histogram",
+    "value": 0.045,
+    "timestamp": "2026-04-17T20:00:00Z",
+    "labels": {
+      "service": "api-server",
+      "method": "GET"
+    },
+    "percentiles": {
+      "p50": 0.025,
+      "p90": 0.050,
+      "p95": 0.075,
+      "p99": 0.150
+    }
+  },
+  {
+    "name": "memory_usage_bytes",
+    "type": "gauge",
+    "value": 891289600.0,
+    "timestamp": "2026-04-17T20:00:00Z",
+    "labels": {
+      "service": "api-server",
+      "host": "localhost"
+    }
+  },
+  {
+    "name": "active_connections",
+    "type": "gauge",
+    "value": 42.0,
+    "timestamp": "2026-04-17T20:00:00Z",
+    "labels": {
+      "service": "api-server",
+      "protocol": "http"
+    }
+  }
+]

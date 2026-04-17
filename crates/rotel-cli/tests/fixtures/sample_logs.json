@@ -1,0 +1,46 @@
+[
+  {
+    "id": "log-001",
+    "timestamp": "2026-04-17T20:00:00Z",
+    "severity": "ERROR",
+    "message": "Database connection failed",
+    "attributes": {
+      "service": "api-server",
+      "host": "localhost",
+      "error_code": "DB_CONN_FAILED"
+    }
+  },
+  {
+    "id": "log-002",
+    "timestamp": "2026-04-17T20:01:00Z",
+    "severity": "WARN",
+    "message": "High memory usage detected",
+    "attributes": {
+      "service": "api-server",
+      "host": "localhost",
+      "memory_mb": "850"
+    }
+  },
+  {
+    "id": "log-003",
+    "timestamp": "2026-04-17T20:02:00Z",
+    "severity": "INFO",
+    "message": "Request processed successfully",
+    "attributes": {
+      "service": "api-server",
+      "host": "localhost",
+      "duration_ms": "45"
+    }
+  },
+  {
+    "id": "log-004",
+    "timestamp": "2026-04-17T20:03:00Z",
+    "severity": "DEBUG",
+    "message": "Cache hit for user profile",
+    "attributes": {
+      "service": "api-server",
+      "host": "localhost",
+      "user_id": "user-123"
+    }
+  }
+]

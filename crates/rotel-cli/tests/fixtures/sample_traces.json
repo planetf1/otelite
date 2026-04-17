@@ -1,0 +1,62 @@
+[
+  {
+    "id": "trace-001",
+    "root_span": "http-request",
+    "duration_ms": 1500,
+    "status": "OK",
+    "spans": [
+      {
+        "id": "span-001",
+        "name": "http-request",
+        "parent_id": null,
+        "start_time": "2026-04-17T20:00:00Z",
+        "duration_ms": 1500,
+        "attributes": {
+          "http.method": "GET",
+          "http.url": "/api/users"
+        }
+      },
+      {
+        "id": "span-002",
+        "name": "database-query",
+        "parent_id": "span-001",
+        "start_time": "2026-04-17T20:00:00.100Z",
+        "duration_ms": 500,
+        "attributes": {
+          "db.system": "postgresql",
+          "db.statement": "SELECT * FROM users"
+        }
+      },
+      {
+        "id": "span-003",
+        "name": "api-call",
+        "parent_id": "span-001",
+        "start_time": "2026-04-17T20:00:00.700Z",
+        "duration_ms": 800,
+        "attributes": {
+          "http.method": "GET",
+          "http.url": "https://api.example.com/data"
+        }
+      }
+    ]
+  },
+  {
+    "id": "trace-002",
+    "root_span": "background-job",
+    "duration_ms": 3200,
+    "status": "ERROR",
+    "spans": [
+      {
+        "id": "span-004",
+        "name": "background-job",
+        "parent_id": null,
+        "start_time": "2026-04-17T20:05:00Z",
+        "duration_ms": 3200,
+        "attributes": {
+          "job.type": "data-sync",
+          "error": "timeout"
+        }
+      }
+    ]
+  }
+]
