@@ -231,12 +231,29 @@ async fn run_dashboard(addr: SocketAddr, storage_path: String) -> Result<()> {
     Ok(())
 }
 
-async fn handle_logs_command(_command: LogsCommands, _config: &Config) -> Result<()> {
-    // Placeholder - will be implemented in Phase 3
-    eprintln!("Logs commands not yet implemented");
-    Err(Error::InvalidArgument(
-        "Logs commands not yet implemented".to_string(),
-    ))
+async fn handle_logs_command(command: LogsCommands, config: &Config) -> Result<()> {
+    use api::client::ApiClient;
+    use commands::logs;
+
+    let client = ApiClient::new(config.endpoint.clone(), config.timeout)?;
+
+    match command {
+        LogsCommands::List {
+            limit,
+            severity,
+            since,
+        } => {
+            logs::handle_list(&client, config, limit, severity, since).await?;
+        }
+        LogsCommands::Search { query, limit } => {
+            logs::handle_search(&client, config, &query, limit, None).await?;
+        }
+        LogsCommands::Show { id } => {
+            logs::handle_show(&client, config, &id).await?;
+        }
+    }
+
+    Ok(())
 }
 
 async fn handle_traces_command(_command: TracesCommands, _config: &Config) -> Result<()> {
