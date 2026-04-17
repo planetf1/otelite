@@ -164,7 +164,7 @@ impl ApiClient {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use mockito::{Mock, Server};
+    use mockito::Server;
 
     #[test]
     fn test_api_client_creation() {
@@ -395,6 +395,187 @@ mod tests {
 
         mock.assert_async().await;
         assert!(result.is_ok());
+    }
+
+    // T038: Unit test for ApiClient::fetch_traces
+    #[tokio::test]
+    async fn test_fetch_traces_success() {
+        let mut server = Server::new_async().await;
+        let mock = server
+            .mock("GET", "/api/traces")
+            .match_query(mockito::Matcher::Any)
+            .with_status(200)
+            .with_header("content-type", "application/json")
+            .with_body(
+                r#"[
+                {
+                    "id": "trace1",
+                    "root_span": "http-request",
+                    "duration_ms": 1500,
+                    "status": "OK",
+                    "spans": [
+                        {
+                            "id": "span1",
+                            "name": "http-request",
+                            "parent_id": null,
+                            "start_time": "2024-01-15T10:30:00Z",
+                            "duration_ms": 1500,
+                            "attributes": {}
+                        }
+                    ]
+                }
+            ]"#,
+            )
+            .create_async()
+            .await;
+
+        let client = ApiClient::new(server.url(), Duration::from_secs(30)).unwrap();
+        let params = vec![("limit", "10".to_string())];
+        let result = client.fetch_traces(params).await;
+
+        mock.assert_async().await;
+        assert!(result.is_ok());
+        let traces = result.unwrap();
+        assert_eq!(traces.len(), 1);
+        assert_eq!(traces[0].id, "trace1");
+        assert_eq!(traces[0].root_span, "http-request");
+        assert_eq!(traces[0].duration_ms, 1500);
+        assert_eq!(traces[0].status, "OK");
+    }
+
+    #[tokio::test]
+    async fn test_fetch_traces_with_filters() {
+        let mut server = Server::new_async().await;
+        let mock = server
+            .mock("GET", "/api/traces")
+            .match_query(mockito::Matcher::AllOf(vec![
+                mockito::Matcher::UrlEncoded("min_duration".into(), "1000".into()),
+                mockito::Matcher::UrlEncoded("status".into(), "ERROR".into()),
+            ]))
+            .with_status(200)
+            .with_header("content-type", "application/json")
+            .with_body(r#"[]"#)
+            .create_async()
+            .await;
+
+        let client = ApiClient::new(server.url(), Duration::from_secs(30)).unwrap();
+        let params = vec![
+            ("min_duration", "1000".to_string()),
+            ("status", "ERROR".to_string()),
+        ];
+        let result = client.fetch_traces(params).await;
+
+        mock.assert_async().await;
+        assert!(result.is_ok());
+    }
+
+    #[tokio::test]
+    async fn test_fetch_traces_error() {
+        let mut server = Server::new_async().await;
+        let mock = server
+            .mock("GET", "/api/traces")
+            .with_status(500)
+            .create_async()
+            .await;
+
+        let client = ApiClient::new(server.url(), Duration::from_secs(30)).unwrap();
+        let result = client.fetch_traces(vec![]).await;
+
+        mock.assert_async().await;
+        assert!(result.is_err());
+        match result {
+            Err(Error::ApiError(msg)) => assert!(msg.contains("500")),
+            _ => panic!("Expected ApiError"),
+        }
+    }
+
+    // T039: Unit test for ApiClient::fetch_trace_by_id
+    #[tokio::test]
+    async fn test_fetch_trace_by_id_success() {
+        let mut server = Server::new_async().await;
+        let mock = server
+            .mock("GET", "/api/traces/trace123")
+            .with_status(200)
+            .with_header("content-type", "application/json")
+            .with_body(
+                r#"{
+                "id": "trace123",
+                "root_span": "database-query",
+                "duration_ms": 250,
+                "status": "OK",
+                "spans": [
+                    {
+                        "id": "span1",
+                        "name": "database-query",
+                        "parent_id": null,
+                        "start_time": "2024-01-15T10:30:00Z",
+                        "duration_ms": 250,
+                        "attributes": {"db.system": "postgresql"}
+                    },
+                    {
+                        "id": "span2",
+                        "name": "query-execution",
+                        "parent_id": "span1",
+                        "start_time": "2024-01-15T10:30:00.100Z",
+                        "duration_ms": 150,
+                        "attributes": {}
+                    }
+                ]
+            }"#,
+            )
+            .create_async()
+            .await;
+
+        let client = ApiClient::new(server.url(), Duration::from_secs(30)).unwrap();
+        let result = client.fetch_trace_by_id("trace123").await;
+
+        mock.assert_async().await;
+        assert!(result.is_ok());
+        let trace = result.unwrap();
+        assert_eq!(trace.id, "trace123");
+        assert_eq!(trace.root_span, "database-query");
+        assert_eq!(trace.duration_ms, 250);
+        assert_eq!(trace.spans.len(), 2);
+    }
+
+    #[tokio::test]
+    async fn test_fetch_trace_by_id_not_found() {
+        let mut server = Server::new_async().await;
+        let mock = server
+            .mock("GET", "/api/traces/nonexistent")
+            .with_status(404)
+            .create_async()
+            .await;
+
+        let client = ApiClient::new(server.url(), Duration::from_secs(30)).unwrap();
+        let result = client.fetch_trace_by_id("nonexistent").await;
+
+        mock.assert_async().await;
+        assert!(result.is_err());
+        match result {
+            Err(Error::NotFound(msg)) => assert!(msg.contains("nonexistent")),
+            _ => panic!("Expected NotFound error"),
+        }
+    }
+
+    #[tokio::test]
+    async fn test_fetch_trace_by_id_error() {
+        let mut server = Server::new_async().await;
+        let mock = server
+            .mock("GET", "/api/traces/trace123")
+            .with_status(500)
+            .create_async()
+            .await;
+
+        let client = ApiClient::new(server.url(), Duration::from_secs(30)).unwrap();
+        let result = client.fetch_trace_by_id("trace123").await;
+
+        mock.assert_async().await;
+        assert!(result.is_err());
+        match result {
+            Err(Error::ApiError(msg)) => assert!(msg.contains("500")),
+            _ => panic!("Expected ApiError"),
+        }
     }
 }
 

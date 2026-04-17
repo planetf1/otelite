@@ -322,6 +322,155 @@ mod tests {
         // Should not panic and should truncate long messages
         print_logs_table(&logs, true);
     }
+
+    // T040: Unit test for traces pretty-print formatter
+    #[test]
+    fn test_print_traces_table_with_data() {
+        let traces = vec![
+            Trace {
+                id: "trace-001".to_string(),
+                root_span: "http-request".to_string(),
+                duration_ms: 1500,
+                status: "OK".to_string(),
+                spans: vec![],
+            },
+            Trace {
+                id: "trace-002".to_string(),
+                root_span: "database-query".to_string(),
+                duration_ms: 250,
+                status: "ERROR".to_string(),
+                spans: vec![],
+            },
+        ];
+        // Should not panic
+        print_traces_table(&traces, true);
+    }
+
+    #[test]
+    fn test_print_traces_table_with_color() {
+        let traces = vec![Trace {
+            id: "trace-001".to_string(),
+            root_span: "http-request".to_string(),
+            duration_ms: 1500,
+            status: "OK".to_string(),
+            spans: vec![],
+        }];
+        // Should not panic with color enabled
+        print_traces_table(&traces, false);
+    }
+
+    // T041: Unit test for span tree formatter
+    #[test]
+    fn test_print_trace_tree_simple() {
+        use crate::api::models::Span;
+
+        let trace = Trace {
+            id: "trace-001".to_string(),
+            root_span: "http-request".to_string(),
+            duration_ms: 1500,
+            status: "OK".to_string(),
+            spans: vec![Span {
+                id: "span-001".to_string(),
+                name: "http-request".to_string(),
+                parent_id: None,
+                start_time: Utc::now(),
+                duration_ms: 1500,
+                attributes: HashMap::new(),
+            }],
+        };
+        // Should not panic
+        print_trace_tree(&trace, true);
+    }
+
+    #[test]
+    fn test_print_trace_tree_with_hierarchy() {
+        use crate::api::models::Span;
+
+        let now = Utc::now();
+        let trace = Trace {
+            id: "trace-001".to_string(),
+            root_span: "http-request".to_string(),
+            duration_ms: 1500,
+            status: "OK".to_string(),
+            spans: vec![
+                Span {
+                    id: "span-001".to_string(),
+                    name: "http-request".to_string(),
+                    parent_id: None,
+                    start_time: now,
+                    duration_ms: 1500,
+                    attributes: HashMap::new(),
+                },
+                Span {
+                    id: "span-002".to_string(),
+                    name: "database-query".to_string(),
+                    parent_id: Some("span-001".to_string()),
+                    start_time: now,
+                    duration_ms: 250,
+                    attributes: HashMap::new(),
+                },
+                Span {
+                    id: "span-003".to_string(),
+                    name: "cache-lookup".to_string(),
+                    parent_id: Some("span-001".to_string()),
+                    start_time: now,
+                    duration_ms: 50,
+                    attributes: HashMap::new(),
+                },
+            ],
+        };
+        // Should not panic and should show hierarchy
+        print_trace_tree(&trace, true);
+    }
+
+    #[test]
+    fn test_print_trace_tree_deep_hierarchy() {
+        use crate::api::models::Span;
+
+        let now = Utc::now();
+        let trace = Trace {
+            id: "trace-001".to_string(),
+            root_span: "http-request".to_string(),
+            duration_ms: 1500,
+            status: "OK".to_string(),
+            spans: vec![
+                Span {
+                    id: "span-001".to_string(),
+                    name: "http-request".to_string(),
+                    parent_id: None,
+                    start_time: now,
+                    duration_ms: 1500,
+                    attributes: HashMap::new(),
+                },
+                Span {
+                    id: "span-002".to_string(),
+                    name: "middleware".to_string(),
+                    parent_id: Some("span-001".to_string()),
+                    start_time: now,
+                    duration_ms: 1000,
+                    attributes: HashMap::new(),
+                },
+                Span {
+                    id: "span-003".to_string(),
+                    name: "handler".to_string(),
+                    parent_id: Some("span-002".to_string()),
+                    start_time: now,
+                    duration_ms: 800,
+                    attributes: HashMap::new(),
+                },
+                Span {
+                    id: "span-004".to_string(),
+                    name: "database-query".to_string(),
+                    parent_id: Some("span-003".to_string()),
+                    start_time: now,
+                    duration_ms: 250,
+                    attributes: HashMap::new(),
+                },
+            ],
+        };
+        // Should not panic and should show deep hierarchy
+        print_trace_tree(&trace, true);
+    }
 }
 
 // Made with Bob

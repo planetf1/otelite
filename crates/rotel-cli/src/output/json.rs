@@ -204,6 +204,128 @@ mod tests {
         let parsed: LogEntry = serde_json::from_str(&json_str).unwrap();
         assert_eq!(parsed.message, log.message);
     }
+
+    // T042: Unit test for traces JSON formatter
+    #[test]
+    fn test_print_traces_json_with_spans() {
+        use crate::api::models::Span;
+
+        let traces = vec![Trace {
+            id: "trace-001".to_string(),
+            root_span: "http-request".to_string(),
+            duration_ms: 1500,
+            status: "OK".to_string(),
+            spans: vec![Span {
+                id: "span-001".to_string(),
+                name: "http-request".to_string(),
+                parent_id: None,
+                start_time: Utc::now(),
+                duration_ms: 1500,
+                attributes: HashMap::new(),
+            }],
+        }];
+        let result = print_traces_json(&traces);
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_print_trace_json() {
+        use crate::api::models::Span;
+
+        let trace = Trace {
+            id: "trace-001".to_string(),
+            root_span: "http-request".to_string(),
+            duration_ms: 1500,
+            status: "OK".to_string(),
+            spans: vec![Span {
+                id: "span-001".to_string(),
+                name: "http-request".to_string(),
+                parent_id: None,
+                start_time: Utc::now(),
+                duration_ms: 1500,
+                attributes: HashMap::new(),
+            }],
+        };
+        let result = print_trace_json(&trace);
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_print_trace_json_with_hierarchy() {
+        use crate::api::models::Span;
+
+        let now = Utc::now();
+        let trace = Trace {
+            id: "trace-001".to_string(),
+            root_span: "http-request".to_string(),
+            duration_ms: 1500,
+            status: "OK".to_string(),
+            spans: vec![
+                Span {
+                    id: "span-001".to_string(),
+                    name: "http-request".to_string(),
+                    parent_id: None,
+                    start_time: now,
+                    duration_ms: 1500,
+                    attributes: HashMap::new(),
+                },
+                Span {
+                    id: "span-002".to_string(),
+                    name: "database-query".to_string(),
+                    parent_id: Some("span-001".to_string()),
+                    start_time: now,
+                    duration_ms: 250,
+                    attributes: HashMap::new(),
+                },
+            ],
+        };
+        let result = print_trace_json(&trace);
+        assert!(result.is_ok());
+
+        // Verify JSON is valid and can be parsed
+        let json_str = serde_json::to_string(&trace).unwrap();
+        let parsed: Trace = serde_json::from_str(&json_str).unwrap();
+        assert_eq!(parsed.id, trace.id);
+        assert_eq!(parsed.spans.len(), 2);
+    }
+
+    #[test]
+    fn test_print_traces_json_empty() {
+        let traces: Vec<Trace> = vec![];
+        let result = print_traces_json(&traces);
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_print_trace_json_with_attributes() {
+        use crate::api::models::Span;
+
+        let mut attributes = HashMap::new();
+        attributes.insert("http.method".to_string(), "GET".to_string());
+        attributes.insert("http.url".to_string(), "/api/users".to_string());
+
+        let trace = Trace {
+            id: "trace-001".to_string(),
+            root_span: "http-request".to_string(),
+            duration_ms: 1500,
+            status: "OK".to_string(),
+            spans: vec![Span {
+                id: "span-001".to_string(),
+                name: "http-request".to_string(),
+                parent_id: None,
+                start_time: Utc::now(),
+                duration_ms: 1500,
+                attributes,
+            }],
+        };
+        let result = print_trace_json(&trace);
+        assert!(result.is_ok());
+
+        // Verify attributes are preserved in JSON
+        let json_str = serde_json::to_string(&trace).unwrap();
+        let parsed: Trace = serde_json::from_str(&json_str).unwrap();
+        assert_eq!(parsed.spans[0].attributes.len(), 2);
+    }
 }
 
 // Made with Bob
