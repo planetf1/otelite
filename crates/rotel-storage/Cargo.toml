@@ -1,0 +1,52 @@
+[package]
+name = "rotel-storage"
+version = "0.1.0"
+edition = "2021"
+authors = ["Rotel Contributors"]
+license = "Apache-2.0"
+description = "Embedded storage layer for Rotel OTLP receiver"
+repository = "https://github.com/rotel/rotel"
+
+[dependencies]
+# Core dependencies
+rotel-core = { path = "../rotel-core" }
+
+# SQLite embedded database
+rusqlite = { version = "0.31", features = ["bundled", "chrono"] }
+
+# Async runtime
+tokio = { version = "1.36", features = ["full"] }
+async-trait = "0.1"
+
+# Serialization
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+
+# Error handling
+thiserror = "1.0"
+
+# Time handling
+chrono = { version = "0.4", features = ["serde"] }
+
+# Logging
+tracing = "0.1"
+
+# Directory utilities
+dirs = "5.0"
+
+[dev-dependencies]
+# Testing utilities
+tempfile = "3.10"
+tokio-test = "0.4"
+
+[lib]
+name = "rotel_storage"
+path = "src/lib.rs"
+
+[[test]]
+name = "zero_config_test"
+path = "tests/integration/zero_config_test.rs"
+
+[[test]]
+name = "persistence_test"
+path = "tests/integration/persistence_test.rs"

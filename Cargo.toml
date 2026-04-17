@@ -4,6 +4,7 @@ members = [
     "crates/rotel-core",
     "crates/rotel-receiver",
     "crates/rotel-cli",
+    "crates/rotel-storage",
 ]
 
 [workspace.package]

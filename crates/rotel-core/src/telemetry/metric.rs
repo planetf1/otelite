@@ -1,9 +1,10 @@
 //! Metric telemetry types
 
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
 /// Represents a metric data point
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Metric {
     /// Metric name
     pub name: String,
@@ -28,7 +29,7 @@ pub struct Metric {
 }
 
 /// Types of metrics
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub enum MetricType {
     /// Gauge metric (instantaneous value)
     Gauge(f64),
@@ -52,7 +53,7 @@ pub enum MetricType {
 }
 
 /// Histogram bucket
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct HistogramBucket {
     /// Upper bound of the bucket
     pub upper_bound: f64,
@@ -62,7 +63,7 @@ pub struct HistogramBucket {
 }
 
 /// Summary quantile
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Quantile {
     /// Quantile value (0.0 to 1.0)
     pub quantile: f64,

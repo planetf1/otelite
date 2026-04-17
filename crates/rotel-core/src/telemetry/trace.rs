@@ -1,9 +1,10 @@
 //! Trace and span telemetry types
 
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
 /// Represents a distributed trace
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Trace {
     /// Trace ID (unique identifier for the trace)
     pub trace_id: String,
@@ -16,7 +17,7 @@ pub struct Trace {
 }
 
 /// Represents a span within a trace
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Span {
     /// Trace ID this span belongs to
     pub trace_id: String,
@@ -50,7 +51,7 @@ pub struct Span {
 }
 
 /// Span kind (type of operation)
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum SpanKind {
     /// Internal operation
     Internal,
@@ -68,8 +69,27 @@ pub enum SpanKind {
     Consumer,
 }
 
+impl SpanKind {
+    /// Convert from integer representation
+    pub fn from_i32(value: i32) -> Option<Self> {
+        match value {
+            0 => Some(Self::Internal),
+            1 => Some(Self::Server),
+            2 => Some(Self::Client),
+            3 => Some(Self::Producer),
+            4 => Some(Self::Consumer),
+            _ => None,
+        }
+    }
+
+    /// Convert to integer representation
+    pub fn to_i32(self) -> i32 {
+        self as i32
+    }
+}
+
 /// Span event (point-in-time occurrence during a span)
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct SpanEvent {
     /// Event name
     pub name: String,
@@ -82,7 +102,7 @@ pub struct SpanEvent {
 }
 
 /// Span status
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct SpanStatus {
     /// Status code
     pub code: StatusCode,
@@ -92,7 +112,7 @@ pub struct SpanStatus {
 }
 
 /// Status code for spans
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum StatusCode {
     /// Unset (default)
     Unset,
@@ -102,6 +122,23 @@ pub enum StatusCode {
 
     /// Error (failure)
     Error,
+}
+
+impl StatusCode {
+    /// Convert from integer representation
+    pub fn from_i32(value: i32) -> Option<Self> {
+        match value {
+            0 => Some(Self::Unset),
+            1 => Some(Self::Ok),
+            2 => Some(Self::Error),
+            _ => None,
+        }
+    }
+
+    /// Convert to integer representation
+    pub fn to_i32(self) -> i32 {
+        self as i32
+    }
 }
 
 impl Span {

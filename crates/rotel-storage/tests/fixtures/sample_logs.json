@@ -1,0 +1,72 @@
+[
+  {
+    "timestamp": 1234567890000000000,
+    "observed_timestamp": 1234567890000000000,
+    "severity_number": 9,
+    "severity_text": "INFO",
+    "body": "Application started successfully",
+    "attributes": {
+      "service.name": "rotel-test",
+      "environment": "test"
+    },
+    "resource": {
+      "attributes": {
+        "host.name": "test-host",
+        "os.type": "linux"
+      }
+    },
+    "scope_name": "rotel.test",
+    "scope_version": "1.0.0",
+    "scope_attributes": {},
+    "trace_id": null,
+    "span_id": null,
+    "trace_flags": null
+  },
+  {
+    "timestamp": 1234567891000000000,
+    "observed_timestamp": 1234567891000000000,
+    "severity_number": 13,
+    "severity_text": "WARN",
+    "body": "High memory usage detected",
+    "attributes": {
+      "memory.used": "850MB",
+      "memory.total": "1GB"
+    },
+    "resource": {
+      "attributes": {
+        "host.name": "test-host",
+        "os.type": "linux"
+      }
+    },
+    "scope_name": "rotel.monitoring",
+    "scope_version": "1.0.0",
+    "scope_attributes": {},
+    "trace_id": "0123456789abcdef0123456789abcdef",
+    "span_id": "0123456789abcdef",
+    "trace_flags": 1
+  },
+  {
+    "timestamp": 1234567892000000000,
+    "observed_timestamp": 1234567892000000000,
+    "severity_number": 17,
+    "severity_text": "ERROR",
+    "body": "Failed to connect to database",
+    "attributes": {
+      "error.type": "ConnectionError",
+      "db.system": "postgresql",
+      "db.connection_string": "postgres://localhost:5432"
+    },
+    "resource": {
+      "attributes": {
+        "host.name": "test-host",
+        "os.type": "linux"
+      }
+    },
+    "scope_name": "rotel.database",
+    "scope_version": "1.0.0",
+    "scope_attributes": {},
+    "trace_id": "fedcba9876543210fedcba9876543210",
+    "span_id": "fedcba9876543210",
+    "trace_flags": 1
+  }
+]

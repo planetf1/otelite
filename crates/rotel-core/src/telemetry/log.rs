@@ -1,9 +1,10 @@
 //! Log telemetry types
 
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
 /// Represents a log record
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct LogRecord {
     /// Timestamp in nanoseconds since Unix epoch
     pub timestamp: i64,
@@ -34,7 +35,7 @@ pub struct LogRecord {
 }
 
 /// Log severity levels (aligned with OpenTelemetry)
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
 #[repr(u8)]
 pub enum SeverityLevel {
     /// Trace level (most verbose)
@@ -103,6 +104,24 @@ impl SeverityLevel {
             Self::Error => "ERROR",
             Self::Fatal => "FATAL",
         }
+    }
+
+    /// Convert from integer representation
+    pub fn from_i32(value: i32) -> Option<Self> {
+        match value {
+            1 => Some(Self::Trace),
+            5 => Some(Self::Debug),
+            9 => Some(Self::Info),
+            13 => Some(Self::Warn),
+            17 => Some(Self::Error),
+            21 => Some(Self::Fatal),
+            _ => None,
+        }
+    }
+
+    /// Convert to integer representation
+    pub fn to_i32(self) -> i32 {
+        self as i32
     }
 }
 
