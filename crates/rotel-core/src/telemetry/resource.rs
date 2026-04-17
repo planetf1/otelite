@@ -1,9 +1,10 @@
 //! Resource types for telemetry data
 
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
 /// Represents a resource (source of telemetry)
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Resource {
     /// Resource attributes (key-value pairs)
     pub attributes: HashMap<String, String>,

@@ -1,0 +1,82 @@
+[
+  {
+    "trace_id": "0123456789abcdef0123456789abcdef",
+    "span_id": "0123456789abcdef",
+    "parent_span_id": null,
+    "name": "HTTP GET /api/users",
+    "kind": 3,
+    "start_time": 1234567890000000000,
+    "end_time": 1234567890500000000,
+    "attributes": {
+      "http.method": "GET",
+      "http.url": "/api/users",
+      "http.status_code": "200"
+    },
+    "events": [],
+    "links": [],
+    "status": 1,
+    "status_message": null,
+    "resource": {
+      "attributes": {
+        "service.name": "rotel-api",
+        "service.version": "1.0.0"
+      }
+    },
+    "scope_name": "rotel.http",
+    "scope_version": "1.0.0",
+    "scope_attributes": {}
+  },
+  {
+    "trace_id": "0123456789abcdef0123456789abcdef",
+    "span_id": "1111111111111111",
+    "parent_span_id": "0123456789abcdef",
+    "name": "database.query",
+    "kind": 2,
+    "start_time": 1234567890100000000,
+    "end_time": 1234567890400000000,
+    "attributes": {
+      "db.system": "postgresql",
+      "db.statement": "SELECT * FROM users",
+      "db.name": "rotel_db"
+    },
+    "events": [],
+    "links": [],
+    "status": 1,
+    "status_message": null,
+    "resource": {
+      "attributes": {
+        "service.name": "rotel-api",
+        "service.version": "1.0.0"
+      }
+    },
+    "scope_name": "rotel.database",
+    "scope_version": "1.0.0",
+    "scope_attributes": {}
+  },
+  {
+    "trace_id": "fedcba9876543210fedcba9876543210",
+    "span_id": "fedcba9876543210",
+    "parent_span_id": null,
+    "name": "background.job",
+    "kind": 1,
+    "start_time": 1234567891000000000,
+    "end_time": 1234567892000000000,
+    "attributes": {
+      "job.type": "cleanup",
+      "job.status": "completed"
+    },
+    "events": [],
+    "links": [],
+    "status": 1,
+    "status_message": "Job completed successfully",
+    "resource": {
+      "attributes": {
+        "service.name": "rotel-worker",
+        "service.version": "1.0.0"
+      }
+    },
+    "scope_name": "rotel.jobs",
+    "scope_version": "1.0.0",
+    "scope_attributes": {}
+  }
+]
