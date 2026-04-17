@@ -3,11 +3,13 @@
 use crate::error::{Result, StorageError};
 use crate::{PurgeOptions, QueryParams, StorageBackend, StorageConfig, StorageStats};
 use async_trait::async_trait;
+use chrono::Timelike;
 use rotel_core::telemetry::{LogRecord, Metric, Span};
 use rusqlite::Connection;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 
+pub mod purge;
 pub mod reader;
 pub mod schema;
 pub mod writer;
@@ -16,6 +18,8 @@ pub mod writer;
 pub struct SqliteBackend {
     config: StorageConfig,
     conn: Arc<Mutex<Option<Connection>>>,
+    purge_lock: Arc<purge::PurgeLock>,
+    purge_handle: Arc<Mutex<Option<tokio::task::JoinHandle<()>>>>,
 }
 
 impl SqliteBackend {
@@ -24,6 +28,8 @@ impl SqliteBackend {
         Self {
             config,
             conn: Arc::new(Mutex::new(None)),
+            purge_lock: Arc::new(purge::PurgeLock::new()),
+            purge_handle: Arc::new(Mutex::new(None)),
         }
     }
 
@@ -58,6 +64,11 @@ impl StorageBackend for SqliteBackend {
 
         // Store connection
         *self.conn.lock().unwrap() = Some(conn);
+
+        // Start background purge scheduler if enabled
+        if self.config.retention_days > 0 {
+            self.start_purge_scheduler();
+        }
 
         Ok(())
     }
@@ -128,18 +139,104 @@ impl StorageBackend for SqliteBackend {
         })
     }
 
-    async fn purge(&self, _options: &PurgeOptions) -> Result<u64> {
-        // TODO: Implement in Phase 4/5
-        Ok(0)
+    async fn purge(&self, options: &PurgeOptions) -> Result<u64> {
+        // Acquire purge lock
+        let _guard = self.purge_lock.try_lock().await?;
+
+        let mut conn_guard = self.conn.lock().unwrap();
+        let conn = conn_guard
+            .as_mut()
+            .ok_or_else(|| StorageError::WriteError("Database not initialized".to_string()))?;
+
+        // Calculate cutoff timestamp
+        let cutoff_timestamp = if let Some(older_than) = options.older_than {
+            older_than
+        } else {
+            // Default to retention period from config
+            let cutoff =
+                chrono::Utc::now() - chrono::Duration::days(self.config.retention_days as i64);
+            cutoff.timestamp_nanos_opt().unwrap_or(0)
+        };
+
+        // Perform purge
+        let record = purge::purge_old_data(conn, cutoff_timestamp, 10000)?;
+
+        // Run VACUUM to reclaim space
+        purge::vacuum(conn)?;
+
+        let total_deleted = record.logs_deleted + record.spans_deleted + record.metrics_deleted;
+        Ok(total_deleted as u64)
     }
 
     async fn close(&mut self) -> Result<()> {
+        // Stop purge scheduler
+        if let Some(handle) = self.purge_handle.lock().unwrap().take() {
+            handle.abort();
+        }
+
         let mut conn_guard = self.conn.lock().unwrap();
         if let Some(conn) = conn_guard.take() {
             conn.close()
                 .map_err(|(_, e)| StorageError::DatabaseError(e))?;
         }
         Ok(())
+    }
+}
+
+impl SqliteBackend {
+    /// Start background purge scheduler
+    fn start_purge_scheduler(&self) {
+        let conn = self.conn.clone();
+        let config = self.config.clone();
+        let purge_lock = self.purge_lock.clone();
+
+        let handle = tokio::spawn(async move {
+            loop {
+                // Calculate next purge time (daily at 2 AM)
+                let now = chrono::Local::now();
+                let next_purge = if now.hour() < 2 {
+                    now.date_naive().and_hms_opt(2, 0, 0).unwrap()
+                } else {
+                    (now.date_naive() + chrono::Duration::days(1))
+                        .and_hms_opt(2, 0, 0)
+                        .unwrap()
+                };
+                let next_purge =
+                    chrono::TimeZone::from_local_datetime(&chrono::Local, &next_purge).unwrap();
+                let duration = (next_purge - now)
+                    .to_std()
+                    .unwrap_or(std::time::Duration::from_secs(86400));
+
+                // Sleep until next purge time
+                tokio::time::sleep(duration).await;
+
+                // Try to acquire purge lock
+                if let Ok(_guard) = purge_lock.try_lock().await {
+                    // Perform automatic purge
+                    let mut conn_guard = conn.lock().unwrap();
+                    if let Some(conn_ref) = conn_guard.as_mut() {
+                        let cutoff = chrono::Utc::now()
+                            - chrono::Duration::days(config.retention_days as i64);
+                        let cutoff_timestamp = cutoff.timestamp_nanos_opt().unwrap_or(0);
+
+                        if let Ok(record) = purge::purge_old_data(conn_ref, cutoff_timestamp, 10000)
+                        {
+                            tracing::info!(
+                                "Automatic purge completed: {} logs, {} spans, {} metrics deleted",
+                                record.logs_deleted,
+                                record.spans_deleted,
+                                record.metrics_deleted
+                            );
+
+                            // Run VACUUM
+                            let _ = purge::vacuum(conn_ref);
+                        }
+                    }
+                }
+            }
+        });
+
+        *self.purge_handle.lock().unwrap() = Some(handle);
     }
 }
 

@@ -103,19 +103,17 @@ pub fn initialize_schema(conn: &Connection) -> Result<()> {
     conn.execute_batch(
         "CREATE TABLE IF NOT EXISTS purge_history (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
-            purge_timestamp INTEGER NOT NULL,
-            signal_type TEXT NOT NULL,
-            records_deleted INTEGER NOT NULL,
-            oldest_deleted INTEGER,
-            newest_deleted INTEGER,
-            duration_ms INTEGER NOT NULL,
-            is_automatic INTEGER NOT NULL DEFAULT 0
+            start_time INTEGER NOT NULL,
+            end_time INTEGER NOT NULL,
+            logs_deleted INTEGER NOT NULL DEFAULT 0,
+            spans_deleted INTEGER NOT NULL DEFAULT 0,
+            metrics_deleted INTEGER NOT NULL DEFAULT 0
         );",
     )?;
 
     // Create index for purge_history
     conn.execute_batch(
-        "CREATE INDEX IF NOT EXISTS idx_purge_history_timestamp ON purge_history(purge_timestamp);",
+        "CREATE INDEX IF NOT EXISTS idx_purge_history_start_time ON purge_history(start_time);",
     )?;
 
     // Create FTS5 full-text search table for logs
