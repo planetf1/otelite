@@ -60,7 +60,7 @@ impl Config {
     pub fn new(name: String, port: u16) -> Self {
         Self { name, port }
     }
-    
+
     pub fn is_valid(&self) -> bool {
         !self.name.is_empty() && self.port > 0
     }

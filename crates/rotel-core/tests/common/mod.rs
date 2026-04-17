@@ -69,7 +69,10 @@ mod tests {
     fn test_load_fixture() {
         let content = load_fixture("sample_metrics.json");
         assert!(!content.is_empty(), "Fixture content should not be empty");
-        assert!(content.contains("resourceMetrics"), "Should contain OTLP metrics structure");
+        assert!(
+            content.contains("resourceMetrics"),
+            "Should contain OTLP metrics structure"
+        );
     }
 
     #[test]

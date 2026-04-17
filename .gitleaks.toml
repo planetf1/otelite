@@ -1,0 +1,99 @@
+# Gitleaks Configuration for Rotel
+# Detects secrets, API keys, passwords, and tokens in commits and staged files
+
+title = "Gitleaks Configuration for Rotel"
+
+# Extend default gitleaks config
+[extend]
+# Use default gitleaks rules as base
+useDefault = true
+
+# Custom rules for additional secret patterns
+[[rules]]
+id = "rotel-api-key"
+description = "Rotel API Key"
+regex = '''(?i)(rotel[_-]?api[_-]?key|rotel[_-]?token)\s*[:=]\s*['"]?([a-zA-Z0-9_\-]{32,})['"]?'''
+tags = ["api-key", "rotel"]
+
+[[rules]]
+id = "generic-api-key"
+description = "Generic API Key"
+regex = '''(?i)(api[_-]?key|apikey)\s*[:=]\s*['"]?([a-zA-Z0-9_\-]{20,})['"]?'''
+tags = ["api-key"]
+
+[[rules]]
+id = "generic-secret"
+description = "Generic Secret"
+regex = '''(?i)(secret|password|passwd|pwd)\s*[:=]\s*['"]?([a-zA-Z0-9_\-!@#$%^&*()]{8,})['"]?'''
+tags = ["secret", "password"]
+
+[[rules]]
+id = "private-key"
+description = "Private Key"
+regex = '''-----BEGIN (RSA|DSA|EC|OPENSSH) PRIVATE KEY-----'''
+tags = ["private-key"]
+
+[[rules]]
+id = "aws-access-key"
+description = "AWS Access Key"
+regex = '''(A3T[A-Z0-9]|AKIA|AGPA|AIDA|AROA|AIPA|ANPA|ANVA|ASIA)[A-Z0-9]{16}'''
+tags = ["aws", "access-key"]
+
+[[rules]]
+id = "github-token"
+description = "GitHub Token"
+regex = '''ghp_[0-9a-zA-Z]{36}|gho_[0-9a-zA-Z]{36}|ghu_[0-9a-zA-Z]{36}|ghs_[0-9a-zA-Z]{36}|ghr_[0-9a-zA-Z]{36}'''
+tags = ["github", "token"]
+
+# Allowlist for false positives
+[allowlist]
+description = "Allowlist for test fixtures and example code"
+
+# Allowlist specific paths (test fixtures, examples, documentation)
+paths = [
+    '''crates/rotel-core/tests/fixtures/.*''',
+    '''tests/fixtures/.*''',
+    '''examples/.*''',
+    '''docs/.*\.md$''',
+    '''README\.md$''',
+    '''CONTRIBUTING\.md$''',
+]
+
+# Allowlist specific patterns that are safe
+regexes = [
+    # Environment variable references (not actual secrets)
+    '''env!["']([A-Z_]+)["']''',
+    '''std::env::var\(["']([A-Z_]+)["']\)''',
+    '''process\.env\.([A-Z_]+)''',
+
+    # Placeholder values in documentation
+    '''(your|my|example|test|demo|sample)[_-]?(api[_-]?key|token|secret|password)''',
+    '''(api[_-]?key|token|secret|password)[_-]?(here|placeholder|example|test)''',
+
+    # Common test values
+    '''test[_-]?(api[_-]?key|token|secret|password)''',
+    '''fake[_-]?(api[_-]?key|token|secret|password)''',
+    '''mock[_-]?(api[_-]?key|token|secret|password)''',
+
+    # Configuration template placeholders
+    '''<[A-Z_]+>''',
+    '''\$\{[A-Z_]+\}''',
+    '''\{\{[A-Z_]+\}\}''',
+]
+
+# Allowlist specific commits (if needed)
+commits = []
+
+# Allowlist specific stopwords (common false positives)
+stopwords = [
+    "example",
+    "test",
+    "demo",
+    "sample",
+    "placeholder",
+    "your_api_key_here",
+    "your_token_here",
+    "your_secret_here",
+    "replace_with_your",
+    "insert_your",
+]

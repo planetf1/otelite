@@ -1,0 +1,106 @@
+# Pre-commit hooks for Rotel
+# Install: pre-commit install
+# Run manually: pre-commit run --all-files
+# Update hooks: pre-commit autoupdate
+
+# Minimum pre-commit version
+minimum_pre_commit_version: '3.0.0'
+
+# Fail fast on first error (set to false to see all errors)
+fail_fast: false
+
+# Default language version
+default_language_version:
+  python: python3
+
+repos:
+# Rust formatting with rustfmt
+- repo: https://github.com/doublify/pre-commit-rust
+  rev: v1.0
+  hooks:
+  - id: fmt
+    name: rustfmt (auto-fix)
+    description: Format Rust code with rustfmt
+    args: [ '--' ]
+    # Run on workspace, not individual files
+    pass_filenames: false
+
+# Rust linting with clippy
+- repo: https://github.com/doublify/pre-commit-rust
+  rev: v1.0
+  hooks:
+  - id: clippy
+    name: clippy (fast checks)
+    description: Lint Rust code with clippy
+    # Fast mode: only check workspace
+    args: [ '--workspace', '--', '-D', 'warnings' ]
+    # Run on workspace, not individual files
+    pass_filenames: false
+
+# Rust compilation check
+- repo: https://github.com/doublify/pre-commit-rust
+  rev: v1.0
+  hooks:
+  - id: cargo-check
+    name: cargo check
+    description: Check Rust code compiles
+    args: [ '--workspace' ]
+    # Run on workspace, not individual files
+    pass_filenames: false
+
+# Secret detection with gitleaks
+- repo: https://github.com/gitleaks/gitleaks
+  rev: v8.18.1
+  hooks:
+  - id: gitleaks
+    name: gitleaks (secret detection)
+    description: Detect secrets, API keys, and tokens
+    entry: gitleaks protect --verbose --redact --staged
+    language: golang
+    pass_filenames: false
+
+# General file checks
+- repo: https://github.com/pre-commit/pre-commit-hooks
+  rev: v4.5.0
+  hooks:
+  # Prevent committing large files (>500KB)
+  - id: check-added-large-files
+    args: [ '--maxkb=500' ]
+
+  # Check for files that would conflict on case-insensitive filesystems
+  - id: check-case-conflict
+
+  # Check for merge conflict markers
+  - id: check-merge-conflict
+
+  # Check YAML syntax (removed --safe argument)
+  - id: check-yaml
+
+  # Check TOML syntax
+  - id: check-toml
+
+  # Check JSON syntax
+  - id: check-json
+
+  # Ensure files end with newline
+  - id: end-of-file-fixer
+
+  # Remove trailing whitespace
+  - id: trailing-whitespace
+    args: [ '--markdown-linebreak-ext=md' ]
+
+  # Prevent committing to main/master
+  - id: no-commit-to-branch
+    args: [ '--branch', 'main', '--branch', 'master' ]
+
+# CI mode: stricter checks for CI environment
+# Run with: pre-commit run --all-files --show-diff-on-failure
+ci:
+  autofix_commit_msg: 'chore: auto-fix pre-commit hooks'
+  autofix_prs: true
+  autoupdate_commit_msg: 'chore: update pre-commit hooks'
+  autoupdate_schedule: weekly
+  skip: []
+  submodules: false
+
+# Made with Bob

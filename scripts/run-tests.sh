@@ -59,10 +59,10 @@ done
 run_tests() {
     local test_type=$1
     local test_cmd=$2
-    
+
     echo ""
     echo -e "${YELLOW}Running $test_type...${NC}"
-    
+
     if eval "$test_cmd"; then
         echo -e "${GREEN}✓ $test_type passed${NC}"
         return 0
@@ -83,7 +83,7 @@ if [ "$COVERAGE" = true ]; then
         echo "Install with: cargo install cargo-llvm-cov"
         exit 1
     fi
-    
+
     cargo llvm-cov --all-features --workspace --html
     echo -e "${GREEN}Coverage report generated in target/llvm-cov/html/index.html${NC}"
     exit 0

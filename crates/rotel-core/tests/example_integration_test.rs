@@ -1,13 +1,12 @@
 // Example integration test for Rotel
 // Integration tests verify that multiple components work together correctly
 
-use rotel_core;
-
 #[test]
 fn test_integration_example() {
     // This is a placeholder integration test
     // Real integration tests will verify component interactions
-    assert!(true, "Integration test framework is working");
+    // Removed assert!(true) as it's always true - clippy warning
+    println!("Integration test framework is working");
 }
 
 #[test]

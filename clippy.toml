@@ -1,0 +1,30 @@
+# Clippy Configuration for Rotel
+# Enforces strict linting rules while allowing reasonable patterns
+
+# Deny all warnings in CI (fail on any clippy issue)
+# This is enforced via `cargo clippy -- -D warnings` in CI
+
+# Cognitive complexity threshold (default: 25)
+# Lower threshold encourages simpler functions
+cognitive-complexity-threshold = 20
+
+# Maximum number of lines for a function (default: 100)
+# Encourages breaking down large functions
+too-many-lines-threshold = 80
+
+# Maximum number of arguments for a function (default: 7)
+# Encourages using structs for complex parameter sets
+too-many-arguments-threshold = 5
+
+# Disallowed methods (methods that should never be used)
+disallowed-methods = [
+    # Prefer ? operator over unwrap/expect in library code
+    # { path = "std::option::Option::unwrap", reason = "use ? or unwrap_or instead" },
+    # { path = "std::result::Result::unwrap", reason = "use ? or unwrap_or instead" },
+]
+
+# Disallowed types (types that should never be used)
+disallowed-types = []
+
+# Allow certain lints that are too pedantic or conflict with project style
+# These are configured via #[allow(clippy::...)] in code or here globally

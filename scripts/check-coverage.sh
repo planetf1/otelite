@@ -120,7 +120,7 @@ COVERAGE_PCT=$(echo "$COVERAGE_OUTPUT" | grep -E "^TOTAL" | awk '{print $NF}' | 
 if [ -z "$COVERAGE_PCT" ] || [ "$COVERAGE_PCT" = "0" ]; then
     echo -e "${YELLOW}Warning: Could not extract coverage percentage${NC}"
     echo "Coverage report available at: $REPORT_PATH"
-    
+
     # Open report if requested
     if [ "$OPEN_REPORT" = true ] && [ "$REPORT_FORMAT" = "html" ]; then
         if command -v open &> /dev/null; then
@@ -129,7 +129,7 @@ if [ -z "$COVERAGE_PCT" ] || [ "$COVERAGE_PCT" = "0" ]; then
             xdg-open "$REPORT_PATH"
         fi
     fi
-    
+
     exit 0
 fi
 

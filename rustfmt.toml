@@ -1,0 +1,109 @@
+# Rustfmt Configuration for Rotel
+# Only includes options available on stable Rust channel
+
+# Rust edition (must match Cargo.toml)
+edition = "2021"
+
+# Maximum line width (default: 100)
+max_width = 100
+
+# Number of spaces per tab (default: 4)
+tab_spaces = 4
+
+# Use hard tabs instead of spaces (default: false)
+hard_tabs = false
+
+# Reorder imports alphabetically (default: true)
+reorder_imports = true
+
+# Reorder modules alphabetically (default: true)
+reorder_modules = true
+
+# Use field init shorthand if possible (default: false)
+use_field_init_shorthand = true
+
+# Use try shorthand (? operator) (default: false)
+use_try_shorthand = true
+
+# Merge derives into a single line if possible (default: true)
+merge_derives = true
+
+# Remove nested parens (default: true)
+remove_nested_parens = true
+
+# Match block trailing comma (default: false)
+match_block_trailing_comma = true
+
+# Newline style (default: "Auto")
+# Options: "Auto", "Windows", "Unix", "Native"
+newline_style = "Unix"
+
+# Note: Many advanced formatting options require nightly Rust.
+# To use them, switch to nightly with: rustup default nightly
+# Then uncomment the desired options below:
+
+# # Unstable features (require nightly)
+# unstable_features = true
+#
+# # Indent style (default: "Block")
+# indent_style = "Block"
+#
+# # Merge imports from the same crate
+# imports_granularity = "Crate"
+#
+# # Group imports by module
+# group_imports = "StdExternalCrate"
+#
+# # Format string literals
+# format_strings = true
+#
+# # Format code in doc comments
+# format_code_in_doc_comments = true
+#
+# # Normalize doc comments to /// style
+# normalize_comments = true
+#
+# # Wrap comments at max_width
+# wrap_comments = true
+#
+# # Format macro bodies
+# format_macro_bodies = true
+#
+# # Format macro matchers
+# format_macro_matchers = true
+#
+# # Reorder impl items
+# reorder_impl_items = true
+#
+# # Brace style for items
+# brace_style = "SameLineWhere"
+#
+# # Control flow brace style
+# control_brace_style = "AlwaysSameLine"
+#
+# # Space before colon in type annotations
+# space_before_colon = false
+#
+# # Space after colon in type annotations
+# space_after_colon = true
+#
+# # Spaces around ranges
+# spaces_around_ranges = false
+#
+# # Trailing comma style
+# trailing_comma = "Vertical"
+#
+# # Trailing semicolon
+# trailing_semicolon = true
+#
+# # Blank lines upper bound
+# blank_lines_upper_bound = 1
+#
+# # Blank lines lower bound
+# blank_lines_lower_bound = 0
+#
+# # Combine control expressions
+# combine_control_expr = true
+#
+# # Overflow delimited expressions
+# overflow_delimited_expr = true

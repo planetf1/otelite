@@ -5,7 +5,8 @@
 fn test_e2e_example() {
     // This is a placeholder e2e test
     // Real e2e tests will verify complete user workflows
-    assert!(true, "E2E test framework is working");
+    // Removed assert!(true) as it's always true - clippy warning
+    println!("E2E test framework is working");
 }
 
 #[test]
@@ -16,8 +17,8 @@ fn test_complete_workflow() {
     // 2. Send OTLP data
     // 3. Query the data
     // 4. Verify results
-    
-    let workflow_steps = vec!["start", "send", "query", "verify"];
+
+    let workflow_steps = ["start", "send", "query", "verify"];
     assert_eq!(workflow_steps.len(), 4, "Workflow should have 4 steps");
 }
 
