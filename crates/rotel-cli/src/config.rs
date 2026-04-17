@@ -56,7 +56,13 @@ impl Default for Config {
 
 impl Config {
     /// Create a new configuration with custom values
-    pub fn new(endpoint: String, timeout: Duration, format: OutputFormat, no_color: bool, no_header: bool) -> Self {
+    pub fn new(
+        endpoint: String,
+        timeout: Duration,
+        format: OutputFormat,
+        no_color: bool,
+        no_header: bool,
+    ) -> Self {
         Self {
             endpoint,
             timeout,

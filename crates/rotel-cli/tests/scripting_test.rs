@@ -250,8 +250,7 @@ async fn test_json_output_is_valid() {
 
     // Verify JSON is parseable
     let stdout = String::from_utf8(output.stdout).expect("Invalid UTF-8");
-    let parsed: serde_json::Value =
-        serde_json::from_str(&stdout).expect("Invalid JSON output");
+    let parsed: serde_json::Value = serde_json::from_str(&stdout).expect("Invalid JSON output");
 
     // Verify it's an array
     assert!(parsed.is_array());
