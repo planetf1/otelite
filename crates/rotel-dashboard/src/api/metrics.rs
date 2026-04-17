@@ -1,0 +1,544 @@
+use crate::server::{AppState, QueryCache};
+use axum::{
+    extract::{Query, State},
+    http::StatusCode,
+    response::{IntoResponse, Json},
+};
+use rotel_core::telemetry::metric::MetricType;
+use rotel_core::telemetry::Metric;
+use rotel_storage::QueryParams;
+use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
+
+/// Query parameters for listing metrics
+#[derive(Debug, Deserialize, Serialize)]
+pub struct MetricsQuery {
+    /// Filter by metric name
+    pub name: Option<String>,
+    /// Filter by resource attribute (format: key=value)
+    pub resource: Option<String>,
+    /// Start time (nanoseconds since Unix epoch)
+    pub start_time: Option<i64>,
+    /// End time (nanoseconds since Unix epoch)
+    pub end_time: Option<i64>,
+    /// Maximum number of metrics to return
+    pub limit: Option<usize>,
+    /// Offset for pagination
+    pub offset: Option<usize>,
+}
+
+/// Query parameters for aggregating metrics
+#[derive(Debug, Deserialize, Serialize)]
+pub struct AggregateQuery {
+    /// Metric name to aggregate
+    pub name: String,
+    /// Aggregation function (sum, avg, min, max)
+    pub function: String,
+    /// Time bucket size in seconds (for time-series aggregation)
+    pub bucket_size: Option<i64>,
+    /// Start time (nanoseconds since Unix epoch)
+    pub start_time: Option<i64>,
+    /// End time (nanoseconds since Unix epoch)
+    pub end_time: Option<i64>,
+}
+
+/// Response structure for a single metric
+#[derive(Debug, Serialize, Deserialize)]
+pub struct MetricResponse {
+    pub name: String,
+    pub description: Option<String>,
+    pub unit: Option<String>,
+    pub metric_type: String,
+    pub value: MetricValue,
+    pub timestamp: i64,
+    pub attributes: HashMap<String, String>,
+    pub resource: Option<HashMap<String, String>>,
+}
+
+/// Metric value (varies by type)
+#[derive(Debug, Serialize, Deserialize)]
+#[serde(untagged)]
+pub enum MetricValue {
+    Gauge(f64),
+    Counter(u64),
+    Histogram {
+        count: u64,
+        sum: f64,
+        buckets: Vec<HistogramBucket>,
+    },
+    Summary {
+        count: u64,
+        sum: f64,
+        quantiles: Vec<Quantile>,
+    },
+}
+
+/// Histogram bucket
+#[derive(Debug, Serialize, Deserialize)]
+pub struct HistogramBucket {
+    pub upper_bound: f64,
+    pub count: u64,
+}
+
+/// Summary quantile
+#[derive(Debug, Serialize, Deserialize)]
+pub struct Quantile {
+    pub quantile: f64,
+    pub value: f64,
+}
+
+/// Response structure for aggregated metrics
+#[derive(Debug, Serialize, Deserialize)]
+pub struct AggregateResponse {
+    pub name: String,
+    pub function: String,
+    pub result: f64,
+    pub count: usize,
+    pub buckets: Option<Vec<TimeBucket>>,
+}
+
+/// Time bucket for time-series aggregation
+#[derive(Debug, Serialize, Deserialize)]
+pub struct TimeBucket {
+    pub timestamp: i64,
+    pub value: f64,
+    pub count: usize,
+}
+
+/// List metrics with optional filtering
+pub async fn list_metrics(
+    State(state): State<AppState>,
+    Query(query): Query<MetricsQuery>,
+) -> Result<Json<Vec<MetricResponse>>, StatusCode> {
+    // Check cache first
+    let cache_key = QueryCache::make_key(&query);
+    if let Some(cached) = state.cache.metrics.get(&cache_key) {
+        if let Ok(response) = serde_json::from_str(&cached) {
+            return Ok(Json(response));
+        }
+    }
+
+    // Build query parameters
+    let mut params = QueryParams::default();
+
+    if let Some(start) = query.start_time {
+        params.start_time = Some(start);
+    }
+    if let Some(end) = query.end_time {
+        params.end_time = Some(end);
+    }
+    if let Some(limit) = query.limit {
+        params.limit = Some(limit);
+    }
+
+    // Query metrics from storage
+    let mut metrics = state
+        .storage
+        .query_metrics(&params)
+        .await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+
+    // Filter by name if specified
+    if let Some(name_filter) = &query.name {
+        metrics.retain(|m| m.name.contains(name_filter));
+    }
+
+    // Filter by resource if specified
+    if let Some(resource_filter) = &query.resource {
+        if let Some((key, value)) = resource_filter.split_once('=') {
+            metrics.retain(|m| {
+                m.resource
+                    .as_ref()
+                    .and_then(|r| r.attributes.get(key))
+                    .map(|v| v == value)
+                    .unwrap_or(false)
+            });
+        }
+    }
+
+    // Apply pagination manually
+    let offset = query.offset.unwrap_or(0);
+    let limit = query.limit.unwrap_or(100);
+
+    let metrics: Vec<_> = metrics.into_iter().skip(offset).take(limit).collect();
+
+    // Convert to response format
+    let response: Vec<MetricResponse> = metrics
+        .into_iter()
+        .map(|metric| {
+            let (metric_type_str, value) = match &metric.metric_type {
+                MetricType::Gauge(v) => ("gauge", MetricValue::Gauge(*v)),
+                MetricType::Counter(v) => ("counter", MetricValue::Counter(*v)),
+                MetricType::Histogram {
+                    count,
+                    sum,
+                    buckets,
+                } => (
+                    "histogram",
+                    MetricValue::Histogram {
+                        count: *count,
+                        sum: *sum,
+                        buckets: buckets
+                            .iter()
+                            .map(|b| HistogramBucket {
+                                upper_bound: b.upper_bound,
+                                count: b.count,
+                            })
+                            .collect(),
+                    },
+                ),
+                MetricType::Summary {
+                    count,
+                    sum,
+                    quantiles,
+                } => (
+                    "summary",
+                    MetricValue::Summary {
+                        count: *count,
+                        sum: *sum,
+                        quantiles: quantiles
+                            .iter()
+                            .map(|q| Quantile {
+                                quantile: q.quantile,
+                                value: q.value,
+                            })
+                            .collect(),
+                    },
+                ),
+            };
+
+            MetricResponse {
+                name: metric.name,
+                description: metric.description,
+                unit: metric.unit,
+                metric_type: metric_type_str.to_string(),
+                value,
+                timestamp: metric.timestamp,
+                attributes: metric.attributes,
+                resource: metric.resource.map(|r| r.attributes),
+            }
+        })
+        .collect();
+
+    Ok(Json(response))
+}
+
+/// Get list of unique metric names
+pub async fn list_metric_names(
+    State(state): State<AppState>,
+) -> Result<Json<Vec<String>>, StatusCode> {
+    // Query all metrics
+    let params = QueryParams::default();
+    let metrics = state
+        .storage
+        .query_metrics(&params)
+        .await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+
+    // Extract unique names
+    let mut names: Vec<String> = metrics
+        .into_iter()
+        .map(|m| m.name)
+        .collect::<std::collections::HashSet<_>>()
+        .into_iter()
+        .collect();
+
+    names.sort();
+    Ok(Json(names))
+}
+
+/// Aggregate metrics by function
+pub async fn aggregate_metrics(
+    State(state): State<AppState>,
+    Query(query): Query<AggregateQuery>,
+) -> Result<Json<AggregateResponse>, StatusCode> {
+    // Check cache first
+    let cache_key = QueryCache::make_key(&query);
+    if let Some(cached) = state.cache.metrics.get(&cache_key) {
+        if let Ok(response) = serde_json::from_str(&cached) {
+            return Ok(Json(response));
+        }
+    }
+
+    // Build query parameters
+    let mut params = QueryParams::default();
+
+    if let Some(start) = query.start_time {
+        params.start_time = Some(start);
+    }
+    if let Some(end) = query.end_time {
+        params.end_time = Some(end);
+    }
+
+    // Query metrics from storage
+    let metrics = state
+        .storage
+        .query_metrics(&params)
+        .await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+
+    // Filter by name
+    let metrics: Vec<_> = metrics
+        .into_iter()
+        .filter(|m| m.name == query.name)
+        .collect();
+
+    if metrics.is_empty() {
+        return Err(StatusCode::NOT_FOUND);
+    }
+
+    // Perform aggregation based on function
+    let result = match query.function.as_str() {
+        "sum" => {
+            let mut sum = 0.0;
+            let mut count = 0;
+            for metric in &metrics {
+                match &metric.metric_type {
+                    MetricType::Gauge(v) => {
+                        sum += v;
+                        count += 1;
+                    },
+                    MetricType::Counter(v) => {
+                        sum += *v as f64;
+                        count += 1;
+                    },
+                    MetricType::Histogram { sum: s, .. } => {
+                        sum += s;
+                        count += 1;
+                    },
+                    MetricType::Summary { sum: s, .. } => {
+                        sum += s;
+                        count += 1;
+                    },
+                }
+            }
+            AggregateResponse {
+                name: query.name.clone(),
+                function: "sum".to_string(),
+                result: sum,
+                count,
+                buckets: None,
+            }
+        },
+        "avg" => {
+            let mut sum = 0.0;
+            let mut count = 0;
+            for metric in &metrics {
+                match &metric.metric_type {
+                    MetricType::Gauge(v) => {
+                        sum += v;
+                        count += 1;
+                    },
+                    MetricType::Counter(v) => {
+                        sum += *v as f64;
+                        count += 1;
+                    },
+                    MetricType::Histogram {
+                        sum: s, count: c, ..
+                    } => {
+                        sum += s;
+                        count += *c as usize;
+                    },
+                    MetricType::Summary {
+                        sum: s, count: c, ..
+                    } => {
+                        sum += s;
+                        count += *c as usize;
+                    },
+                }
+            }
+            let avg = if count > 0 { sum / count as f64 } else { 0.0 };
+            AggregateResponse {
+                name: query.name.clone(),
+                function: "avg".to_string(),
+                result: avg,
+                count,
+                buckets: None,
+            }
+        },
+        "min" => {
+            let mut min = f64::MAX;
+            let mut count = 0;
+            for metric in &metrics {
+                match &metric.metric_type {
+                    MetricType::Gauge(v) => {
+                        min = min.min(*v);
+                        count += 1;
+                    },
+                    MetricType::Counter(v) => {
+                        min = min.min(*v as f64);
+                        count += 1;
+                    },
+                    _ => {},
+                }
+            }
+            AggregateResponse {
+                name: query.name.clone(),
+                function: "min".to_string(),
+                result: if count > 0 { min } else { 0.0 },
+                count,
+                buckets: None,
+            }
+        },
+        "max" => {
+            let mut max = f64::MIN;
+            let mut count = 0;
+            for metric in &metrics {
+                match &metric.metric_type {
+                    MetricType::Gauge(v) => {
+                        max = max.max(*v);
+                        count += 1;
+                    },
+                    MetricType::Counter(v) => {
+                        max = max.max(*v as f64);
+                        count += 1;
+                    },
+                    _ => {},
+                }
+            }
+            AggregateResponse {
+                name: query.name.clone(),
+                function: "max".to_string(),
+                result: if count > 0 { max } else { 0.0 },
+                count,
+                buckets: None,
+            }
+        },
+        _ => return Err(StatusCode::BAD_REQUEST),
+    };
+
+    // If bucket_size is specified, perform time-series aggregation
+    let result = if let Some(bucket_size) = query.bucket_size {
+        let bucket_size_ns = bucket_size * 1_000_000_000; // Convert seconds to nanoseconds
+
+        // Group metrics by time bucket
+        let mut buckets: HashMap<i64, Vec<&Metric>> = HashMap::new();
+        for metric in &metrics {
+            let bucket_timestamp = (metric.timestamp / bucket_size_ns) * bucket_size_ns;
+            buckets.entry(bucket_timestamp).or_default().push(metric);
+        }
+
+        // Aggregate each bucket
+        let mut time_buckets: Vec<TimeBucket> = buckets
+            .into_iter()
+            .map(|(timestamp, bucket_metrics)| {
+                let (sum, count) = match query.function.as_str() {
+                    "sum" => {
+                        let mut sum = 0.0;
+                        let mut count = 0;
+                        for metric in bucket_metrics {
+                            match &metric.metric_type {
+                                MetricType::Gauge(v) => {
+                                    sum += v;
+                                    count += 1;
+                                },
+                                MetricType::Counter(v) => {
+                                    sum += *v as f64;
+                                    count += 1;
+                                },
+                                MetricType::Histogram { sum: s, .. } => {
+                                    sum += s;
+                                    count += 1;
+                                },
+                                MetricType::Summary { sum: s, .. } => {
+                                    sum += s;
+                                    count += 1;
+                                },
+                            }
+                        }
+                        (sum, count)
+                    },
+                    "avg" => {
+                        let mut sum = 0.0;
+                        let mut count = 0;
+                        for metric in bucket_metrics {
+                            match &metric.metric_type {
+                                MetricType::Gauge(v) => {
+                                    sum += v;
+                                    count += 1;
+                                },
+                                MetricType::Counter(v) => {
+                                    sum += *v as f64;
+                                    count += 1;
+                                },
+                                MetricType::Histogram {
+                                    sum: s, count: c, ..
+                                } => {
+                                    sum += s;
+                                    count += *c as usize;
+                                },
+                                MetricType::Summary {
+                                    sum: s, count: c, ..
+                                } => {
+                                    sum += s;
+                                    count += *c as usize;
+                                },
+                            }
+                        }
+                        let avg = if count > 0 { sum / count as f64 } else { 0.0 };
+                        (avg, count)
+                    },
+                    _ => (0.0, 0),
+                };
+
+                TimeBucket {
+                    timestamp,
+                    value: sum,
+                    count,
+                }
+            })
+            .collect();
+
+        time_buckets.sort_by_key(|b| b.timestamp);
+
+        AggregateResponse {
+            buckets: Some(time_buckets),
+            ..result
+        }
+    } else {
+        result
+    };
+
+    Ok(Json(result))
+}
+
+/// Export metrics as JSON
+pub async fn export_metrics(
+    State(state): State<AppState>,
+    Query(query): Query<MetricsQuery>,
+) -> Result<impl IntoResponse, StatusCode> {
+    // Build query parameters
+    let mut params = QueryParams::default();
+
+    if let Some(start) = query.start_time {
+        params.start_time = Some(start);
+    }
+    if let Some(end) = query.end_time {
+        params.end_time = Some(end);
+    }
+
+    // Query metrics from storage
+    let metrics = state
+        .storage
+        .query_metrics(&params)
+        .await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+
+    // Filter by name if specified
+    let metrics: Vec<_> = if let Some(name_filter) = &query.name {
+        metrics
+            .into_iter()
+            .filter(|m| m.name.contains(name_filter))
+            .collect()
+    } else {
+        metrics
+    };
+
+    // Convert to JSON
+    let json =
+        serde_json::to_string_pretty(&metrics).map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+
+    Ok((StatusCode::OK, [("Content-Type", "application/json")], json))
+}
+
+// Made with Bob
