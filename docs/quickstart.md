@@ -2,202 +2,101 @@
 
 Get up and running with Rotel in 5 minutes.
 
-## Prerequisites
-
-- **Operating System**: macOS or Linux
-- **Rust**: 1.77+ (for building from source)
-- **Git**: For cloning the repository
-
 ## Installation
 
-### Option 1: Pre-built Binary (Recommended)
-
-**macOS (Homebrew)**:
-```bash
-brew install rotel
-```
-
-**Linux (x86_64)**:
-```bash
-curl -L https://github.com/YOUR_USERNAME/rotel/releases/latest/download/rotel-linux-x86_64.tar.gz | tar xz
-sudo mv rotel /usr/local/bin/
-```
-
-**Linux (ARM64)**:
-```bash
-curl -L https://github.com/YOUR_USERNAME/rotel/releases/latest/download/rotel-linux-arm64.tar.gz | tar xz
-sudo mv rotel /usr/local/bin/
-```
-
-### Option 2: Build from Source
+### Build from Source
 
 ```bash
 # Clone repository
 git clone https://github.com/YOUR_USERNAME/rotel.git
 cd rotel
 
-# Build release binary
-cargo build --release
-
-# Install to system
-sudo cp target/release/rotel /usr/local/bin/
+# Build and install
+cargo install --path crates/rotel-cli
 ```
 
-### Verify Installation
+Verify installation:
 
 ```bash
 rotel --version
-# Output: rotel 0.1.0-alpha
 ```
 
-## Starting Rotel
+## First Run
 
-### Basic Usage
-
-Start Rotel with default configuration:
+Start the Rotel dashboard:
 
 ```bash
-rotel start
+rotel dashboard
 ```
 
 This starts:
 - **OTLP/gRPC** receiver on `localhost:4317`
 - **OTLP/HTTP** receiver on `localhost:4318`
-- **Dashboard** on `http://localhost:8080`
+- **REST API** on `http://localhost:3000`
+- **Web Dashboard** on `http://localhost:3000`
 
-### Custom Configuration
+You should see output like:
 
-Create a configuration file `rotel.toml`:
-
-```toml
-[server]
-grpc_port = 4317
-http_port = 4318
-dashboard_port = 8080
-
-[storage]
-backend = "embedded"
-data_dir = "~/.rotel/data"
-max_size_gb = 10
-
-[limits]
-max_events_per_second = 1000
-max_memory_mb = 100
+```
+🚀 Rotel starting...
+✓ OTLP gRPC receiver listening on 0.0.0.0:4317
+✓ OTLP HTTP receiver listening on 0.0.0.0:4318
+✓ REST API listening on http://0.0.0.0:3000
+✓ Web dashboard available at http://localhost:3000
 ```
 
-Start with custom config:
+## Sending Test Data
+
+### Using otel-cli
+
+Install [otel-cli](https://github.com/equinix-labs/otel-cli):
 
 ```bash
-rotel start --config rotel.toml
+# macOS
+brew install otel-cli
+
+# Linux
+curl -L https://github.com/equinix-labs/otel-cli/releases/latest/download/otel-cli-linux-amd64 -o otel-cli
+chmod +x otel-cli
+sudo mv otel-cli /usr/local/bin/
 ```
 
-### Running as a Service
-
-**systemd (Linux)**:
-
-Create `/etc/systemd/system/rotel.service`:
-
-```ini
-[Unit]
-Description=Rotel OpenTelemetry Receiver
-After=network.target
-
-[Service]
-Type=simple
-User=rotel
-ExecStart=/usr/local/bin/rotel start --config /etc/rotel/rotel.toml
-Restart=on-failure
-RestartSec=5s
-
-[Install]
-WantedBy=multi-user.target
-```
-
-Enable and start:
+Send a test trace:
 
 ```bash
-sudo systemctl enable rotel
-sudo systemctl start rotel
-sudo systemctl status rotel
+otel-cli span --endpoint localhost:4317 \
+  --service my-service \
+  --name "test-operation" \
+  --attrs "key1=value1,key2=value2"
 ```
 
-**launchd (macOS)**:
+### Using curl
 
-Create `~/Library/LaunchAgents/com.rotel.plist`:
-
-```xml
-<?xml version="1.0" encoding="UTF-8"?>
-<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-<plist version="1.0">
-<dict>
-    <key>Label</key>
-    <string>com.rotel</string>
-    <key>ProgramArguments</key>
-    <array>
-        <string>/usr/local/bin/rotel</string>
-        <string>start</string>
-    </array>
-    <key>RunAtLoad</key>
-    <true/>
-    <key>KeepAlive</key>
-    <true/>
-</dict>
-</plist>
-```
-
-Load and start:
+Send a test log via HTTP:
 
 ```bash
-launchctl load ~/Library/LaunchAgents/com.rotel.plist
-launchctl start com.rotel
+curl -X POST http://localhost:4318/v1/logs \
+  -H "Content-Type: application/json" \
+  -d '{
+    "resourceLogs": [{
+      "resource": {
+        "attributes": [{
+          "key": "service.name",
+          "value": {"stringValue": "my-service"}
+        }]
+      },
+      "scopeLogs": [{
+        "logRecords": [{
+          "timeUnixNano": "1609459200000000000",
+          "severityText": "INFO",
+          "body": {"stringValue": "Test log message"}
+        }]
+      }]
+    }]
+  }'
 ```
 
-## Instrumenting Your Application
-
-### Rust
-
-Add dependencies to `Cargo.toml`:
-
-```toml
-[dependencies]
-opentelemetry = "0.21"
-opentelemetry-otlp = "0.14"
-opentelemetry_sdk = "0.21"
-tokio = { version = "1", features = ["full"] }
-```
-
-Configure OTLP exporter:
-
-```rust
-use opentelemetry::global;
-use opentelemetry_otlp::WithExportConfig;
-use opentelemetry_sdk::trace::TracerProvider;
-
-#[tokio::main]
-async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    // Initialize tracer
-    let tracer = opentelemetry_otlp::new_pipeline()
-        .tracing()
-        .with_exporter(
-            opentelemetry_otlp::new_exporter()
-                .tonic()
-                .with_endpoint("http://localhost:4317")
-        )
-        .install_batch(opentelemetry_sdk::runtime::Tokio)?;
-
-    global::set_tracer_provider(tracer);
-
-    // Use tracer
-    let tracer = global::tracer("my-app");
-    tracer.in_span("my-operation", |_cx| {
-        // Your code here
-    });
-
-    Ok(())
-}
-```
-
-### Python
+### Using Python SDK
 
 Install dependencies:
 
@@ -205,7 +104,7 @@ Install dependencies:
 pip install opentelemetry-api opentelemetry-sdk opentelemetry-exporter-otlp
 ```
 
-Configure OTLP exporter:
+Send a test trace:
 
 ```python
 from opentelemetry import trace
@@ -213,176 +112,86 @@ from opentelemetry.exporter.otlp.proto.grpc.trace_exporter import OTLPSpanExport
 from opentelemetry.sdk.trace import TracerProvider
 from opentelemetry.sdk.trace.export import BatchSpanProcessor
 
-# Initialize tracer
+# Configure
 trace.set_tracer_provider(TracerProvider())
-otlp_exporter = OTLPSpanExporter(endpoint="http://localhost:4317")
-trace.get_tracer_provider().add_span_processor(
-    BatchSpanProcessor(otlp_exporter)
-)
+otlp_exporter = OTLPSpanExporter(endpoint="http://localhost:4317", insecure=True)
+trace.get_tracer_provider().add_span_processor(BatchSpanProcessor(otlp_exporter))
 
-# Use tracer
+# Send trace
 tracer = trace.get_tracer(__name__)
-with tracer.start_as_current_span("my-operation"):
-    # Your code here
-    pass
-```
-
-### JavaScript/Node.js
-
-Install dependencies:
-
-```bash
-npm install @opentelemetry/api @opentelemetry/sdk-node @opentelemetry/exporter-trace-otlp-grpc
-```
-
-Configure OTLP exporter:
-
-```javascript
-const { NodeSDK } = require('@opentelemetry/sdk-node');
-const { OTLPTraceExporter } = require('@opentelemetry/exporter-trace-otlp-grpc');
-
-const sdk = new NodeSDK({
-  traceExporter: new OTLPTraceExporter({
-    url: 'http://localhost:4317',
-  }),
-});
-
-sdk.start();
-
-// Use tracer
-const { trace } = require('@opentelemetry/api');
-const tracer = trace.getTracer('my-app');
-
-tracer.startActiveSpan('my-operation', (span) => {
-  // Your code here
-  span.end();
-});
-```
-
-### Go
-
-Install dependencies:
-
-```bash
-go get go.opentelemetry.io/otel
-go get go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracegrpc
-go get go.opentelemetry.io/otel/sdk/trace
-```
-
-Configure OTLP exporter:
-
-```go
-package main
-
-import (
-    "context"
-    "go.opentelemetry.io/otel"
-    "go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracegrpc"
-    "go.opentelemetry.io/otel/sdk/trace"
-)
-
-func main() {
-    ctx := context.Background()
-
-    // Initialize tracer
-    exporter, _ := otlptracegrpc.New(ctx,
-        otlptracegrpc.WithEndpoint("localhost:4317"),
-        otlptracegrpc.WithInsecure(),
-    )
-
-    tp := trace.NewTracerProvider(
-        trace.WithBatcher(exporter),
-    )
-    otel.SetTracerProvider(tp)
-
-    // Use tracer
-    tracer := otel.Tracer("my-app")
-    _, span := tracer.Start(ctx, "my-operation")
-    defer span.End()
-
-    // Your code here
-}
+with tracer.start_as_current_span("test-operation"):
+    print("Sending test trace to Rotel")
 ```
 
 ## Viewing Data
 
-### Dashboard
+### Web Dashboard
 
 Open your browser and navigate to:
 
 ```
-http://localhost:8080
+http://localhost:3000
 ```
 
-The dashboard provides:
-- **Metrics**: Time-series charts and aggregations
-- **Logs**: Search, filter, and view log entries
-- **Traces**: Distributed trace timeline and service graph
+The dashboard shows:
+- **Logs**: Recent log entries with severity filtering
+- **Traces**: Distributed traces with span details
+- **Metrics**: Time-series data and aggregations
 
 ### CLI Queries
 
 Query data using the CLI:
 
 ```bash
-# View recent metrics
-rotel query metrics --last 1h
+# List recent logs
+rotel logs list
 
-# Search logs
-rotel query logs --filter 'level=error' --last 30m
+# List traces
+rotel traces list
 
-# View traces
-rotel query traces --min-duration 1s --last 1h
+# List metrics
+rotel metrics list
 ```
 
 ## Next Steps
 
-- **Configuration**: Learn about [configuration options](configuration.md)
+- **CLI Reference**: See [CLI documentation](../crates/rotel-cli/README.md) for all commands
+- **TUI Guide**: Learn about the [terminal UI](tui-quickstart.md)
+- **Configuration**: Customize [configuration options](../ARCHITECTURE.md#configuration)
 - **Testing**: Set up [testing infrastructure](testing.md)
-- **Troubleshooting**: Check [common issues](troubleshooting.md)
-- **Contributing**: Read the [contributing guide](../CONTRIBUTING.md)
 
-## Common Issues
+## Troubleshooting
 
 ### Port Already in Use
 
-If ports 4317, 4318, or 8080 are already in use:
+If ports are already in use, check what's using them:
 
 ```bash
-# Check what's using the port
+# macOS/Linux
 lsof -i :4317
-
-# Start Rotel with different ports
-rotel start --grpc-port 14317 --http-port 14318 --dashboard-port 18080
-```
-
-### Permission Denied
-
-If you get permission errors:
-
-```bash
-# Create data directory with correct permissions
-mkdir -p ~/.rotel/data
-chmod 755 ~/.rotel/data
-
-# Or run with sudo (not recommended)
-sudo rotel start
+lsof -i :4318
+lsof -i :3000
 ```
 
 ### Connection Refused
 
-If your application can't connect to Rotel:
+If your application can't connect:
 
 1. Verify Rotel is running: `ps aux | grep rotel`
-2. Check firewall settings
-3. Verify endpoint URL in your application
-4. Check Rotel logs: `rotel logs`
+2. Check the endpoint URL matches: `http://localhost:4317` (gRPC) or `http://localhost:4318` (HTTP)
+3. Check firewall settings
+
+### No Data Appearing
+
+If you send data but don't see it:
+
+1. Check Rotel logs for errors
+2. Verify the OTLP endpoint is correct
+3. Ensure your application is using the correct protocol (gRPC vs HTTP)
+4. Try the curl example above to verify the receiver is working
 
 ## Getting Help
 
 - **Documentation**: Check the [docs](.) directory
 - **Issues**: Report bugs on [GitHub Issues](https://github.com/YOUR_USERNAME/rotel/issues)
 - **Discussions**: Ask questions on [GitHub Discussions](https://github.com/YOUR_USERNAME/rotel/discussions)
-
----
-
-**Next**: [Configuration Guide](configuration.md) | [Testing Guide](testing.md)

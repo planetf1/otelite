@@ -1,62 +1,67 @@
 # Rotel
 
-**OpenTelemetry Receiver & Dashboard for Local LLM Users**
+**Lightweight OpenTelemetry receiver and dashboard for local development**
 
-[![CI](https://github.com/YOUR_USERNAME/rotel/workflows/CI/badge.svg)](https://github.com/YOUR_USERNAME/rotel/actions)
-[![Security](https://github.com/YOUR_USERNAME/rotel/workflows/Security/badge.svg)](https://github.com/YOUR_USERNAME/rotel/actions)
-[![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](LICENSE)
-
-Rotel is a lightweight, open-source OpenTelemetry receiver and dashboard designed specifically for local LLM users. It provides comprehensive observability for your LLM applications with minimal resource footprint.
-
-## Features
-
-- **🚀 Lightweight**: <100MB memory, <5% CPU idle, starts in <3s
-- **📊 Full OTLP Support**: Metrics, logs, and traces via gRPC and HTTP
-- **🔌 Pluggable Architecture**: Extensible storage backends and exporters
-- **🛡️ Standards Compliant**: Full OpenTelemetry Protocol (OTLP) compliance
-- **💾 Embedded Storage**: No external database required (PostgreSQL optional)
-- **🌍 Cross-Platform**: macOS (Intel/Apple Silicon) and Linux (x86_64/ARM64)
-- **📦 Single Binary**: Zero-dependency deployment
+Rotel is a single-binary observability tool that receives OpenTelemetry data (logs, traces, metrics) and provides a web dashboard and CLI for viewing it. Designed for local LLM development with minimal resource usage (<100MB memory, <5% CPU), it starts in seconds and requires no external dependencies.
 
 ## Quick Start
 
-### Installation
-
-**macOS (Homebrew)**:
 ```bash
-brew install rotel
+# Install
+cargo install --path crates/rotel-cli
+
+# Start dashboard (opens OTLP receivers on 4317/4318, web UI on 3000)
+rotel dashboard
+
+# View data
+open http://localhost:3000
 ```
 
-**Linux (Binary)**:
-```bash
-curl -L https://github.com/YOUR_USERNAME/rotel/releases/latest/download/rotel-linux-x86_64.tar.gz | tar xz
-sudo mv rotel /usr/local/bin/
+![Rotel Dashboard](docs/assets/dashboard-screenshot.png)
+
+## Features
+
+- **🚀 Fast**: Starts in <3s, <100MB memory, <5% CPU idle
+- **📊 Full OTLP Support**: Metrics, logs, and traces via gRPC (4317) and HTTP (4318)
+- **💾 Embedded Storage**: SQLite-based, no external database required
+- **🌐 Web Dashboard**: View and filter telemetry data at `http://localhost:3000`
+- **⌨️ Terminal UI**: Full-featured TUI with `rotel tui`
+- **🔧 CLI**: Query and export data with `rotel logs`, `rotel traces`, `rotel metrics`
+- **📦 Single Binary**: Zero runtime dependencies
+
+## Documentation
+
+- [**Quick Start Guide**](docs/quickstart.md) - Installation and first run
+- [**Architecture**](ARCHITECTURE.md) - System design and components
+- [**CLI Reference**](crates/rotel-cli/README.md) - Command-line interface
+- [**TUI Guide**](docs/tui-quickstart.md) - Terminal user interface
+- [**API Documentation**](crates/rotel-api/README.md) - REST API reference
+- [**Testing Guide**](docs/testing.md) - Running and writing tests
+- [**Contributing**](CONTRIBUTING.md) - Development workflow
+
+## Sending Data
+
+### Python
+
+```python
+from opentelemetry import trace
+from opentelemetry.exporter.otlp.proto.grpc.trace_exporter import OTLPSpanExporter
+from opentelemetry.sdk.trace import TracerProvider
+from opentelemetry.sdk.trace.export import BatchSpanProcessor
+
+trace.set_tracer_provider(TracerProvider())
+otlp_exporter = OTLPSpanExporter(endpoint="http://localhost:4317", insecure=True)
+trace.get_tracer_provider().add_span_processor(BatchSpanProcessor(otlp_exporter))
+
+tracer = trace.get_tracer(__name__)
+with tracer.start_as_current_span("my-operation"):
+    # Your code here
+    pass
 ```
 
-**From Source**:
-```bash
-git clone https://github.com/YOUR_USERNAME/rotel.git
-cd rotel
-cargo build --release
-sudo cp target/release/rotel /usr/local/bin/
-```
-
-### Usage
-
-**Start Rotel**:
-```bash
-rotel start
-```
-
-This starts the OTLP receiver on:
-- gRPC: `localhost:4317`
-- HTTP: `localhost:4318`
-- Dashboard: `http://localhost:8080`
-
-**Configure Your Application**:
+### Rust
 
 ```rust
-// Rust example
 use opentelemetry_otlp::WithExportConfig;
 
 let tracer = opentelemetry_otlp::new_pipeline()
@@ -69,274 +74,142 @@ let tracer = opentelemetry_otlp::new_pipeline()
     .install_batch(opentelemetry_sdk::runtime::Tokio)?;
 ```
 
-```python
-# Python example
-from opentelemetry import trace
-from opentelemetry.exporter.otlp.proto.grpc.trace_exporter import OTLPSpanExporter
-from opentelemetry.sdk.trace import TracerProvider
-from opentelemetry.sdk.trace.export import BatchSpanProcessor
+### JavaScript/Node.js
 
-trace.set_tracer_provider(TracerProvider())
-otlp_exporter = OTLPSpanExporter(endpoint="http://localhost:4317")
-trace.get_tracer_provider().add_span_processor(
-    BatchSpanProcessor(otlp_exporter)
+```javascript
+const { NodeSDK } = require('@opentelemetry/sdk-node');
+const { OTLPTraceExporter } = require('@opentelemetry/exporter-trace-otlp-grpc');
+
+const sdk = new NodeSDK({
+  traceExporter: new OTLPTraceExporter({ url: 'http://localhost:4317' }),
+});
+sdk.start();
+```
+
+### Go
+
+```go
+import (
+    "go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracegrpc"
+    "go.opentelemetry.io/otel/sdk/trace"
 )
+
+exporter, _ := otlptracegrpc.New(ctx,
+    otlptracegrpc.WithEndpoint("localhost:4317"),
+    otlptracegrpc.WithInsecure(),
+)
+tp := trace.NewTracerProvider(trace.WithBatcher(exporter))
 ```
 
-**View Dashboard**:
+## CLI Usage
 
-Open `http://localhost:8080` in your browser to view metrics, logs, and traces.
-
-### Terminal User Interface (TUI)
-
-Rotel includes a powerful terminal-based interface for viewing telemetry data directly in your terminal.
-
-**Installation**:
 ```bash
-cargo install rotel-tui
-```
+# List recent logs
+rotel logs list --severity ERROR --since 1h
 
-**Usage**:
-```bash
-# Start TUI (connects to localhost:8080 by default)
-rotel-tui
-
-# Connect to custom API endpoint
-rotel-tui --api-url http://localhost:8080
-
-# Use custom configuration
-rotel-tui --config ~/.config/rotel/tui.toml
-```
-
-**Key Features**:
-- 📊 **Logs View** (`l` key) - Real-time log streaming with severity filtering and search
-- 🔍 **Traces View** (`t` key) - Span waterfall visualization with critical path highlighting
-- 📈 **Metrics View** (`m` key) - Time series charts with zoom and navigation
-- ⌨️ **Keyboard-Driven** - Complete keyboard navigation, no mouse required
-- 🎨 **Color-Coded** - Severity levels, error states, and performance indicators
-- 🚀 **Lightweight** - <20MB memory, <1% CPU idle
-
-**Quick Navigation**:
-- `l` - Switch to logs view
-- `t` - Switch to traces view
-- `m` - Switch to metrics view
-- `/` - Search within current view
-- `f` - Apply filters
-- `?` or `h` - Show help screen
-- `q` - Quit
-
-See [`docs/tui-quickstart.md`](docs/tui-quickstart.md) for detailed TUI documentation.
-
-### Command-Line Interface (CLI)
-
-Rotel includes a powerful CLI for querying telemetry data from your terminal or scripts.
-
-**Installation**:
-```bash
-cargo install rotel-cli
-```
-
-**Quick Examples**:
-```bash
-# Query logs
-rotel-cli logs list --severity ERROR --since 1h
-rotel-cli logs search "database timeout"
-rotel-cli logs show log-123
-
-# Query traces
-rotel-cli traces list --min-duration 1s --status ERROR
-rotel-cli traces show trace-456
-
-# Query metrics
-rotel-cli metrics list --name "http_*"
-rotel-cli metrics get response_time_ms --label "endpoint=/api/users"
-
-# JSON output for scripting
-rotel-cli --format json logs list | jq '.[] | select(.severity == "ERROR")'
-
-# Use in shell scripts
-ERROR_COUNT=$(rotel-cli --format json logs list --severity ERROR | jq 'length')
-if [ "$ERROR_COUNT" -gt 0 ]; then
-  echo "Found $ERROR_COUNT errors"
-fi
-```
-
-**Key Features**:
-- 🚀 **Fast**: <100ms cold start, <1s queries
-- 📊 **Multiple Formats**: Pretty tables or JSON output
-- 🔧 **Scriptable**: Exit codes, pipeable output, jq-friendly JSON
-- 🎨 **Flexible**: Color/header control, custom endpoints, timeouts
-- 🌍 **Unix-Friendly**: Follows Unix conventions (stdout/stderr, exit codes)
-
-**Global Flags**:
-```bash
---endpoint <URL>        # Backend URL (or ROTEL_ENDPOINT env var)
---format <pretty|json>  # Output format
---no-color              # Disable colors
---no-header             # Disable table headers
---timeout <SECONDS>     # Request timeout
-```
-
-See [`specs/004-cli/quickstart.md`](specs/004-cli/quickstart.md) for detailed CLI documentation and scripting examples.
-
-### REST API
-
-Rotel provides a comprehensive REST API for programmatic access to telemetry data.
-
-**Base URL**: `http://localhost:8080/api/v1`
-
-**Quick Examples**:
-```bash
-# List logs with filtering
-curl "http://localhost:8080/api/v1/logs?severity=ERROR&limit=50&since=1h"
-
-# Get specific log entry
-curl "http://localhost:8080/api/v1/logs/log-123"
+# Search logs
+rotel logs search "database timeout"
 
 # List traces with duration filter
-curl "http://localhost:8080/api/v1/traces?min_duration_ns=1000000&limit=50"
+rotel traces list --min-duration 1s
 
-# Get trace with span hierarchy
-curl "http://localhost:8080/api/v1/traces/trace-456"
+# Show trace details
+rotel traces show trace-abc123
 
-# List metrics with filtering
-curl "http://localhost:8080/api/v1/metrics?name=http_requests_total&metric_type=COUNTER"
+# List metrics
+rotel metrics list --name "http_*"
 
-# Get metric statistics
-curl "http://localhost:8080/api/v1/metrics/request_duration_ms/stats?since=1h"
+# JSON output for scripting
+rotel --format json logs list | jq '.[] | select(.severity == "ERROR")'
+```
+
+## Terminal UI
+
+```bash
+# Start TUI
+rotel tui
+
+# Connect to custom API
+rotel tui --api-url http://localhost:3000
+```
+
+**Keyboard shortcuts:**
+- `l` - Logs view
+- `t` - Traces view
+- `m` - Metrics view
+- `/` - Search
+- `f` - Filter
+- `?` - Help
+- `q` - Quit
+
+See [TUI documentation](docs/tui-quickstart.md) for details.
+
+## REST API
+
+```bash
+# List logs
+curl "http://localhost:3000/api/v1/logs?severity=ERROR&limit=50"
+
+# Get specific log
+curl "http://localhost:3000/api/v1/logs/log-123"
+
+# List traces
+curl "http://localhost:3000/api/v1/traces?min_duration_ns=1000000"
+
+# Get trace with spans
+curl "http://localhost:3000/api/v1/traces/trace-456"
 
 # Health check
-curl "http://localhost:8080/health"
+curl "http://localhost:3000/health"
 ```
 
-**Key Features**:
-- 📊 **OpenAPI Documentation**: Interactive Swagger UI at `/docs`
-- 🔍 **Rich Filtering**: Time ranges, severity, service names, duration filters
-- 📄 **Pagination**: Offset-based with metadata (total count, next/prev)
-- 🎯 **Type-Safe**: Full request/response validation with detailed errors
-- 🌐 **CORS Enabled**: Ready for browser-based applications
-- 📈 **Statistics**: Percentile calculations (p50, p95, p99) for metrics
-
-**API Documentation**:
-- Interactive docs: `http://localhost:8080/docs`
-- Detailed guide: [`crates/rotel-api/README.md`](crates/rotel-api/README.md)
-
-## Configuration
-
-Rotel uses sensible defaults but can be customized via `rotel.toml`:
-
-```toml
-[server]
-grpc_port = 4317
-http_port = 4318
-dashboard_port = 8080
-
-[storage]
-backend = "embedded"  # or "postgresql"
-data_dir = "~/.rotel/data"
-max_size_gb = 10
-
-[limits]
-max_events_per_second = 1000
-max_memory_mb = 100
-```
-
-See [`docs/configuration.md`](docs/configuration.md) for full configuration options.
-
-## Documentation
-
-- [**Quick Start Guide**](docs/quickstart.md) - Get up and running in 5 minutes
-- [**TUI Quick Start**](docs/tui-quickstart.md) - Terminal UI guide
-- [**TUI Keyboard Shortcuts**](docs/tui-shortcuts.md) - Complete shortcuts reference
-- [**TUI Troubleshooting**](docs/tui-troubleshooting.md) - TUI-specific issues and solutions
-- [**Architecture Overview**](ARCHITECTURE.md) - System design and components
-- [**Testing Guide**](docs/testing.md) - Running and writing tests
-- [**Contributing Guide**](CONTRIBUTING.md) - How to contribute
-- [**Troubleshooting**](docs/troubleshooting.md) - Common issues and solutions
-- [**API Documentation**](https://docs.rs/rotel) - Rust API docs
+Interactive API docs: `http://localhost:3000/docs`
 
 ## Development
 
-### Prerequisites
-
-- Rust 1.77+ (stable)
-- Git
-- Pre-commit (optional but recommended)
-
-### Setup
-
 ```bash
-# Clone repository
+# Clone and build
 git clone https://github.com/YOUR_USERNAME/rotel.git
 cd rotel
-
-# Run setup script (installs tools, configures pre-commit)
-./scripts/setup-dev.sh
+cargo build --workspace
 
 # Run tests
-cargo test
+cargo test --workspace
+
+# Run quality gates
+cargo clippy --workspace --all-targets -- -D warnings
+cargo fmt --check
 
 # Run with coverage
 cargo llvm-cov --all-features --workspace --html
 ```
 
-### Testing
-
-```bash
-# Run all tests
-./scripts/run-tests.sh
-
-# Run specific test suite
-cargo test --test integration_tests
-
-# Check coverage
-./scripts/check-coverage.sh
-```
-
-### Code Quality
-
-```bash
-# Format code
-cargo fmt
-
-# Run linter
-cargo clippy --all-targets --all-features -- -D warnings
-
-# Run pre-commit hooks
-pre-commit run --all-files
-```
-
-See [`docs/testing.md`](docs/testing.md) for detailed testing documentation.
+See [CONTRIBUTING.md](CONTRIBUTING.md) for development workflow.
 
 ## Architecture
 
-Rotel is built with a modular, pluggable architecture:
-
 ```
 ┌─────────────────────────────────────────────┐
-│              Dashboard UI                    │
+│         Web Dashboard (port 3000)           │
 └─────────────────┬───────────────────────────┘
                   │
 ┌─────────────────▼───────────────────────────┐
-│           Query Engine                       │
+│            REST API (port 3000)             │
 └─────────────────┬───────────────────────────┘
                   │
 ┌─────────────────▼───────────────────────────┐
-│         Storage Backend                      │
-│  (Embedded / PostgreSQL / Pluggable)        │
+│       SQLite Storage (rotel.db)             │
 └─────────────────▲───────────────────────────┘
                   │
 ┌─────────────────┴───────────────────────────┐
 │          OTLP Receiver                       │
-│      (gRPC + HTTP Endpoints)                │
+│    gRPC (4317) + HTTP (4318)                │
 └─────────────────────────────────────────────┘
 ```
 
-See [`ARCHITECTURE.md`](ARCHITECTURE.md) for detailed architecture documentation.
+See [ARCHITECTURE.md](ARCHITECTURE.md) for details.
 
 ## Performance
-
-Rotel is designed for minimal resource usage:
 
 | Metric | Target | Typical |
 |--------|--------|---------|
@@ -344,57 +217,32 @@ Rotel is designed for minimal resource usage:
 | CPU (idle) | <5% | ~2% |
 | Startup time | <3s | ~1.5s |
 | Throughput | 1000 events/s | 2000+ events/s |
-| Test suite | <30s | ~15s |
-| Pre-commit | <10s | ~5s |
-| CI pipeline | <10min | ~6min |
-
-## Contributing
-
-We welcome contributions! Please see [`CONTRIBUTING.md`](CONTRIBUTING.md) for:
-
-- Code of conduct
-- Development workflow
-- Pull request process
-- Testing requirements
-- Code style guidelines
-
-## License
-
-Rotel is licensed under the [Apache License 2.0](LICENSE).
 
 ## Project Status
 
-Rotel is currently in **active development**. The API is not yet stable and may change between releases.
+**Current version:** 0.1.0-alpha
 
-Current version: **0.1.0-alpha**
+Rotel is in active development. The API may change between releases.
 
-See [`CHANGELOG.md`](CHANGELOG.md) for release history.
+See [CHANGELOG.md](CHANGELOG.md) for release history.
+
+## Contributing
+
+We welcome contributions! See [CONTRIBUTING.md](CONTRIBUTING.md) for:
+- Development workflow
+- Testing requirements
+- Code style guidelines
+- Pull request process
+
+## License
+
+Apache License 2.0 - see [LICENSE](LICENSE)
 
 ## Support
 
 - **Issues**: [GitHub Issues](https://github.com/YOUR_USERNAME/rotel/issues)
 - **Discussions**: [GitHub Discussions](https://github.com/YOUR_USERNAME/rotel/discussions)
-- **Security**: See [SECURITY.md](SECURITY.md) for reporting vulnerabilities
-
-## Acknowledgments
-
-Rotel is built on top of excellent open-source projects:
-
-- [OpenTelemetry](https://opentelemetry.io/) - Observability framework
-- [Tokio](https://tokio.rs/) - Async runtime
-- [Tonic](https://github.com/hyperium/tonic) - gRPC implementation
-- [Axum](https://github.com/tokio-rs/axum) - Web framework
-
-## Roadmap
-
-See [GitHub Projects](https://github.com/YOUR_USERNAME/rotel/projects) for planned features and milestones.
-
-**Upcoming Features**:
-- [ ] Query language for advanced filtering
-- [ ] Alerting and notification system
-- [ ] Distributed tracing visualization
-- [ ] Metrics aggregation and downsampling
-- [ ] Plugin marketplace
+- **Security**: See [SECURITY.md](SECURITY.md)
 
 ---
 
