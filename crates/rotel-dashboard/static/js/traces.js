@@ -181,7 +181,12 @@ class TracesView {
             </div>
             <div class="trace-waterfall">
                 <h4>Span Waterfall</h4>
-                ${this.renderSpanTree(spanTree, trace.start_time, trace.duration)}
+                <div class="waterfall-container">
+                    <div class="waterfall-spans">
+                        ${this.renderSpanTree(spanTree, trace.start_time, trace.duration)}
+                    </div>
+                    <div id="span-detail-panel" class="span-detail-panel" style="display: none;"></div>
+                </div>
             </div>
         `;
 
@@ -189,6 +194,9 @@ class TracesView {
             container.style.display = 'none';
             this.selectedTrace = null;
         });
+
+        // Attach click handlers to span bars
+        this.attachSpanClickHandlers(trace);
     }
 
     /**
@@ -238,11 +246,11 @@ class TracesView {
                     <div class="span-bar-container">
                         <div class="span-bar ${hasError ? 'span-bar-error' : ''}"
                              style="left: ${startOffset}%; width: ${width}%;"
+                             data-span-id="${span.span_id}"
                              title="${this.escapeHtml(span.name)}: ${duration}ms">
                         </div>
                     </div>
                 </div>
-                ${this.renderSpanAttributes(span.attributes)}
                 ${span.children.length > 0 ? this.renderSpanTree(span.children, traceStart, traceDuration, depth + 1) : ''}
             `;
         }).join('');
@@ -541,6 +549,127 @@ class TracesView {
         const div = document.createElement('div');
         div.textContent = text;
         return div.innerHTML;
+    }
+
+    /**
+     * Attach click handlers to span bars
+     */
+    attachSpanClickHandlers(trace) {
+        const spanBars = document.querySelectorAll('.span-bar');
+        spanBars.forEach((bar, index) => {
+            bar.style.cursor = 'pointer';
+            bar.addEventListener('click', (e) => {
+                e.stopPropagation();
+                const spanId = bar.getAttribute('data-span-id');
+                const span = trace.spans.find(s => s.span_id === spanId);
+                if (span) {
+                    this.showSpanDetail(span, trace);
+                }
+            });
+        });
+    }
+
+    /**
+     * Show detailed information for a span
+     */
+    showSpanDetail(span, trace) {
+        const panel = document.getElementById('span-detail-panel');
+        panel.style.display = 'block';
+
+        const duration = (span.duration / 1000000).toFixed(2);
+        const startTime = new Date(span.start_time / 1000000);
+        const hasError = typeof span.status === 'string'
+            ? span.status.toUpperCase() === 'ERROR'
+            : span.status && span.status.code === 'Error';
+
+        // Find parent and children
+        const parent = span.parent_span_id
+            ? trace.spans.find(s => s.span_id === span.parent_span_id)
+            : null;
+        const children = trace.spans.filter(s => s.parent_span_id === span.span_id);
+
+        panel.innerHTML = `
+            <div class="span-detail-header">
+                <h4>Span Details</h4>
+                <button id="close-span-detail" class="btn btn-secondary btn-sm">×</button>
+            </div>
+            <div class="span-detail-content">
+                <div class="span-detail-section">
+                    <h5>Basic Information</h5>
+                    <div class="span-detail-item"><strong>Name:</strong> ${this.escapeHtml(span.name)}</div>
+                    <div class="span-detail-item"><strong>Span ID:</strong> <code>${span.span_id}</code></div>
+                    <div class="span-detail-item"><strong>Trace ID:</strong> <code>${span.trace_id}</code></div>
+                    <div class="span-detail-item"><strong>Kind:</strong> ${this.escapeHtml(String(span.kind ?? 'unknown'))}</div>
+                    <div class="span-detail-item"><strong>Status:</strong> <span class="${hasError ? 'status-error' : 'status-ok'}">${hasError ? 'ERROR' : 'OK'}</span></div>
+                    <div class="span-detail-item"><strong>Start Time:</strong> ${startTime.toISOString()}</div>
+                    <div class="span-detail-item"><strong>Duration:</strong> ${duration}ms</div>
+                </div>
+
+                ${parent || children.length > 0 ? `
+                    <div class="span-detail-section">
+                        <h5>Relationships</h5>
+                        ${parent ? `<div class="span-detail-item"><strong>Parent:</strong> ${this.escapeHtml(parent.name)}</div>` : ''}
+                        ${children.length > 0 ? `
+                            <div class="span-detail-item">
+                                <strong>Children (${children.length}):</strong>
+                                <ul class="span-children-list">
+                                    ${children.map(child => `<li>${this.escapeHtml(child.name)}</li>`).join('')}
+                                </ul>
+                            </div>
+                        ` : ''}
+                    </div>
+                ` : ''}
+
+                ${span.events && span.events.length > 0 ? `
+                    <div class="span-detail-section">
+                        <h5>Events (${span.events.length})</h5>
+                        <div class="span-events-timeline">
+                            ${this.renderSpanEvents(span.events, span.start_time)}
+                        </div>
+                    </div>
+                ` : ''}
+
+                ${Object.keys(span.attributes || {}).length > 0 ? `
+                    <div class="span-detail-section">
+                        <h5>Attributes</h5>
+                        ${this.renderSpanAttributes(span.attributes)}
+                    </div>
+                ` : ''}
+            </div>
+        `;
+
+        document.getElementById('close-span-detail').addEventListener('click', () => {
+            panel.style.display = 'none';
+        });
+    }
+
+    /**
+     * Render span events as a timeline
+     */
+    renderSpanEvents(events, spanStartTime) {
+        return events.map(event => {
+            const eventTime = new Date(event.time / 1000000);
+            const offsetMs = ((event.time - spanStartTime) / 1000000).toFixed(2);
+
+            return `
+                <div class="span-event">
+                    <div class="span-event-header">
+                        <span class="span-event-name">${this.escapeHtml(event.name)}</span>
+                        <span class="span-event-time">+${offsetMs}ms</span>
+                    </div>
+                    ${Object.keys(event.attributes || {}).length > 0 ? `
+                        <div class="span-event-attributes">
+                            ${Object.entries(event.attributes).map(([key, value]) => `
+                                <div class="attribute-item">
+                                    <span class="attribute-key">${this.escapeHtml(key)}:</span>
+                                    <span class="attribute-value">${this.escapeHtml(String(value))}</span>
+                                </div>
+                            `).join('')}
+                        </div>
+                    ` : ''}
+                </div>
+            `;
+        }).join('');
     }
 
     /**

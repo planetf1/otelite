@@ -1002,6 +1002,154 @@ body {
     border-radius: 4px;
 }
 
+/* Waterfall container with detail panel */
+.waterfall-container {
+    display: flex;
+    gap: 1rem;
+}
+
+.waterfall-spans {
+    flex: 1;
+    min-width: 0;
+}
+
+.span-detail-panel {
+    width: 400px;
+    flex-shrink: 0;
+    background-color: var(--bg-primary);
+    border: 1px solid var(--border-color);
+    border-radius: 4px;
+    padding: 1rem;
+    overflow-y: auto;
+    max-height: 600px;
+}
+
+.span-detail-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 1rem;
+    padding-bottom: 0.75rem;
+    border-bottom: 1px solid var(--border-color);
+}
+
+.span-detail-header h4 {
+    font-size: 1.1rem;
+    font-weight: 600;
+    margin: 0;
+}
+
+.btn-sm {
+    padding: 0.25rem 0.5rem;
+    font-size: 1.25rem;
+    line-height: 1;
+}
+
+.span-detail-content {
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
+}
+
+.span-detail-section {
+    padding-bottom: 1rem;
+    border-bottom: 1px solid var(--border-color);
+}
+
+.span-detail-section:last-child {
+    border-bottom: none;
+    padding-bottom: 0;
+}
+
+.span-detail-section h5 {
+    font-size: 0.9rem;
+    font-weight: 600;
+    color: var(--text-secondary);
+    text-transform: uppercase;
+    margin-bottom: 0.75rem;
+}
+
+.span-detail-item {
+    font-size: 0.875rem;
+    margin-bottom: 0.5rem;
+    word-break: break-word;
+}
+
+.span-detail-item strong {
+    color: var(--text-secondary);
+    margin-right: 0.5rem;
+}
+
+.span-detail-item code {
+    font-family: 'Courier New', monospace;
+    font-size: 0.75rem;
+    background-color: var(--bg-secondary);
+    padding: 0.125rem 0.375rem;
+    border-radius: 3px;
+}
+
+.status-ok {
+    color: var(--success-color);
+    font-weight: 600;
+}
+
+.status-error {
+    color: var(--error-color);
+    font-weight: 600;
+}
+
+.span-children-list {
+    margin: 0.5rem 0 0 1.5rem;
+    padding: 0;
+}
+
+.span-children-list li {
+    font-size: 0.875rem;
+    margin-bottom: 0.25rem;
+}
+
+/* Span events timeline */
+.span-events-timeline {
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+}
+
+.span-event {
+    background-color: var(--bg-secondary);
+    border-left: 3px solid var(--accent-color);
+    padding: 0.75rem;
+    border-radius: 4px;
+}
+
+.span-event-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 0.5rem;
+}
+
+.span-event-name {
+    font-weight: 500;
+    font-size: 0.875rem;
+}
+
+.span-event-time {
+    font-family: 'Courier New', monospace;
+    font-size: 0.75rem;
+    color: var(--accent-color);
+    background-color: var(--bg-primary);
+    padding: 0.125rem 0.375rem;
+    border-radius: 3px;
+}
+
+.span-event-attributes {
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+    margin-top: 0.5rem;
+}
+
 /* Responsive design for traces */
 @media (max-width: 1024px) {
     .traces-container {
@@ -1014,6 +1162,15 @@ body {
 
     .span-info {
         min-width: 200px;
+    }
+
+    .waterfall-container {
+        flex-direction: column;
+    }
+
+    .span-detail-panel {
+        width: 100%;
+        max-height: 400px;
     }
 }
 
