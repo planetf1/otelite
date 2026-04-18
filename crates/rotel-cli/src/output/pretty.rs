@@ -2,6 +2,7 @@
 
 use crate::api::models::{LogEntry, Metric, SpanNode, Trace};
 use comfy_table::{presets::UTF8_FULL, Cell, Color, ContentArrangement, Table};
+use rotel_core::telemetry::format_attribute_value;
 
 /// Print logs in a pretty table format
 pub fn print_logs_table(logs: &[LogEntry], no_color: bool, no_header: bool) {
@@ -69,7 +70,8 @@ pub fn print_log_details(log: &LogEntry, no_color: bool) {
     if !log.attributes.is_empty() {
         println!("\nAttributes:");
         for (key, value) in &log.attributes {
-            println!("  {}: {}", key, value);
+            let formatted = format_attribute_value(value);
+            print_key_value_block(key, &formatted, 2);
         }
     }
 }
@@ -138,8 +140,31 @@ fn print_span_node(node: &SpanNode, depth: usize) {
         indent, prefix, node.span.name, node.span.duration_ms
     );
 
+    if !node.span.attributes.is_empty() {
+        for (key, value) in &node.span.attributes {
+            let formatted = format_attribute_value(value);
+            print_key_value_block(key, &formatted, depth + 1);
+        }
+    }
+
     for child in &node.children {
         print_span_node(child, depth + 1);
+    }
+}
+
+fn print_key_value_block(key: &str, value: &str, indent_level: usize) {
+    let indent = "  ".repeat(indent_level);
+    let continuation_indent = format!("{indent}    ");
+    let mut lines = value.lines();
+
+    if let Some(first_line) = lines.next() {
+        println!("{indent}{key}: {first_line}");
+    } else {
+        println!("{indent}{key}:");
+    }
+
+    for line in lines {
+        println!("{continuation_indent}{line}");
     }
 }
 

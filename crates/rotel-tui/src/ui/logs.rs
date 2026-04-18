@@ -149,7 +149,7 @@ fn format_log_detail(log: &LogEntry) -> Text<'static> {
             Style::default().add_modifier(Modifier::BOLD),
         )]));
         for (key, value) in &log.attributes {
-            lines.push(Line::from(format!("  {}: {}", key, value)));
+            append_formatted_key_value_lines(&mut lines, key, value, 60);
         }
     }
 
@@ -161,11 +161,28 @@ fn format_log_detail(log: &LogEntry) -> Text<'static> {
             Style::default().add_modifier(Modifier::BOLD),
         )]));
         for (key, value) in &log.resource.attributes {
-            lines.push(Line::from(format!("  {}: {}", key, value)));
+            append_formatted_key_value_lines(&mut lines, key, value, 60);
         }
     }
 
     Text::from(lines)
+}
+
+fn append_formatted_key_value_lines(
+    lines: &mut Vec<Line<'static>>,
+    key: &str,
+    value: &str,
+    preview_width: usize,
+) {
+    let preview = rotel_core::telemetry::format_attribute_preview(value, preview_width);
+    lines.push(Line::from(format!("  {key}: {preview}")));
+
+    let formatted = rotel_core::telemetry::format_attribute_value(value);
+    if formatted != value {
+        for line in formatted.lines() {
+            lines.push(Line::from(format!("      {line}")));
+        }
+    }
 }
 
 /// Render status bar

@@ -7,7 +7,9 @@
 pub mod telemetry;
 
 // Re-exports for convenience
-pub use telemetry::{LogRecord, Metric, Resource, Span, Trace};
+pub use telemetry::{
+    format_attribute_preview, format_attribute_value, LogRecord, Metric, Resource, Span, Trace,
+};
 
 pub fn add(left: u64, right: u64) -> u64 {
     left + right

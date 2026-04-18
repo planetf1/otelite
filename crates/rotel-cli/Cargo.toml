@@ -28,6 +28,7 @@ tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 chrono = { version = "0.4", features = ["serde"] }
 
 # Internal dependencies
+rotel-core = { path = "../rotel-core" }
 rotel-dashboard = { path = "../rotel-dashboard" }
 rotel-receiver = { path = "../rotel-receiver" }
 rotel-storage = { path = "../rotel-storage" }

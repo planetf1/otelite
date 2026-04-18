@@ -224,25 +224,102 @@ class TracesView {
             const startOffset = ((span.start_time - traceStart) / traceDuration) * 100;
             const width = ((span.duration) / traceDuration) * 100;
             const duration = (span.duration / 1000000).toFixed(2);
-            const hasError = span.status && span.status.code === 'Error';
+            const hasError = typeof span.status === 'string'
+                ? span.status.toUpperCase() === 'ERROR'
+                : span.status && span.status.code === 'Error';
 
             return `
                 <div class="span-row" style="padding-left: ${depth * 20}px;">
                     <div class="span-info">
                         <span class="span-name ${hasError ? 'span-error' : ''}">${this.escapeHtml(span.name)}</span>
-                        <span class="span-kind">${span.kind}</span>
+                        <span class="span-kind">${this.escapeHtml(String(span.kind ?? 'unknown'))}</span>
                         <span class="span-duration">${duration}ms</span>
                     </div>
                     <div class="span-bar-container">
                         <div class="span-bar ${hasError ? 'span-bar-error' : ''}"
                              style="left: ${startOffset}%; width: ${width}%;"
-                             title="${span.name}: ${duration}ms">
+                             title="${this.escapeHtml(span.name)}: ${duration}ms">
                         </div>
                     </div>
                 </div>
+                ${this.renderSpanAttributes(span.attributes)}
                 ${span.children.length > 0 ? this.renderSpanTree(span.children, traceStart, traceDuration, depth + 1) : ''}
             `;
         }).join('');
+    }
+
+    renderSpanAttributes(attributes) {
+        const entries = Object.entries(attributes ?? {});
+        if (entries.length === 0) {
+            return '';
+        }
+
+        return `
+            <div class="span-attributes">
+                ${entries.map(([key, value]) => `
+                    <div class="attribute-item">
+                        <span class="attribute-key">${this.escapeHtml(key)}</span>
+                        ${this.renderAttributeValue(value)}
+                    </div>
+                `).join('')}
+            </div>
+        `;
+    }
+
+    renderAttributeValue(value) {
+        const formatted = this.tryFormatJsonString(value);
+        if (formatted) {
+            return `
+                <div class="attribute-value attribute-value-json">
+                    <span class="attribute-preview">${this.escapeHtml(formatted.preview)}</span>
+                    <pre class="json-block"><code>${this.syntaxHighlightJson(formatted.pretty)}</code></pre>
+                </div>
+            `;
+        }
+
+        return `<span class="attribute-value">${this.escapeHtml(String(value))}</span>`;
+    }
+
+    tryFormatJsonString(value) {
+        if (typeof value !== 'string') {
+            return null;
+        }
+
+        try {
+            const parsed = JSON.parse(value);
+            const pretty = JSON.stringify(parsed, null, 2);
+            return {
+                preview: this.describeJsonValue(parsed),
+                pretty
+            };
+        } catch (_error) {
+            return null;
+        }
+    }
+
+    describeJsonValue(value) {
+        if (Array.isArray(value)) {
+            return `[array, ${value.length} items]`;
+        }
+
+        if (value !== null && typeof value === 'object') {
+            return `{object, ${Object.keys(value).length} keys}`;
+        }
+
+        return String(value);
+    }
+
+    syntaxHighlightJson(json) {
+        return this.escapeHtml(json)
+            .replace(/(&quot;(?:\\.|[^"\\])*&quot;)(\s*:)?/g, (match, stringToken, colon) => {
+                if (colon) {
+                    return `<span class="json-key">${stringToken}</span><span class="json-punctuation">:</span>`;
+                }
+                return `<span class="json-string">${stringToken}</span>`;
+            })
+            .replace(/\b(true|false)\b/g, '<span class="json-boolean">$1</span>')
+            .replace(/\bnull\b/g, '<span class="json-null">null</span>')
+            .replace(/(-?\b\d+(?:\.\d+)?(?:[eE][+-]?\d+)?\b)/g, '<span class="json-number">$1</span>');
     }
 
     /**

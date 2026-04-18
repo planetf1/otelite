@@ -7,7 +7,7 @@
 //! - JSON output is parseable by jq
 
 use assert_cmd::Command;
-use mockito::Server;
+use mockito::{Matcher, Server};
 use predicates::prelude::*;
 
 // T083: Integration test for exit codes (0, 1, 2, 3)
@@ -17,6 +17,10 @@ async fn test_exit_code_success() {
     let mut server = Server::new_async().await;
     let _mock = server
         .mock("GET", "/api/logs")
+        .match_query(Matcher::AllOf(vec![
+            Matcher::UrlEncoded("limit".into(), "50".into()),
+            Matcher::UrlEncoded("since".into(), "1h".into()),
+        ]))
         .with_status(200)
         .with_header("content-type", "application/json")
         .with_body(r#"[]"#)
@@ -29,23 +33,22 @@ async fn test_exit_code_success() {
         .arg("logs")
         .arg("list")
         .assert()
-        .success() // Exit code 0
+        .success()
         .stdout(predicate::str::contains("No logs found"));
 }
 
 #[tokio::test]
 async fn test_exit_code_connection_error() {
-    // Use invalid endpoint to trigger connection error
     let mut cmd = Command::cargo_bin("rotel-cli").unwrap();
     cmd.arg("--endpoint")
-        .arg("http://localhost:9999") // Non-existent server
+        .arg("http://localhost:9999")
         .arg("--timeout")
-        .arg("1") // Short timeout
+        .arg("1")
         .arg("logs")
         .arg("list")
         .assert()
         .failure()
-        .code(2) // Connection error exit code
+        .code(2)
         .stderr(predicate::str::contains("Failed to connect"))
         .stderr(predicate::str::contains("Suggestions"));
 }
@@ -69,7 +72,7 @@ async fn test_exit_code_not_found() {
         .arg("nonexistent-id")
         .assert()
         .failure()
-        .code(3) // Not found exit code
+        .code(3)
         .stderr(predicate::str::contains("not found"))
         .stderr(predicate::str::contains("Suggestions"));
 }
@@ -78,12 +81,12 @@ async fn test_exit_code_not_found() {
 async fn test_exit_code_invalid_argument() {
     let mut cmd = Command::cargo_bin("rotel-cli").unwrap();
     cmd.arg("--timeout")
-        .arg("invalid") // Invalid timeout value
+        .arg("invalid")
         .arg("logs")
         .arg("list")
         .assert()
         .failure()
-        .code(2); // clap returns 2 for usage errors
+        .code(2);
 }
 
 // T084: Integration test for stderr error output
@@ -106,7 +109,7 @@ async fn test_errors_write_to_stderr() {
         .assert()
         .failure()
         .stderr(predicate::str::contains("not found"))
-        .stdout(predicate::str::is_empty()); // No output to stdout on error
+        .stdout(predicate::str::is_empty());
 }
 
 #[tokio::test]
@@ -155,6 +158,10 @@ async fn test_data_writes_to_stdout() {
     let mut server = Server::new_async().await;
     let _mock = server
         .mock("GET", "/api/logs")
+        .match_query(Matcher::AllOf(vec![
+            Matcher::UrlEncoded("limit".into(), "50".into()),
+            Matcher::UrlEncoded("since".into(), "1h".into()),
+        ]))
         .with_status(200)
         .with_header("content-type", "application/json")
         .with_body(
@@ -178,7 +185,7 @@ async fn test_data_writes_to_stdout() {
         .success()
         .stdout(predicate::str::contains("log-123"))
         .stdout(predicate::str::contains("Test log message"))
-        .stderr(predicate::str::is_empty()); // No errors to stderr
+        .stderr(predicate::str::is_empty());
 }
 
 #[tokio::test]
@@ -186,6 +193,10 @@ async fn test_json_output_to_stdout() {
     let mut server = Server::new_async().await;
     let _mock = server
         .mock("GET", "/api/metrics")
+        .match_query(Matcher::AllOf(vec![
+            Matcher::UrlEncoded("limit".into(), "50".into()),
+            Matcher::UrlEncoded("since".into(), "1h".into()),
+        ]))
         .with_status(200)
         .with_header("content-type", "application/json")
         .with_body(
@@ -221,6 +232,10 @@ async fn test_json_output_is_valid() {
     let mut server = Server::new_async().await;
     let _mock = server
         .mock("GET", "/api/logs")
+        .match_query(Matcher::AllOf(vec![
+            Matcher::UrlEncoded("limit".into(), "50".into()),
+            Matcher::UrlEncoded("since".into(), "1h".into()),
+        ]))
         .with_status(200)
         .with_header("content-type", "application/json")
         .with_body(
@@ -248,16 +263,12 @@ async fn test_json_output_is_valid() {
 
     assert!(output.status.success());
 
-    // Verify JSON is parseable
     let stdout = String::from_utf8(output.stdout).expect("Invalid UTF-8");
     let parsed: serde_json::Value = serde_json::from_str(&stdout).expect("Invalid JSON output");
 
-    // Verify it's an array
     assert!(parsed.is_array());
     let array = parsed.as_array().unwrap();
     assert_eq!(array.len(), 1);
-
-    // Verify structure
     assert_eq!(array[0]["id"], "log-1");
     assert_eq!(array[0]["severity"], "INFO");
 }
@@ -267,6 +278,7 @@ async fn test_json_output_can_be_piped() {
     let mut server = Server::new_async().await;
     let _mock = server
         .mock("GET", "/api/traces")
+        .match_query(Matcher::UrlEncoded("limit".into(), "50".into()))
         .with_status(200)
         .with_header("content-type", "application/json")
         .with_body(
@@ -294,15 +306,12 @@ async fn test_json_output_can_be_piped() {
 
     assert!(output.status.success());
 
-    // Verify JSON can be parsed (simulating jq)
     let stdout = String::from_utf8(output.stdout).expect("Invalid UTF-8");
     let parsed: serde_json::Value = serde_json::from_str(&stdout).expect("Invalid JSON");
 
-    // Simulate jq query: .[0].id
     let trace_id = parsed[0]["id"].as_str().unwrap();
     assert_eq!(trace_id, "trace-123");
 
-    // Simulate jq query: .[0].duration_ms
     let duration = parsed[0]["duration_ms"].as_f64().unwrap();
     assert_eq!(duration, 150.0);
 }
@@ -312,6 +321,10 @@ async fn test_empty_json_array_is_valid() {
     let mut server = Server::new_async().await;
     let _mock = server
         .mock("GET", "/api/metrics")
+        .match_query(Matcher::AllOf(vec![
+            Matcher::UrlEncoded("limit".into(), "50".into()),
+            Matcher::UrlEncoded("since".into(), "1h".into()),
+        ]))
         .with_status(200)
         .with_header("content-type", "application/json")
         .with_body(r#"[]"#)
@@ -331,7 +344,6 @@ async fn test_empty_json_array_is_valid() {
 
     assert!(output.status.success());
 
-    // Verify empty array is valid JSON
     let stdout = String::from_utf8(output.stdout).expect("Invalid UTF-8");
     let parsed: serde_json::Value = serde_json::from_str(&stdout).expect("Invalid JSON");
     assert!(parsed.is_array());

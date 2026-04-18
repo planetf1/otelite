@@ -38,6 +38,7 @@ anyhow = "1.0"
 
 # CLI parsing
 clap = { version = "4.4", features = ["derive"] }
+rotel-core = { path = "../rotel-core" }
 
 [dev-dependencies]
 mockito = "1.2"

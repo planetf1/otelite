@@ -253,9 +253,32 @@ fn format_trace_detail(trace: &Trace) -> Text<'static> {
             ),
             TextSpan::raw(format!(" ({}ms)", span_duration_ms)),
         ]));
+
+        for (key, value) in &span.attributes {
+            append_formatted_key_value_lines(&mut lines, key, value, indent + 1, 60);
+        }
     }
 
     Text::from(lines)
+}
+
+fn append_formatted_key_value_lines(
+    lines: &mut Vec<Line<'static>>,
+    key: &str,
+    value: &str,
+    indent_level: usize,
+    preview_width: usize,
+) {
+    let indent = " ".repeat(indent_level * 2);
+    let preview = rotel_core::telemetry::format_attribute_preview(value, preview_width);
+    lines.push(Line::from(format!("{indent}  {key}: {preview}")));
+
+    let formatted = rotel_core::telemetry::format_attribute_value(value);
+    if formatted != value {
+        for line in formatted.lines() {
+            lines.push(Line::from(format!("{indent}      {line}")));
+        }
+    }
 }
 
 /// Calculate indentation level for span based on parent relationships

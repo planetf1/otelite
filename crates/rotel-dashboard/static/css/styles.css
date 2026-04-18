@@ -650,6 +650,77 @@ body {
     margin-top: 0.25rem;
 }
 
+.attribute-list {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+    margin-top: 0.5rem;
+}
+
+.attribute-item {
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+}
+
+.attribute-key {
+    font-family: 'Courier New', monospace;
+    font-size: 0.75rem;
+    color: var(--text-secondary);
+}
+
+.attribute-value {
+    font-size: 0.875rem;
+    word-break: break-word;
+}
+
+.attribute-value-json {
+    display: flex;
+    flex-direction: column;
+    gap: 0.35rem;
+}
+
+.attribute-preview {
+    font-family: 'Courier New', monospace;
+    font-size: 0.75rem;
+    color: var(--accent-color);
+}
+
+.json-block {
+    font-family: 'Courier New', monospace;
+    font-size: 0.75rem;
+    background-color: var(--bg-primary);
+    padding: 0.75rem;
+    border: 1px solid var(--border-color);
+    border-radius: 4px;
+    overflow-x: auto;
+    white-space: pre;
+}
+
+.json-key {
+    color: var(--accent-color);
+}
+
+.json-string {
+    color: var(--success-color);
+}
+
+.json-number {
+    color: #9c27b0;
+}
+
+.json-boolean {
+    color: #ff9800;
+}
+
+.json-null {
+    color: var(--text-secondary);
+}
+
+.json-punctuation {
+    color: var(--text-secondary);
+}
+
 .pagination {
     display: flex;
     justify-content: center;
@@ -921,6 +992,14 @@ body {
 
 .span-bar-error {
     background-color: var(--error-color);
+}
+
+.span-attributes {
+    margin: 0.5rem 0 0.75rem 1rem;
+    padding: 0.75rem;
+    background-color: var(--bg-primary);
+    border: 1px solid var(--border-color);
+    border-radius: 4px;
 }
 
 /* Responsive design for traces */

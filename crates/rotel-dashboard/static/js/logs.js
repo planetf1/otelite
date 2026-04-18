@@ -147,18 +147,97 @@ class LogsView {
                     ${Object.keys(log.attributes).length > 0 ? `
                         <div class="log-field">
                             <strong>Attributes:</strong>
-                            <pre>${JSON.stringify(log.attributes, null, 2)}</pre>
+                            ${this.renderAttributeMap(log.attributes)}
                         </div>
                     ` : ''}
                     ${log.resource ? `
                         <div class="log-field">
                             <strong>Resource:</strong>
-                            <pre>${JSON.stringify(log.resource, null, 2)}</pre>
+                            ${this.renderJsonBlock(log.resource)}
                         </div>
                     ` : ''}
                 </div>
             </div>
         `;
+    }
+
+    renderAttributeMap(attributes) {
+        const entries = Object.entries(attributes);
+        if (entries.length === 0) {
+            return '';
+        }
+
+        return `
+            <div class="attribute-list">
+                ${entries.map(([key, value]) => `
+                    <div class="attribute-item">
+                        <span class="attribute-key">${this.escapeHtml(key)}</span>
+                        ${this.renderAttributeValue(value)}
+                    </div>
+                `).join('')}
+            </div>
+        `;
+    }
+
+    renderAttributeValue(value) {
+        const formatted = this.tryFormatJsonString(value);
+        if (formatted) {
+            return `
+                <div class="attribute-value attribute-value-json">
+                    <span class="attribute-preview">${this.escapeHtml(formatted.preview)}</span>
+                    <pre class="json-block"><code>${this.syntaxHighlightJson(formatted.pretty)}</code></pre>
+                </div>
+            `;
+        }
+
+        return `<span class="attribute-value">${this.escapeHtml(String(value))}</span>`;
+    }
+
+    renderJsonBlock(value) {
+        const pretty = JSON.stringify(value, null, 2);
+        return `<pre class="json-block"><code>${this.syntaxHighlightJson(pretty)}</code></pre>`;
+    }
+
+    tryFormatJsonString(value) {
+        if (typeof value !== 'string') {
+            return null;
+        }
+
+        try {
+            const parsed = JSON.parse(value);
+            const pretty = JSON.stringify(parsed, null, 2);
+            return {
+                preview: this.describeJsonValue(parsed),
+                pretty
+            };
+        } catch (_error) {
+            return null;
+        }
+    }
+
+    describeJsonValue(value) {
+        if (Array.isArray(value)) {
+            return `[array, ${value.length} items]`;
+        }
+
+        if (value !== null && typeof value === 'object') {
+            return `{object, ${Object.keys(value).length} keys}`;
+        }
+
+        return String(value);
+    }
+
+    syntaxHighlightJson(json) {
+        return this.escapeHtml(json)
+            .replace(/(&quot;(?:\\.|[^"\\])*&quot;)(\s*:)?/g, (match, stringToken, colon) => {
+                if (colon) {
+                    return `<span class="json-key">${stringToken}</span><span class="json-punctuation">:</span>`;
+                }
+                return `<span class="json-string">${stringToken}</span>`;
+            })
+            .replace(/\b(true|false)\b/g, '<span class="json-boolean">$1</span>')
+            .replace(/\bnull\b/g, '<span class="json-null">null</span>')
+            .replace(/(-?\b\d+(?:\.\d+)?(?:[eE][+-]?\d+)?\b)/g, '<span class="json-number">$1</span>');
     }
 
     /**
