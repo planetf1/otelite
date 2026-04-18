@@ -2,7 +2,7 @@
 
 use crate::api::models::{LogEntry, Metric, SpanNode, Trace};
 use comfy_table::{presets::UTF8_FULL, Cell, Color, ContentArrangement, Table};
-use rotel_core::telemetry::format_attribute_value;
+use rotel_core::telemetry::{format_attribute_value, GenAiSpanInfo};
 
 /// Print logs in a pretty table format
 pub fn print_logs_table(logs: &[LogEntry], no_color: bool, no_header: bool) {
@@ -135,9 +135,31 @@ fn print_span_node(node: &SpanNode, depth: usize) {
     let indent = "  ".repeat(depth);
     let prefix = if depth > 0 { "├─ " } else { "" };
 
+    // Check for GenAI information
+    let genai_info = GenAiSpanInfo::from_attributes(&node.span.attributes);
+    let genai_suffix = if genai_info.is_genai {
+        let mut parts = Vec::new();
+        if let Some(system) = genai_info.system_display_name() {
+            parts.push(format!("[{}]", system));
+        }
+        if let Some(model) = &genai_info.model {
+            parts.push(model.clone());
+        }
+        if let Some(token_summary) = genai_info.format_token_summary() {
+            parts.push(token_summary);
+        }
+        if !parts.is_empty() {
+            format!(" {}", parts.join(" "))
+        } else {
+            String::new()
+        }
+    } else {
+        String::new()
+    };
+
     println!(
-        "{}{}{} ({}ms)",
-        indent, prefix, node.span.name, node.span.duration_ms
+        "{}{}{} ({}ms){}",
+        indent, prefix, node.span.name, node.span.duration_ms, genai_suffix
     );
 
     if !node.span.attributes.is_empty() {

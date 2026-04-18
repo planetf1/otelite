@@ -7,6 +7,7 @@ use ratatui::{
     widgets::{Block, Borders, Paragraph, Row, Table, Wrap},
     Frame,
 };
+use rotel_core::telemetry::GenAiSpanInfo;
 
 /// A span node in the tree with calculated timing information
 #[derive(Debug, Clone)]
@@ -432,6 +433,80 @@ fn format_span_detail(span: &Span, trace: &Trace) -> Text<'static> {
     }
 
     lines.push(Line::from(""));
+
+    // GenAI/LLM information (if present)
+    let genai_info = GenAiSpanInfo::from_attributes(&span.attributes);
+    if genai_info.is_genai {
+        lines.push(Line::from(vec![TextSpan::styled(
+            "GenAI/LLM Information:",
+            Style::default()
+                .add_modifier(Modifier::BOLD)
+                .fg(Color::Magenta),
+        )]));
+
+        if let Some(system) = genai_info.system_display_name() {
+            lines.push(Line::from(vec![
+                TextSpan::styled("  System: ", Style::default().add_modifier(Modifier::BOLD)),
+                TextSpan::styled(format!("[{}]", system), Style::default().fg(Color::Cyan)),
+            ]));
+        }
+
+        if let Some(model) = &genai_info.model {
+            lines.push(Line::from(vec![
+                TextSpan::styled("  Model: ", Style::default().add_modifier(Modifier::BOLD)),
+                TextSpan::raw(model.clone()),
+            ]));
+        }
+
+        if let Some(operation) = &genai_info.operation {
+            lines.push(Line::from(vec![
+                TextSpan::styled(
+                    "  Operation: ",
+                    Style::default().add_modifier(Modifier::BOLD),
+                ),
+                TextSpan::raw(operation.clone()),
+            ]));
+        }
+
+        if let Some(token_usage) = genai_info.format_token_usage() {
+            lines.push(Line::from(vec![
+                TextSpan::styled("  Tokens: ", Style::default().add_modifier(Modifier::BOLD)),
+                TextSpan::styled(token_usage, Style::default().fg(Color::Yellow)),
+            ]));
+        }
+
+        if let Some(temp) = genai_info.temperature {
+            lines.push(Line::from(vec![
+                TextSpan::styled(
+                    "  Temperature: ",
+                    Style::default().add_modifier(Modifier::BOLD),
+                ),
+                TextSpan::raw(format!("{:.2}", temp)),
+            ]));
+        }
+
+        if let Some(max_tokens) = genai_info.max_tokens {
+            lines.push(Line::from(vec![
+                TextSpan::styled(
+                    "  Max Tokens: ",
+                    Style::default().add_modifier(Modifier::BOLD),
+                ),
+                TextSpan::raw(max_tokens.to_string()),
+            ]));
+        }
+
+        if !genai_info.finish_reasons.is_empty() {
+            lines.push(Line::from(vec![
+                TextSpan::styled(
+                    "  Finish Reasons: ",
+                    Style::default().add_modifier(Modifier::BOLD),
+                ),
+                TextSpan::raw(genai_info.finish_reasons.join(", ")),
+            ]));
+        }
+
+        lines.push(Line::from(""));
+    }
 
     // Attributes
     if !span.attributes.is_empty() {

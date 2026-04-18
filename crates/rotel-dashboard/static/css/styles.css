@@ -1016,3 +1016,111 @@ body {
         min-width: 200px;
     }
 }
+
+/* Rotel Dashboard Styles */
+
+/* CSS Variables for theming */
+:root {
+    --bg-primary: #ffffff;
+    --bg-secondary: #f5f5f5;
+    --bg-tertiary: #e0e0e0;
+    --text-primary: #212121;
+    --text-secondary: #757575;
+    --border-color: #e0e0e0;
+    --accent-color: #2196f3;
+    --accent-hover: #1976d2;
+    --success-color: #4caf50;
+    --warning-color: #ff9800;
+    --error-color: #f44336;
+    --genai-color: #9c27b0;
+    --genai-bg: #f3e5f5;
+    --shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+}
+
+/* Dark mode */
+@media (prefers-color-scheme: dark) {
+    :root {
+        --bg-primary: #1e1e1e;
+        --bg-secondary: #2d2d2d;
+        --bg-tertiary: #3d3d3d;
+        --text-primary: #e0e0e0;
+        --text-secondary: #b0b0b0;
+        --border-color: #3d3d3d;
+        --genai-bg: #4a148c;
+        --shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
+    }
+}
+
+/* Reset and base styles */
+* {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+}
+
+body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+    background-color: var(--bg-primary);
+    color: var(--text-primary);
+    line-height: 1.6;
+}
+
+/* Layout */
+#app {
+    display: flex;
+    flex-direction: column;
+    height: 100vh;
+}
+
+/* GenAI/LLM Information Card */
+.genai-info-card {
+    background-color: var(--genai-bg);
+    border-left: 4px solid var(--genai-color);
+    padding: 12px 16px;
+    margin: 8px 0;
+    border-radius: 4px;
+}
+
+.genai-header {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 8px;
+}
+
+.genai-badge {
+    font-weight: 600;
+    color: var(--genai-color);
+    font-size: 14px;
+}
+
+.genai-system {
+    background-color: var(--genai-color);
+    color: white;
+    padding: 2px 8px;
+    border-radius: 12px;
+    font-size: 12px;
+    font-weight: 500;
+}
+
+.genai-details {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: 8px;
+    font-size: 13px;
+}
+
+.genai-detail-item {
+    display: flex;
+    gap: 4px;
+}
+
+.genai-detail-item strong {
+    color: var(--text-secondary);
+    font-weight: 500;
+}
+
+.genai-tokens {
+    color: var(--warning-color);
+    font-weight: 500;
+}

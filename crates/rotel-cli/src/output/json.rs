@@ -2,7 +2,8 @@
 
 use crate::api::models::{LogEntry, Metric, Trace};
 use crate::error::Result;
-use serde_json;
+use rotel_core::telemetry::GenAiSpanInfo;
+use serde_json::{self, json};
 
 /// Print logs as JSON array
 pub fn print_logs_json(logs: &[LogEntry]) -> Result<()> {
@@ -27,7 +28,60 @@ pub fn print_traces_json(traces: &[Trace]) -> Result<()> {
 
 /// Print a single trace as JSON object
 pub fn print_trace_json(trace: &Trace) -> Result<()> {
-    let json = serde_json::to_string_pretty(trace)?;
+    // Enrich trace with GenAI information
+    let mut trace_json = serde_json::to_value(trace)?;
+
+    if let Some(spans) = trace_json.get_mut("spans").and_then(|s| s.as_array_mut()) {
+        for span in spans {
+            if let Some(attributes) = span.get("attributes").and_then(|a| a.as_object()) {
+                // Convert attributes to HashMap for GenAI parsing
+                let attrs_map: std::collections::HashMap<String, String> = attributes
+                    .iter()
+                    .filter_map(|(k, v)| v.as_str().map(|s| (k.clone(), s.to_string())))
+                    .collect();
+
+                let genai_info = GenAiSpanInfo::from_attributes(&attrs_map);
+
+                if genai_info.is_genai {
+                    let mut genai_obj = json!({});
+
+                    if let Some(system) = &genai_info.system {
+                        genai_obj["system"] = json!(system);
+                    }
+                    if let Some(model) = &genai_info.model {
+                        genai_obj["model"] = json!(model);
+                    }
+                    if let Some(operation) = &genai_info.operation {
+                        genai_obj["operation"] = json!(operation);
+                    }
+                    if let Some(input_tokens) = genai_info.input_tokens {
+                        genai_obj["input_tokens"] = json!(input_tokens);
+                    }
+                    if let Some(output_tokens) = genai_info.output_tokens {
+                        genai_obj["output_tokens"] = json!(output_tokens);
+                    }
+                    if let Some(total_tokens) = genai_info.total_tokens {
+                        genai_obj["total_tokens"] = json!(total_tokens);
+                    }
+                    if let Some(temperature) = genai_info.temperature {
+                        genai_obj["temperature"] = json!(temperature);
+                    }
+                    if let Some(max_tokens) = genai_info.max_tokens {
+                        genai_obj["max_tokens"] = json!(max_tokens);
+                    }
+                    if !genai_info.finish_reasons.is_empty() {
+                        genai_obj["finish_reasons"] = json!(genai_info.finish_reasons);
+                    }
+
+                    span.as_object_mut()
+                        .unwrap()
+                        .insert("genai".to_string(), genai_obj);
+                }
+            }
+        }
+    }
+
+    let json = serde_json::to_string_pretty(&trace_json)?;
     println!("{}", json);
     Ok(())
 }

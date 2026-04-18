@@ -254,7 +254,12 @@ class TracesView {
             return '';
         }
 
+        // Check for GenAI attributes
+        const genaiInfo = this.extractGenAiInfo(attributes);
+        const genaiSection = genaiInfo ? this.renderGenAiInfo(genaiInfo) : '';
+
         return `
+            ${genaiSection}
             <div class="span-attributes">
                 ${entries.map(([key, value]) => `
                     <div class="attribute-item">
@@ -264,6 +269,105 @@ class TracesView {
                 `).join('')}
             </div>
         `;
+    }
+
+    /**
+     * Extract GenAI/LLM information from span attributes
+     */
+    extractGenAiInfo(attributes) {
+        // Check if any gen_ai.* attributes exist
+        const hasGenAi = Object.keys(attributes).some(key => key.startsWith('gen_ai.'));
+        if (!hasGenAi) {
+            return null;
+        }
+
+        const info = {
+            system: attributes['gen_ai.system'],
+            model: attributes['gen_ai.request.model'],
+            operation: attributes['gen_ai.operation.name'],
+            inputTokens: attributes['gen_ai.usage.input_tokens'] ? parseInt(attributes['gen_ai.usage.input_tokens']) : null,
+            outputTokens: attributes['gen_ai.usage.output_tokens'] ? parseInt(attributes['gen_ai.usage.output_tokens']) : null,
+            totalTokens: attributes['gen_ai.usage.total_tokens'] ? parseInt(attributes['gen_ai.usage.total_tokens']) : null,
+            temperature: attributes['gen_ai.request.temperature'] ? parseFloat(attributes['gen_ai.request.temperature']) : null,
+            maxTokens: attributes['gen_ai.request.max_tokens'] ? parseInt(attributes['gen_ai.request.max_tokens']) : null,
+            finishReasons: this.parseFinishReasons(attributes['gen_ai.response.finish_reasons'])
+        };
+
+        // Calculate total tokens if not provided
+        if (!info.totalTokens && info.inputTokens && info.outputTokens) {
+            info.totalTokens = info.inputTokens + info.outputTokens;
+        }
+
+        return info;
+    }
+
+    /**
+     * Parse finish reasons from string (JSON array or comma-separated)
+     */
+    parseFinishReasons(value) {
+        if (!value) return [];
+
+        try {
+            // Try parsing as JSON array
+            return JSON.parse(value);
+        } catch {
+            // Fall back to comma-separated
+            return value.split(',').map(s => s.trim().replace(/^"|"$/g, '')).filter(s => s);
+        }
+    }
+
+    /**
+     * Render GenAI information card
+     */
+    renderGenAiInfo(info) {
+        const systemName = this.getSystemDisplayName(info.system);
+        const tokenUsage = this.formatTokenUsage(info);
+
+        return `
+            <div class="genai-info-card">
+                <div class="genai-header">
+                    <span class="genai-badge">🤖 GenAI/LLM</span>
+                    ${systemName ? `<span class="genai-system">[${this.escapeHtml(systemName)}]</span>` : ''}
+                </div>
+                <div class="genai-details">
+                    ${info.model ? `<div class="genai-detail-item"><strong>Model:</strong> ${this.escapeHtml(info.model)}</div>` : ''}
+                    ${info.operation ? `<div class="genai-detail-item"><strong>Operation:</strong> ${this.escapeHtml(info.operation)}</div>` : ''}
+                    ${tokenUsage ? `<div class="genai-detail-item"><strong>Tokens:</strong> <span class="genai-tokens">${tokenUsage}</span></div>` : ''}
+                    ${info.temperature !== null ? `<div class="genai-detail-item"><strong>Temperature:</strong> ${info.temperature.toFixed(2)}</div>` : ''}
+                    ${info.maxTokens ? `<div class="genai-detail-item"><strong>Max Tokens:</strong> ${info.maxTokens.toLocaleString()}</div>` : ''}
+                    ${info.finishReasons.length > 0 ? `<div class="genai-detail-item"><strong>Finish Reasons:</strong> ${info.finishReasons.join(', ')}</div>` : ''}
+                </div>
+            </div>
+        `;
+    }
+
+    /**
+     * Get display name for GenAI system
+     */
+    getSystemDisplayName(system) {
+        if (!system) return null;
+
+        const names = {
+            'openai': 'OpenAI',
+            'anthropic': 'Anthropic',
+            'azure_openai': 'Azure OpenAI',
+            'google': 'Google',
+            'cohere': 'Cohere'
+        };
+
+        return names[system] || system.charAt(0).toUpperCase() + system.slice(1);
+    }
+
+    /**
+     * Format token usage for display
+     */
+    formatTokenUsage(info) {
+        if (info.inputTokens && info.outputTokens) {
+            return `Input: ${info.inputTokens.toLocaleString()} | Output: ${info.outputTokens.toLocaleString()} | Total: ${info.totalTokens.toLocaleString()}`;
+        } else if (info.totalTokens) {
+            return `Total: ${info.totalTokens.toLocaleString()}`;
+        }
+        return null;
     }
 
     renderAttributeValue(value) {
