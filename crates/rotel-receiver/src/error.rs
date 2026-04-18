@@ -60,6 +60,10 @@ pub enum ReceiverError {
     /// Internal error
     #[error("Internal error: {0}")]
     Internal(String),
+
+    /// Storage error
+    #[error("Storage error: {0}")]
+    StorageError(#[from] rotel_storage::StorageError),
 }
 
 impl ReceiverError {
@@ -98,6 +102,7 @@ impl ReceiverError {
             Self::CompressionError(_) => tonic::Status::internal(self.to_string()),
             Self::ConfigError(_) => tonic::Status::failed_precondition(self.to_string()),
             Self::Internal(_) => tonic::Status::internal(self.to_string()),
+            Self::StorageError(_) => tonic::Status::internal(self.to_string()),
         }
     }
 
@@ -116,6 +121,7 @@ impl ReceiverError {
             Self::CompressionError(_) => 500,
             Self::ConfigError(_) => 500,
             Self::Internal(_) => 500,
+            Self::StorageError(_) => 500,
         }
     }
 }

@@ -55,16 +55,37 @@ impl LogsService for LogsServiceImpl {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use rotel_storage::{sqlite::SqliteBackend, StorageBackend, StorageConfig};
 
-    #[test]
-    fn test_logs_service_creation() {
-        let handler = Arc::new(LogsHandler::new());
+    #[tokio::test]
+    async fn test_logs_service_creation() {
+        let temp_dir = tempfile::tempdir().expect("Failed to create temp dir");
+        let config = StorageConfig {
+            data_dir: temp_dir.path().to_path_buf(),
+            ..Default::default()
+        };
+        let mut storage = SqliteBackend::new(config);
+        storage
+            .initialize()
+            .await
+            .expect("Failed to initialize storage");
+        let handler = Arc::new(LogsHandler::new(Arc::new(storage)));
         let _service = LogsServiceImpl::new(handler);
     }
 
     #[tokio::test]
     async fn test_logs_export_empty() {
-        let handler = Arc::new(LogsHandler::new());
+        let temp_dir = tempfile::tempdir().expect("Failed to create temp dir");
+        let config = StorageConfig {
+            data_dir: temp_dir.path().to_path_buf(),
+            ..Default::default()
+        };
+        let mut storage = SqliteBackend::new(config);
+        storage
+            .initialize()
+            .await
+            .expect("Failed to initialize storage");
+        let handler = Arc::new(LogsHandler::new(Arc::new(storage)));
         let service = LogsServiceImpl::new(handler);
 
         let request = Request::new(ExportLogsServiceRequest {

@@ -55,16 +55,37 @@ impl MetricsService for MetricsServiceImpl {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use rotel_storage::{sqlite::SqliteBackend, StorageBackend, StorageConfig};
 
-    #[test]
-    fn test_metrics_service_creation() {
-        let handler = Arc::new(MetricsHandler::new());
+    #[tokio::test]
+    async fn test_metrics_service_creation() {
+        let temp_dir = tempfile::tempdir().expect("Failed to create temp dir");
+        let config = StorageConfig {
+            data_dir: temp_dir.path().to_path_buf(),
+            ..Default::default()
+        };
+        let mut storage = SqliteBackend::new(config);
+        storage
+            .initialize()
+            .await
+            .expect("Failed to initialize storage");
+        let handler = Arc::new(MetricsHandler::new(Arc::new(storage)));
         let _service = MetricsServiceImpl::new(handler);
     }
 
     #[tokio::test]
     async fn test_metrics_export_empty() {
-        let handler = Arc::new(MetricsHandler::new());
+        let temp_dir = tempfile::tempdir().expect("Failed to create temp dir");
+        let config = StorageConfig {
+            data_dir: temp_dir.path().to_path_buf(),
+            ..Default::default()
+        };
+        let mut storage = SqliteBackend::new(config);
+        storage
+            .initialize()
+            .await
+            .expect("Failed to initialize storage");
+        let handler = Arc::new(MetricsHandler::new(Arc::new(storage)));
         let service = MetricsServiceImpl::new(handler);
 
         let request = Request::new(ExportMetricsServiceRequest {

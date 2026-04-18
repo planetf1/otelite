@@ -33,7 +33,7 @@ async fn test_list_logs_endpoint() {
         .unwrap();
     let list_response: ListResponse<LogEntry> = serde_json::from_slice(&body).unwrap();
 
-    assert!(list_response.items.len() > 0);
+    assert!(!list_response.items.is_empty());
     assert_eq!(list_response.pagination.total, list_response.items.len());
 }
 
@@ -230,7 +230,7 @@ async fn test_list_logs_response_structure() {
     let list_response: ListResponse<LogEntry> = serde_json::from_slice(&body).unwrap();
 
     // Verify response structure
-    assert!(list_response.items.len() > 0);
+    assert!(!list_response.items.is_empty());
 
     // Verify pagination metadata
     assert!(list_response.pagination.total > 0);

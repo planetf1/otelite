@@ -49,12 +49,20 @@ pub struct AppState {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use rotel_storage::{sqlite::SqliteBackend, StorageBackend, StorageConfig};
 
-    #[test]
-    fn test_create_router() {
-        let metrics_handler = Arc::new(MetricsHandler::new());
-        let logs_handler = Arc::new(LogsHandler::new());
-        let traces_handler = Arc::new(TracesHandler::new());
+    #[tokio::test]
+    async fn test_create_router() {
+        let mut storage = SqliteBackend::new(StorageConfig::default());
+        storage
+            .initialize()
+            .await
+            .expect("Failed to initialize storage");
+        let storage = Arc::new(storage);
+
+        let metrics_handler = Arc::new(MetricsHandler::new(storage.clone()));
+        let logs_handler = Arc::new(LogsHandler::new(storage.clone()));
+        let traces_handler = Arc::new(TracesHandler::new(storage));
         let health_checker = Arc::new(HealthChecker::new());
 
         let _router = create_router(

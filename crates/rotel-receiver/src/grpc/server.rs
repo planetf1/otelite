@@ -44,7 +44,10 @@ impl GrpcServer {
     }
 
     /// Start the gRPC server
-    pub async fn start(&self) -> Result<(), ReceiverError> {
+    pub async fn start(
+        &self,
+        storage: Arc<dyn rotel_storage::StorageBackend>,
+    ) -> Result<(), ReceiverError> {
         let addr = self.config.grpc_addr;
 
         info!("Starting gRPC server on {}", addr);
@@ -53,9 +56,9 @@ impl GrpcServer {
         self.health_checker.set_ready(true);
 
         // Create signal handlers
-        let metrics_handler = Arc::new(MetricsHandler::new());
-        let logs_handler = Arc::new(LogsHandler::new());
-        let traces_handler = Arc::new(TracesHandler::new());
+        let metrics_handler = Arc::new(MetricsHandler::new(storage.clone()));
+        let logs_handler = Arc::new(LogsHandler::new(storage.clone()));
+        let traces_handler = Arc::new(TracesHandler::new(storage));
 
         // Create gRPC services
         let metrics_service = crate::grpc::metrics::MetricsServiceImpl::new(metrics_handler);

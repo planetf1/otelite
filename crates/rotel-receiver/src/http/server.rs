@@ -46,7 +46,10 @@ impl HttpServer {
     }
 
     /// Start the HTTP server
-    pub async fn start(&self) -> Result<(), ReceiverError> {
+    pub async fn start(
+        &self,
+        storage: Arc<dyn rotel_storage::StorageBackend>,
+    ) -> Result<(), ReceiverError> {
         let addr = self.config.http_addr;
 
         info!("Starting HTTP server on {}", addr);
@@ -55,9 +58,9 @@ impl HttpServer {
         self.health_checker.set_ready(true);
 
         // Create signal handlers
-        let metrics_handler = Arc::new(MetricsHandler::new());
-        let logs_handler = Arc::new(LogsHandler::new());
-        let traces_handler = Arc::new(TracesHandler::new());
+        let metrics_handler = Arc::new(MetricsHandler::new(storage.clone()));
+        let logs_handler = Arc::new(LogsHandler::new(storage.clone()));
+        let traces_handler = Arc::new(TracesHandler::new(storage));
 
         // Create router with all routes
         // Note: Backpressure is handled via semaphore in handlers

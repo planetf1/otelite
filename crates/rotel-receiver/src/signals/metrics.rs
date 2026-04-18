@@ -1,19 +1,21 @@
 //! Metrics signal handler
 
-use crate::Result;
+use crate::{conversion, Result};
 use opentelemetry_proto::tonic::collector::metrics::v1::ExportMetricsServiceRequest;
+use rotel_storage::StorageBackend;
+use std::sync::Arc;
 use tracing::{debug, info};
 
 /// Handler for metrics signals
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct MetricsHandler {
-    // Future: will contain storage backend reference
+    storage: Arc<dyn StorageBackend>,
 }
 
 impl MetricsHandler {
     /// Create a new metrics handler
-    pub fn new() -> Self {
-        Self {}
+    pub fn new(storage: Arc<dyn StorageBackend>) -> Self {
+        Self { storage }
     }
 
     /// Process metrics data from OTLP request
@@ -35,52 +37,29 @@ impl MetricsHandler {
             request.resource_metrics.len()
         );
 
-        // TODO: Convert OTLP metrics to internal format
-        // TODO: Store metrics in backend
-        // For now, just log receipt
+        let metrics = conversion::convert_metrics(request);
+        for metric in metrics {
+            self.storage.write_metric(&metric).await?;
+        }
 
-        info!("Received {} metrics", metric_count);
+        info!("Stored {} metrics", metric_count);
         Ok(())
-    }
-
-    /// Process raw bytes (for HTTP/protobuf)
-    pub fn process_bytes(&self, data: &[u8]) -> Result<()> {
-        debug!("Processing metrics data: {} bytes", data.len());
-
-        // TODO: Parse OTLP metrics from protobuf/JSON
-        // TODO: Store metrics in backend
-        // For now, just log receipt
-
-        info!("Received metrics: {} bytes", data.len());
-        Ok(())
-    }
-}
-
-impl Default for MetricsHandler {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
-impl super::SignalHandler for MetricsHandler {
-    fn process(&self, data: &[u8]) -> Result<()> {
-        self.process_bytes(data)
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn test_metrics_handler_creation() {
-        let handler = MetricsHandler::new();
-        assert!(handler.process_bytes(&[1, 2, 3]).is_ok());
-    }
+    use rotel_storage::{sqlite::SqliteBackend, StorageBackend, StorageConfig};
 
     #[tokio::test]
     async fn test_metrics_handler_process() {
-        let handler = MetricsHandler::new();
+        let mut storage = SqliteBackend::new(StorageConfig::default());
+        storage
+            .initialize()
+            .await
+            .expect("Failed to initialize storage");
+        let handler = MetricsHandler::new(Arc::new(storage));
         let request = ExportMetricsServiceRequest {
             resource_metrics: vec![],
         };

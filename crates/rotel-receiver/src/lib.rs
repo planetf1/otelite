@@ -5,6 +5,7 @@
 
 // Module declarations
 pub mod config;
+pub mod conversion;
 pub mod error;
 pub mod grpc;
 pub mod health;

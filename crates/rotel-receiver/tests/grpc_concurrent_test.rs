@@ -5,7 +5,9 @@ mod grpc_test_utils;
 use grpc_test_utils::{create_logs_batch, create_metrics_batch, create_traces_batch};
 use rotel_receiver::config::ReceiverConfig;
 use rotel_receiver::grpc::GrpcServer;
+use rotel_storage::{sqlite::SqliteBackend, StorageBackend, StorageConfig};
 use std::net::SocketAddr;
+use std::sync::Arc;
 use std::time::Duration;
 use tokio::time::sleep;
 
@@ -17,8 +19,16 @@ async fn test_concurrent_metrics_requests() {
 
     let server = GrpcServer::new(config);
 
+    // Create storage backend
+    let mut storage = SqliteBackend::new(StorageConfig::default());
+    storage
+        .initialize()
+        .await
+        .expect("Failed to initialize storage");
+    let storage: Arc<dyn StorageBackend> = Arc::new(storage);
+
     // Start server
-    server.start().await.expect("Failed to start server");
+    server.start(storage).await.expect("Failed to start server");
 
     // Give server time to start
     sleep(Duration::from_millis(100)).await;
@@ -56,8 +66,16 @@ async fn test_concurrent_logs_requests() {
 
     let server = GrpcServer::new(config);
 
+    // Create storage backend
+    let mut storage = SqliteBackend::new(StorageConfig::default());
+    storage
+        .initialize()
+        .await
+        .expect("Failed to initialize storage");
+    let storage: Arc<dyn StorageBackend> = Arc::new(storage);
+
     // Start server
-    server.start().await.expect("Failed to start server");
+    server.start(storage).await.expect("Failed to start server");
 
     // Give server time to start
     sleep(Duration::from_millis(100)).await;
@@ -95,8 +113,16 @@ async fn test_concurrent_traces_requests() {
 
     let server = GrpcServer::new(config);
 
+    // Create storage backend
+    let mut storage = SqliteBackend::new(StorageConfig::default());
+    storage
+        .initialize()
+        .await
+        .expect("Failed to initialize storage");
+    let storage: Arc<dyn StorageBackend> = Arc::new(storage);
+
     // Start server
-    server.start().await.expect("Failed to start server");
+    server.start(storage).await.expect("Failed to start server");
 
     // Give server time to start
     sleep(Duration::from_millis(100)).await;
@@ -134,8 +160,16 @@ async fn test_mixed_concurrent_requests() {
 
     let server = GrpcServer::new(config);
 
+    // Create storage backend
+    let mut storage = SqliteBackend::new(StorageConfig::default());
+    storage
+        .initialize()
+        .await
+        .expect("Failed to initialize storage");
+    let storage: Arc<dyn StorageBackend> = Arc::new(storage);
+
     // Start server
-    server.start().await.expect("Failed to start server");
+    server.start(storage).await.expect("Failed to start server");
 
     // Give server time to start
     sleep(Duration::from_millis(100)).await;
@@ -190,8 +224,16 @@ async fn test_server_graceful_shutdown_under_load() {
 
     let server = GrpcServer::new(config);
 
+    // Create storage backend
+    let mut storage = SqliteBackend::new(StorageConfig::default());
+    storage
+        .initialize()
+        .await
+        .expect("Failed to initialize storage");
+    let storage: Arc<dyn StorageBackend> = Arc::new(storage);
+
     // Start server
-    server.start().await.expect("Failed to start server");
+    server.start(storage).await.expect("Failed to start server");
 
     // Give server time to start
     sleep(Duration::from_millis(100)).await;

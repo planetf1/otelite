@@ -9,6 +9,8 @@ use http_test_utils::{
 use reqwest::StatusCode;
 use rotel_receiver::config::ReceiverConfig;
 use rotel_receiver::http::HttpServer;
+use rotel_storage::{sqlite::SqliteBackend, StorageBackend, StorageConfig};
+use std::sync::Arc;
 use std::time::Duration;
 use tokio::time::sleep;
 
@@ -19,7 +21,16 @@ async fn start_test_server() -> (String, HttpServer) {
     config.http_addr = "127.0.0.1:0".parse().expect("Failed to parse address");
 
     let server = HttpServer::new(config);
-    server.start().await.expect("Failed to start server");
+
+    // Create storage backend
+    let mut storage = SqliteBackend::new(StorageConfig::default());
+    storage
+        .initialize()
+        .await
+        .expect("Failed to initialize storage");
+    let storage: Arc<dyn StorageBackend> = Arc::new(storage);
+
+    server.start(storage).await.expect("Failed to start server");
 
     // Wait for server to be ready and get actual bound address
     sleep(Duration::from_millis(100)).await;

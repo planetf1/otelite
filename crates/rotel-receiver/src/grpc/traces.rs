@@ -55,16 +55,27 @@ impl TraceService for TraceServiceImpl {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use rotel_storage::{sqlite::SqliteBackend, StorageBackend, StorageConfig};
 
-    #[test]
-    fn test_trace_service_creation() {
-        let handler = Arc::new(TracesHandler::new());
+    #[tokio::test]
+    async fn test_trace_service_creation() {
+        let mut storage = SqliteBackend::new(StorageConfig::default());
+        storage
+            .initialize()
+            .await
+            .expect("Failed to initialize storage");
+        let handler = Arc::new(TracesHandler::new(Arc::new(storage)));
         let _service = TraceServiceImpl::new(handler);
     }
 
     #[tokio::test]
     async fn test_trace_export_empty() {
-        let handler = Arc::new(TracesHandler::new());
+        let mut storage = SqliteBackend::new(StorageConfig::default());
+        storage
+            .initialize()
+            .await
+            .expect("Failed to initialize storage");
+        let handler = Arc::new(TracesHandler::new(Arc::new(storage)));
         let service = TraceServiceImpl::new(handler);
 
         let request = Request::new(ExportTraceServiceRequest {

@@ -33,7 +33,7 @@ async fn test_list_traces_endpoint() {
         .unwrap();
     let list_response: ListResponse<Trace> = serde_json::from_slice(&body).unwrap();
 
-    assert!(list_response.items.len() > 0);
+    assert!(!list_response.items.is_empty());
     assert_eq!(list_response.pagination.total, list_response.items.len());
 }
 
@@ -311,7 +311,7 @@ async fn test_trace_hierarchy() {
         .filter(|s| s.parent_span_id.is_some())
         .collect();
 
-    assert!(child_spans.len() > 0);
+    assert!(!child_spans.is_empty());
 
     // Verify each child span has a valid parent
     for child in child_spans {
@@ -345,7 +345,7 @@ async fn test_list_traces_response_structure() {
     let list_response: ListResponse<Trace> = serde_json::from_slice(&body).unwrap();
 
     // Verify response structure
-    assert!(list_response.items.len() > 0);
+    assert!(!list_response.items.is_empty());
 
     // Verify pagination metadata
     assert!(list_response.pagination.total > 0);

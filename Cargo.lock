@@ -2556,6 +2556,8 @@ dependencies = [
  "pretty_assertions",
  "prost",
  "reqwest 0.11.27",
+ "rotel-core",
+ "rotel-storage",
  "serde",
  "serde_json",
  "tempfile",

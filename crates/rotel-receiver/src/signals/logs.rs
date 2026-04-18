@@ -1,19 +1,21 @@
 //! Logs signal handler
 
-use crate::Result;
+use crate::{conversion, Result};
 use opentelemetry_proto::tonic::collector::logs::v1::ExportLogsServiceRequest;
+use rotel_storage::StorageBackend;
+use std::sync::Arc;
 use tracing::{debug, info};
 
 /// Handler for logs signals
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct LogsHandler {
-    // Future: will contain storage backend reference
+    storage: Arc<dyn StorageBackend>,
 }
 
 impl LogsHandler {
     /// Create a new logs handler
-    pub fn new() -> Self {
-        Self {}
+    pub fn new(storage: Arc<dyn StorageBackend>) -> Self {
+        Self { storage }
     }
 
     /// Process logs data from OTLP request
@@ -35,52 +37,29 @@ impl LogsHandler {
             request.resource_logs.len()
         );
 
-        // TODO: Convert OTLP logs to internal format
-        // TODO: Store logs in backend
-        // For now, just log receipt
+        let records = conversion::convert_logs(request);
+        for record in records {
+            self.storage.write_log(&record).await?;
+        }
 
-        info!("Received {} logs", log_count);
+        info!("Stored {} logs", log_count);
         Ok(())
-    }
-
-    /// Process raw bytes (for HTTP/protobuf)
-    pub fn process_bytes(&self, data: &[u8]) -> Result<()> {
-        debug!("Processing logs data: {} bytes", data.len());
-
-        // TODO: Parse OTLP logs from protobuf/JSON
-        // TODO: Store logs in backend
-        // For now, just log receipt
-
-        info!("Received logs: {} bytes", data.len());
-        Ok(())
-    }
-}
-
-impl Default for LogsHandler {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
-impl super::SignalHandler for LogsHandler {
-    fn process(&self, data: &[u8]) -> Result<()> {
-        self.process_bytes(data)
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn test_logs_handler_creation() {
-        let handler = LogsHandler::new();
-        assert!(handler.process_bytes(&[1, 2, 3]).is_ok());
-    }
+    use rotel_storage::{sqlite::SqliteBackend, StorageBackend, StorageConfig};
 
     #[tokio::test]
     async fn test_logs_handler_process() {
-        let handler = LogsHandler::new();
+        let mut storage = SqliteBackend::new(StorageConfig::default());
+        storage
+            .initialize()
+            .await
+            .expect("Failed to initialize storage");
+        let handler = LogsHandler::new(Arc::new(storage));
         let request = ExportLogsServiceRequest {
             resource_logs: vec![],
         };

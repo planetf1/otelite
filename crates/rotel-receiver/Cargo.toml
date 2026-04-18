@@ -24,6 +24,10 @@ tower = { version = "0.4", features = ["limit", "timeout"] }
 # OTLP protocol definitions
 opentelemetry-proto = { version = "0.5", features = ["gen-tonic", "metrics", "logs", "trace"] }
 
+# Internal crates
+rotel-core = { path = "../rotel-core" }
+rotel-storage = { path = "../rotel-storage" }
+
 # Serialization
 serde = { workspace = true }
 serde_json = { workspace = true }
