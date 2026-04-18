@@ -132,6 +132,27 @@ If `bd show <id>` lists dependencies, those must be completed first. The tool en
 2. Beads that unblock other beads (check with `bd dep list <id> --direction up`)
 3. Smaller beads (quicker wins, faster feedback)
 
+## When You're Stuck
+
+If you can't complete a bead:
+
+1. **Compilation error you can't fix:** Read the error carefully. Check if a dependency bead should have been done first (`bd dep list <id>`). If so, stop — the bead is blocked.
+2. **Test failure you don't understand:** Run the single failing test with `cargo test -p <crate> -- <test_name> --nocapture` to see output.
+3. **Unclear bead description:** Don't guess. File a new bead describing what's unclear, add it as a blocker, and move to the next unblocked bead.
+4. **Bead is too large:** If a bead involves more than 3 files or 2 components, break it into smaller beads with `bd create` and add dependencies. Close the original as a parent.
+
+**Never submit incomplete work.** If you can't finish a bead, leave it as `in_progress` with a comment (`bd update <id> --notes "got stuck on X"`) and move on.
+
+## Definition of Done
+
+A bead is complete when ALL of these are true:
+
+1. Acceptance criteria in `bd show <id>` are met
+2. All quality gates pass (build, test, clippy, fmt)
+3. Changes are committed with a clear message
+4. `git push` succeeded
+5. `bd close <id> --reason "..."` called with a specific reason
+
 ## Session End
 
 Before ending a session:
