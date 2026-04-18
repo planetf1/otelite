@@ -2,7 +2,6 @@
 
 This file provides instructions and context for AI coding agents working on this project.
 
-<!-- BEGIN BEADS INTEGRATION v:1 profile:minimal hash:ca08a54f -->
 ## Beads Issue Tracker
 
 This project uses **bd (beads)** for issue tracking. Run `bd prime` to see full workflow context and commands.
@@ -47,23 +46,6 @@ bd close <id>         # Complete work
 - NEVER stop before pushing - that leaves work stranded locally
 - NEVER say "ready to push when you are" - YOU must push
 - If push fails, resolve and retry until it succeeds
-<!-- END BEADS INTEGRATION -->
-
-## Development Workflow: BobKit is LEGACY
-
-> **IMPORTANT**: The BobKit spec-driven workflow (`.bob/commands/bobkit.*`, `.specify/` templates, `/bobkit.*` slash commands) is **legacy**. Do **not** use it for new work.
->
-> **For all task and issue tracking, use beads (`bd`).**
->
-> Existing specs under `specs/` are **reference only**. They describe historical intent but have been found to be **inconsistent** — the code and `bd` issues are authoritative.
-
-### Rules
-
-- Do **NOT** invoke `/bobkit.plan`, `/bobkit.tasks`, `/bobkit.implement`, or any other BobKit command for new features.
-- Do **NOT** create new files under `specs/` or `.specify/`.
-- Do **NOT** treat `specs/*/tasks.md` or `specs/*/plan.md` as ground truth.
-- **DO** use `bd` for all planning, task breakdown, and progress tracking.
-- Run `bd prime` at session start for current workflow context.
 
 ## Build & Test
 
@@ -79,14 +61,20 @@ cargo fmt --check
 
 Rotel is an OpenTelemetry receiver and dashboard for local LLM users.
 
-- `crates/rotel-storage` — embedded SQLite storage backend
-- `crates/rotel-api` — axum HTTP API (logs, traces, metrics, health)
-- `src/` — main binary, CLI, OTLP receiver
+**Crate structure:**
+- `crates/rotel-core` — telemetry data types (LogRecord, Span, Metric, Resource)
+- `crates/rotel-receiver` — OTLP gRPC (4317) and HTTP (4318) receiver
+- `crates/rotel-storage` — embedded SQLite backend (WAL mode, FTS5)
+- `crates/rotel-dashboard` — axum web dashboard with REST API (port 3000)
+- `crates/rotel-cli` — CLI with logs/traces/metrics/dashboard subcommands
+- `crates/rotel-tui` — ratatui terminal UI
+
+**Data flow:** OTLP Source -> Receiver -> Storage (SQLite) -> Dashboard API -> CLI/TUI/Web
 
 ## Conventions & Patterns
 
 - Rust 1.77+ stable
-- Async via tokio; axum for HTTP
+- Async via tokio; axum for HTTP; tonic for gRPC
 - `thiserror` for error types; no silent `?` swallowing
 - Commit trailers: `Assisted-by: Claude Code`
 
@@ -116,3 +104,15 @@ These rules apply to ALL code changes:
 - After completing: `bd close <id> --reason "what was done"` with a clear reason
 - If blocked: create a new bead for the blocker and add a dependency
 - Read the bead's full description with `bd show <id>` before starting — it has step-by-step instructions
+
+## Session Retrospective
+
+Before ending each session, briefly consider:
+
+1. **Process friction** — Did anything slow you down that could be avoided next time?
+2. **Rules and standards** — Should any rule in AGENTS.md or CLAUDE.md be added, clarified, or removed?
+3. **Documentation gaps** — Is any documentation now stale because of changes made?
+4. **Bead quality** — Were the bead descriptions clear enough to work from? If not, improve them.
+5. **Tooling** — Would a reusable script, alias, or automation save time on recurring tasks?
+
+If something actionable surfaces, either fix it immediately (if small) or create a bead for it.
