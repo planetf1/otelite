@@ -17,8 +17,6 @@ async fn test_concurrent_metrics_requests() {
     let mut config = ReceiverConfig::new();
     config.grpc_addr = "127.0.0.1:14317".parse::<SocketAddr>().unwrap();
 
-    let server = GrpcServer::new(config);
-
     // Create storage backend
     let mut storage = SqliteBackend::new(StorageConfig::default());
     storage
@@ -27,8 +25,10 @@ async fn test_concurrent_metrics_requests() {
         .expect("Failed to initialize storage");
     let storage: Arc<dyn StorageBackend> = Arc::new(storage);
 
+    let server = GrpcServer::new(config, storage);
+
     // Start server
-    server.start(storage).await.expect("Failed to start server");
+    server.start().await.expect("Failed to start server");
 
     // Give server time to start
     sleep(Duration::from_millis(100)).await;
@@ -64,8 +64,6 @@ async fn test_concurrent_logs_requests() {
     let mut config = ReceiverConfig::new();
     config.grpc_addr = "127.0.0.1:14318".parse::<SocketAddr>().unwrap();
 
-    let server = GrpcServer::new(config);
-
     // Create storage backend
     let mut storage = SqliteBackend::new(StorageConfig::default());
     storage
@@ -74,8 +72,10 @@ async fn test_concurrent_logs_requests() {
         .expect("Failed to initialize storage");
     let storage: Arc<dyn StorageBackend> = Arc::new(storage);
 
+    let server = GrpcServer::new(config, storage);
+
     // Start server
-    server.start(storage).await.expect("Failed to start server");
+    server.start().await.expect("Failed to start server");
 
     // Give server time to start
     sleep(Duration::from_millis(100)).await;
@@ -111,8 +111,6 @@ async fn test_concurrent_traces_requests() {
     let mut config = ReceiverConfig::new();
     config.grpc_addr = "127.0.0.1:14319".parse::<SocketAddr>().unwrap();
 
-    let server = GrpcServer::new(config);
-
     // Create storage backend
     let mut storage = SqliteBackend::new(StorageConfig::default());
     storage
@@ -121,8 +119,10 @@ async fn test_concurrent_traces_requests() {
         .expect("Failed to initialize storage");
     let storage: Arc<dyn StorageBackend> = Arc::new(storage);
 
+    let server = GrpcServer::new(config, storage);
+
     // Start server
-    server.start(storage).await.expect("Failed to start server");
+    server.start().await.expect("Failed to start server");
 
     // Give server time to start
     sleep(Duration::from_millis(100)).await;
@@ -158,8 +158,6 @@ async fn test_mixed_concurrent_requests() {
     let mut config = ReceiverConfig::new();
     config.grpc_addr = "127.0.0.1:14320".parse::<SocketAddr>().unwrap();
 
-    let server = GrpcServer::new(config);
-
     // Create storage backend
     let mut storage = SqliteBackend::new(StorageConfig::default());
     storage
@@ -168,8 +166,10 @@ async fn test_mixed_concurrent_requests() {
         .expect("Failed to initialize storage");
     let storage: Arc<dyn StorageBackend> = Arc::new(storage);
 
+    let server = GrpcServer::new(config, storage);
+
     // Start server
-    server.start(storage).await.expect("Failed to start server");
+    server.start().await.expect("Failed to start server");
 
     // Give server time to start
     sleep(Duration::from_millis(100)).await;
@@ -222,8 +222,6 @@ async fn test_server_graceful_shutdown_under_load() {
     let mut config = ReceiverConfig::new();
     config.grpc_addr = "127.0.0.1:14321".parse::<SocketAddr>().unwrap();
 
-    let server = GrpcServer::new(config);
-
     // Create storage backend
     let mut storage = SqliteBackend::new(StorageConfig::default());
     storage
@@ -232,8 +230,10 @@ async fn test_server_graceful_shutdown_under_load() {
         .expect("Failed to initialize storage");
     let storage: Arc<dyn StorageBackend> = Arc::new(storage);
 
+    let server = GrpcServer::new(config, storage);
+
     // Start server
-    server.start(storage).await.expect("Failed to start server");
+    server.start().await.expect("Failed to start server");
 
     // Give server time to start
     sleep(Duration::from_millis(100)).await;
