@@ -220,7 +220,7 @@ impl StateManager for MetricsState {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::api::models::DataPoint;
+    use crate::api::models::MetricValue;
 
     fn create_test_metric(name: &str, metric_type: &str, unit: Option<&str>) -> Metric {
         Metric {
@@ -228,11 +228,10 @@ mod tests {
             description: Some(format!("Test metric: {}", name)),
             unit: unit.map(|u| u.to_string()),
             metric_type: metric_type.to_string(),
-            data_points: vec![DataPoint {
-                timestamp: 1713360000000,
-                value: 42.0,
-                attributes: HashMap::new(),
-            }],
+            value: MetricValue::Gauge(42.0),
+            timestamp: 1713360000000000000,
+            attributes: HashMap::new(),
+            resource: None,
         }
     }
 

@@ -356,11 +356,14 @@ mod tests {
     #[test]
     fn test_print_log_details() {
         let log = LogEntry {
-            id: "log-001".to_string(),
-            timestamp: Utc::now(),
+            timestamp: 1000000000000000000,
             severity: "ERROR".to_string(),
-            message: "Test error".to_string(),
+            severity_text: None,
+            body: "Test error".to_string(),
             attributes: HashMap::new(),
+            resource: None,
+            trace_id: None,
+            span_id: None,
         };
         // Should not panic
         print_log_details(&log, true);
@@ -370,25 +373,34 @@ mod tests {
     fn test_print_logs_table_with_data() {
         let logs = vec![
             LogEntry {
-                id: "log-001".to_string(),
-                timestamp: Utc::now(),
+                timestamp: 1000000000000000000,
                 severity: "ERROR".to_string(),
-                message: "Error message".to_string(),
+                severity_text: None,
+                body: "Error message".to_string(),
                 attributes: HashMap::new(),
+                resource: None,
+                trace_id: None,
+                span_id: None,
             },
             LogEntry {
-                id: "log-002".to_string(),
-                timestamp: Utc::now(),
+                timestamp: 1000000000000000000,
                 severity: "INFO".to_string(),
-                message: "Info message".to_string(),
+                severity_text: None,
+                body: "Info message".to_string(),
                 attributes: HashMap::new(),
+                resource: None,
+                trace_id: None,
+                span_id: None,
             },
             LogEntry {
-                id: "log-003".to_string(),
-                timestamp: Utc::now(),
+                timestamp: 1000000000000000000,
                 severity: "WARN".to_string(),
-                message: "Warning message".to_string(),
+                severity_text: None,
+                body: "Warning message".to_string(),
                 attributes: HashMap::new(),
+                resource: None,
+                trace_id: None,
+                span_id: None,
             },
         ];
         // Should not panic and should handle different severity levels
@@ -403,10 +415,13 @@ mod tests {
         for severity in severities {
             let logs = vec![LogEntry {
                 id: format!("log-{}", severity),
-                timestamp: Utc::now(),
+                timestamp: 1000000000000000000,
                 severity: severity.to_string(),
                 message: format!("{} message", severity),
                 attributes: HashMap::new(),
+                resource: None,
+                trace_id: None,
+                span_id: None,
             }];
             // Should not panic for any severity level
             print_logs_table(&logs, true, false);
@@ -420,10 +435,10 @@ mod tests {
         attributes.insert("request_id".to_string(), "abc-def-ghi".to_string());
 
         let log = LogEntry {
-            id: "log-001".to_string(),
-            timestamp: Utc::now(),
+            timestamp: 1000000000000000000,
             severity: "ERROR".to_string(),
-            message: "Test error with attributes".to_string(),
+            severity_text: None,
+            body: "Test error with attributes".to_string(),
             attributes,
         };
         // Should not panic and should display attributes
@@ -433,11 +448,15 @@ mod tests {
     #[test]
     fn test_print_logs_table_long_messages() {
         let logs = vec![LogEntry {
-            id: "log-001".to_string(),
-            timestamp: Utc::now(),
+
+            timestamp: 1000000000000000000,
             severity: "INFO".to_string(),
-            message: "This is a very long message that should be truncated in the table view to ensure the table remains readable and doesn't overflow the terminal width".to_string(),
+            severity_text: None,
+            body: "This is a very long message that should be truncated in the table view to ensure the table remains readable and doesn't overflow the terminal width".to_string(),
             attributes: HashMap::new(),
+            resource: None,
+            trace_id: None,
+            span_id: None,
         }];
         // Should not panic and should truncate long messages
         print_logs_table(&logs, true, false);
@@ -448,14 +467,12 @@ mod tests {
     fn test_print_traces_table_with_data() {
         let traces = vec![
             Trace {
-                id: "trace-001".to_string(),
                 root_span: "http-request".to_string(),
                 duration_ms: 1500,
                 status: "OK".to_string(),
                 spans: vec![],
             },
             Trace {
-                id: "trace-002".to_string(),
                 root_span: "database-query".to_string(),
                 duration_ms: 250,
                 status: "ERROR".to_string(),
@@ -469,7 +486,6 @@ mod tests {
     #[test]
     fn test_print_traces_table_with_color() {
         let traces = vec![Trace {
-            id: "trace-001".to_string(),
             root_span: "http-request".to_string(),
             duration_ms: 1500,
             status: "OK".to_string(),
@@ -482,21 +498,29 @@ mod tests {
     // T041: Unit test for span tree formatter
     #[test]
     fn test_print_trace_tree_simple() {
-        use crate::api::models::Span;
+        use crate::api::models::SpanEntry;
 
-        let trace = Trace {
-            id: "trace-001".to_string(),
-            root_span: "http-request".to_string(),
-            duration_ms: 1500,
-            status: "OK".to_string(),
-            spans: vec![Span {
-                id: "span-001".to_string(),
+        let trace = TraceDetail {
+            trace_id: "trace-001".to_string(),
+            spans: vec![SpanEntry {
+                span_id: "span-001".to_string(),
+                trace_id: "trace-001".to_string(),
+                parent_span_id: None,
                 name: "http-request".to_string(),
-                parent_id: None,
-                start_time: Utc::now(),
-                duration_ms: 1500,
+                kind: "Internal".to_string(),
+                start_time: 1000000000000000000,
+                end_time: 1000000001500000000,
+                duration: 1500000000,
                 attributes: HashMap::new(),
+                resource: None,
+                status: None,
+                events: vec![],
             }],
+            start_time: 1000000000000000000,
+            end_time: 1000000001500000000,
+            duration: 1500000000,
+            span_count: 1,
+            service_names: vec![],
         };
         // Should not panic
         print_trace_tree(&trace, true);
@@ -504,40 +528,59 @@ mod tests {
 
     #[test]
     fn test_print_trace_tree_with_hierarchy() {
-        use crate::api::models::Span;
+        use crate::api::models::SpanEntry;
 
-        let now = Utc::now();
-        let trace = Trace {
-            id: "trace-001".to_string(),
-            root_span: "http-request".to_string(),
-            duration_ms: 1500,
-            status: "OK".to_string(),
+        let trace = TraceDetail {
+            trace_id: "trace-001".to_string(),
             spans: vec![
-                Span {
-                    id: "span-001".to_string(),
+                SpanEntry {
+                    span_id: "span-001".to_string(),
+                    trace_id: "trace-001".to_string(),
+                    parent_span_id: None,
                     name: "http-request".to_string(),
-                    parent_id: None,
-                    start_time: now,
-                    duration_ms: 1500,
+                    kind: "Internal".to_string(),
+                    start_time: 1000000000000000000,
+                    end_time: 1000000001500000000,
+                    duration: 1500000000,
                     attributes: HashMap::new(),
+                    resource: None,
+                    status: None,
+                    events: vec![],
                 },
-                Span {
-                    id: "span-002".to_string(),
+                SpanEntry {
+                    span_id: "span-002".to_string(),
+                    trace_id: "trace-001".to_string(),
+                    parent_span_id: Some("span-001".to_string()),
                     name: "database-query".to_string(),
-                    parent_id: Some("span-001".to_string()),
-                    start_time: now,
-                    duration_ms: 250,
+                    kind: "Internal".to_string(),
+                    start_time: 1000000000000000000,
+                    end_time: 1000000000250000000,
+                    duration: 250000000,
                     attributes: HashMap::new(),
+                    resource: None,
+                    status: None,
+                    events: vec![],
                 },
-                Span {
-                    id: "span-003".to_string(),
+                SpanEntry {
+                    span_id: "span-003".to_string(),
+                    trace_id: "trace-001".to_string(),
+                    parent_span_id: Some("span-001".to_string()),
                     name: "cache-lookup".to_string(),
-                    parent_id: Some("span-001".to_string()),
-                    start_time: now,
-                    duration_ms: 50,
+                    kind: "Internal".to_string(),
+                    start_time: 1000000000000000000,
+                    end_time: 1000000000050000000,
+                    duration: 50000000,
                     attributes: HashMap::new(),
+                    resource: None,
+                    status: None,
+                    events: vec![],
                 },
             ],
+            start_time: 1000000000000000000,
+            end_time: 1000000001500000000,
+            duration: 1500000000,
+            span_count: 3,
+            service_names: vec![],
         };
         // Should not panic and should show hierarchy
         print_trace_tree(&trace, true);
@@ -545,48 +588,73 @@ mod tests {
 
     #[test]
     fn test_print_trace_tree_deep_hierarchy() {
-        use crate::api::models::Span;
+        use crate::api::models::SpanEntry;
 
-        let now = Utc::now();
-        let trace = Trace {
-            id: "trace-001".to_string(),
-            root_span: "http-request".to_string(),
-            duration_ms: 1500,
-            status: "OK".to_string(),
+        let trace = TraceDetail {
+            trace_id: "trace-001".to_string(),
             spans: vec![
-                Span {
-                    id: "span-001".to_string(),
+                SpanEntry {
+                    span_id: "span-001".to_string(),
+                    trace_id: "trace-001".to_string(),
+                    parent_span_id: None,
                     name: "http-request".to_string(),
-                    parent_id: None,
-                    start_time: now,
-                    duration_ms: 1500,
+                    kind: "Internal".to_string(),
+                    start_time: 1000000000000000000,
+                    end_time: 1000000001500000000,
+                    duration: 1500000000,
                     attributes: HashMap::new(),
+                    resource: None,
+                    status: None,
+                    events: vec![],
                 },
-                Span {
-                    id: "span-002".to_string(),
+                SpanEntry {
+                    span_id: "span-002".to_string(),
+                    trace_id: "trace-001".to_string(),
+                    parent_span_id: Some("span-001".to_string()),
                     name: "middleware".to_string(),
-                    parent_id: Some("span-001".to_string()),
-                    start_time: now,
-                    duration_ms: 1000,
+                    kind: "Internal".to_string(),
+                    start_time: 1000000000000000000,
+                    end_time: 1000000001000000000,
+                    duration: 1000000000,
                     attributes: HashMap::new(),
+                    resource: None,
+                    status: None,
+                    events: vec![],
                 },
-                Span {
-                    id: "span-003".to_string(),
+                SpanEntry {
+                    span_id: "span-003".to_string(),
+                    trace_id: "trace-001".to_string(),
+                    parent_span_id: Some("span-002".to_string()),
                     name: "handler".to_string(),
-                    parent_id: Some("span-002".to_string()),
-                    start_time: now,
-                    duration_ms: 800,
+                    kind: "Internal".to_string(),
+                    start_time: 1000000000000000000,
+                    end_time: 1000000000800000000,
+                    duration: 800000000,
                     attributes: HashMap::new(),
+                    resource: None,
+                    status: None,
+                    events: vec![],
                 },
-                Span {
-                    id: "span-004".to_string(),
+                SpanEntry {
+                    span_id: "span-004".to_string(),
+                    trace_id: "trace-001".to_string(),
+                    parent_span_id: Some("span-003".to_string()),
                     name: "database-query".to_string(),
-                    parent_id: Some("span-003".to_string()),
-                    start_time: now,
-                    duration_ms: 250,
+                    kind: "Internal".to_string(),
+                    start_time: 1000000000000000000,
+                    end_time: 1000000000250000000,
+                    duration: 250000000,
                     attributes: HashMap::new(),
+                    resource: None,
+                    status: None,
+                    events: vec![],
                 },
             ],
+            start_time: 1000000000000000000,
+            end_time: 1000000001500000000,
+            duration: 1500000000,
+            span_count: 4,
+            service_names: vec![],
         };
         // Should not panic and should show deep hierarchy
         print_trace_tree(&trace, true);
@@ -596,36 +664,42 @@ mod tests {
     #[test]
     fn test_print_metrics_table_with_data() {
         let metrics = vec![
-            Metric {
+            MetricResponse {
                 name: "http_requests_total".to_string(),
-                type_: "counter".to_string(),
-                value: 1234.0,
-                timestamp: Utc::now(),
+                description: None,
+                unit: None,
+                metric_type: "counter".to_string(),
+                value: MetricValue::Counter(1234.0 as u64),
+                timestamp: 1000000000000000000,
                 labels: HashMap::from([
                     ("method".to_string(), "GET".to_string()),
                     ("status".to_string(), "200".to_string()),
                 ]),
-                percentiles: None,
+                resource: None,
             },
-            Metric {
+            MetricResponse {
                 name: "response_time_ms".to_string(),
-                type_: "histogram".to_string(),
-                value: 150.5,
-                timestamp: Utc::now(),
-                labels: HashMap::new(),
+                description: None,
+                unit: None,
+                metric_type: "histogram".to_string(),
+                value: MetricValue::Counter(150.5 as u64),
+                timestamp: 1000000000000000000,
+                attributes: HashMap::new(),
                 percentiles: Some(HashMap::from([
                     ("p50".to_string(), 100.0),
                     ("p95".to_string(), 200.0),
                     ("p99".to_string(), 300.0),
                 ])),
             },
-            Metric {
+            MetricResponse {
                 name: "memory_usage_bytes".to_string(),
-                type_: "gauge".to_string(),
-                value: 1048576.0,
-                timestamp: Utc::now(),
+                description: None,
+                unit: None,
+                metric_type: "gauge".to_string(),
+                value: MetricValue::Counter(1048576.0 as u64),
+                timestamp: 1000000000000000000,
                 labels: HashMap::from([("host".to_string(), "server1".to_string())]),
-                percentiles: None,
+                resource: None,
             },
         ];
         // Should not panic and should handle different metric types
@@ -637,9 +711,11 @@ mod tests {
     fn test_print_metric_details_with_percentiles() {
         let metric = Metric {
             name: "response_time_ms".to_string(),
-            type_: "histogram".to_string(),
-            value: 150.5,
-            timestamp: Utc::now(),
+            description: None,
+            unit: None,
+            metric_type: "histogram".to_string(),
+            value: MetricValue::Counter(150.5 as u64),
+            timestamp: 1000000000000000000,
             labels: HashMap::from([
                 ("endpoint".to_string(), "/api/users".to_string()),
                 ("method".to_string(), "GET".to_string()),
@@ -659,11 +735,13 @@ mod tests {
     fn test_print_metric_details_without_percentiles() {
         let metric = Metric {
             name: "http_requests_total".to_string(),
-            type_: "counter".to_string(),
-            value: 1234.0,
-            timestamp: Utc::now(),
+            description: None,
+            unit: None,
+            metric_type: "counter".to_string(),
+            value: MetricValue::Counter(1234.0 as u64),
+            timestamp: 1000000000000000000,
             labels: HashMap::from([("status".to_string(), "200".to_string())]),
-            percentiles: None,
+            resource: None,
         };
         // Should not panic even without percentiles
         print_metric_details(&metric, true);

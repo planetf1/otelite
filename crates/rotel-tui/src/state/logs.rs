@@ -213,14 +213,16 @@ mod tests {
 
     fn create_test_log(body: &str, severity: &str) -> LogEntry {
         LogEntry {
-            id: "test-id".to_string(),
-            timestamp: 1713360000000, // 2026-04-17T12:00:00Z in milliseconds
+            timestamp: 1713360000000000000, // nanoseconds
             severity: severity.to_string(),
+            severity_text: None,
             body: body.to_string(),
             attributes: HashMap::new(),
-            resource: Resource {
+            resource: Some(Resource {
                 attributes: HashMap::new(),
-            },
+            }),
+            trace_id: None,
+            span_id: None,
         }
     }
     impl StateManager for LogsState {

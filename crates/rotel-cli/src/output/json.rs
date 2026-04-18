@@ -109,11 +109,17 @@ mod tests {
     #[test]
     fn test_print_logs_json() {
         let logs = vec![LogEntry {
-            id: "log-001".to_string(),
-            timestamp: Utc::now(),
+            timestamp: 1000000000000000000,
             severity: "ERROR".to_string(),
-            message: "Test error".to_string(),
+            severity_text: None,
+            body: "Test error".to_string(),
             attributes: HashMap::new(),
+            resource: None,
+            trace_id: None,
+            span_id: None,
+            resource: None,
+            trace_id: None,
+            span_id: None,
         }];
         let result = print_logs_json(&logs);
         assert!(result.is_ok());
@@ -122,11 +128,17 @@ mod tests {
     #[test]
     fn test_print_log_json() {
         let log = LogEntry {
-            id: "log-001".to_string(),
-            timestamp: Utc::now(),
+            timestamp: 1000000000000000000,
             severity: "ERROR".to_string(),
-            message: "Test error".to_string(),
+            severity_text: None,
+            body: "Test error".to_string(),
             attributes: HashMap::new(),
+            resource: None,
+            trace_id: None,
+            span_id: None,
+            resource: None,
+            trace_id: None,
+            span_id: None,
         };
         let result = print_log_json(&log);
         assert!(result.is_ok());
@@ -134,12 +146,14 @@ mod tests {
 
     #[test]
     fn test_print_traces_json() {
-        let traces = vec![Trace {
-            id: "trace-001".to_string(),
-            root_span: "http-request".to_string(),
-            duration_ms: 1500,
-            status: "OK".to_string(),
-            spans: vec![],
+        let traces = vec![TraceEntry {
+            trace_id: "trace-001".to_string(),
+            root_span_name: "http-request".to_string(),
+            start_time: 1000000000000000000,
+            duration: 1500000000,
+            span_count: 0,
+            service_names: vec![],
+            has_errors: false,
         }];
         let result = print_traces_json(&traces);
         assert!(result.is_ok());
@@ -149,11 +163,13 @@ mod tests {
     fn test_print_metrics_json() {
         let metrics = vec![Metric {
             name: "http_requests_total".to_string(),
-            type_: "counter".to_string(),
-            value: 1234.0,
-            timestamp: Utc::now(),
-            labels: HashMap::new(),
-            percentiles: None,
+            description: None,
+            unit: None,
+            metric_type: "counter".to_string(),
+            value: MetricValue::Counter(1234.0 as u64),
+            timestamp: 1000000000000000000,
+            attributes: HashMap::new(),
+            resource: None,
         }];
         let result = print_metrics_json(&metrics);
         assert!(result.is_ok());
@@ -163,11 +179,14 @@ mod tests {
     #[test]
     fn test_json_is_valid() {
         let log = LogEntry {
-            id: "log-001".to_string(),
-            timestamp: Utc::now(),
+            timestamp: 1000000000000000000,
             severity: "ERROR".to_string(),
-            message: "Test error".to_string(),
+            severity_text: None,
+            body: "Test error".to_string(),
             attributes: HashMap::new(),
+            resource: None,
+            trace_id: None,
+            span_id: None,
         };
         let json = serde_json::to_string(&log).unwrap();
         // Verify it can be parsed back
@@ -179,18 +198,24 @@ mod tests {
     fn test_print_logs_json_multiple() {
         let logs = vec![
             LogEntry {
-                id: "log-001".to_string(),
-                timestamp: Utc::now(),
+                timestamp: 1000000000000000000,
                 severity: "ERROR".to_string(),
-                message: "Error message".to_string(),
+                severity_text: None,
+                body: "Error message".to_string(),
                 attributes: HashMap::new(),
+                resource: None,
+                trace_id: None,
+                span_id: None,
             },
             LogEntry {
-                id: "log-002".to_string(),
-                timestamp: Utc::now(),
+                timestamp: 1000000000000000000,
                 severity: "INFO".to_string(),
-                message: "Info message".to_string(),
+                severity_text: None,
+                body: "Info message".to_string(),
                 attributes: HashMap::new(),
+                resource: None,
+                trace_id: None,
+                span_id: None,
             },
         ];
         let result = print_logs_json(&logs);
@@ -204,10 +229,10 @@ mod tests {
         attributes.insert("request_id".to_string(), "abc-def".to_string());
 
         let log = LogEntry {
-            id: "log-001".to_string(),
-            timestamp: Utc::now(),
+            timestamp: 1000000000000000000,
             severity: "ERROR".to_string(),
-            message: "Error with attributes".to_string(),
+            severity_text: None,
+            body: "Error with attributes".to_string(),
             attributes,
         };
         let result = print_log_json(&log);
@@ -217,11 +242,14 @@ mod tests {
     #[test]
     fn test_json_output_is_parseable() {
         let logs = vec![LogEntry {
-            id: "log-001".to_string(),
-            timestamp: Utc::now(),
+            timestamp: 1000000000000000000,
             severity: "ERROR".to_string(),
-            message: "Test error".to_string(),
+            severity_text: None,
+            body: "Test error".to_string(),
             attributes: HashMap::new(),
+            resource: None,
+            trace_id: None,
+            span_id: None,
         }];
 
         // Serialize to JSON string
@@ -244,11 +272,13 @@ mod tests {
     #[test]
     fn test_json_special_characters() {
         let log = LogEntry {
-            id: "log-001".to_string(),
-            timestamp: Utc::now(),
+            timestamp: 1000000000000000000,
             severity: "ERROR".to_string(),
             message: r#"Message with "quotes" and \backslashes\ and newlines\n"#.to_string(),
             attributes: HashMap::new(),
+            resource: None,
+            trace_id: None,
+            span_id: None,
         };
         let result = print_log_json(&log);
         assert!(result.is_ok());
@@ -262,21 +292,16 @@ mod tests {
     // T042: Unit test for traces JSON formatter
     #[test]
     fn test_print_traces_json_with_spans() {
-        use crate::api::models::Span;
+        use crate::api::models::SpanEntry;
 
-        let traces = vec![Trace {
-            id: "trace-001".to_string(),
-            root_span: "http-request".to_string(),
-            duration_ms: 1500,
-            status: "OK".to_string(),
-            spans: vec![Span {
-                id: "span-001".to_string(),
-                name: "http-request".to_string(),
-                parent_id: None,
-                start_time: Utc::now(),
-                duration_ms: 1500,
-                attributes: HashMap::new(),
-            }],
+        let traces = vec![TraceEntry {
+            trace_id: "trace-001".to_string(),
+            root_span_name: "http-request".to_string(),
+            start_time: 1000000000000000000,
+            duration: 1500000000,
+            span_count: 1,
+            service_names: vec![],
+            has_errors: false,
         }];
         let result = print_traces_json(&traces);
         assert!(result.is_ok());
@@ -284,21 +309,29 @@ mod tests {
 
     #[test]
     fn test_print_trace_json() {
-        use crate::api::models::Span;
+        use crate::api::models::SpanEntry;
 
-        let trace = Trace {
-            id: "trace-001".to_string(),
-            root_span: "http-request".to_string(),
-            duration_ms: 1500,
-            status: "OK".to_string(),
-            spans: vec![Span {
-                id: "span-001".to_string(),
+        let trace = TraceDetail {
+            trace_id: "trace-001".to_string(),
+            spans: vec![SpanEntry {
+                span_id: "span-001".to_string(),
+                trace_id: "trace-001".to_string(),
+                parent_span_id: None,
                 name: "http-request".to_string(),
-                parent_id: None,
-                start_time: Utc::now(),
-                duration_ms: 1500,
+                kind: "Internal".to_string(),
+                start_time: 1000000000000000000,
+                end_time: 1000000001500000000,
+                duration: 1500000000,
                 attributes: HashMap::new(),
+                resource: None,
+                status: None,
+                events: vec![],
             }],
+            start_time: 1000000000000000000,
+            end_time: 1000000001500000000,
+            duration: 1500000000,
+            span_count: 1,
+            service_names: vec![],
         };
         let result = print_trace_json(&trace);
         assert!(result.is_ok());
@@ -306,78 +339,99 @@ mod tests {
 
     #[test]
     fn test_print_trace_json_with_hierarchy() {
-        use crate::api::models::Span;
+        use crate::api::models::SpanEntry;
 
-        let now = Utc::now();
-        let trace = Trace {
-            id: "trace-001".to_string(),
-            root_span: "http-request".to_string(),
-            duration_ms: 1500,
-            status: "OK".to_string(),
+        let trace = TraceDetail {
+            trace_id: "trace-001".to_string(),
             spans: vec![
-                Span {
-                    id: "span-001".to_string(),
+                SpanEntry {
+                    span_id: "span-001".to_string(),
+                    trace_id: "trace-001".to_string(),
+                    parent_span_id: None,
                     name: "http-request".to_string(),
-                    parent_id: None,
-                    start_time: now,
-                    duration_ms: 1500,
+                    kind: "Internal".to_string(),
+                    start_time: 1000000000000000000,
+                    end_time: 1000000001500000000,
+                    duration: 1500000000,
                     attributes: HashMap::new(),
+                    resource: None,
+                    status: None,
+                    events: vec![],
                 },
-                Span {
-                    id: "span-002".to_string(),
+                SpanEntry {
+                    span_id: "span-002".to_string(),
+                    trace_id: "trace-001".to_string(),
+                    parent_span_id: Some("span-001".to_string()),
                     name: "database-query".to_string(),
-                    parent_id: Some("span-001".to_string()),
-                    start_time: now,
-                    duration_ms: 250,
+                    kind: "Internal".to_string(),
+                    start_time: 1000000000000000000,
+                    end_time: 1000000000250000000,
+                    duration: 250000000,
                     attributes: HashMap::new(),
+                    resource: None,
+                    status: None,
+                    events: vec![],
                 },
             ],
+            start_time: 1000000000000000000,
+            end_time: 1000000001500000000,
+            duration: 1500000000,
+            span_count: 2,
+            service_names: vec![],
         };
         let result = print_trace_json(&trace);
         assert!(result.is_ok());
 
         // Verify JSON is valid and can be parsed
         let json_str = serde_json::to_string(&trace).unwrap();
-        let parsed: Trace = serde_json::from_str(&json_str).unwrap();
-        assert_eq!(parsed.id, trace.id);
+        let parsed: TraceDetail = serde_json::from_str(&json_str).unwrap();
+        assert_eq!(parsed.trace_id, trace.trace_id);
         assert_eq!(parsed.spans.len(), 2);
     }
 
     #[test]
     fn test_print_traces_json_empty() {
-        let traces: Vec<Trace> = vec![];
+        let traces: Vec<TraceEntry> = vec![];
         let result = print_traces_json(&traces);
         assert!(result.is_ok());
     }
 
     #[test]
     fn test_print_trace_json_with_attributes() {
-        use crate::api::models::Span;
+        use crate::api::models::SpanEntry;
 
         let mut attributes = HashMap::new();
         attributes.insert("http.method".to_string(), "GET".to_string());
         attributes.insert("http.url".to_string(), "/api/users".to_string());
 
-        let trace = Trace {
-            id: "trace-001".to_string(),
-            root_span: "http-request".to_string(),
-            duration_ms: 1500,
-            status: "OK".to_string(),
-            spans: vec![Span {
-                id: "span-001".to_string(),
+        let trace = TraceDetail {
+            trace_id: "trace-001".to_string(),
+            spans: vec![SpanEntry {
+                span_id: "span-001".to_string(),
+                trace_id: "trace-001".to_string(),
+                parent_span_id: None,
                 name: "http-request".to_string(),
-                parent_id: None,
-                start_time: Utc::now(),
-                duration_ms: 1500,
+                kind: "Internal".to_string(),
+                start_time: 1000000000000000000,
+                end_time: 1000000001500000000,
+                duration: 1500000000,
                 attributes,
+                resource: None,
+                status: None,
+                events: vec![],
             }],
+            start_time: 1000000000000000000,
+            end_time: 1000000001500000000,
+            duration: 1500000000,
+            span_count: 1,
+            service_names: vec![],
         };
         let result = print_trace_json(&trace);
         assert!(result.is_ok());
 
         // Verify attributes are preserved in JSON
         let json_str = serde_json::to_string(&trace).unwrap();
-        let parsed: Trace = serde_json::from_str(&json_str).unwrap();
+        let parsed: TraceDetail = serde_json::from_str(&json_str).unwrap();
         assert_eq!(parsed.spans[0].attributes.len(), 2);
     }
 
@@ -385,27 +439,31 @@ mod tests {
     #[test]
     fn test_print_metrics_json_with_labels() {
         let metrics = vec![
-            Metric {
+            MetricResponse {
                 name: "http_requests_total".to_string(),
-                type_: "counter".to_string(),
-                value: 1234.0,
-                timestamp: Utc::now(),
+                description: None,
+                unit: None,
+                metric_type: "counter".to_string(),
+                value: MetricValue::Counter(1234.0 as u64),
+                timestamp: 1000000000000000000,
                 labels: HashMap::from([
                     ("method".to_string(), "GET".to_string()),
                     ("status".to_string(), "200".to_string()),
                 ]),
-                percentiles: None,
+                resource: None,
             },
-            Metric {
+            MetricResponse {
                 name: "http_requests_total".to_string(),
-                type_: "counter".to_string(),
-                value: 567.0,
-                timestamp: Utc::now(),
+                description: None,
+                unit: None,
+                metric_type: "counter".to_string(),
+                value: MetricValue::Counter(567.0 as u64),
+                timestamp: 1000000000000000000,
                 labels: HashMap::from([
                     ("method".to_string(), "POST".to_string()),
                     ("status".to_string(), "201".to_string()),
                 ]),
-                percentiles: None,
+                resource: None,
             },
         ];
         let result = print_metrics_json(&metrics);
@@ -422,9 +480,11 @@ mod tests {
     fn test_print_metric_json_with_percentiles() {
         let metric = Metric {
             name: "response_time_ms".to_string(),
-            type_: "histogram".to_string(),
-            value: 150.5,
-            timestamp: Utc::now(),
+            description: None,
+            unit: None,
+            metric_type: "histogram".to_string(),
+            value: MetricValue::Counter(150.5 as u64),
+            timestamp: 1000000000000000000,
             labels: HashMap::from([("endpoint".to_string(), "/api/users".to_string())]),
             percentiles: Some(HashMap::from([
                 ("p50".to_string(), 100.0),
@@ -455,29 +515,35 @@ mod tests {
         // Test time-series data (multiple data points for same metric)
         let now = Utc::now();
         let metrics = vec![
-            Metric {
+            MetricResponse {
                 name: "cpu_usage_percent".to_string(),
-                type_: "gauge".to_string(),
-                value: 45.2,
+                description: None,
+                unit: None,
+                metric_type: "gauge".to_string(),
+                value: MetricValue::Counter(45.2 as u64),
                 timestamp: now - chrono::Duration::minutes(2),
                 labels: HashMap::from([("host".to_string(), "server1".to_string())]),
-                percentiles: None,
+                resource: None,
             },
-            Metric {
+            MetricResponse {
                 name: "cpu_usage_percent".to_string(),
-                type_: "gauge".to_string(),
-                value: 52.8,
+                description: None,
+                unit: None,
+                metric_type: "gauge".to_string(),
+                value: MetricValue::Counter(52.8 as u64),
                 timestamp: now - chrono::Duration::minutes(1),
                 labels: HashMap::from([("host".to_string(), "server1".to_string())]),
-                percentiles: None,
+                resource: None,
             },
-            Metric {
+            MetricResponse {
                 name: "cpu_usage_percent".to_string(),
-                type_: "gauge".to_string(),
-                value: 48.5,
+                description: None,
+                unit: None,
+                metric_type: "gauge".to_string(),
+                value: MetricValue::Counter(48.5 as u64),
                 timestamp: now,
                 labels: HashMap::from([("host".to_string(), "server1".to_string())]),
-                percentiles: None,
+                resource: None,
             },
         ];
         let result = print_metrics_json(&metrics);
