@@ -153,6 +153,17 @@ A bead is complete when ALL of these are true:
 4. `git push` succeeded
 5. `bd close <id> --reason "..."` called with a specific reason
 
+## Before Context Compaction
+
+Your context may be compacted mid-session without warning. Protect your work:
+
+- **Commit and push frequently** — after every bead, not at the end
+- **Update bead status immediately** — `bd update <id> --claim` when starting, `bd close` when done
+- **Leave notes on in-progress beads** — `bd update <id> --notes "completed step 2, starting step 3"` so the next context can resume
+- **Don't hold state in your head** — if you've figured something out (e.g., "the function signature needs to change"), write it in a bead note or commit it
+
+If you resume after compaction: run `bd ready` and `git status` to understand current state.
+
 ## Session End
 
 Before ending a session:
@@ -160,7 +171,24 @@ Before ending a session:
 1. Ensure all work is committed and pushed (`git push` must succeed)
 2. Close completed beads, file new beads for unfinished work
 3. Push beads: `bd dolt push`
-4. Brief retrospective: could any rule, doc, or bead description be improved? If so, fix it or file a bead.
+4. Run retrospective (see below)
+
+## Retrospective
+
+At the end of every session, reflect and **capture findings as bead notes or new beads**:
+
+1. **Process friction** — What slowed you down? Unclear bead? Missing dependency? Flaky test?
+   → Fix it now if small, or `bd create` a bead for it.
+2. **Rules** — Should anything in this file or CLAUDE.md change?
+   → Edit the file directly and commit.
+3. **Bead quality** — Were descriptions clear enough? Did you need info that wasn't there?
+   → Update the bead with `bd update <id> --notes "needed X, add it for next time"`.
+4. **Documentation** — Is any doc now stale from your changes?
+   → Update it or file a bead.
+5. **Tooling** — Would a script or alias save time?
+   → File a bead with label `infra`.
+
+**The retrospective is not optional.** Even a one-line "nothing to improve" note on the last bead you worked on counts. The goal is that each session leaves the project slightly easier to work on.
 
 ## Historical Note
 
