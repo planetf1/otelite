@@ -4,7 +4,7 @@ use ratatui::{
     layout::{Constraint, Direction, Layout, Rect},
     style::{Color, Modifier, Style},
     text::{Line, Span, Text},
-    widgets::{Block, Borders, List, ListItem, Paragraph, Row, Table, Wrap},
+    widgets::{Block, Borders, Paragraph, Row, Table, Wrap},
     Frame,
 };
 
@@ -47,7 +47,7 @@ fn render_logs_table(frame: &mut Frame, area: Rect, state: &LogsState) {
                 Style::default()
             };
 
-            let severity_style = get_severity_style(&log.severity);
+            let _severity_style = get_severity_style(&log.severity);
 
             Row::new(vec![
                 format_timestamp(log.timestamp),
@@ -247,7 +247,7 @@ fn get_severity_style(severity: &str) -> Style {
 
 /// Format timestamp for display (converts milliseconds to HH:MM:SS)
 fn format_timestamp(timestamp_ms: i64) -> String {
-    use chrono::{DateTime, Utc};
+    use chrono::DateTime;
 
     // Convert milliseconds to DateTime
     if let Some(dt) = DateTime::from_timestamp_millis(timestamp_ms) {

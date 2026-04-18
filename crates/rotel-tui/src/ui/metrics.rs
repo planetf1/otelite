@@ -1,9 +1,9 @@
-use crate::api::models::{DataPoint, Metric};
+use crate::api::models::Metric;
 use crate::state::MetricsState;
 use ratatui::{
     layout::{Constraint, Direction, Layout, Rect},
     style::{Color, Modifier, Style},
-    text::{Line, Span, Text},
+    text::{Line, Span},
     widgets::{Block, Borders, Paragraph, Row, Sparkline, Table, Wrap},
     Frame,
 };

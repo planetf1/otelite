@@ -1,0 +1,362 @@
+[
+  {
+    "trace_id": "trace-001",
+    "root_span": {
+      "span_id": "span-001-root",
+      "trace_id": "trace-001",
+      "parent_span_id": null,
+      "name": "HTTP GET /api/users",
+      "kind": "SERVER",
+      "start_time": 1713398400000000000,
+      "end_time": 1713398400150000000,
+      "duration_ns": 150000000,
+      "status": {
+        "code": "OK",
+        "message": null
+      },
+      "resource": {
+        "service_name": "rotel-api",
+        "service_version": "0.1.0",
+        "service_instance_id": "instance-1",
+        "attributes": {
+          "environment": "production",
+          "region": "us-west-2"
+        }
+      },
+      "attributes": {
+        "http.method": "GET",
+        "http.route": "/api/users",
+        "http.status_code": "200",
+        "http.user_agent": "Mozilla/5.0"
+      },
+      "events": [
+        {
+          "name": "request.received",
+          "timestamp": 1713398400000000000,
+          "attributes": {}
+        }
+      ],
+      "links": []
+    },
+    "spans": [
+      {
+        "span_id": "span-001-root",
+        "trace_id": "trace-001",
+        "parent_span_id": null,
+        "name": "HTTP GET /api/users",
+        "kind": "SERVER",
+        "start_time": 1713398400000000000,
+        "end_time": 1713398400150000000,
+        "duration_ns": 150000000,
+        "status": {
+          "code": "OK",
+          "message": null
+        },
+        "resource": {
+          "service_name": "rotel-api",
+          "service_version": "0.1.0",
+          "service_instance_id": "instance-1",
+          "attributes": {
+            "environment": "production",
+            "region": "us-west-2"
+          }
+        },
+        "attributes": {
+          "http.method": "GET",
+          "http.route": "/api/users",
+          "http.status_code": "200"
+        },
+        "events": [],
+        "links": []
+      },
+      {
+        "span_id": "span-001-db",
+        "trace_id": "trace-001",
+        "parent_span_id": "span-001-root",
+        "name": "SELECT users",
+        "kind": "CLIENT",
+        "start_time": 1713398400010000000,
+        "end_time": 1713398400100000000,
+        "duration_ns": 90000000,
+        "status": {
+          "code": "OK",
+          "message": null
+        },
+        "resource": {
+          "service_name": "rotel-api",
+          "service_version": "0.1.0",
+          "service_instance_id": "instance-1",
+          "attributes": {}
+        },
+        "attributes": {
+          "db.system": "postgresql",
+          "db.statement": "SELECT * FROM users WHERE active = true",
+          "db.name": "rotel_db"
+        },
+        "events": [],
+        "links": []
+      },
+      {
+        "span_id": "span-001-cache",
+        "trace_id": "trace-001",
+        "parent_span_id": "span-001-root",
+        "name": "cache.get",
+        "kind": "CLIENT",
+        "start_time": 1713398400005000000,
+        "end_time": 1713398400008000000,
+        "duration_ns": 3000000,
+        "status": {
+          "code": "OK",
+          "message": null
+        },
+        "resource": {
+          "service_name": "rotel-api",
+          "service_version": "0.1.0",
+          "service_instance_id": "instance-1",
+          "attributes": {}
+        },
+        "attributes": {
+          "cache.key": "users:active",
+          "cache.hit": "false"
+        },
+        "events": [],
+        "links": []
+      }
+    ],
+    "duration_ns": 150000000,
+    "span_count": 3,
+    "start_time": 1713398400000000000,
+    "end_time": 1713398400150000000
+  },
+  {
+    "trace_id": "trace-002",
+    "root_span": {
+      "span_id": "span-002-root",
+      "trace_id": "trace-002",
+      "parent_span_id": null,
+      "name": "background.job.process",
+      "kind": "INTERNAL",
+      "start_time": 1713398410000000000,
+      "end_time": 1713398410500000000,
+      "duration_ns": 500000000,
+      "status": {
+        "code": "OK",
+        "message": null
+      },
+      "resource": {
+        "service_name": "rotel-worker",
+        "service_version": "0.1.0",
+        "service_instance_id": "worker-1",
+        "attributes": {
+          "environment": "production"
+        }
+      },
+      "attributes": {
+        "job.type": "data_cleanup",
+        "job.id": "job-123"
+      },
+      "events": [
+        {
+          "name": "job.started",
+          "timestamp": 1713398410000000000,
+          "attributes": {
+            "items_to_process": "1000"
+          }
+        },
+        {
+          "name": "job.completed",
+          "timestamp": 1713398410500000000,
+          "attributes": {
+            "items_processed": "1000"
+          }
+        }
+      ],
+      "links": []
+    },
+    "spans": [
+      {
+        "span_id": "span-002-root",
+        "trace_id": "trace-002",
+        "parent_span_id": null,
+        "name": "background.job.process",
+        "kind": "INTERNAL",
+        "start_time": 1713398410000000000,
+        "end_time": 1713398410500000000,
+        "duration_ns": 500000000,
+        "status": {
+          "code": "OK",
+          "message": null
+        },
+        "resource": {
+          "service_name": "rotel-worker",
+          "service_version": "0.1.0",
+          "service_instance_id": "worker-1",
+          "attributes": {}
+        },
+        "attributes": {
+          "job.type": "data_cleanup"
+        },
+        "events": [],
+        "links": []
+      },
+      {
+        "span_id": "span-002-batch-1",
+        "trace_id": "trace-002",
+        "parent_span_id": "span-002-root",
+        "name": "process.batch",
+        "kind": "INTERNAL",
+        "start_time": 1713398410050000000,
+        "end_time": 1713398410200000000,
+        "duration_ns": 150000000,
+        "status": {
+          "code": "OK",
+          "message": null
+        },
+        "resource": {
+          "service_name": "rotel-worker",
+          "service_version": "0.1.0",
+          "service_instance_id": "worker-1",
+          "attributes": {}
+        },
+        "attributes": {
+          "batch.number": "1",
+          "batch.size": "500"
+        },
+        "events": [],
+        "links": []
+      },
+      {
+        "span_id": "span-002-batch-2",
+        "trace_id": "trace-002",
+        "parent_span_id": "span-002-root",
+        "name": "process.batch",
+        "kind": "INTERNAL",
+        "start_time": 1713398410250000000,
+        "end_time": 1713398410400000000,
+        "duration_ns": 150000000,
+        "status": {
+          "code": "OK",
+          "message": null
+        },
+        "resource": {
+          "service_name": "rotel-worker",
+          "service_version": "0.1.0",
+          "service_instance_id": "worker-1",
+          "attributes": {}
+        },
+        "attributes": {
+          "batch.number": "2",
+          "batch.size": "500"
+        },
+        "events": [],
+        "links": []
+      }
+    ],
+    "duration_ns": 500000000,
+    "span_count": 3,
+    "start_time": 1713398410000000000,
+    "end_time": 1713398410500000000
+  },
+  {
+    "trace_id": "trace-003",
+    "root_span": {
+      "span_id": "span-003-root",
+      "trace_id": "trace-003",
+      "parent_span_id": null,
+      "name": "HTTP POST /api/orders",
+      "kind": "SERVER",
+      "start_time": 1713398420000000000,
+      "end_time": 1713398420300000000,
+      "duration_ns": 300000000,
+      "status": {
+        "code": "ERROR",
+        "message": "Payment processing failed"
+      },
+      "resource": {
+        "service_name": "rotel-api",
+        "service_version": "0.1.0",
+        "service_instance_id": "instance-2",
+        "attributes": {
+          "environment": "production"
+        }
+      },
+      "attributes": {
+        "http.method": "POST",
+        "http.route": "/api/orders",
+        "http.status_code": "500",
+        "error": "true"
+      },
+      "events": [
+        {
+          "name": "exception",
+          "timestamp": 1713398420250000000,
+          "attributes": {
+            "exception.type": "PaymentError",
+            "exception.message": "Payment gateway timeout"
+          }
+        }
+      ],
+      "links": []
+    },
+    "spans": [
+      {
+        "span_id": "span-003-root",
+        "trace_id": "trace-003",
+        "parent_span_id": null,
+        "name": "HTTP POST /api/orders",
+        "kind": "SERVER",
+        "start_time": 1713398420000000000,
+        "end_time": 1713398420300000000,
+        "duration_ns": 300000000,
+        "status": {
+          "code": "ERROR",
+          "message": "Payment processing failed"
+        },
+        "resource": {
+          "service_name": "rotel-api",
+          "service_version": "0.1.0",
+          "service_instance_id": "instance-2",
+          "attributes": {}
+        },
+        "attributes": {
+          "http.method": "POST",
+          "http.route": "/api/orders",
+          "http.status_code": "500"
+        },
+        "events": [],
+        "links": []
+      },
+      {
+        "span_id": "span-003-payment",
+        "trace_id": "trace-003",
+        "parent_span_id": "span-003-root",
+        "name": "payment.process",
+        "kind": "CLIENT",
+        "start_time": 1713398420100000000,
+        "end_time": 1713398420280000000,
+        "duration_ns": 180000000,
+        "status": {
+          "code": "ERROR",
+          "message": "Gateway timeout"
+        },
+        "resource": {
+          "service_name": "rotel-api",
+          "service_version": "0.1.0",
+          "service_instance_id": "instance-2",
+          "attributes": {}
+        },
+        "attributes": {
+          "payment.gateway": "stripe",
+          "payment.amount": "99.99",
+          "payment.currency": "USD"
+        },
+        "events": [],
+        "links": []
+      }
+    ],
+    "duration_ns": 300000000,
+    "span_count": 2,
+    "start_time": 1713398420000000000,
+    "end_time": 1713398420300000000
+  }
+]

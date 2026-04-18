@@ -14,10 +14,11 @@ pub const MAX_ITEMS_IN_MEMORY: usize = 1000;
 /// Minimum time between data refreshes to avoid excessive API calls
 pub const MIN_REFRESH_INTERVAL: Duration = Duration::from_millis(100);
 
-/// Time to keep old data before cleanup
+#[allow(dead_code)]
 pub const DATA_RETENTION_DURATION: Duration = Duration::from_secs(3600); // 1 hour
 
 /// Trait for state management with performance optimizations
+#[allow(dead_code)]
 pub trait StateManager {
     /// Apply pagination to limit items in memory
     fn apply_pagination(&mut self);
@@ -56,6 +57,7 @@ impl UpdateTracker {
     }
 
     /// Get time since last update
+    #[allow(dead_code)]
     pub fn time_since_update(&self) -> Duration {
         self.last_update.elapsed()
     }
@@ -69,6 +71,7 @@ pub struct ResponseCache<T> {
     ttl: Duration,
 }
 
+#[allow(dead_code)]
 impl<T: Clone> ResponseCache<T> {
     /// Create a new response cache with TTL
     pub fn new(ttl: Duration) -> Self {
@@ -112,6 +115,7 @@ pub struct PaginatedList<T> {
     max_items: usize,
 }
 
+#[allow(dead_code)]
 impl<T> PaginatedList<T> {
     /// Create a new paginated list
     pub fn new(max_items: usize) -> Self {

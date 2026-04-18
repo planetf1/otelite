@@ -1,3 +1,5 @@
+#![allow(dead_code)]
+
 use anyhow::{Context, Result};
 use reqwest::Client;
 
@@ -42,6 +44,7 @@ impl ApiClient {
     }
 
     /// Fetch a single log entry by ID
+    #[allow(dead_code)]
     pub async fn get_log(&self, id: &str) -> Result<LogEntry> {
         let url = format!("{}/api/logs/{}", self.base_url, id);
 

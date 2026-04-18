@@ -1,3 +1,5 @@
+#![allow(dead_code)]
+
 use crate::api::models::{Trace, TraceSummary};
 use std::collections::HashMap;
 
@@ -23,6 +25,7 @@ pub struct TracesState {
     /// Active filters (field -> value)
     pub filters: HashMap<String, String>,
     /// Scroll offset for the traces table
+    #[allow(dead_code)]
     pub scroll_offset: usize,
     /// Last error message
     pub error: Option<String>,
@@ -68,6 +71,7 @@ impl TracesState {
         }
     }
 
+    #[allow(dead_code)]
     /// Get all traces
     pub fn traces(&self) -> &[TraceSummary] {
         self.traces.items()
@@ -91,7 +95,7 @@ impl TracesState {
     pub fn has_cached_trace(&self, trace_id: &str) -> bool {
         self.trace_details
             .get(trace_id)
-            .map_or(false, |cache| cache.is_valid())
+            .is_some_and(|cache| cache.is_valid())
     }
 
     /// Check if update is needed (for debouncing)

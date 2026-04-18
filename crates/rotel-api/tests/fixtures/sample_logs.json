@@ -1,0 +1,226 @@
+[
+  {
+    "id": "log-001",
+    "timestamp": 1713398400000000000,
+    "severity": "INFO",
+    "message": "Application started successfully",
+    "resource": {
+      "service_name": "rotel-api",
+      "service_version": "0.1.0",
+      "service_instance_id": "instance-1",
+      "attributes": {
+        "environment": "production",
+        "region": "us-west-2"
+      }
+    },
+    "attributes": {
+      "user_id": "user-123",
+      "request_id": "req-abc-001"
+    },
+    "trace_id": "trace-001",
+    "span_id": "span-001"
+  },
+  {
+    "id": "log-002",
+    "timestamp": 1713398410000000000,
+    "severity": "DEBUG",
+    "message": "Processing incoming request",
+    "resource": {
+      "service_name": "rotel-api",
+      "service_version": "0.1.0",
+      "service_instance_id": "instance-1",
+      "attributes": {
+        "environment": "production",
+        "region": "us-west-2"
+      }
+    },
+    "attributes": {
+      "method": "GET",
+      "path": "/api/v1/logs",
+      "request_id": "req-abc-002"
+    },
+    "trace_id": "trace-002",
+    "span_id": "span-002"
+  },
+  {
+    "id": "log-003",
+    "timestamp": 1713398420000000000,
+    "severity": "ERROR",
+    "message": "Database connection failed",
+    "resource": {
+      "service_name": "rotel-api",
+      "service_version": "0.1.0",
+      "service_instance_id": "instance-1",
+      "attributes": {
+        "environment": "production",
+        "region": "us-west-2"
+      }
+    },
+    "attributes": {
+      "error_type": "ConnectionError",
+      "error_message": "Connection timeout after 30s",
+      "request_id": "req-abc-003"
+    },
+    "trace_id": "trace-003",
+    "span_id": "span-003"
+  },
+  {
+    "id": "log-004",
+    "timestamp": 1713398430000000000,
+    "severity": "WARN",
+    "message": "High memory usage detected",
+    "resource": {
+      "service_name": "rotel-api",
+      "service_version": "0.1.0",
+      "service_instance_id": "instance-1",
+      "attributes": {
+        "environment": "production",
+        "region": "us-west-2"
+      }
+    },
+    "attributes": {
+      "memory_usage_mb": 850,
+      "memory_limit_mb": 1024,
+      "request_id": "req-abc-004"
+    },
+    "trace_id": null,
+    "span_id": null
+  },
+  {
+    "id": "log-005",
+    "timestamp": 1713398440000000000,
+    "severity": "INFO",
+    "message": "Request completed successfully",
+    "resource": {
+      "service_name": "rotel-api",
+      "service_version": "0.1.0",
+      "service_instance_id": "instance-1",
+      "attributes": {
+        "environment": "production",
+        "region": "us-west-2"
+      }
+    },
+    "attributes": {
+      "method": "GET",
+      "path": "/api/v1/logs",
+      "status_code": 200,
+      "duration_ms": 45,
+      "request_id": "req-abc-005"
+    },
+    "trace_id": "trace-004",
+    "span_id": "span-004"
+  },
+  {
+    "id": "log-006",
+    "timestamp": 1713398450000000000,
+    "severity": "ERROR",
+    "message": "Authentication failed for user",
+    "resource": {
+      "service_name": "rotel-api",
+      "service_version": "0.1.0",
+      "service_instance_id": "instance-2",
+      "attributes": {
+        "environment": "production",
+        "region": "us-east-1"
+      }
+    },
+    "attributes": {
+      "user_id": "user-456",
+      "error_type": "AuthenticationError",
+      "error_message": "Invalid credentials",
+      "request_id": "req-def-001"
+    },
+    "trace_id": "trace-005",
+    "span_id": "span-005"
+  },
+  {
+    "id": "log-007",
+    "timestamp": 1713398460000000000,
+    "severity": "DEBUG",
+    "message": "Cache hit for key",
+    "resource": {
+      "service_name": "rotel-api",
+      "service_version": "0.1.0",
+      "service_instance_id": "instance-2",
+      "attributes": {
+        "environment": "production",
+        "region": "us-east-1"
+      }
+    },
+    "attributes": {
+      "cache_key": "user:123:profile",
+      "cache_ttl_seconds": 300,
+      "request_id": "req-def-002"
+    },
+    "trace_id": null,
+    "span_id": null
+  },
+  {
+    "id": "log-008",
+    "timestamp": 1713398470000000000,
+    "severity": "INFO",
+    "message": "Background job started",
+    "resource": {
+      "service_name": "rotel-worker",
+      "service_version": "0.1.0",
+      "service_instance_id": "worker-1",
+      "attributes": {
+        "environment": "production",
+        "region": "us-west-2"
+      }
+    },
+    "attributes": {
+      "job_type": "data_cleanup",
+      "job_id": "job-001",
+      "scheduled_time": "2024-04-17T12:00:00Z"
+    },
+    "trace_id": "trace-006",
+    "span_id": "span-006"
+  },
+  {
+    "id": "log-009",
+    "timestamp": 1713398480000000000,
+    "severity": "WARN",
+    "message": "Rate limit approaching for client",
+    "resource": {
+      "service_name": "rotel-api",
+      "service_version": "0.1.0",
+      "service_instance_id": "instance-1",
+      "attributes": {
+        "environment": "production",
+        "region": "us-west-2"
+      }
+    },
+    "attributes": {
+      "client_id": "client-789",
+      "current_rate": 950,
+      "rate_limit": 1000,
+      "window_seconds": 60,
+      "request_id": "req-abc-006"
+    },
+    "trace_id": null,
+    "span_id": null
+  },
+  {
+    "id": "log-010",
+    "timestamp": 1713398490000000000,
+    "severity": "INFO",
+    "message": "Health check passed",
+    "resource": {
+      "service_name": "rotel-api",
+      "service_version": "0.1.0",
+      "service_instance_id": "instance-1",
+      "attributes": {
+        "environment": "production",
+        "region": "us-west-2"
+      }
+    },
+    "attributes": {
+      "check_type": "liveness",
+      "response_time_ms": 5,
+      "status": "healthy"
+    },
+    "trace_id": null,
+    "span_id": null
+  }
+]

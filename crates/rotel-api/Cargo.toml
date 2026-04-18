@@ -1,0 +1,56 @@
+[package]
+name = "rotel-api"
+version = "0.1.0"
+edition = "2021"
+authors = ["Rotel Contributors"]
+description = "Shared REST API backend for Rotel frontends"
+license = "Apache-2.0"
+
+[dependencies]
+# Web framework
+axum = { version = "0.7", features = ["macros"] }
+tokio = { version = "1.40", features = ["full"] }
+hyper = { version = "1.4", features = ["full"] }
+
+# Serialization
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+
+# API documentation
+utoipa = { version = "4.2", features = ["axum_extras"] }
+utoipa-swagger-ui = { version = "7.1", features = ["axum"] }
+
+# Middleware
+tower = "0.4"
+tower-http = { version = "0.5", features = ["cors", "trace", "compression-br", "compression-gzip"] }
+
+# Error handling
+thiserror = "1.0"
+anyhow = "1.0"
+
+# Validation
+validator = { version = "0.18", features = ["derive"] }
+
+# UUID generation
+uuid = { version = "1.10", features = ["v4", "serde"] }
+
+# Date/time handling
+chrono = { version = "0.4", features = ["serde"] }
+
+# Logging
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
+
+# Storage integration (internal crate)
+rotel-storage = { path = "../rotel-storage" }
+rotel-core = { path = "../rotel-core" }
+
+[dev-dependencies]
+# Testing
+tokio-test = "0.4"
+tower = { version = "0.4", features = ["util"] }
+http-body-util = "0.1"
+
+[lib]
+name = "rotel_api"
+path = "src/lib.rs"

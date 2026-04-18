@@ -1,3 +1,5 @@
+#![allow(dead_code)]
+
 use crate::api::models::Metric;
 use std::collections::HashMap;
 
@@ -19,6 +21,7 @@ pub struct MetricsState {
     /// Active filters (field -> value)
     pub filters: HashMap<String, String>,
     /// Scroll offset for the metrics table
+    #[allow(dead_code)]
     pub scroll_offset: usize,
     /// Last error message
     pub error: Option<String>,
@@ -63,6 +66,7 @@ impl MetricsState {
         }
     }
 
+    #[allow(dead_code)]
     /// Get all metrics
     pub fn metrics(&self) -> &[Metric] {
         self.metrics.items()
@@ -86,11 +90,11 @@ impl MetricsState {
                         || metric
                             .description
                             .as_ref()
-                            .map_or(false, |d: &String| d.to_lowercase().contains(&query))
+                            .is_some_and(|d: &String| d.to_lowercase().contains(&query))
                         || metric
                             .unit
                             .as_ref()
-                            .map_or(false, |u: &String| u.to_lowercase().contains(&query));
+                            .is_some_and(|u: &String| u.to_lowercase().contains(&query));
                     if !matches {
                         return false;
                     }

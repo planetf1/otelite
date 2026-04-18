@@ -1,0 +1,7 @@
+{
+  "database": "dolt",
+  "backend": "dolt",
+  "dolt_mode": "embedded",
+  "dolt_database": "rotel",
+  "project_id": "26a19412-a10d-48c2-b63d-2145312784c9"
+}

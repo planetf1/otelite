@@ -50,3 +50,8 @@ Thumbs.db
 # Rust-specific IDE files
 *.rs.bk
 **/*.rs.bk
+
+# Beads / Dolt files (added by bd init)
+.dolt/
+*.db
+.beads-credential-key

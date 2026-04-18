@@ -179,6 +179,48 @@ fi
 
 See [`specs/004-cli/quickstart.md`](specs/004-cli/quickstart.md) for detailed CLI documentation and scripting examples.
 
+### REST API
+
+Rotel provides a comprehensive REST API for programmatic access to telemetry data.
+
+**Base URL**: `http://localhost:8080/api/v1`
+
+**Quick Examples**:
+```bash
+# List logs with filtering
+curl "http://localhost:8080/api/v1/logs?severity=ERROR&limit=50&since=1h"
+
+# Get specific log entry
+curl "http://localhost:8080/api/v1/logs/log-123"
+
+# List traces with duration filter
+curl "http://localhost:8080/api/v1/traces?min_duration_ns=1000000&limit=50"
+
+# Get trace with span hierarchy
+curl "http://localhost:8080/api/v1/traces/trace-456"
+
+# List metrics with filtering
+curl "http://localhost:8080/api/v1/metrics?name=http_requests_total&metric_type=COUNTER"
+
+# Get metric statistics
+curl "http://localhost:8080/api/v1/metrics/request_duration_ms/stats?since=1h"
+
+# Health check
+curl "http://localhost:8080/health"
+```
+
+**Key Features**:
+- 📊 **OpenAPI Documentation**: Interactive Swagger UI at `/docs`
+- 🔍 **Rich Filtering**: Time ranges, severity, service names, duration filters
+- 📄 **Pagination**: Offset-based with metadata (total count, next/prev)
+- 🎯 **Type-Safe**: Full request/response validation with detailed errors
+- 🌐 **CORS Enabled**: Ready for browser-based applications
+- 📈 **Statistics**: Percentile calculations (p50, p95, p99) for metrics
+
+**API Documentation**:
+- Interactive docs: `http://localhost:8080/docs`
+- Detailed guide: [`crates/rotel-api/README.md`](crates/rotel-api/README.md)
+
 ## Configuration
 
 Rotel uses sensible defaults but can be customized via `rotel.toml`:

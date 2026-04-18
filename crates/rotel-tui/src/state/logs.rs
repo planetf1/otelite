@@ -1,9 +1,9 @@
-use crate::api::models::{LogEntry, Resource};
+#![allow(dead_code)]
+
+use crate::api::models::LogEntry;
 use std::collections::HashMap;
 
-use super::{
-    PaginatedList, StateManager, UpdateTracker, MAX_ITEMS_IN_MEMORY, MIN_REFRESH_INTERVAL,
-};
+use super::{PaginatedList, UpdateTracker, MAX_ITEMS_IN_MEMORY, MIN_REFRESH_INTERVAL};
 
 /// State management for the logs view
 #[derive(Debug, Clone)]
@@ -21,6 +21,7 @@ pub struct LogsState {
     /// Whether auto-scroll is enabled
     pub auto_scroll: bool,
     /// Scroll offset for the logs table
+    #[allow(dead_code)]
     pub scroll_offset: usize,
     /// Last error message
     pub error: Option<String>,
@@ -139,6 +140,7 @@ impl LogsState {
         }
     }
 
+    #[allow(dead_code)]
     /// Toggle detail panel
     pub fn toggle_detail(&mut self) {
         self.show_detail = !self.show_detail;
@@ -206,6 +208,8 @@ impl LogsState {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::api::models::Resource;
+    use crate::state::StateManager;
 
     fn create_test_log(body: &str, severity: &str) -> LogEntry {
         LogEntry {
