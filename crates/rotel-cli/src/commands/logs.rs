@@ -30,10 +30,10 @@ pub async fn handle_list(
         params.push(("since", since));
     }
 
-    let logs = client.fetch_logs(params).await?;
+    let logs_response = client.fetch_logs(params).await?;
 
     // Apply client-side severity filtering if needed
-    let filtered_logs = filter_by_severity(logs, severity_filter);
+    let filtered_logs = filter_by_severity(logs_response.logs, severity_filter);
 
     // Output based on format
     match config.format {
@@ -66,10 +66,10 @@ pub async fn handle_search(
         params.push(("severity", severity.clone()));
     }
 
-    let logs = client.search_logs(query, params).await?;
+    let logs_response = client.search_logs(query, params).await?;
 
     // Apply client-side severity filtering if needed
-    let filtered_logs = filter_by_severity(logs, severity);
+    let filtered_logs = filter_by_severity(logs_response.logs, severity);
 
     // Output based on format
     match config.format {
@@ -86,7 +86,10 @@ pub async fn handle_search(
 
 /// Handle the `logs show` command
 pub async fn handle_show(client: &ApiClient, config: &Config, id: &str) -> Result<LogEntry> {
-    let log = client.fetch_log_by_id(id).await?;
+    let timestamp: i64 = id
+        .parse()
+        .map_err(|_| crate::error::Error::ApiError(format!("Invalid timestamp: {}", id)))?;
+    let log = client.fetch_log_by_id(timestamp).await?;
 
     // Output based on format
     match config.format {

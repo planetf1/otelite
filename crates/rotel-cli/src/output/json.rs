@@ -1,6 +1,6 @@
 //! JSON output formatting for CLI
 
-use crate::api::models::{LogEntry, Metric, Trace};
+use crate::api::models::{LogEntry, MetricResponse, TraceDetail, TraceEntry};
 use crate::error::Result;
 use rotel_core::telemetry::GenAiSpanInfo;
 use serde_json::{self, json};
@@ -20,14 +20,14 @@ pub fn print_log_json(log: &LogEntry) -> Result<()> {
 }
 
 /// Print traces as JSON array
-pub fn print_traces_json(traces: &[Trace]) -> Result<()> {
+pub fn print_traces_json(traces: &[TraceEntry]) -> Result<()> {
     let json = serde_json::to_string_pretty(traces)?;
     println!("{}", json);
     Ok(())
 }
 
 /// Print a single trace as JSON object
-pub fn print_trace_json(trace: &Trace) -> Result<()> {
+pub fn print_trace_json(trace: &TraceDetail) -> Result<()> {
     // Enrich trace with GenAI information
     let mut trace_json = serde_json::to_value(trace)?;
 
@@ -87,14 +87,14 @@ pub fn print_trace_json(trace: &Trace) -> Result<()> {
 }
 
 /// Print metrics as JSON array
-pub fn print_metrics_json(metrics: &[Metric]) -> Result<()> {
+pub fn print_metrics_json(metrics: &[MetricResponse]) -> Result<()> {
     let json = serde_json::to_string_pretty(metrics)?;
     println!("{}", json);
     Ok(())
 }
 
 /// Print a single metric as JSON object
-pub fn print_metric_json(metric: &Metric) -> Result<()> {
+pub fn print_metric_json(metric: &MetricResponse) -> Result<()> {
     let json = serde_json::to_string_pretty(metric)?;
     println!("{}", json);
     Ok(())

@@ -1,6 +1,6 @@
 //! HTTP client for Rotel backend API
 
-use crate::api::models::{LogEntry, Metric, Trace};
+use crate::api::models::{LogEntry, LogsResponse, MetricResponse, TraceDetail, TracesResponse};
 use crate::error::{Error, Result};
 use reqwest::Client;
 use std::time::Duration;
@@ -26,7 +26,7 @@ impl ApiClient {
     }
 
     /// Fetch logs from the backend
-    pub async fn fetch_logs(&self, params: Vec<(&str, String)>) -> Result<Vec<LogEntry>> {
+    pub async fn fetch_logs(&self, params: Vec<(&str, String)>) -> Result<LogsResponse> {
         let url = format!("{}/api/logs", self.base_url);
         let response = self.client.get(&url).query(&params).send().await?;
 
@@ -37,17 +37,20 @@ impl ApiClient {
             )));
         }
 
-        let logs = response.json().await?;
-        Ok(logs)
+        let logs_response = response.json().await?;
+        Ok(logs_response)
     }
 
-    /// Fetch a single log by ID
-    pub async fn fetch_log_by_id(&self, id: &str) -> Result<LogEntry> {
-        let url = format!("{}/api/logs/{}", self.base_url, id);
+    /// Fetch a single log by timestamp
+    pub async fn fetch_log_by_id(&self, timestamp: i64) -> Result<LogEntry> {
+        let url = format!("{}/api/logs/{}", self.base_url, timestamp);
         let response = self.client.get(&url).send().await?;
 
         if response.status().as_u16() == 404 {
-            return Err(Error::NotFound(format!("Log '{}' not found", id)));
+            return Err(Error::NotFound(format!(
+                "Log at timestamp '{}' not found",
+                timestamp
+            )));
         }
 
         if !response.status().is_success() {
@@ -61,14 +64,14 @@ impl ApiClient {
         Ok(log)
     }
 
-    /// Search logs by query string
+    /// Search logs by query string (uses the same endpoint as fetch_logs with search param)
     pub async fn search_logs(
         &self,
         query: &str,
         params: Vec<(&str, String)>,
-    ) -> Result<Vec<LogEntry>> {
-        let url = format!("{}/api/logs/search", self.base_url);
-        let mut all_params = vec![("q", query.to_string())];
+    ) -> Result<LogsResponse> {
+        let url = format!("{}/api/logs", self.base_url);
+        let mut all_params = vec![("search", query.to_string())];
         all_params.extend(params);
 
         let response = self.client.get(&url).query(&all_params).send().await?;
@@ -80,12 +83,12 @@ impl ApiClient {
             )));
         }
 
-        let logs = response.json().await?;
-        Ok(logs)
+        let logs_response = response.json().await?;
+        Ok(logs_response)
     }
 
     /// Fetch traces from the backend
-    pub async fn fetch_traces(&self, params: Vec<(&str, String)>) -> Result<Vec<Trace>> {
+    pub async fn fetch_traces(&self, params: Vec<(&str, String)>) -> Result<TracesResponse> {
         let url = format!("{}/api/traces", self.base_url);
         let response = self.client.get(&url).query(&params).send().await?;
 
@@ -96,12 +99,12 @@ impl ApiClient {
             )));
         }
 
-        let traces = response.json().await?;
-        Ok(traces)
+        let traces_response = response.json().await?;
+        Ok(traces_response)
     }
 
     /// Fetch a single trace by ID
-    pub async fn fetch_trace_by_id(&self, id: &str) -> Result<Trace> {
+    pub async fn fetch_trace_by_id(&self, id: &str) -> Result<TraceDetail> {
         let url = format!("{}/api/traces/{}", self.base_url, id);
         let response = self.client.get(&url).send().await?;
 
@@ -121,7 +124,7 @@ impl ApiClient {
     }
 
     /// Fetch metrics from the backend
-    pub async fn fetch_metrics(&self, params: Vec<(&str, String)>) -> Result<Vec<Metric>> {
+    pub async fn fetch_metrics(&self, params: Vec<(&str, String)>) -> Result<Vec<MetricResponse>> {
         let url = format!("{}/api/metrics", self.base_url);
         let response = self.client.get(&url).query(&params).send().await?;
 
@@ -141,13 +144,12 @@ impl ApiClient {
         &self,
         name: &str,
         params: Vec<(&str, String)>,
-    ) -> Result<Vec<Metric>> {
-        let url = format!("{}/api/metrics/{}", self.base_url, name);
-        let response = self.client.get(&url).query(&params).send().await?;
+    ) -> Result<Vec<MetricResponse>> {
+        let url = format!("{}/api/metrics", self.base_url);
+        let mut all_params = vec![("name", name.to_string())];
+        all_params.extend(params);
 
-        if response.status().as_u16() == 404 {
-            return Err(Error::NotFound(format!("Metric '{}' not found", name)));
-        }
+        let response = self.client.get(&url).query(&all_params).send().await?;
 
         if !response.status().is_success() {
             return Err(Error::ApiError(format!(
@@ -156,7 +158,12 @@ impl ApiClient {
             )));
         }
 
-        let metrics = response.json().await?;
+        let metrics: Vec<MetricResponse> = response.json().await?;
+
+        if metrics.is_empty() {
+            return Err(Error::NotFound(format!("Metric '{}' not found", name)));
+        }
+
         Ok(metrics)
     }
 

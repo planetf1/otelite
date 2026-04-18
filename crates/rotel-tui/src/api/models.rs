@@ -4,12 +4,14 @@ use std::collections::HashMap;
 /// Log entry from the API
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct LogEntry {
-    pub id: String,
     pub timestamp: i64,
     pub severity: String,
+    pub severity_text: Option<String>,
     pub body: String,
     pub attributes: HashMap<String, String>,
-    pub resource: Resource,
+    pub resource: Option<Resource>,
+    pub trace_id: Option<String>,
+    pub span_id: Option<String>,
 }
 
 /// Trace summary from the API
@@ -28,13 +30,12 @@ pub struct TraceSummary {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Trace {
     pub trace_id: String,
-    pub root_span_name: String,
+    pub spans: Vec<Span>,
     pub start_time: i64,
+    pub end_time: i64,
     pub duration: i64,
     pub span_count: usize,
-    pub has_errors: bool,
     pub service_names: Vec<String>,
-    pub spans: Vec<Span>,
 }
 
 /// Span within a trace
@@ -48,10 +49,16 @@ pub struct Span {
     pub start_time: i64,
     pub end_time: i64,
     pub duration: i64,
-    pub status: String,
     pub attributes: HashMap<String, String>,
+    pub resource: Option<Resource>,
+    pub status: Option<SpanStatus>,
     pub events: Vec<SpanEvent>,
-    pub links: Vec<SpanLink>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SpanStatus {
+    pub code: String,
+    pub message: Option<String>,
 }
 
 /// Span event
@@ -62,14 +69,6 @@ pub struct SpanEvent {
     pub attributes: HashMap<String, String>,
 }
 
-/// Span link
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct SpanLink {
-    pub trace_id: String,
-    pub span_id: String,
-    pub attributes: HashMap<String, String>,
-}
-
 /// Metric from the API
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Metric {
@@ -77,15 +76,42 @@ pub struct Metric {
     pub description: Option<String>,
     pub unit: Option<String>,
     pub metric_type: String,
-    pub data_points: Vec<DataPoint>,
+    pub value: MetricValue,
+    pub timestamp: i64,
+    pub attributes: HashMap<String, String>,
+    pub resource: Option<HashMap<String, String>>,
 }
 
-/// Metric data point
+/// Metric value (varies by type)
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct DataPoint {
-    pub timestamp: i64,
+#[serde(untagged)]
+pub enum MetricValue {
+    Gauge(f64),
+    Counter(u64),
+    Histogram {
+        count: u64,
+        sum: f64,
+        buckets: Vec<HistogramBucket>,
+    },
+    Summary {
+        count: u64,
+        sum: f64,
+        quantiles: Vec<Quantile>,
+    },
+}
+
+/// Histogram bucket
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct HistogramBucket {
+    pub upper_bound: f64,
+    pub count: u64,
+}
+
+/// Summary quantile
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Quantile {
+    pub quantile: f64,
     pub value: f64,
-    pub attributes: HashMap<String, String>,
 }
 
 /// Resource information
@@ -99,6 +125,8 @@ pub struct Resource {
 pub struct LogsResponse {
     pub logs: Vec<LogEntry>,
     pub total: usize,
+    pub limit: usize,
+    pub offset: usize,
 }
 
 /// API response for traces list
@@ -106,14 +134,12 @@ pub struct LogsResponse {
 pub struct TracesResponse {
     pub traces: Vec<TraceSummary>,
     pub total: usize,
+    pub limit: usize,
+    pub offset: usize,
 }
 
-/// API response for metrics list
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct MetricsResponse {
-    pub metrics: Vec<Metric>,
-    pub total: usize,
-}
+/// API response for metrics list (just a Vec, no wrapper in dashboard API)
+pub type MetricsResponse = Vec<Metric>;
 
 /// Query parameters for logs
 #[derive(Debug, Clone, Serialize)]

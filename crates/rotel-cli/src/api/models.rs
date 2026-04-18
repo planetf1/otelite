@@ -1,108 +1,189 @@
 //! API response models for Rotel backend
 
-use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
-/// Log entry from the backend
+/// Response for log listing
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct LogsResponse {
+    pub logs: Vec<LogEntry>,
+    pub total: usize,
+    pub limit: usize,
+    pub offset: usize,
+}
+
+/// Individual log entry from the backend
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct LogEntry {
-    /// Unique log identifier
-    pub id: String,
-    /// Timestamp when the log was created
-    pub timestamp: DateTime<Utc>,
-    /// Severity level (DEBUG, INFO, WARN, ERROR)
+    /// Timestamp in nanoseconds since Unix epoch
+    pub timestamp: i64,
+    /// Severity level (TRACE, DEBUG, INFO, WARN, ERROR, FATAL)
     pub severity: String,
-    /// Log message content
-    pub message: String,
+    /// Optional severity text
+    pub severity_text: Option<String>,
+    /// Log message body
+    pub body: String,
     /// Additional attributes/metadata
     #[serde(default)]
     pub attributes: HashMap<String, String>,
+    /// Resource information
+    pub resource: Option<Resource>,
+    /// Associated trace ID
+    pub trace_id: Option<String>,
+    /// Associated span ID
+    pub span_id: Option<String>,
 }
 
-/// Trace with spans
+/// Resource information
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct Trace {
-    /// Unique trace identifier
-    pub id: String,
-    /// Root span name
-    pub root_span: String,
-    /// Total duration in milliseconds
-    pub duration_ms: u64,
-    /// Trace status (OK, ERROR)
-    pub status: String,
-    /// All spans in the trace
-    pub spans: Vec<Span>,
+pub struct Resource {
+    pub attributes: HashMap<String, String>,
 }
 
-/// Individual span within a trace
+/// Response for trace listing
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct Span {
-    /// Unique span identifier
-    pub id: String,
-    /// Span name/operation
+pub struct TracesResponse {
+    pub traces: Vec<TraceEntry>,
+    pub total: usize,
+    pub limit: usize,
+    pub offset: usize,
+}
+
+/// Individual trace entry (aggregated from spans)
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TraceEntry {
+    pub trace_id: String,
+    pub root_span_name: String,
+    pub start_time: i64,
+    pub duration: i64,
+    pub span_count: usize,
+    pub service_names: Vec<String>,
+    pub has_errors: bool,
+}
+
+/// Detailed trace with all spans
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TraceDetail {
+    pub trace_id: String,
+    pub spans: Vec<SpanEntry>,
+    pub start_time: i64,
+    pub end_time: i64,
+    pub duration: i64,
+    pub span_count: usize,
+    pub service_names: Vec<String>,
+}
+
+/// Individual span entry
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SpanEntry {
+    pub span_id: String,
+    pub trace_id: String,
+    pub parent_span_id: Option<String>,
     pub name: String,
-    /// Parent span ID (None for root span)
-    pub parent_id: Option<String>,
-    /// Span start time
-    pub start_time: DateTime<Utc>,
-    /// Span duration in milliseconds
-    pub duration_ms: u64,
-    /// Span attributes/metadata
+    pub kind: String,
+    pub start_time: i64,
+    pub end_time: i64,
+    pub duration: i64,
+    #[serde(default)]
+    pub attributes: HashMap<String, String>,
+    pub resource: Option<Resource>,
+    pub status: Option<SpanStatus>,
+    pub events: Vec<SpanEvent>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SpanStatus {
+    pub code: String,
+    pub message: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SpanEvent {
+    pub name: String,
+    pub timestamp: i64,
     #[serde(default)]
     pub attributes: HashMap<String, String>,
 }
 
-/// Metric data point
+/// Response structure for a single metric
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct Metric {
-    /// Metric name
+pub struct MetricResponse {
     pub name: String,
-    /// Metric type (counter, gauge, histogram, summary)
-    #[serde(rename = "type")]
-    pub type_: String,
-    /// Metric value
-    pub value: f64,
-    /// Timestamp when the metric was recorded
-    pub timestamp: DateTime<Utc>,
-    /// Metric labels/dimensions
+    pub description: Option<String>,
+    pub unit: Option<String>,
+    pub metric_type: String,
+    pub value: MetricValue,
+    pub timestamp: i64,
     #[serde(default)]
-    pub labels: HashMap<String, String>,
-    /// Histogram percentiles (if applicable)
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub percentiles: Option<HashMap<String, f64>>,
+    pub attributes: HashMap<String, String>,
+    pub resource: Option<HashMap<String, String>>,
+}
+
+/// Metric value (varies by type)
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(untagged)]
+pub enum MetricValue {
+    Gauge(f64),
+    Counter(u64),
+    Histogram {
+        count: u64,
+        sum: f64,
+        buckets: Vec<HistogramBucket>,
+    },
+    Summary {
+        count: u64,
+        sum: f64,
+        quantiles: Vec<Quantile>,
+    },
+}
+
+/// Histogram bucket
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct HistogramBucket {
+    pub upper_bound: f64,
+    pub count: u64,
+}
+
+/// Summary quantile
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Quantile {
+    pub quantile: f64,
+    pub value: f64,
 }
 
 impl LogEntry {
     /// Get a short display string for the log
     pub fn short_display(&self) -> String {
+        use chrono::{DateTime, Utc};
+        let dt = DateTime::<Utc>::from_timestamp_nanos(self.timestamp);
         format!(
             "{} [{}] {}",
-            self.timestamp.format("%Y-%m-%d %H:%M:%S"),
+            dt.format("%Y-%m-%d %H:%M:%S"),
             self.severity,
-            self.message
+            self.body
         )
     }
 }
 
-impl Trace {
+impl TraceEntry {
     /// Get a short display string for the trace
     pub fn short_display(&self) -> String {
-        format!(
-            "{} ({}ms) [{}]",
-            self.root_span, self.duration_ms, self.status
-        )
+        let duration_ms = self.duration / 1_000_000;
+        let status = if self.has_errors { "ERROR" } else { "OK" };
+        format!("{} ({}ms) [{}]", self.root_span_name, duration_ms, status)
     }
+}
 
-    /// Build a tree structure of spans
-    pub fn build_span_tree(&self) -> Vec<SpanNode> {
+impl SpanEntry {
+    /// Build a tree structure of spans from a flat list
+    pub fn build_span_tree(spans: &[SpanEntry]) -> Vec<SpanNode> {
         let mut nodes: HashMap<String, SpanNode> = HashMap::new();
         let mut root_nodes = Vec::new();
 
         // Create nodes for all spans
-        for span in &self.spans {
+        for span in spans {
             nodes.insert(
-                span.id.clone(),
+                span.span_id.clone(),
                 SpanNode {
                     span: span.clone(),
                     children: Vec::new(),
@@ -112,12 +193,12 @@ impl Trace {
 
         // Build tree structure - collect parent-child relationships first
         let mut parent_child_map: HashMap<String, Vec<String>> = HashMap::new();
-        for span in &self.spans {
-            if let Some(parent_id) = &span.parent_id {
+        for span in spans {
+            if let Some(parent_id) = &span.parent_span_id {
                 parent_child_map
                     .entry(parent_id.clone())
                     .or_default()
-                    .push(span.id.clone());
+                    .push(span.span_id.clone());
             }
         }
 
@@ -136,9 +217,9 @@ impl Trace {
         }
 
         // Collect root nodes (spans without parents)
-        for span in &self.spans {
-            if span.parent_id.is_none() {
-                if let Some(node) = nodes.get(&span.id).cloned() {
+        for span in spans {
+            if span.parent_span_id.is_none() {
+                if let Some(node) = nodes.get(&span.span_id).cloned() {
                     root_nodes.push(node);
                 }
             }
@@ -151,14 +232,20 @@ impl Trace {
 /// Span node in a tree structure
 #[derive(Debug, Clone)]
 pub struct SpanNode {
-    pub span: Span,
+    pub span: SpanEntry,
     pub children: Vec<SpanNode>,
 }
 
-impl Metric {
+impl MetricResponse {
     /// Get a short display string for the metric
     pub fn short_display(&self) -> String {
-        format!("{} = {} ({})", self.name, self.value, self.type_)
+        let value_str = match &self.value {
+            MetricValue::Gauge(v) => format!("{}", v),
+            MetricValue::Counter(v) => format!("{}", v),
+            MetricValue::Histogram { count, sum, .. } => format!("count={}, sum={}", count, sum),
+            MetricValue::Summary { count, sum, .. } => format!("count={}, sum={}", count, sum),
+        };
+        format!("{} = {} ({})", self.name, value_str, self.metric_type)
     }
 }
 
@@ -169,11 +256,14 @@ mod tests {
     #[test]
     fn test_log_entry_short_display() {
         let log = LogEntry {
-            id: "log-001".to_string(),
-            timestamp: Utc::now(),
+            timestamp: 1_000_000_000_000_000_000, // 2001-09-09 01:46:40 UTC
             severity: "ERROR".to_string(),
-            message: "Test error".to_string(),
+            severity_text: None,
+            body: "Test error".to_string(),
             attributes: HashMap::new(),
+            resource: None,
+            trace_id: None,
+            span_id: None,
         };
         let display = log.short_display();
         assert!(display.contains("ERROR"));
@@ -181,13 +271,15 @@ mod tests {
     }
 
     #[test]
-    fn test_trace_short_display() {
-        let trace = Trace {
-            id: "trace-001".to_string(),
-            root_span: "http-request".to_string(),
-            duration_ms: 1500,
-            status: "OK".to_string(),
-            spans: Vec::new(),
+    fn test_trace_entry_short_display() {
+        let trace = TraceEntry {
+            trace_id: "trace-001".to_string(),
+            root_span_name: "http-request".to_string(),
+            start_time: 1_000_000_000_000_000_000,
+            duration: 1_500_000_000, // 1.5 seconds in nanoseconds
+            span_count: 5,
+            service_names: vec!["api".to_string()],
+            has_errors: false,
         };
         let display = trace.short_display();
         assert!(display.contains("http-request"));
@@ -196,14 +288,16 @@ mod tests {
     }
 
     #[test]
-    fn test_metric_short_display() {
-        let metric = Metric {
+    fn test_metric_response_short_display() {
+        let metric = MetricResponse {
             name: "http_requests_total".to_string(),
-            type_: "counter".to_string(),
-            value: 1234.0,
-            timestamp: Utc::now(),
-            labels: HashMap::new(),
-            percentiles: None,
+            description: None,
+            unit: None,
+            metric_type: "counter".to_string(),
+            value: MetricValue::Counter(1234),
+            timestamp: 1_000_000_000_000_000_000,
+            attributes: HashMap::new(),
+            resource: None,
         };
         let display = metric.short_display();
         assert!(display.contains("http_requests_total"));

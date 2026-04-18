@@ -154,14 +154,16 @@ fn format_log_detail(log: &LogEntry) -> Text<'static> {
     }
 
     // Add resource attributes
-    if !log.resource.attributes.is_empty() {
-        lines.push(Line::from(""));
-        lines.push(Line::from(vec![Span::styled(
-            "Resource:",
-            Style::default().add_modifier(Modifier::BOLD),
-        )]));
-        for (key, value) in &log.resource.attributes {
-            append_formatted_key_value_lines(&mut lines, key, value, 60);
+    if let Some(resource) = &log.resource {
+        if !resource.attributes.is_empty() {
+            lines.push(Line::from(""));
+            lines.push(Line::from(vec![Span::styled(
+                "Resource:",
+                Style::default().add_modifier(Modifier::BOLD),
+            )]));
+            for (key, value) in &resource.attributes {
+                append_formatted_key_value_lines(&mut lines, key, value, 60);
+            }
         }
     }
 

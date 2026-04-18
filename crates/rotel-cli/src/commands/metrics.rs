@@ -1,7 +1,7 @@
 //! Metrics command handlers
 
 use crate::api::client::ApiClient;
-use crate::api::models::Metric;
+use crate::api::models::MetricResponse;
 use crate::config::Config;
 use crate::error::Result;
 use crate::output::{json, pretty};
@@ -133,7 +133,10 @@ pub async fn handle_export(
 
 /// Filter metrics by label key-value pairs (client-side filtering)
 /// Labels should be in format "key=value"
-pub fn filter_by_labels(metrics: Vec<Metric>, label_filters: &[String]) -> Vec<Metric> {
+pub fn filter_by_labels(
+    metrics: Vec<MetricResponse>,
+    label_filters: &[String],
+) -> Vec<MetricResponse> {
     if label_filters.is_empty() {
         return metrics;
     }
@@ -155,15 +158,19 @@ pub fn filter_by_labels(metrics: Vec<Metric>, label_filters: &[String]) -> Vec<M
         .into_iter()
         .filter(|metric| {
             // Metric must match ALL label filters
-            filters
-                .iter()
-                .all(|(key, value)| metric.labels.get(*key).map(|v| v == value).unwrap_or(false))
+            filters.iter().all(|(key, value)| {
+                metric
+                    .attributes
+                    .get(*key)
+                    .map(|v| v == value)
+                    .unwrap_or(false)
+            })
         })
         .collect()
 }
 
 /// Filter metrics by name pattern (client-side filtering)
-pub fn filter_by_name(metrics: Vec<Metric>, name_pattern: &str) -> Vec<Metric> {
+pub fn filter_by_name(metrics: Vec<MetricResponse>, name_pattern: &str) -> Vec<MetricResponse> {
     metrics
         .into_iter()
         .filter(|metric| metric.name.contains(name_pattern))
@@ -171,10 +178,10 @@ pub fn filter_by_name(metrics: Vec<Metric>, name_pattern: &str) -> Vec<Metric> {
 }
 
 /// Filter metrics by type (client-side filtering)
-pub fn filter_by_type(metrics: Vec<Metric>, metric_type: &str) -> Vec<Metric> {
+pub fn filter_by_type(metrics: Vec<MetricResponse>, metric_type: &str) -> Vec<MetricResponse> {
     metrics
         .into_iter()
-        .filter(|metric| metric.type_.eq_ignore_ascii_case(metric_type))
+        .filter(|metric| metric.metric_type.eq_ignore_ascii_case(metric_type))
         .collect()
 }
 

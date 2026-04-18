@@ -1,6 +1,6 @@
 //! Pretty-print table formatting for CLI output
 
-use crate::api::models::{LogEntry, Metric, SpanNode, Trace};
+use crate::api::models::{LogEntry, MetricResponse, SpanNode, TraceDetail, TraceEntry};
 use comfy_table::{presets::UTF8_FULL, Cell, Color, ContentArrangement, Table};
 use rotel_core::telemetry::{format_attribute_value, GenAiSpanInfo};
 
@@ -36,11 +36,15 @@ pub fn print_logs_table(logs: &[LogEntry], no_color: bool, no_header: bool) {
             Cell::new(&log.severity).fg(color)
         };
 
+        use chrono::{DateTime, Utc};
+        let dt = DateTime::<Utc>::from_timestamp_nanos(log.timestamp);
+        let timestamp_str = dt.format("%Y-%m-%d %H:%M:%S").to_string();
+
         table.add_row(vec![
-            Cell::new(&log.id),
-            Cell::new(log.timestamp.format("%Y-%m-%d %H:%M:%S").to_string()),
+            Cell::new(log.timestamp.to_string()),
+            Cell::new(timestamp_str),
             severity_cell,
-            Cell::new(&log.message),
+            Cell::new(&log.body),
         ]);
     }
 
@@ -62,10 +66,20 @@ pub fn print_log_details(log: &LogEntry, no_color: bool) {
     };
     let reset = if no_color { "" } else { "\x1b[0m" };
 
-    println!("ID:        {}", log.id);
-    println!("Timestamp: {}", log.timestamp.format("%Y-%m-%d %H:%M:%S"));
+    use chrono::{DateTime, Utc};
+    let dt = DateTime::<Utc>::from_timestamp_nanos(log.timestamp);
+    let timestamp_str = dt.format("%Y-%m-%d %H:%M:%S").to_string();
+
+    println!("Timestamp: {}", timestamp_str);
     println!("Severity:  {}{}{}", severity_color, log.severity, reset);
-    println!("Message:   {}", log.message);
+    println!("Body:      {}", log.body);
+
+    if let Some(trace_id) = &log.trace_id {
+        println!("Trace ID:  {}", trace_id);
+    }
+    if let Some(span_id) = &log.span_id {
+        println!("Span ID:   {}", span_id);
+    }
 
     if !log.attributes.is_empty() {
         println!("\nAttributes:");
@@ -77,7 +91,7 @@ pub fn print_log_details(log: &LogEntry, no_color: bool) {
 }
 
 /// Print traces in a pretty table format
-pub fn print_traces_table(traces: &[Trace], no_color: bool, no_header: bool) {
+pub fn print_traces_table(traces: &[TraceEntry], no_color: bool, no_header: bool) {
     if traces.is_empty() {
         println!("No traces found");
         return;
@@ -90,28 +104,31 @@ pub fn print_traces_table(traces: &[Trace], no_color: bool, no_header: bool) {
 
     // Add header (unless disabled)
     if !no_header {
-        table.set_header(vec!["ID", "Root Span", "Duration", "Status", "Spans"]);
+        table.set_header(vec!["Trace ID", "Root Span", "Duration", "Status", "Spans"]);
     }
 
     // Add rows
     for trace in traces {
+        let status = if trace.has_errors { "ERROR" } else { "OK" };
         let status_cell = if no_color {
-            Cell::new(&trace.status)
+            Cell::new(status)
         } else {
-            let color = match trace.status.as_str() {
-                "ERROR" => Color::Red,
-                "OK" => Color::Green,
-                _ => Color::Reset,
+            let color = if trace.has_errors {
+                Color::Red
+            } else {
+                Color::Green
             };
-            Cell::new(&trace.status).fg(color)
+            Cell::new(status).fg(color)
         };
 
+        let duration_ms = trace.duration / 1_000_000;
+
         table.add_row(vec![
-            Cell::new(&trace.id),
-            Cell::new(&trace.root_span),
-            Cell::new(format!("{}ms", trace.duration_ms)),
+            Cell::new(&trace.trace_id),
+            Cell::new(&trace.root_span_name),
+            Cell::new(format!("{}ms", duration_ms)),
             status_cell,
-            Cell::new(trace.spans.len().to_string()),
+            Cell::new(trace.span_count.to_string()),
         ]);
     }
 
@@ -119,13 +136,25 @@ pub fn print_traces_table(traces: &[Trace], no_color: bool, no_header: bool) {
 }
 
 /// Print a trace with span tree
-pub fn print_trace_tree(trace: &Trace, _no_color: bool) {
-    println!("Trace ID: {}", trace.id);
-    println!("Duration: {}ms", trace.duration_ms);
-    println!("Status:   {}", trace.status);
+pub fn print_trace_tree(trace: &TraceDetail, _no_color: bool) {
+    println!("Trace ID: {}", trace.trace_id);
+    let duration_ms = trace.duration / 1_000_000;
+    println!("Duration: {}ms", duration_ms);
+    let status = if trace.spans.iter().any(|s| {
+        s.status
+            .as_ref()
+            .map(|st| st.code == "Error")
+            .unwrap_or(false)
+    }) {
+        "ERROR"
+    } else {
+        "OK"
+    };
+    println!("Status:   {}", status);
     println!("\nSpans:");
 
-    let tree = trace.build_span_tree();
+    use crate::api::models::SpanEntry;
+    let tree = SpanEntry::build_span_tree(&trace.spans);
     for node in &tree {
         print_span_node(node, 0);
     }
@@ -157,9 +186,11 @@ fn print_span_node(node: &SpanNode, depth: usize) {
         String::new()
     };
 
+    let duration_ms = node.span.duration / 1_000_000;
+
     println!(
         "{}{}{} ({}ms){}",
-        indent, prefix, node.span.name, node.span.duration_ms, genai_suffix
+        indent, prefix, node.span.name, duration_ms, genai_suffix
     );
 
     if !node.span.attributes.is_empty() {
@@ -191,7 +222,7 @@ fn print_key_value_block(key: &str, value: &str, indent_level: usize) {
 }
 
 /// Print metrics in a pretty table format
-pub fn print_metrics_table(metrics: &[Metric], no_color: bool, no_header: bool) {
+pub fn print_metrics_table(metrics: &[MetricResponse], no_color: bool, no_header: bool) {
     if metrics.is_empty() {
         println!("No metrics found");
         return;
@@ -210,23 +241,36 @@ pub fn print_metrics_table(metrics: &[Metric], no_color: bool, no_header: bool) 
     // Add rows
     for metric in metrics {
         let type_cell = if no_color {
-            Cell::new(&metric.type_)
+            Cell::new(&metric.metric_type)
         } else {
-            let color = match metric.type_.as_str() {
+            let color = match metric.metric_type.as_str() {
                 "counter" => Color::Green,
                 "gauge" => Color::Blue,
                 "histogram" => Color::Yellow,
                 "summary" => Color::Cyan,
                 _ => Color::Reset,
             };
-            Cell::new(&metric.type_).fg(color)
+            Cell::new(&metric.metric_type).fg(color)
         };
+
+        use crate::api::models::MetricValue;
+        use chrono::{DateTime, Utc};
+
+        let value_str = match &metric.value {
+            MetricValue::Gauge(v) => format!("{:.2}", v),
+            MetricValue::Counter(v) => format!("{}", v),
+            MetricValue::Histogram { count, sum, .. } => format!("count={}, sum={:.2}", count, sum),
+            MetricValue::Summary { count, sum, .. } => format!("count={}, sum={:.2}", count, sum),
+        };
+
+        let dt = DateTime::<Utc>::from_timestamp_nanos(metric.timestamp);
+        let timestamp_str = dt.format("%Y-%m-%d %H:%M:%S").to_string();
 
         table.add_row(vec![
             Cell::new(&metric.name),
             type_cell,
-            Cell::new(format!("{:.2}", metric.value)),
-            Cell::new(metric.timestamp.format("%Y-%m-%d %H:%M:%S").to_string()),
+            Cell::new(value_str),
+            Cell::new(timestamp_str),
         ]);
     }
 
@@ -234,26 +278,49 @@ pub fn print_metrics_table(metrics: &[Metric], no_color: bool, no_header: bool) 
 }
 
 /// Print a single metric with full details including percentiles
-pub fn print_metric_details(metric: &Metric, _no_color: bool) {
-    println!("Name:      {}", metric.name);
-    println!("Type:      {}", metric.type_);
-    println!("Value:     {:.2}", metric.value);
-    println!(
-        "Timestamp: {}",
-        metric.timestamp.format("%Y-%m-%d %H:%M:%S")
-    );
+pub fn print_metric_details(metric: &MetricResponse, _no_color: bool) {
+    use crate::api::models::MetricValue;
+    use chrono::{DateTime, Utc};
 
-    if !metric.labels.is_empty() {
-        println!("\nLabels:");
-        for (key, value) in &metric.labels {
-            println!("  {}: {}", key, value);
-        }
+    println!("Name:      {}", metric.name);
+    println!("Type:      {}", metric.metric_type);
+
+    match &metric.value {
+        MetricValue::Gauge(v) => println!("Value:     {:.2}", v),
+        MetricValue::Counter(v) => println!("Value:     {}", v),
+        MetricValue::Histogram {
+            count,
+            sum,
+            buckets,
+        } => {
+            println!("Count:     {}", count);
+            println!("Sum:       {:.2}", sum);
+            println!("Buckets:");
+            for bucket in buckets {
+                println!("  <= {:.2}: {}", bucket.upper_bound, bucket.count);
+            }
+        },
+        MetricValue::Summary {
+            count,
+            sum,
+            quantiles,
+        } => {
+            println!("Count:     {}", count);
+            println!("Sum:       {:.2}", sum);
+            println!("Quantiles:");
+            for q in quantiles {
+                println!("  p{}: {:.4}", (q.quantile * 100.0) as u32, q.value);
+            }
+        },
     }
 
-    if let Some(percentiles) = &metric.percentiles {
-        println!("\nPercentiles:");
-        for (key, value) in percentiles {
-            println!("  {}: {:.4}", key, value);
+    let dt = DateTime::<Utc>::from_timestamp_nanos(metric.timestamp);
+    println!("Timestamp: {}", dt.format("%Y-%m-%d %H:%M:%S"));
+
+    if !metric.attributes.is_empty() {
+        println!("\nAttributes:");
+        for (key, value) in &metric.attributes {
+            println!("  {}: {}", key, value);
         }
     }
 }

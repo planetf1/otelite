@@ -1,7 +1,7 @@
 //! Traces command handlers
 
 use crate::api::client::ApiClient;
-use crate::api::models::Trace;
+use crate::api::models::TraceEntry;
 use crate::config::Config;
 use crate::error::Result;
 use crate::output::{json, pretty};
@@ -28,14 +28,14 @@ pub async fn handle_list(
         params.push(("status", status));
     }
 
-    let traces = client.fetch_traces(params).await?;
+    let traces_response = client.fetch_traces(params).await?;
 
     match config.format {
         crate::config::OutputFormat::Pretty => {
-            pretty::print_traces_table(&traces, config.no_color, config.no_header);
+            pretty::print_traces_table(&traces_response.traces, config.no_color, config.no_header);
         },
         crate::config::OutputFormat::Json => {
-            json::print_traces_json(&traces)?;
+            json::print_traces_json(&traces_response.traces)?;
         },
     }
 
@@ -101,18 +101,21 @@ pub async fn handle_export(
 }
 
 /// Filter traces by minimum duration (client-side filtering)
-pub fn filter_by_duration(traces: Vec<Trace>, min_duration_ms: u64) -> Vec<Trace> {
+pub fn filter_by_duration(traces: Vec<TraceEntry>, min_duration_ms: u64) -> Vec<TraceEntry> {
     traces
         .into_iter()
-        .filter(|trace| trace.duration_ms >= min_duration_ms)
+        .filter(|trace| (trace.duration / 1_000_000) >= min_duration_ms as i64)
         .collect()
 }
 
 /// Filter traces by status (client-side filtering)
-pub fn filter_by_status(traces: Vec<Trace>, status: &str) -> Vec<Trace> {
+pub fn filter_by_status(traces: Vec<TraceEntry>, status: &str) -> Vec<TraceEntry> {
     traces
         .into_iter()
-        .filter(|trace| trace.status.eq_ignore_ascii_case(status))
+        .filter(|trace| {
+            let trace_status = if trace.has_errors { "ERROR" } else { "OK" };
+            trace_status.eq_ignore_ascii_case(status)
+        })
         .collect()
 }
 

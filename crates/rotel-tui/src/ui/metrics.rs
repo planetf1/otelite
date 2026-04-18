@@ -4,7 +4,7 @@ use ratatui::{
     layout::{Constraint, Direction, Layout, Rect},
     style::{Color, Modifier, Style},
     text::{Line, Span},
-    widgets::{Block, Borders, Paragraph, Row, Sparkline, Table, Wrap},
+    widgets::{Block, Borders, Paragraph, Row, Table, Wrap},
     Frame,
 };
 
@@ -47,14 +47,21 @@ fn render_metrics_table(frame: &mut Frame, area: Rect, state: &MetricsState) {
                 Style::default()
             };
 
-            let latest_value = metric
-                .data_points
-                .last()
-                .map(|dp| format!("{:.2}", dp.value))
-                .unwrap_or_else(|| "N/A".to_string());
+            use crate::api::models::MetricValue;
+
+            let latest_value = match &metric.value {
+                MetricValue::Gauge(v) => format!("{:.2}", v),
+                MetricValue::Counter(v) => format!("{}", v),
+                MetricValue::Histogram { sum, count, .. } => {
+                    format!("sum={:.2}, count={}", sum, count)
+                },
+                MetricValue::Summary { sum, count, .. } => {
+                    format!("sum={:.2}, count={}", sum, count)
+                },
+            };
 
             let unit = metric.unit.as_deref().unwrap_or("");
-            let data_point_count = metric.data_points.len();
+            let data_point_count = 1; // Single data point per metric now
 
             Row::new(vec![
                 truncate_string(&metric.name, 40),
@@ -152,11 +159,14 @@ fn render_detail_panel(frame: &mut Frame, area: Rect, state: &MetricsState) {
 
 /// Render metric information
 fn render_metric_info(frame: &mut Frame, area: Rect, metric: &Metric) {
-    let latest_value = metric
-        .data_points
-        .last()
-        .map(|dp| format!("{:.2}", dp.value))
-        .unwrap_or_else(|| "N/A".to_string());
+    use crate::api::models::MetricValue;
+
+    let latest_value = match &metric.value {
+        MetricValue::Gauge(v) => format!("{:.2}", v),
+        MetricValue::Counter(v) => format!("{}", v),
+        MetricValue::Histogram { sum, count, .. } => format!("sum={:.2}, count={}", sum, count),
+        MetricValue::Summary { sum, count, .. } => format!("sum={:.2}, count={}", sum, count),
+    };
 
     let unit = metric.unit.as_deref().unwrap_or("none");
 
@@ -175,18 +185,8 @@ fn render_metric_info(frame: &mut Frame, area: Rect, metric: &Metric) {
         ]),
         Line::from(""),
         Line::from(vec![
-            Span::styled(
-                "Latest Value: ",
-                Style::default().add_modifier(Modifier::BOLD),
-            ),
+            Span::styled("Value: ", Style::default().add_modifier(Modifier::BOLD)),
             Span::styled(latest_value, Style::default().fg(Color::Green)),
-        ]),
-        Line::from(vec![
-            Span::styled(
-                "Data Points: ",
-                Style::default().add_modifier(Modifier::BOLD),
-            ),
-            Span::raw(metric.data_points.len().to_string()),
         ]),
         Line::from(""),
         Line::from(vec![Span::styled(
@@ -209,42 +209,44 @@ fn render_metric_info(frame: &mut Frame, area: Rect, metric: &Metric) {
 
 /// Render metric chart (sparkline)
 fn render_metric_chart(frame: &mut Frame, area: Rect, metric: &Metric) {
-    // Extract values for sparkline
-    let values: Vec<u64> = metric
-        .data_points
-        .iter()
-        .map(|dp| dp.value.max(0.0) as u64)
-        .collect();
+    use crate::api::models::MetricValue;
 
-    if values.is_empty() {
-        let paragraph = Paragraph::new("No data points available").block(
-            Block::default()
-                .borders(Borders::ALL)
-                .title(" Value History "),
-        );
-        frame.render_widget(paragraph, area);
-        return;
-    }
-
-    // Calculate statistics
-    let min_value = values.iter().min().copied().unwrap_or(0);
-    let max_value = values.iter().max().copied().unwrap_or(0);
-    let avg_value = if !values.is_empty() {
-        values.iter().sum::<u64>() / values.len() as u64
-    } else {
-        0
+    // For single-value metrics, show a simple display instead of sparkline
+    let display_text = match &metric.value {
+        MetricValue::Gauge(v) => format!("Current: {:.2}", v),
+        MetricValue::Counter(v) => format!("Total: {}", v),
+        MetricValue::Histogram {
+            count,
+            sum,
+            buckets,
+        } => {
+            format!(
+                "Count: {}, Sum: {:.2}, Buckets: {}",
+                count,
+                sum,
+                buckets.len()
+            )
+        },
+        MetricValue::Summary {
+            count,
+            sum,
+            quantiles,
+        } => {
+            format!(
+                "Count: {}, Sum: {:.2}, Quantiles: {}",
+                count,
+                sum,
+                quantiles.len()
+            )
+        },
     };
 
-    let sparkline = Sparkline::default()
-        .block(Block::default().borders(Borders::ALL).title(format!(
-            " Value History (min: {}, max: {}, avg: {}) ",
-            min_value, max_value, avg_value
-        )))
-        .data(&values)
-        .style(Style::default().fg(Color::Cyan))
-        .max(max_value);
-
-    frame.render_widget(sparkline, area);
+    let paragraph = Paragraph::new(display_text).block(
+        Block::default()
+            .borders(Borders::ALL)
+            .title(" Current Value "),
+    );
+    frame.render_widget(paragraph, area);
 }
 
 /// Render status bar

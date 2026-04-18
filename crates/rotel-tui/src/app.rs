@@ -239,7 +239,7 @@ impl App {
                 // Note: Metrics API doesn't have query parameters in current implementation
                 match self.api_client.get_metrics().await {
                     Ok(response) => {
-                        self.metrics_state.update_metrics(response.metrics);
+                        self.metrics_state.update_metrics(response);
                         self.metrics_state.clear_error();
                     },
                     Err(e) => {

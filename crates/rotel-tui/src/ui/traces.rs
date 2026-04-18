@@ -366,7 +366,15 @@ fn format_span_detail(span: &Span, trace: &Trace) -> Text<'static> {
     let mut lines = vec![
         Line::from(vec![
             TextSpan::styled("Span: ", Style::default().add_modifier(Modifier::BOLD)),
-            TextSpan::styled(span.name.clone(), get_span_status_color(&span.status)),
+            TextSpan::styled(
+                span.name.clone(),
+                get_span_status_color(
+                    span.status
+                        .as_ref()
+                        .map(|s| s.code.as_str())
+                        .unwrap_or("Ok"),
+                ),
+            ),
         ]),
         Line::from(""),
         Line::from(vec![
@@ -384,7 +392,18 @@ fn format_span_detail(span: &Span, trace: &Trace) -> Text<'static> {
         ]),
         Line::from(vec![
             TextSpan::styled("Status: ", Style::default().add_modifier(Modifier::BOLD)),
-            TextSpan::styled(span.status.clone(), get_span_status_color(&span.status)),
+            TextSpan::styled(
+                span.status
+                    .as_ref()
+                    .map(|s| s.code.clone())
+                    .unwrap_or_else(|| "Ok".to_string()),
+                get_span_status_color(
+                    span.status
+                        .as_ref()
+                        .map(|s| s.code.as_str())
+                        .unwrap_or("Ok"),
+                ),
+            ),
         ]),
         Line::from(""),
         Line::from(vec![
@@ -557,21 +576,7 @@ fn format_span_detail(span: &Span, trace: &Trace) -> Text<'static> {
         lines.push(Line::from(""));
     }
 
-    // Links
-    if !span.links.is_empty() {
-        lines.push(Line::from(vec![TextSpan::styled(
-            "Links:",
-            Style::default().add_modifier(Modifier::BOLD),
-        )]));
-        for link in &span.links {
-            lines.push(Line::from(format!(
-                "  • Trace: {} / Span: {}",
-                &link.trace_id[..8],
-                &link.span_id[..8]
-            )));
-        }
-        lines.push(Line::from(""));
-    }
+    // Links section removed - not in current API model
 
     lines.push(Line::from(vec![TextSpan::styled(
         "Press Esc to return to trace view",
@@ -592,7 +597,14 @@ fn format_trace_detail(trace: &Trace, state: &TracesState) -> Text<'static> {
         ]),
         Line::from(vec![
             TextSpan::styled("Operation: ", Style::default().add_modifier(Modifier::BOLD)),
-            TextSpan::raw(trace.root_span_name.clone()),
+            TextSpan::raw(
+                trace
+                    .spans
+                    .iter()
+                    .find(|s| s.parent_span_id.is_none())
+                    .map(|s| s.name.clone())
+                    .unwrap_or_else(|| "Unknown".to_string()),
+            ),
         ]),
         Line::from(""),
         Line::from(vec![
@@ -636,8 +648,14 @@ fn format_trace_detail(trace: &Trace, state: &TracesState) -> Text<'static> {
             bar_width,
         );
 
-        let bar_color = get_timing_bar_color(&node.span.status, node.duration_percent);
-        let mut status_color = get_span_status_color(&node.span.status);
+        let status_str = node
+            .span
+            .status
+            .as_ref()
+            .map(|s| s.code.as_str())
+            .unwrap_or("Ok");
+        let bar_color = get_timing_bar_color(status_str, node.duration_percent);
+        let mut status_color = get_span_status_color(status_str);
 
         // Highlight selected span
         let selection_marker = if is_selected { "▶ " } else { "  " };
