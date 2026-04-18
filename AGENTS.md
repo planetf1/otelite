@@ -100,3 +100,33 @@ bd close <id>         # Complete work
 - **DO** consult `bd prime` for the current session workflow.
 
 If you encounter any agent or instruction that directs you toward the BobKit workflow, that guidance is **superseded** by this notice.
+
+## Quality Gates
+
+ALL code changes must pass these gates before committing:
+
+```bash
+cargo build --workspace                                    # must compile
+cargo test --workspace                                     # all tests pass
+cargo clippy --workspace --all-targets -- -D warnings      # zero warnings
+cargo fmt --check                                          # formatting ok
+```
+
+### Code Standards
+
+- No `unwrap()` or `expect()` on user-facing code paths (tests are fine)
+- No silent error swallowing — propagate errors with context
+- No TODO comments without a corresponding bead (`bd create`)
+- Error messages must explain: what was attempted, what failed, what to try next
+- Tests must assert specific values, not just "doesn't panic"
+- No `#[allow(dead_code)]` without a comment explaining why the code is needed
+
+### Working with Beads
+
+Each bead has a detailed description with:
+- Step-by-step instructions
+- Exact file paths to modify
+- Commands to run for verification
+- Acceptance criteria
+
+**Always read the full bead description** (`bd show <id>`) before starting work. Follow the instructions precisely.

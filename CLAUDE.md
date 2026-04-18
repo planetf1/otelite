@@ -89,3 +89,30 @@ Rotel is an OpenTelemetry receiver and dashboard for local LLM users.
 - Async via tokio; axum for HTTP
 - `thiserror` for error types; no silent `?` swallowing
 - Commit trailers: `Assisted-by: Claude Code`
+
+## Quality Standards
+
+These rules apply to ALL code changes:
+
+### Before committing
+
+1. `cargo build --workspace` — must compile cleanly
+2. `cargo test --workspace` — all tests must pass
+3. `cargo clippy --workspace --all-targets -- -D warnings` — zero warnings
+4. `cargo fmt --check` — formatting must pass
+
+### Code quality rules
+
+- **No `#[allow(dead_code)]`** unless the code is genuinely needed soon (add a comment explaining why)
+- **No `unwrap()` or `expect()`** on user-facing code paths (tests are fine)
+- **No silent error swallowing** — every `?` should propagate to a meaningful error message
+- **No TODO comments** without a corresponding bead — if work is deferred, create a bead for it
+- **Error messages must include context** — what was attempted, what failed, what to try next
+- **Tests must assert specific values** — not just "doesn't panic"
+
+### Bead workflow
+
+- Before starting work: `bd update <id> --claim` to claim the bead
+- After completing: `bd close <id> --reason "what was done"` with a clear reason
+- If blocked: create a new bead for the blocker and add a dependency
+- Read the bead's full description with `bd show <id>` before starting — it has step-by-step instructions
