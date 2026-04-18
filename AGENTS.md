@@ -9,7 +9,7 @@ bd ready              # Find available work
 bd show <id>          # View issue details
 bd update <id> --claim  # Claim work atomically
 bd close <id>         # Complete work
-bd dolt push          # Push beads data to remote
+bd dolt push          # Sync beads to remote (run at session end)
 ```
 
 ## Rules
@@ -44,9 +44,9 @@ bd dolt push          # Push beads data to remote
 3. Commit with a clear message describing what was done (no agent attribution trailers)
 4. Push immediately: `git push`
 5. Close the bead: `bd close <id> --reason "what was done"`
-6. Push beads data: `bd dolt push`
 
 **Do NOT batch multiple beads into one commit.** Each bead = one commit + push.
+Beads data is stored in Dolt (not git) — no need to commit `.beads/` files. Run `bd dolt push` at session end to sync.
 
 ## Non-Interactive Shell Commands
 
