@@ -161,6 +161,7 @@ Your context may be compacted mid-session without warning. Protect your work:
 - **Update bead status immediately** — `bd update <id> --claim` when starting, `bd close` when done
 - **Leave notes on in-progress beads** — `bd update <id> --notes "completed step 2, starting step 3"` so the next context can resume
 - **Don't hold state in your head** — if you've figured something out (e.g., "the function signature needs to change"), write it in a bead note or commit it
+- **Before any significant change** (editing multiple files, refactoring, changing public APIs), update the bead with your plan: `bd update <id> --append-notes "About to change X because Y"`. If the session aborts mid-change, the next agent can pick up from your notes rather than guessing
 
 If you resume after compaction: run `bd ready` and `git status` to understand current state.
 
