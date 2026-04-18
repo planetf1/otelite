@@ -152,6 +152,7 @@ A bead is complete when ALL of these are true:
 3. Changes are committed with a clear message
 4. `git push` succeeded
 5. `bd close <id> --reason "..."` called with a specific reason
+6. `bd dolt push` to sync bead state to remote (so the next agent sees it)
 
 ## Before Context Compaction
 
