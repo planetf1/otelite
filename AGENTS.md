@@ -85,6 +85,51 @@ Each bead has a detailed description with step-by-step instructions, exact file 
 
 **Always read the full bead description** (`bd show <id>`) before starting work. Follow the instructions precisely.
 
+## Implementation Sequence
+
+Work through beads in this order. Within each phase, follow priority (P0 first) and dependency chains.
+
+### Phase 1: Connect the pipeline (P0 — do these first, in order)
+1. `rotel-3eh` — OTLP-to-internal type conversion functions
+2. `rotel-xfw` — Inject storage into receiver signal handlers
+3. `rotel-7nv` — Wire storage into gRPC/HTTP server constructors
+4. `rotel-82c` — Wire receiver startup into CLI run_dashboard
+5. `rotel-e2h` — Pipeline integration test
+
+### Phase 2: Foundation cleanup (P1 — unblocked, do in parallel)
+- `rotel-0y3` — Add rotel-dashboard to workspace
+- `rotel-ka3` — Archive rotel-api mock crate
+- `rotel-2c2` — Fix TUI default URL to port 3000
+- `rotel-vcj` — Design CLI/API noun-verb structure (do early — it shapes later work)
+- `rotel-8yo` — Align CLI+TUI models (after rotel-ka3)
+
+### Phase 3: Core UX features (P1 — after pipeline works)
+- `rotel-7vp` — End-to-end test
+- `rotel-fr0` — Trace waterfall in TUI
+- `rotel-vox` — Trace waterfall in web dashboard
+- `rotel-mbt` — GenAI/LLM span detection
+- `rotel-fjm` — JSON attribute formatting
+- `rotel-fo0` — CLI export commands
+- `rotel-54a` — Quickstart documentation
+
+### Phase 4: Quality and polish (P2)
+- Bug fixes: `rotel-373` (stats), `rotel-ac3` (JSON parsing)
+- Cleanup: `rotel-c36` (Bob comments), `rotel-y90` (core scaffolding), `rotel-cvt` (dep versions)
+- Quality: `rotel-5tw` (clippy), `rotel-aay` (error handling), `rotel-3j3` (test coverage)
+- Features: `rotel-pr9` (config file), `rotel-cp2` (debug logging), `rotel-i7a` (CLI polish)
+- Features: `rotel-cz5` (TUI loading), `rotel-25s` (structured query), `rotel-aeo` (correlation)
+- Features: `rotel-ons` (metric charts), `rotel-3hw` (sparklines), `rotel-q3y` (token usage)
+- Docs: `rotel-nyg` (ARCHITECTURE.md), `rotel-h5g` (CHANGELOG), `rotel-3qj` (OpenAPI)
+- Infra: `rotel-x6a` (benchmarks), `rotel-cie` (profiling), `rotel-2he` (OTLP conformance)
+
+### Phase 5: Advanced features and docs (P3)
+- Service mode, AI chat, MCP server
+- TUI polish, web responsive layout, lazy loading
+- All remaining documentation beads
+- CI/CD review
+
+**Key rule:** If `bd show <id>` lists dependencies, those must be completed first.
+
 ## Session End
 
 Before ending a session:
