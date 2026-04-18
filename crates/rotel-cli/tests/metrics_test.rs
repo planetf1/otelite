@@ -61,7 +61,8 @@ async fn test_metrics_list_command() {
     let config = create_test_config(server.url(), rotel_cli::config::OutputFormat::Json);
 
     let result =
-        rotel_cli::commands::metrics::handle_list(&client, &config, Some(10), None, vec![]).await;
+        rotel_cli::commands::metrics::handle_list(&client, &config, Some(10), None, vec![], None)
+            .await;
 
     mock.assert_async().await;
     assert!(result.is_ok());
@@ -82,7 +83,7 @@ async fn test_metrics_list_empty() {
     let config = create_test_config(server.url(), rotel_cli::config::OutputFormat::Json);
 
     let result =
-        rotel_cli::commands::metrics::handle_list(&client, &config, None, None, vec![]).await;
+        rotel_cli::commands::metrics::handle_list(&client, &config, None, None, vec![], None).await;
 
     mock.assert_async().await;
     assert!(result.is_ok());
@@ -124,6 +125,7 @@ async fn test_metrics_list_with_name_filter() {
         None,
         Some("http_requests_total".to_string()),
         vec![],
+        None,
     )
     .await;
 
@@ -159,9 +161,14 @@ async fn test_metrics_get_command() {
     let client = create_test_client(server.url()).await;
     let config = create_test_config(server.url(), rotel_cli::config::OutputFormat::Json);
 
-    let result =
-        rotel_cli::commands::metrics::handle_get(&client, &config, "http_requests_total", vec![])
-            .await;
+    let result = rotel_cli::commands::metrics::handle_show(
+        &client,
+        &config,
+        "http_requests_total",
+        vec![],
+        None,
+    )
+    .await;
 
     mock.assert_async().await;
     assert!(result.is_ok());
@@ -179,9 +186,14 @@ async fn test_metrics_get_not_found() {
     let client = create_test_client(server.url()).await;
     let config = create_test_config(server.url(), rotel_cli::config::OutputFormat::Json);
 
-    let result =
-        rotel_cli::commands::metrics::handle_get(&client, &config, "nonexistent_metric", vec![])
-            .await;
+    let result = rotel_cli::commands::metrics::handle_show(
+        &client,
+        &config,
+        "nonexistent_metric",
+        vec![],
+        None,
+    )
+    .await;
 
     mock.assert_async().await;
     assert!(result.is_err());
@@ -225,6 +237,7 @@ async fn test_metrics_list_with_label_filter() {
         None,
         None,
         vec!["method=GET".to_string()],
+        None,
     )
     .await;
 
@@ -266,6 +279,7 @@ async fn test_metrics_list_with_multiple_label_filters() {
         None,
         None,
         vec!["method=GET".to_string(), "status=200".to_string()],
+        None,
     )
     .await;
 
@@ -304,11 +318,12 @@ async fn test_metrics_get_with_label_filter() {
     let client = create_test_client(server.url()).await;
     let config = create_test_config(server.url(), rotel_cli::config::OutputFormat::Json);
 
-    let result = rotel_cli::commands::metrics::handle_get(
+    let result = rotel_cli::commands::metrics::handle_show(
         &client,
         &config,
         "http_requests_total",
         vec!["method=GET".to_string()],
+        None,
     )
     .await;
 
@@ -361,9 +376,14 @@ async fn test_metrics_time_series_json_output() {
     let client = create_test_client(server.url()).await;
     let config = create_test_config(server.url(), rotel_cli::config::OutputFormat::Json);
 
-    let result =
-        rotel_cli::commands::metrics::handle_get(&client, &config, "cpu_usage_percent", vec![])
-            .await;
+    let result = rotel_cli::commands::metrics::handle_show(
+        &client,
+        &config,
+        "cpu_usage_percent",
+        vec![],
+        None,
+    )
+    .await;
 
     mock.assert_async().await;
     assert!(result.is_ok());
@@ -401,9 +421,14 @@ async fn test_metrics_histogram_with_percentiles() {
     let client = create_test_client(server.url()).await;
     let config = create_test_config(server.url(), rotel_cli::config::OutputFormat::Json);
 
-    let result =
-        rotel_cli::commands::metrics::handle_get(&client, &config, "response_time_ms", vec![])
-            .await;
+    let result = rotel_cli::commands::metrics::handle_show(
+        &client,
+        &config,
+        "response_time_ms",
+        vec![],
+        None,
+    )
+    .await;
 
     mock.assert_async().await;
     assert!(result.is_ok());
@@ -436,7 +461,7 @@ async fn test_metrics_json_output_format() {
     let config = create_test_config(server.url(), rotel_cli::config::OutputFormat::Json);
 
     let result =
-        rotel_cli::commands::metrics::handle_list(&client, &config, None, None, vec![]).await;
+        rotel_cli::commands::metrics::handle_list(&client, &config, None, None, vec![], None).await;
 
     mock.assert_async().await;
     assert!(result.is_ok());

@@ -7,12 +7,14 @@ use crate::error::Result;
 use crate::output::{json, pretty};
 
 /// Handle metrics list command
+#[allow(clippy::too_many_arguments)]
 pub async fn handle_list(
     client: &ApiClient,
     config: &Config,
     limit: Option<u32>,
     name: Option<String>,
     labels: Vec<String>,
+    since: Option<String>,
 ) -> Result<()> {
     let mut params = Vec::new();
 
@@ -22,6 +24,10 @@ pub async fn handle_list(
 
     if let Some(name) = name {
         params.push(("name", name));
+    }
+
+    if let Some(since) = since {
+        params.push(("since", since));
     }
 
     // Add label filters as query parameters
@@ -43,14 +49,19 @@ pub async fn handle_list(
     Ok(())
 }
 
-/// Handle metrics get command
-pub async fn handle_get(
+/// Handle metrics show command
+pub async fn handle_show(
     client: &ApiClient,
     config: &Config,
     name: &str,
     labels: Vec<String>,
+    since: Option<String>,
 ) -> Result<()> {
     let mut params = Vec::new();
+
+    if let Some(since) = since {
+        params.push(("since", since));
+    }
 
     // Add label filters as query parameters
     for label in labels {

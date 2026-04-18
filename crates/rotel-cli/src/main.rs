@@ -53,7 +53,10 @@ struct Cli {
 
 #[derive(Subcommand, Debug)]
 enum Commands {
-    /// Start the dashboard server (default if no subcommand)
+    /// Start the dashboard server with OTLP receivers (default if no subcommand)
+    #[command(
+        after_help = "Examples:\n  rotel dashboard\n  rotel dashboard --addr 0.0.0.0:8080 --storage-path /data/rotel.db"
+    )]
     Dashboard {
         /// Dashboard bind address
         #[arg(long, default_value = "127.0.0.1:3000")]
@@ -63,17 +66,26 @@ enum Commands {
         #[arg(long, default_value = "rotel.db")]
         storage_path: String,
     },
-    /// Query and display logs
+    /// Manage log entries
+    #[command(
+        after_help = "Use 'rotel logs <command> --help' for more information on a specific command."
+    )]
     Logs {
         #[command(subcommand)]
         command: LogsCommands,
     },
-    /// Query and display traces
+    /// Manage distributed traces
+    #[command(
+        after_help = "Use 'rotel traces <command> --help' for more information on a specific command."
+    )]
     Traces {
         #[command(subcommand)]
         command: TracesCommands,
     },
-    /// Query and display metrics
+    /// Manage time-series metrics
+    #[command(
+        after_help = "Use 'rotel metrics <command> --help' for more information on a specific command."
+    )]
     Metrics {
         #[command(subcommand)]
         command: MetricsCommands,
@@ -82,30 +94,39 @@ enum Commands {
 
 #[derive(Subcommand, Debug)]
 enum LogsCommands {
-    /// List recent logs
+    /// List recent log entries
+    #[command(
+        after_help = "Examples:\n  rotel logs list --severity ERROR --since 24h\n  rotel logs list --format json | jq '.[] | .body'"
+    )]
     List {
-        /// Maximum number of results
-        #[arg(long, short = 'n')]
-        limit: Option<usize>,
+        /// Filter by time range (e.g., 1h, 24h, 7d)
+        #[arg(long, default_value = "1h")]
+        since: Option<String>,
 
-        /// Filter by severity level
+        /// Filter by severity level (ERROR, WARN, INFO, DEBUG, TRACE)
         #[arg(long)]
         severity: Option<String>,
 
-        /// Filter by time range (e.g., 1h, 30m, 5s)
-        #[arg(long)]
-        since: Option<String>,
+        /// Maximum number of results
+        #[arg(long, short = 'n', default_value = "50")]
+        limit: Option<usize>,
     },
-    /// Search logs by content
+    /// Full-text search in log bodies
+    #[command(
+        after_help = "Examples:\n  rotel logs search \"database error\" --limit 20\n  rotel logs search \"timeout\" --format json"
+    )]
     Search {
         /// Search query
         query: String,
 
         /// Maximum number of results
-        #[arg(long, short = 'n')]
+        #[arg(long, short = 'n', default_value = "50")]
         limit: Option<usize>,
     },
-    /// Show detailed log entry
+    /// Show a single log entry by ID
+    #[command(
+        after_help = "Examples:\n  rotel logs show log-12345\n  rotel logs show log-12345 --format json"
+    )]
     Show {
         /// Log ID
         id: String,
@@ -114,25 +135,31 @@ enum LogsCommands {
 
 #[derive(Subcommand, Debug)]
 enum TracesCommands {
-    /// List recent traces
+    /// List recent distributed traces
+    #[command(
+        after_help = "Examples:\n  rotel traces list --status ERROR --min-duration 1s\n  rotel traces list --since 24h --limit 20"
+    )]
     List {
-        /// Maximum number of results
-        #[arg(long, short = 'n')]
-        limit: Option<usize>,
-
-        /// Filter by minimum duration (e.g., 1s, 500ms)
-        #[arg(long)]
-        min_duration: Option<String>,
+        /// Filter by time range (e.g., 1h, 24h, 7d)
+        #[arg(long, default_value = "1h")]
+        since: Option<String>,
 
         /// Filter by status (OK or ERROR)
         #[arg(long)]
         status: Option<String>,
 
-        /// Filter by time range (e.g., 1h, 30m, 5s)
+        /// Filter by minimum duration (e.g., 1s, 500ms)
         #[arg(long)]
-        since: Option<String>,
+        min_duration: Option<String>,
+
+        /// Maximum number of results
+        #[arg(long, short = 'n', default_value = "50")]
+        limit: Option<usize>,
     },
-    /// Show detailed trace with spans
+    /// Show a single trace with all spans
+    #[command(
+        after_help = "Examples:\n  rotel traces show trace-abc123\n  rotel traces show trace-abc123 --format json"
+    )]
     Show {
         /// Trace ID
         id: String,
@@ -142,10 +169,13 @@ enum TracesCommands {
 #[derive(Subcommand, Debug)]
 enum MetricsCommands {
     /// List available metrics
+    #[command(
+        after_help = "Examples:\n  rotel metrics list --name http --since 24h\n  rotel metrics list --label method=GET --limit 20"
+    )]
     List {
-        /// Maximum number of results
-        #[arg(long, short = 'n')]
-        limit: Option<u32>,
+        /// Filter by time range (e.g., 1h, 24h, 7d)
+        #[arg(long, default_value = "1h")]
+        since: Option<String>,
 
         /// Filter by metric name pattern
         #[arg(long)]
@@ -154,11 +184,22 @@ enum MetricsCommands {
         /// Filter by label (key=value, can be specified multiple times)
         #[arg(long)]
         label: Vec<String>,
+
+        /// Maximum number of results
+        #[arg(long, short = 'n', default_value = "50")]
+        limit: Option<u32>,
     },
-    /// Get metric values by name
-    Get {
+    /// Show metric values by name
+    #[command(
+        after_help = "Examples:\n  rotel metrics show http_requests_total\n  rotel metrics show http_requests_total --label method=GET"
+    )]
+    Show {
         /// Metric name
         name: String,
+
+        /// Filter by time range (e.g., 1h, 24h, 7d)
+        #[arg(long, default_value = "1h")]
+        since: Option<String>,
 
         /// Filter by label (key=value, can be specified multiple times)
         #[arg(long)]
@@ -348,11 +389,16 @@ async fn handle_metrics_command(command: MetricsCommands, config: &Config) -> Re
     let client = ApiClient::new(config.endpoint.clone(), config.timeout)?;
 
     match command {
-        MetricsCommands::List { limit, name, label } => {
-            metrics::handle_list(&client, config, limit, name, label).await?;
+        MetricsCommands::List {
+            limit,
+            name,
+            label,
+            since,
+        } => {
+            metrics::handle_list(&client, config, limit, name, label, since).await?;
         },
-        MetricsCommands::Get { name, label } => {
-            metrics::handle_get(&client, config, &name, label).await?;
+        MetricsCommands::Show { name, label, since } => {
+            metrics::handle_show(&client, config, &name, label, since).await?;
         },
     }
 
