@@ -77,7 +77,7 @@ impl DashboardServer {
     }
 
     /// Build the router with all routes
-    fn build_router(&self) -> Router {
+    pub fn build_router(&self) -> Router {
         Router::new()
             // API routes - Health
             .route("/api/health", get(crate::api::health_check))
