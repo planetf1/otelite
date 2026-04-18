@@ -55,3 +55,6 @@ Thumbs.db
 .dolt/
 *.db
 .beads-credential-key
+
+# Archived bobkit artifacts
+.archive/
