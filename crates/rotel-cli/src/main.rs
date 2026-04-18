@@ -217,7 +217,7 @@ async fn run_cli() -> Result<()> {
 }
 
 async fn run_dashboard(addr: SocketAddr, storage_path: String) -> Result<()> {
-    info!("Starting Rotel Dashboard...");
+    info!("Starting Rotel Dashboard with OTLP Receiver...");
 
     // Initialize storage backend
     info!("Initializing storage at {}", storage_path);
@@ -231,6 +231,35 @@ async fn run_dashboard(addr: SocketAddr, storage_path: String) -> Result<()> {
     let storage: Arc<dyn StorageBackend> = Arc::new(storage);
 
     info!("Storage initialized successfully");
+
+    // Start gRPC receiver on port 4317
+    let grpc_addr = "0.0.0.0:4317".parse().unwrap();
+    let receiver_config = rotel_receiver::ReceiverConfig::new().with_grpc_addr(grpc_addr);
+
+    let grpc_server =
+        rotel_receiver::grpc::GrpcServer::new(receiver_config.clone(), storage.clone());
+
+    grpc_server
+        .start()
+        .await
+        .map_err(|e| Error::ApiError(format!("Failed to start gRPC receiver: {}", e)))?;
+
+    info!("gRPC receiver started on {}", grpc_addr);
+
+    // Start HTTP receiver on port 4318
+    let http_addr = "0.0.0.0:4318".parse().unwrap();
+    let http_config = receiver_config.with_http_addr(http_addr);
+
+    let http_server = rotel_receiver::http::HttpServer::new(http_config);
+
+    http_server
+        .start(storage.clone())
+        .await
+        .map_err(|e| Error::ApiError(format!("Failed to start HTTP receiver: {}", e)))?;
+
+    info!("HTTP receiver started on {}", http_addr);
+
+    // Start dashboard server
     info!("Dashboard enabled at http://{}", addr);
 
     let config = DashboardConfig::default()
