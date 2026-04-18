@@ -81,8 +81,14 @@ impl App {
                         View::Logs if self.logs_state.show_detail => {
                             self.logs_state.hide_detail_panel();
                         },
+                        View::Traces if self.traces_state.show_span_detail => {
+                            // Exit span detail back to trace detail
+                            self.traces_state.toggle_span_detail();
+                        },
                         View::Traces if self.traces_state.show_detail => {
+                            // Exit trace detail back to trace list
                             self.traces_state.hide_detail_panel();
+                            self.traces_state.reset_span_selection();
                         },
                         View::Metrics if self.metrics_state.show_detail => {
                             self.metrics_state.hide_detail_panel();
@@ -106,14 +112,43 @@ impl App {
             },
             // Traces view events
             AppEvent::Up if self.current_view == View::Traces => {
-                self.traces_state.select_previous();
+                if self.traces_state.show_span_detail {
+                    // In span detail view, do nothing (Esc to go back)
+                } else if self.traces_state.show_detail {
+                    // In trace detail view, navigate spans
+                    if let Some(_trace) = self.traces_state.selected_trace_details() {
+                        self.traces_state.select_previous_span();
+                    }
+                } else {
+                    // In trace list view, navigate traces
+                    self.traces_state.select_previous();
+                }
             },
             AppEvent::Down if self.current_view == View::Traces => {
-                self.traces_state.select_next();
+                if self.traces_state.show_span_detail {
+                    // In span detail view, do nothing (Esc to go back)
+                } else if self.traces_state.show_detail {
+                    // In trace detail view, navigate spans
+                    if let Some(trace) = self.traces_state.selected_trace_details() {
+                        self.traces_state.select_next_span(trace.spans.len());
+                    }
+                } else {
+                    // In trace list view, navigate traces
+                    self.traces_state.select_next();
+                }
             },
             AppEvent::Select if self.current_view == View::Traces => {
-                self.traces_state.show_detail_panel();
-                // TODO: Load full trace details from API
+                if self.traces_state.show_span_detail {
+                    // Already in span detail, do nothing
+                } else if self.traces_state.show_detail {
+                    // In trace detail view, show span detail
+                    self.traces_state.toggle_span_detail();
+                } else {
+                    // In trace list view, show trace detail
+                    self.traces_state.show_detail_panel();
+                    self.traces_state.reset_span_selection();
+                    // TODO: Load full trace details from API
+                }
             },
             // Metrics view events
             AppEvent::Up if self.current_view == View::Metrics => {

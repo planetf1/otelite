@@ -20,6 +20,12 @@ pub struct TracesState {
     trace_details: HashMap<String, ResponseCache<Trace>>,
     /// Whether detail panel is shown
     pub show_detail: bool,
+    /// Selected span index within the trace detail view
+    pub selected_span_index: usize,
+    /// Scroll offset for span list in detail view
+    pub span_scroll_offset: usize,
+    /// Whether to show span detail (nested detail within trace detail)
+    pub show_span_detail: bool,
     /// Search query
     pub search_query: String,
     /// Active filters (field -> value)
@@ -40,6 +46,9 @@ impl Default for TracesState {
             selected_index: 0,
             trace_details: HashMap::new(),
             show_detail: false,
+            selected_span_index: 0,
+            span_scroll_offset: 0,
+            show_span_detail: false,
             search_query: String::new(),
             filters: HashMap::new(),
             scroll_offset: 0,
@@ -235,6 +244,32 @@ impl TracesState {
     /// Clear error message
     pub fn clear_error(&mut self) {
         self.error = None;
+    }
+
+    /// Move span selection up
+    pub fn select_previous_span(&mut self) {
+        if self.selected_span_index > 0 {
+            self.selected_span_index -= 1;
+        }
+    }
+
+    /// Move span selection down
+    pub fn select_next_span(&mut self, max_spans: usize) {
+        if max_spans > 0 && self.selected_span_index < max_spans - 1 {
+            self.selected_span_index += 1;
+        }
+    }
+
+    /// Toggle span detail panel
+    pub fn toggle_span_detail(&mut self) {
+        self.show_span_detail = !self.show_span_detail;
+    }
+
+    /// Reset span selection when switching traces
+    pub fn reset_span_selection(&mut self) {
+        self.selected_span_index = 0;
+        self.span_scroll_offset = 0;
+        self.show_span_detail = false;
     }
 }
 
