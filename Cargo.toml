@@ -6,7 +6,6 @@ members = [
     "crates/rotel-cli",
     "crates/rotel-storage",
     "crates/rotel-tui",
-    "crates/rotel-api",
     "crates/rotel-dashboard",
 ]
 
