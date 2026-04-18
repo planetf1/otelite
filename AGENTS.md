@@ -85,50 +85,52 @@ Each bead has a detailed description with step-by-step instructions, exact file 
 
 **Always read the full bead description** (`bd show <id>`) before starting work. Follow the instructions precisely.
 
-## Implementation Sequence
+## Picking What to Work On
 
-Work through beads in this order. Within each phase, follow priority (P0 first) and dependency chains.
+Use beads priorities, labels, and dependencies to decide:
 
-### Phase 1: Connect the pipeline (P0 — do these first, in order)
-1. `rotel-3eh` — OTLP-to-internal type conversion functions
-2. `rotel-xfw` — Inject storage into receiver signal handlers
-3. `rotel-7nv` — Wire storage into gRPC/HTTP server constructors
-4. `rotel-82c` — Wire receiver startup into CLI run_dashboard
-5. `rotel-e2h` — Pipeline integration test
+```bash
+bd ready                    # Show all unblocked beads, sorted by priority
+bd ready -l pipeline        # Show only pipeline-related beads
+bd ready -l cli             # Show only CLI beads
+bd ready -l bugfix          # Show only bug fixes
+```
 
-### Phase 2: Foundation cleanup (P1 — unblocked, do in parallel)
-- `rotel-0y3` — Add rotel-dashboard to workspace
-- `rotel-ka3` — Archive rotel-api mock crate
-- `rotel-2c2` — Fix TUI default URL to port 3000
-- `rotel-vcj` — Design CLI/API noun-verb structure (do early — it shapes later work)
-- `rotel-8yo` — Align CLI+TUI models (after rotel-ka3)
+### Priority rules
 
-### Phase 3: Core UX features (P1 — after pipeline works)
-- `rotel-7vp` — End-to-end test
-- `rotel-fr0` — Trace waterfall in TUI
-- `rotel-vox` — Trace waterfall in web dashboard
-- `rotel-mbt` — GenAI/LLM span detection
-- `rotel-fjm` — JSON attribute formatting
-- `rotel-fo0` — CLI export commands
-- `rotel-54a` — Quickstart documentation
+- **P0 (critical):** Must be done first. These form a dependency chain — do them in order. They connect the core pipeline (OTLP → storage → API).
+- **P1 (high):** Core functionality and design. Do after P0 chain completes (some are unblocked earlier). The `cli` label P1 bead for noun-verb design should be done early as it shapes later CLI work.
+- **P2 (medium):** Quality, polish, and secondary features. Bug fixes (`bugfix` label) first, then `quality` label, then features.
+- **P3 (low):** Advanced features, documentation, nice-to-haves. Do these last.
 
-### Phase 4: Quality and polish (P2)
-- Bug fixes: `rotel-373` (stats), `rotel-ac3` (JSON parsing)
-- Cleanup: `rotel-c36` (Bob comments), `rotel-y90` (core scaffolding), `rotel-cvt` (dep versions)
-- Quality: `rotel-5tw` (clippy), `rotel-aay` (error handling), `rotel-3j3` (test coverage)
-- Features: `rotel-pr9` (config file), `rotel-cp2` (debug logging), `rotel-i7a` (CLI polish)
-- Features: `rotel-cz5` (TUI loading), `rotel-25s` (structured query), `rotel-aeo` (correlation)
-- Features: `rotel-ons` (metric charts), `rotel-3hw` (sparklines), `rotel-q3y` (token usage)
-- Docs: `rotel-nyg` (ARCHITECTURE.md), `rotel-h5g` (CHANGELOG), `rotel-3qj` (OpenAPI)
-- Infra: `rotel-x6a` (benchmarks), `rotel-cie` (profiling), `rotel-2he` (OTLP conformance)
+### Label meanings
 
-### Phase 5: Advanced features and docs (P3)
-- Service mode, AI chat, MCP server
-- TUI polish, web responsive layout, lazy loading
-- All remaining documentation beads
-- CI/CD review
+| Label | Meaning |
+|-------|---------|
+| `pipeline` | Core OTLP → storage → API data flow |
+| `cli` | CLI commands, output, structure |
+| `tui` | Terminal UI |
+| `web` | Web dashboard |
+| `api` | REST API endpoints |
+| `genai` / `llm` | LLM/GenAI-specific features |
+| `quality` | Tests, clippy, error handling, code review |
+| `docs` | Documentation |
+| `infra` | Config, logging, CI, service mode |
+| `ai` | AI chat integration, MCP |
+| `cleanup` | Remove dead code, archive artifacts |
+| `bugfix` | Bug fixes |
+| `testing` | Test suites |
+| `search` | Search and query features |
 
-**Key rule:** If `bd show <id>` lists dependencies, those must be completed first.
+### Dependency rules
+
+If `bd show <id>` lists dependencies, those must be completed first. The tool enforces this — blocked beads won't appear in `bd ready` output.
+
+### Within the same priority, prefer
+
+1. Bug fixes (`bugfix` label)
+2. Beads that unblock other beads (check with `bd dep list <id> --direction up`)
+3. Smaller beads (quicker wins, faster feedback)
 
 ## Session End
 
