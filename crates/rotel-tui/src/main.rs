@@ -13,7 +13,7 @@ mod ui;
 #[command(author, version, about, long_about = None)]
 struct Args {
     /// Rotel API base URL
-    #[arg(short, long, default_value = "http://localhost:8080")]
+    #[arg(short, long, default_value = "http://localhost:3000")]
     api_url: String,
 
     /// Refresh interval in seconds
