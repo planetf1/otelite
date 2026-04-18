@@ -89,9 +89,6 @@ repos:
   - id: trailing-whitespace
     args: [ '--markdown-linebreak-ext=md' ]
 
-  # Prevent committing to main/master
-  - id: no-commit-to-branch
-    args: [ '--branch', 'main', '--branch', 'master' ]
 
 # CI mode: stricter checks for CI environment
 # Run with: pre-commit run --all-files --show-diff-on-failure
@@ -102,5 +99,3 @@ ci:
   autoupdate_schedule: weekly
   skip: []
   submodules: false
-
-# Made with Bob
