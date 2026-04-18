@@ -21,39 +21,51 @@ bd close <id>         # Complete work
 - Run `bd prime` for detailed command reference and session close protocol
 - Use `bd remember` for persistent knowledge — do NOT use MEMORY.md files
 
-## Session Completion
+## How to Start a Session
 
-**When ending a work session**, you MUST complete ALL steps below. Work is NOT complete until `git push` succeeds.
+1. Run `bd ready` to see available beads sorted by priority
+2. Pick the highest-priority unblocked bead
+3. Run `bd show <id>` to read the full description — it has step-by-step instructions
+4. Run `bd update <id> --claim` to claim it
+5. Follow the instructions in the bead description precisely
+6. When done, run quality gates, commit, push, and close the bead (see below)
+7. Repeat with the next bead
 
-**MANDATORY WORKFLOW:**
+## Commit and Push After EVERY Bead
 
-1. **File issues for remaining work** - Create issues for anything that needs follow-up
-2. **Run quality gates** (if code changed) - Tests, linters, builds
-3. **Update issue status** - Close finished work, update in-progress items
-4. **PUSH TO REMOTE** - This is MANDATORY:
+**This is critical.** After completing each bead:
+
+1. Run quality gates:
    ```bash
-   git pull --rebase
-   bd dolt push
-   git push
-   git status  # MUST show "up to date with origin"
+   cargo build --workspace
+   cargo test --workspace
+   cargo clippy --workspace --all-targets -- -D warnings
+   cargo fmt --check
    ```
-5. **Clean up** - Clear stashes, prune remote branches
-6. **Verify** - All changes committed AND pushed
-7. **Hand off** - Provide context for next session
+2. If any gate fails, fix the issue before committing
+3. Commit with a clear message describing what was done
+4. Push immediately:
+   ```bash
+   git push
+   ```
+5. Close the bead:
+   ```bash
+   bd close <id> --reason "what was done"
+   ```
+6. Push beads data:
+   ```bash
+   bd dolt push
+   ```
 
-**CRITICAL RULES:**
-- Work is NOT complete until `git push` succeeds
-- NEVER stop before pushing - that leaves work stranded locally
-- NEVER say "ready to push when you are" - YOU must push
-- If push fails, resolve and retry until it succeeds
+**Do NOT batch multiple beads into one commit.** Each bead = one commit + push.
 
 ## Build & Test
 
 ```bash
 cargo build --workspace          # build everything
 cargo test --workspace           # run all tests
-cargo test -p rotel-api          # test specific crate
-cargo clippy --all-targets --all-features -- -D warnings
+cargo test -p <crate-name>      # test specific crate
+cargo clippy --workspace --all-targets -- -D warnings
 cargo fmt --check
 ```
 
@@ -76,18 +88,11 @@ Rotel is an OpenTelemetry receiver and dashboard for local LLM users.
 - Rust 1.77+ stable
 - Async via tokio; axum for HTTP; tonic for gRPC
 - `thiserror` for error types; no silent `?` swallowing
-- Commit trailers: `Assisted-by: Claude Code`
+- No agent attribution in commits — do not add Co-Authored-By, Assisted-by, or similar trailers
 
 ## Quality Standards
 
 These rules apply to ALL code changes:
-
-### Before committing
-
-1. `cargo build --workspace` — must compile cleanly
-2. `cargo test --workspace` — all tests must pass
-3. `cargo clippy --workspace --all-targets -- -D warnings` — zero warnings
-4. `cargo fmt --check` — formatting must pass
 
 ### Code quality rules
 
@@ -98,21 +103,11 @@ These rules apply to ALL code changes:
 - **Error messages must include context** — what was attempted, what failed, what to try next
 - **Tests must assert specific values** — not just "doesn't panic"
 
-### Bead workflow
+## Session End
 
-- Before starting work: `bd update <id> --claim` to claim the bead
-- After completing: `bd close <id> --reason "what was done"` with a clear reason
-- If blocked: create a new bead for the blocker and add a dependency
-- Read the bead's full description with `bd show <id>` before starting — it has step-by-step instructions
+Before ending a session:
 
-## Session Retrospective
-
-Before ending each session, briefly consider:
-
-1. **Process friction** — Did anything slow you down that could be avoided next time?
-2. **Rules and standards** — Should any rule in AGENTS.md or CLAUDE.md be added, clarified, or removed?
-3. **Documentation gaps** — Is any documentation now stale because of changes made?
-4. **Bead quality** — Were the bead descriptions clear enough to work from? If not, improve them.
-5. **Tooling** — Would a reusable script, alias, or automation save time on recurring tasks?
-
-If something actionable surfaces, either fix it immediately (if small) or create a bead for it.
+1. Ensure all work is committed and pushed
+2. Close completed beads, file new beads for unfinished work
+3. Run `bd dolt push` to sync beads data
+4. Brief retrospective: could any rule, doc, or bead description be improved? If so, fix it or file a bead.
