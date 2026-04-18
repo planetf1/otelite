@@ -101,6 +101,49 @@ pub async fn handle_show(client: &ApiClient, config: &Config, id: &str) -> Resul
     Ok(log)
 }
 
+/// Handle the `logs export` command
+#[allow(clippy::too_many_arguments)]
+pub async fn handle_export(
+    client: &ApiClient,
+    _config: &Config,
+    format: &str,
+    severity: Option<String>,
+    since: Option<String>,
+    output: Option<String>,
+) -> Result<()> {
+    let mut params = vec![("format", format.to_string())];
+
+    if let Some(severity) = severity {
+        params.push(("severity", severity));
+    }
+
+    if let Some(since) = since {
+        params.push(("since", since));
+    }
+
+    let data = client.export_logs(params).await?;
+
+    // Write to file or stdout
+    if let Some(output_path) = output {
+        std::fs::write(&output_path, &data)?;
+
+        // Count entries for progress message
+        let count = if format == "json" {
+            // Count JSON array elements
+            data.matches("\"id\"").count()
+        } else {
+            // Count CSV lines (minus header)
+            data.lines().count().saturating_sub(1)
+        };
+
+        eprintln!("✓ Exported {} log entries to {}", count, output_path);
+    } else {
+        print!("{}", data);
+    }
+
+    Ok(())
+}
+
 /// Filter logs by severity level
 ///
 /// Severity hierarchy: ERROR > WARN > INFO > DEBUG > TRACE

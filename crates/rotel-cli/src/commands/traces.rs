@@ -58,6 +58,48 @@ pub async fn handle_show(client: &ApiClient, config: &Config, id: &str) -> Resul
     Ok(())
 }
 
+/// Handle the `traces export` command
+#[allow(clippy::too_many_arguments)]
+pub async fn handle_export(
+    client: &ApiClient,
+    _config: &Config,
+    format: &str,
+    status: Option<String>,
+    min_duration: Option<u64>,
+    since: Option<String>,
+    output: Option<String>,
+) -> Result<()> {
+    let mut params = vec![("format", format.to_string())];
+
+    if let Some(status) = status {
+        params.push(("status", status));
+    }
+
+    if let Some(min_duration) = min_duration {
+        params.push(("min_duration", min_duration.to_string()));
+    }
+
+    if let Some(since) = since {
+        params.push(("since", since));
+    }
+
+    let data = client.export_traces(params).await?;
+
+    // Write to file or stdout
+    if let Some(output_path) = output {
+        std::fs::write(&output_path, &data)?;
+
+        // Count entries for progress message
+        let count = data.matches("\"id\"").count();
+
+        eprintln!("✓ Exported {} traces to {}", count, output_path);
+    } else {
+        print!("{}", data);
+    }
+
+    Ok(())
+}
+
 /// Filter traces by minimum duration (client-side filtering)
 pub fn filter_by_duration(traces: Vec<Trace>, min_duration_ms: u64) -> Vec<Trace> {
     traces

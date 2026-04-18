@@ -94,6 +94,43 @@ pub async fn handle_show(
     Ok(())
 }
 
+/// Handle the `metrics export` command
+#[allow(clippy::too_many_arguments)]
+pub async fn handle_export(
+    client: &ApiClient,
+    _config: &Config,
+    format: &str,
+    name: Option<String>,
+    since: Option<String>,
+    output: Option<String>,
+) -> Result<()> {
+    let mut params = vec![("format", format.to_string())];
+
+    if let Some(name) = name {
+        params.push(("name", name));
+    }
+
+    if let Some(since) = since {
+        params.push(("since", since));
+    }
+
+    let data = client.export_metrics(params).await?;
+
+    // Write to file or stdout
+    if let Some(output_path) = output {
+        std::fs::write(&output_path, &data)?;
+
+        // Count entries for progress message
+        let count = data.matches("\"name\"").count();
+
+        eprintln!("✓ Exported {} metrics to {}", count, output_path);
+    } else {
+        print!("{}", data);
+    }
+
+    Ok(())
+}
+
 /// Filter metrics by label key-value pairs (client-side filtering)
 /// Labels should be in format "key=value"
 pub fn filter_by_labels(metrics: Vec<Metric>, label_filters: &[String]) -> Vec<Metric> {

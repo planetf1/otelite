@@ -159,6 +159,54 @@ impl ApiClient {
         let metrics = response.json().await?;
         Ok(metrics)
     }
+
+    /// Export logs from the backend
+    pub async fn export_logs(&self, params: Vec<(&str, String)>) -> Result<String> {
+        let url = format!("{}/api/logs/export", self.base_url);
+        let response = self.client.get(&url).query(&params).send().await?;
+
+        if !response.status().is_success() {
+            return Err(Error::ApiError(format!(
+                "Failed to export logs: HTTP {}",
+                response.status()
+            )));
+        }
+
+        let body = response.text().await?;
+        Ok(body)
+    }
+
+    /// Export traces from the backend
+    pub async fn export_traces(&self, params: Vec<(&str, String)>) -> Result<String> {
+        let url = format!("{}/api/traces/export", self.base_url);
+        let response = self.client.get(&url).query(&params).send().await?;
+
+        if !response.status().is_success() {
+            return Err(Error::ApiError(format!(
+                "Failed to export traces: HTTP {}",
+                response.status()
+            )));
+        }
+
+        let body = response.text().await?;
+        Ok(body)
+    }
+
+    /// Export metrics from the backend
+    pub async fn export_metrics(&self, params: Vec<(&str, String)>) -> Result<String> {
+        let url = format!("{}/api/metrics/export", self.base_url);
+        let response = self.client.get(&url).query(&params).send().await?;
+
+        if !response.status().is_success() {
+            return Err(Error::ApiError(format!(
+                "Failed to export metrics: HTTP {}",
+                response.status()
+            )));
+        }
+
+        let body = response.text().await?;
+        Ok(body)
+    }
 }
 
 #[cfg(test)]

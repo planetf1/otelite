@@ -131,6 +131,27 @@ enum LogsCommands {
         /// Log ID
         id: String,
     },
+    /// Export log entries to file or stdout
+    #[command(
+        after_help = "Examples:\n  rotel logs export --format json --output logs.json\n  rotel logs export --format csv --severity ERROR --since 24h\n  rotel logs export --format json | jq ."
+    )]
+    Export {
+        /// Export format (json or csv)
+        #[arg(long, default_value = "json")]
+        format: String,
+
+        /// Filter by severity level (ERROR, WARN, INFO, DEBUG, TRACE)
+        #[arg(long)]
+        severity: Option<String>,
+
+        /// Filter by time range (e.g., 1h, 24h, 7d)
+        #[arg(long, default_value = "1h")]
+        since: Option<String>,
+
+        /// Output file path (stdout if not specified)
+        #[arg(long, short = 'o')]
+        output: Option<String>,
+    },
 }
 
 #[derive(Subcommand, Debug)]
@@ -163,6 +184,31 @@ enum TracesCommands {
     Show {
         /// Trace ID
         id: String,
+    },
+    /// Export traces to file or stdout
+    #[command(
+        after_help = "Examples:\n  rotel traces export --format json --output traces.json\n  rotel traces export --status ERROR --min-duration 1s\n  rotel traces export --format json | jq ."
+    )]
+    Export {
+        /// Export format (json only)
+        #[arg(long, default_value = "json")]
+        format: String,
+
+        /// Filter by status (OK or ERROR)
+        #[arg(long)]
+        status: Option<String>,
+
+        /// Filter by minimum duration (e.g., 1s, 500ms)
+        #[arg(long)]
+        min_duration: Option<String>,
+
+        /// Filter by time range (e.g., 1h, 24h, 7d)
+        #[arg(long, default_value = "1h")]
+        since: Option<String>,
+
+        /// Output file path (stdout if not specified)
+        #[arg(long, short = 'o')]
+        output: Option<String>,
     },
 }
 
@@ -204,6 +250,27 @@ enum MetricsCommands {
         /// Filter by label (key=value, can be specified multiple times)
         #[arg(long)]
         label: Vec<String>,
+    },
+    /// Export metrics to file or stdout
+    #[command(
+        after_help = "Examples:\n  rotel metrics export --format json --output metrics.json\n  rotel metrics export --name cpu.usage --since 1h\n  rotel metrics export --format json | jq ."
+    )]
+    Export {
+        /// Export format (json only)
+        #[arg(long, default_value = "json")]
+        format: String,
+
+        /// Filter by metric name pattern
+        #[arg(long)]
+        name: Option<String>,
+
+        /// Filter by time range (e.g., 1h, 24h, 7d)
+        #[arg(long, default_value = "1h")]
+        since: Option<String>,
+
+        /// Output file path (stdout if not specified)
+        #[arg(long, short = 'o')]
+        output: Option<String>,
     },
 }
 
@@ -336,6 +403,14 @@ async fn handle_logs_command(command: LogsCommands, config: &Config) -> Result<(
         LogsCommands::Show { id } => {
             logs::handle_show(&client, config, &id).await?;
         },
+        LogsCommands::Export {
+            format,
+            severity,
+            since,
+            output,
+        } => {
+            logs::handle_export(&client, config, &format, severity, since, output).await?;
+        },
     }
 
     Ok(())
@@ -377,6 +452,34 @@ async fn handle_traces_command(command: TracesCommands, config: &Config) -> Resu
         TracesCommands::Show { id } => {
             traces::handle_show(&client, config, &id).await?;
         },
+        TracesCommands::Export {
+            format,
+            status,
+            min_duration,
+            since,
+            output,
+        } => {
+            // Parse min_duration string to milliseconds if provided
+            let min_duration_ms = if let Some(duration_str) = min_duration {
+                Some(
+                    parse_duration(&duration_str)
+                        .map_err(|e| Error::InvalidArgument(format!("Invalid duration: {}", e)))?,
+                )
+            } else {
+                None
+            };
+
+            traces::handle_export(
+                &client,
+                config,
+                &format,
+                status,
+                min_duration_ms,
+                since,
+                output,
+            )
+            .await?;
+        },
     }
 
     Ok(())
@@ -399,6 +502,14 @@ async fn handle_metrics_command(command: MetricsCommands, config: &Config) -> Re
         },
         MetricsCommands::Show { name, label, since } => {
             metrics::handle_show(&client, config, &name, label, since).await?;
+        },
+        MetricsCommands::Export {
+            format,
+            name,
+            since,
+            output,
+        } => {
+            metrics::handle_export(&client, config, &format, name, since, output).await?;
         },
     }
 
