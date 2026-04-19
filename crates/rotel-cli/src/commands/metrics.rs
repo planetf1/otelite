@@ -188,80 +188,94 @@ pub fn filter_by_type(metrics: Vec<MetricResponse>, metric_type: &str) -> Vec<Me
 #[cfg(test)]
 mod tests {
     use super::*;
-    use chrono::Utc;
+    use crate::api::models::{MetricResponse, MetricValue};
     use std::collections::HashMap;
 
     // T065: Unit tests for label filtering logic
     #[test]
     fn test_filter_by_labels_single_label() {
         let metrics = vec![
-            Metric {
+            MetricResponse {
                 name: "http_requests_total".to_string(),
-                type_: "counter".to_string(),
-                value: 100.0,
-                timestamp: Utc::now(),
-                labels: HashMap::from([("method".to_string(), "GET".to_string())]),
-                percentiles: None,
+                description: None,
+                unit: None,
+                metric_type: "counter".to_string(),
+                value: MetricValue::Counter(100),
+                timestamp: 1234567890000000000,
+                attributes: HashMap::from([("method".to_string(), "GET".to_string())]),
+                resource: None,
             },
-            Metric {
+            MetricResponse {
                 name: "http_requests_total".to_string(),
-                type_: "counter".to_string(),
-                value: 50.0,
-                timestamp: Utc::now(),
-                labels: HashMap::from([("method".to_string(), "POST".to_string())]),
-                percentiles: None,
+                description: None,
+                unit: None,
+                metric_type: "counter".to_string(),
+                value: MetricValue::Counter(50),
+                timestamp: 1234567890000000000,
+                attributes: HashMap::from([("method".to_string(), "POST".to_string())]),
+                resource: None,
             },
-            Metric {
+            MetricResponse {
                 name: "http_requests_total".to_string(),
-                type_: "counter".to_string(),
-                value: 25.0,
-                timestamp: Utc::now(),
-                labels: HashMap::from([("method".to_string(), "DELETE".to_string())]),
-                percentiles: None,
+                description: None,
+                unit: None,
+                metric_type: "counter".to_string(),
+                value: MetricValue::Counter(25),
+                timestamp: 1234567890000000000,
+                attributes: HashMap::from([("method".to_string(), "DELETE".to_string())]),
+                resource: None,
             },
         ];
 
         let filters = vec!["method=GET".to_string()];
         let filtered = filter_by_labels(metrics, &filters);
         assert_eq!(filtered.len(), 1);
-        assert_eq!(filtered[0].value, 100.0);
+        if let MetricValue::Counter(val) = filtered[0].value {
+            assert_eq!(val, 100);
+        }
     }
 
     #[test]
     fn test_filter_by_labels_multiple_labels() {
         let metrics = vec![
-            Metric {
+            MetricResponse {
                 name: "http_requests_total".to_string(),
-                type_: "counter".to_string(),
-                value: 100.0,
-                timestamp: Utc::now(),
-                labels: HashMap::from([
+                description: None,
+                unit: None,
+                metric_type: "counter".to_string(),
+                value: MetricValue::Counter(100),
+                timestamp: 1234567890000000000,
+                attributes: HashMap::from([
                     ("method".to_string(), "GET".to_string()),
                     ("status".to_string(), "200".to_string()),
                 ]),
-                percentiles: None,
+                resource: None,
             },
-            Metric {
+            MetricResponse {
                 name: "http_requests_total".to_string(),
-                type_: "counter".to_string(),
-                value: 50.0,
-                timestamp: Utc::now(),
-                labels: HashMap::from([
+                description: None,
+                unit: None,
+                metric_type: "counter".to_string(),
+                value: MetricValue::Counter(50),
+                timestamp: 1234567890000000000,
+                attributes: HashMap::from([
                     ("method".to_string(), "GET".to_string()),
                     ("status".to_string(), "404".to_string()),
                 ]),
-                percentiles: None,
+                resource: None,
             },
-            Metric {
+            MetricResponse {
                 name: "http_requests_total".to_string(),
-                type_: "counter".to_string(),
-                value: 25.0,
-                timestamp: Utc::now(),
-                labels: HashMap::from([
+                description: None,
+                unit: None,
+                metric_type: "counter".to_string(),
+                value: MetricValue::Counter(25),
+                timestamp: 1234567890000000000,
+                attributes: HashMap::from([
                     ("method".to_string(), "POST".to_string()),
                     ("status".to_string(), "200".to_string()),
                 ]),
-                percentiles: None,
+                resource: None,
             },
         ];
 
@@ -269,18 +283,22 @@ mod tests {
         let filters = vec!["method=GET".to_string(), "status=200".to_string()];
         let filtered = filter_by_labels(metrics, &filters);
         assert_eq!(filtered.len(), 1);
-        assert_eq!(filtered[0].value, 100.0);
+        if let MetricValue::Counter(val) = filtered[0].value {
+            assert_eq!(val, 100);
+        }
     }
 
     #[test]
     fn test_filter_by_labels_no_match() {
-        let metrics = vec![Metric {
+        let metrics = vec![MetricResponse {
             name: "http_requests_total".to_string(),
-            type_: "counter".to_string(),
-            value: 100.0,
-            timestamp: Utc::now(),
-            labels: HashMap::from([("method".to_string(), "GET".to_string())]),
-            percentiles: None,
+            description: None,
+            unit: None,
+            metric_type: "counter".to_string(),
+            value: MetricValue::Counter(100),
+            timestamp: 1234567890000000000,
+            attributes: HashMap::from([("method".to_string(), "GET".to_string())]),
+            resource: None,
         }];
 
         let filters = vec!["method=POST".to_string()];
@@ -291,21 +309,25 @@ mod tests {
     #[test]
     fn test_filter_by_labels_empty_filters() {
         let metrics = vec![
-            Metric {
+            MetricResponse {
                 name: "metric1".to_string(),
-                type_: "counter".to_string(),
-                value: 100.0,
-                timestamp: Utc::now(),
-                labels: HashMap::new(),
-                percentiles: None,
+                description: None,
+                unit: None,
+                metric_type: "counter".to_string(),
+                value: MetricValue::Counter(100),
+                timestamp: 1234567890000000000,
+                attributes: HashMap::new(),
+                resource: None,
             },
-            Metric {
+            MetricResponse {
                 name: "metric2".to_string(),
-                type_: "gauge".to_string(),
-                value: 50.0,
-                timestamp: Utc::now(),
-                labels: HashMap::new(),
-                percentiles: None,
+                description: None,
+                unit: None,
+                metric_type: "gauge".to_string(),
+                value: MetricValue::Gauge(50.0),
+                timestamp: 1234567890000000000,
+                attributes: HashMap::new(),
+                resource: None,
             },
         ];
 
@@ -316,13 +338,15 @@ mod tests {
 
     #[test]
     fn test_filter_by_labels_invalid_format() {
-        let metrics = vec![Metric {
+        let metrics = vec![MetricResponse {
             name: "http_requests_total".to_string(),
-            type_: "counter".to_string(),
-            value: 100.0,
-            timestamp: Utc::now(),
-            labels: HashMap::from([("method".to_string(), "GET".to_string())]),
-            percentiles: None,
+            description: None,
+            unit: None,
+            metric_type: "counter".to_string(),
+            value: MetricValue::Counter(100),
+            timestamp: 1234567890000000000,
+            attributes: HashMap::from([("method".to_string(), "GET".to_string())]),
+            resource: None,
         }];
 
         // Invalid filter format (no '=')
@@ -334,16 +358,18 @@ mod tests {
 
     #[test]
     fn test_filter_by_labels_partial_match() {
-        let metrics = vec![Metric {
+        let metrics = vec![MetricResponse {
             name: "http_requests_total".to_string(),
-            type_: "counter".to_string(),
-            value: 100.0,
-            timestamp: Utc::now(),
-            labels: HashMap::from([
+            description: None,
+            unit: None,
+            metric_type: "counter".to_string(),
+            value: MetricValue::Counter(100),
+            timestamp: 1234567890000000000,
+            attributes: HashMap::from([
                 ("method".to_string(), "GET".to_string()),
                 ("status".to_string(), "200".to_string()),
             ]),
-            percentiles: None,
+            resource: None,
         }];
 
         // Filter requires both labels, but metric only matches one
@@ -355,29 +381,39 @@ mod tests {
     #[test]
     fn test_filter_by_name() {
         let metrics = vec![
-            Metric {
+            MetricResponse {
                 name: "http_requests_total".to_string(),
-                type_: "counter".to_string(),
-                value: 100.0,
-                timestamp: Utc::now(),
-                labels: HashMap::new(),
-                percentiles: None,
+                description: None,
+                unit: None,
+                metric_type: "counter".to_string(),
+                value: MetricValue::Counter(100),
+                timestamp: 1234567890000000000,
+                attributes: HashMap::new(),
+                resource: None,
             },
-            Metric {
+            MetricResponse {
                 name: "http_response_time_ms".to_string(),
-                type_: "histogram".to_string(),
-                value: 150.0,
-                timestamp: Utc::now(),
-                labels: HashMap::new(),
-                percentiles: None,
+                description: None,
+                unit: None,
+                metric_type: "histogram".to_string(),
+                value: MetricValue::Histogram {
+                    count: 10,
+                    sum: 1500.0,
+                    buckets: vec![],
+                },
+                timestamp: 1234567890000000000,
+                attributes: HashMap::new(),
+                resource: None,
             },
-            Metric {
+            MetricResponse {
                 name: "cpu_usage_percent".to_string(),
-                type_: "gauge".to_string(),
-                value: 45.0,
-                timestamp: Utc::now(),
-                labels: HashMap::new(),
-                percentiles: None,
+                description: None,
+                unit: None,
+                metric_type: "gauge".to_string(),
+                value: MetricValue::Gauge(45.0),
+                timestamp: 1234567890000000000,
+                attributes: HashMap::new(),
+                resource: None,
             },
         ];
 
@@ -398,29 +434,39 @@ mod tests {
     #[test]
     fn test_filter_by_type() {
         let metrics = vec![
-            Metric {
+            MetricResponse {
                 name: "requests_total".to_string(),
-                type_: "counter".to_string(),
-                value: 100.0,
-                timestamp: Utc::now(),
-                labels: HashMap::new(),
-                percentiles: None,
+                description: None,
+                unit: None,
+                metric_type: "counter".to_string(),
+                value: MetricValue::Counter(100),
+                timestamp: 1234567890000000000,
+                attributes: HashMap::new(),
+                resource: None,
             },
-            Metric {
+            MetricResponse {
                 name: "cpu_usage".to_string(),
-                type_: "gauge".to_string(),
-                value: 45.0,
-                timestamp: Utc::now(),
-                labels: HashMap::new(),
-                percentiles: None,
+                description: None,
+                unit: None,
+                metric_type: "gauge".to_string(),
+                value: MetricValue::Gauge(45.0),
+                timestamp: 1234567890000000000,
+                attributes: HashMap::new(),
+                resource: None,
             },
-            Metric {
+            MetricResponse {
                 name: "response_time".to_string(),
-                type_: "histogram".to_string(),
-                value: 150.0,
-                timestamp: Utc::now(),
-                labels: HashMap::new(),
-                percentiles: None,
+                description: None,
+                unit: None,
+                metric_type: "histogram".to_string(),
+                value: MetricValue::Histogram {
+                    count: 10,
+                    sum: 1500.0,
+                    buckets: vec![],
+                },
+                timestamp: 1234567890000000000,
+                attributes: HashMap::new(),
+                resource: None,
             },
         ];
 

@@ -103,7 +103,7 @@ pub fn print_metric_json(metric: &MetricResponse) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use chrono::Utc;
+    use crate::api::models::{MetricValue, SpanEntry};
     use std::collections::HashMap;
 
     #[test]
@@ -114,9 +114,6 @@ mod tests {
             severity_text: None,
             body: "Test error".to_string(),
             attributes: HashMap::new(),
-            resource: None,
-            trace_id: None,
-            span_id: None,
             resource: None,
             trace_id: None,
             span_id: None,
@@ -133,9 +130,6 @@ mod tests {
             severity_text: None,
             body: "Test error".to_string(),
             attributes: HashMap::new(),
-            resource: None,
-            trace_id: None,
-            span_id: None,
             resource: None,
             trace_id: None,
             span_id: None,
@@ -161,12 +155,14 @@ mod tests {
 
     #[test]
     fn test_print_metrics_json() {
-        let metrics = vec![Metric {
+        use crate::api::models::MetricValue;
+
+        let metrics = vec![MetricResponse {
             name: "http_requests_total".to_string(),
             description: None,
             unit: None,
             metric_type: "counter".to_string(),
-            value: MetricValue::Counter(1234.0 as u64),
+            value: MetricValue::Counter(1234),
             timestamp: 1000000000000000000,
             attributes: HashMap::new(),
             resource: None,
@@ -191,7 +187,7 @@ mod tests {
         let json = serde_json::to_string(&log).unwrap();
         // Verify it can be parsed back
         let parsed: LogEntry = serde_json::from_str(&json).unwrap();
-        assert_eq!(parsed.id, log.id);
+        assert_eq!(parsed.timestamp, log.timestamp);
     }
 
     #[test]
@@ -234,6 +230,9 @@ mod tests {
             severity_text: None,
             body: "Error with attributes".to_string(),
             attributes,
+            resource: None,
+            trace_id: None,
+            span_id: None,
         };
         let result = print_log_json(&log);
         assert!(result.is_ok());
@@ -258,7 +257,7 @@ mod tests {
         // Verify it can be parsed back
         let parsed: Vec<LogEntry> = serde_json::from_str(&json_str).unwrap();
         assert_eq!(parsed.len(), 1);
-        assert_eq!(parsed[0].id, "log-001");
+        assert_eq!(parsed[0].timestamp, 1000000000000000000);
         assert_eq!(parsed[0].severity, "ERROR");
     }
 
@@ -274,7 +273,8 @@ mod tests {
         let log = LogEntry {
             timestamp: 1000000000000000000,
             severity: "ERROR".to_string(),
-            message: r#"Message with "quotes" and \backslashes\ and newlines\n"#.to_string(),
+            severity_text: None,
+            body: r#"Message with "quotes" and \backslashes\ and newlines\n"#.to_string(),
             attributes: HashMap::new(),
             resource: None,
             trace_id: None,
@@ -286,14 +286,12 @@ mod tests {
         // Verify JSON is valid and can be parsed
         let json_str = serde_json::to_string(&log).unwrap();
         let parsed: LogEntry = serde_json::from_str(&json_str).unwrap();
-        assert_eq!(parsed.message, log.message);
+        assert_eq!(parsed.body, log.body);
     }
 
     // T042: Unit test for traces JSON formatter
     #[test]
     fn test_print_traces_json_with_spans() {
-        use crate::api::models::SpanEntry;
-
         let traces = vec![TraceEntry {
             trace_id: "trace-001".to_string(),
             root_span_name: "http-request".to_string(),
@@ -309,8 +307,6 @@ mod tests {
 
     #[test]
     fn test_print_trace_json() {
-        use crate::api::models::SpanEntry;
-
         let trace = TraceDetail {
             trace_id: "trace-001".to_string(),
             spans: vec![SpanEntry {
@@ -339,8 +335,6 @@ mod tests {
 
     #[test]
     fn test_print_trace_json_with_hierarchy() {
-        use crate::api::models::SpanEntry;
-
         let trace = TraceDetail {
             trace_id: "trace-001".to_string(),
             spans: vec![
@@ -398,8 +392,6 @@ mod tests {
 
     #[test]
     fn test_print_trace_json_with_attributes() {
-        use crate::api::models::SpanEntry;
-
         let mut attributes = HashMap::new();
         attributes.insert("http.method".to_string(), "GET".to_string());
         attributes.insert("http.url".to_string(), "/api/users".to_string());
@@ -444,9 +436,9 @@ mod tests {
                 description: None,
                 unit: None,
                 metric_type: "counter".to_string(),
-                value: MetricValue::Counter(1234.0 as u64),
+                value: MetricValue::Counter(1234),
                 timestamp: 1000000000000000000,
-                labels: HashMap::from([
+                attributes: HashMap::from([
                     ("method".to_string(), "GET".to_string()),
                     ("status".to_string(), "200".to_string()),
                 ]),
@@ -457,9 +449,9 @@ mod tests {
                 description: None,
                 unit: None,
                 metric_type: "counter".to_string(),
-                value: MetricValue::Counter(567.0 as u64),
+                value: MetricValue::Counter(567),
                 timestamp: 1000000000000000000,
-                labels: HashMap::from([
+                attributes: HashMap::from([
                     ("method".to_string(), "POST".to_string()),
                     ("status".to_string(), "201".to_string()),
                 ]),
@@ -471,41 +463,60 @@ mod tests {
 
         // Verify labels are preserved in JSON
         let json_str = serde_json::to_string(&metrics).unwrap();
-        let parsed: Vec<Metric> = serde_json::from_str(&json_str).unwrap();
-        assert_eq!(parsed[0].labels.len(), 2);
-        assert_eq!(parsed[1].labels.len(), 2);
+        let parsed: Vec<MetricResponse> = serde_json::from_str(&json_str).unwrap();
+        assert_eq!(parsed[0].attributes.len(), 2);
+        assert_eq!(parsed[1].attributes.len(), 2);
     }
 
     #[test]
-    fn test_print_metric_json_with_percentiles() {
-        let metric = Metric {
+    fn test_print_metric_json_with_histogram() {
+        use crate::api::models::HistogramBucket;
+
+        let metric = MetricResponse {
             name: "response_time_ms".to_string(),
             description: None,
             unit: None,
             metric_type: "histogram".to_string(),
-            value: MetricValue::Counter(150.5 as u64),
+            value: MetricValue::Histogram {
+                count: 150,
+                sum: 15000.0,
+                buckets: vec![
+                    HistogramBucket {
+                        upper_bound: 100.0,
+                        count: 50,
+                    },
+                    HistogramBucket {
+                        upper_bound: 200.0,
+                        count: 75,
+                    },
+                    HistogramBucket {
+                        upper_bound: 300.0,
+                        count: 20,
+                    },
+                    HistogramBucket {
+                        upper_bound: 500.0,
+                        count: 5,
+                    },
+                ],
+            },
             timestamp: 1000000000000000000,
-            labels: HashMap::from([("endpoint".to_string(), "/api/users".to_string())]),
-            percentiles: Some(HashMap::from([
-                ("p50".to_string(), 100.0),
-                ("p95".to_string(), 200.0),
-                ("p99".to_string(), 300.0),
-                ("p99.9".to_string(), 500.0),
-            ])),
+            attributes: HashMap::from([("endpoint".to_string(), "/api/users".to_string())]),
+            resource: None,
         };
         let result = print_metric_json(&metric);
         assert!(result.is_ok());
 
-        // Verify percentiles are preserved in JSON
+        // Verify histogram structure is preserved in JSON
         let json_str = serde_json::to_string(&metric).unwrap();
-        let parsed: Metric = serde_json::from_str(&json_str).unwrap();
-        assert!(parsed.percentiles.is_some());
-        assert_eq!(parsed.percentiles.as_ref().unwrap().len(), 4);
+        let parsed: MetricResponse = serde_json::from_str(&json_str).unwrap();
+        if let MetricValue::Histogram { buckets, .. } = &parsed.value {
+            assert_eq!(buckets.len(), 4);
+        }
     }
 
     #[test]
     fn test_print_metrics_json_empty() {
-        let metrics: Vec<Metric> = vec![];
+        let metrics: Vec<MetricResponse> = vec![];
         let result = print_metrics_json(&metrics);
         assert!(result.is_ok());
     }
@@ -513,16 +524,15 @@ mod tests {
     #[test]
     fn test_metrics_json_time_series() {
         // Test time-series data (multiple data points for same metric)
-        let now = Utc::now();
         let metrics = vec![
             MetricResponse {
                 name: "cpu_usage_percent".to_string(),
                 description: None,
                 unit: None,
                 metric_type: "gauge".to_string(),
-                value: MetricValue::Counter(45.2 as u64),
-                timestamp: now - chrono::Duration::minutes(2),
-                labels: HashMap::from([("host".to_string(), "server1".to_string())]),
+                value: MetricValue::Gauge(45.2),
+                timestamp: 1000000000000000000,
+                attributes: HashMap::from([("host".to_string(), "server1".to_string())]),
                 resource: None,
             },
             MetricResponse {
@@ -530,9 +540,9 @@ mod tests {
                 description: None,
                 unit: None,
                 metric_type: "gauge".to_string(),
-                value: MetricValue::Counter(52.8 as u64),
-                timestamp: now - chrono::Duration::minutes(1),
-                labels: HashMap::from([("host".to_string(), "server1".to_string())]),
+                value: MetricValue::Gauge(52.8),
+                timestamp: 1000000060000000000,
+                attributes: HashMap::from([("host".to_string(), "server1".to_string())]),
                 resource: None,
             },
             MetricResponse {
@@ -540,9 +550,9 @@ mod tests {
                 description: None,
                 unit: None,
                 metric_type: "gauge".to_string(),
-                value: MetricValue::Counter(48.5 as u64),
-                timestamp: now,
-                labels: HashMap::from([("host".to_string(), "server1".to_string())]),
+                value: MetricValue::Gauge(48.5),
+                timestamp: 1000000120000000000,
+                attributes: HashMap::from([("host".to_string(), "server1".to_string())]),
                 resource: None,
             },
         ];
@@ -551,7 +561,7 @@ mod tests {
 
         // Verify time-series structure is preserved
         let json_str = serde_json::to_string(&metrics).unwrap();
-        let parsed: Vec<Metric> = serde_json::from_str(&json_str).unwrap();
+        let parsed: Vec<MetricResponse> = serde_json::from_str(&json_str).unwrap();
         assert_eq!(parsed.len(), 3);
         assert_eq!(parsed[0].name, "cpu_usage_percent");
         assert_eq!(parsed[1].name, "cpu_usage_percent");

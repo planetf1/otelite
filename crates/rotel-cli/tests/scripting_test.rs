@@ -23,7 +23,7 @@ async fn test_exit_code_success() {
         ]))
         .with_status(200)
         .with_header("content-type", "application/json")
-        .with_body(r#"[]"#)
+        .with_body(r#"{"logs": [], "total": 0, "limit": 50, "offset": 0}"#)
         .create_async()
         .await;
 
@@ -57,7 +57,7 @@ async fn test_exit_code_connection_error() {
 async fn test_exit_code_not_found() {
     let mut server = Server::new_async().await;
     let _mock = server
-        .mock("GET", "/api/logs/nonexistent-id")
+        .mock("GET", "/api/logs/9999999999999999")
         .with_status(404)
         .with_header("content-type", "application/json")
         .with_body(r#"{"error":"Not found"}"#)
@@ -69,7 +69,7 @@ async fn test_exit_code_not_found() {
         .arg(server.url())
         .arg("logs")
         .arg("show")
-        .arg("nonexistent-id")
+        .arg("9999999999999999")
         .assert()
         .failure()
         .code(3)
@@ -95,7 +95,7 @@ async fn test_exit_code_invalid_argument() {
 async fn test_errors_write_to_stderr() {
     let mut server = Server::new_async().await;
     let _mock = server
-        .mock("GET", "/api/logs/test-id")
+        .mock("GET", "/api/logs/1705315800000000000")
         .with_status(404)
         .create_async()
         .await;
@@ -105,7 +105,7 @@ async fn test_errors_write_to_stderr() {
         .arg(server.url())
         .arg("logs")
         .arg("show")
-        .arg("test-id")
+        .arg("1705315800000000000")
         .assert()
         .failure()
         .stderr(predicate::str::contains("not found"))
@@ -165,13 +165,17 @@ async fn test_data_writes_to_stdout() {
         .with_status(200)
         .with_header("content-type", "application/json")
         .with_body(
-            r#"[{
-                "id": "log-123",
-                "timestamp": "2024-01-15T10:30:00Z",
+            r#"{"logs": [{
+                "timestamp": 1705315800000000000,
                 "severity": "INFO",
-                "message": "Test log message",
-                "attributes": {}
-            }]"#,
+                "severity_text": "INFO",
+                "body": "Test log message",
+                "attributes": {},
+                "resource_attributes": {},
+                "scope_name": "test",
+                "trace_id": null,
+                "span_id": null
+            }], "total": 1, "limit": 50, "offset": 0}"#,
         )
         .create_async()
         .await;
@@ -183,7 +187,7 @@ async fn test_data_writes_to_stdout() {
         .arg("list")
         .assert()
         .success()
-        .stdout(predicate::str::contains("log-123"))
+        .stdout(predicate::str::contains("1705315800000000000"))
         .stdout(predicate::str::contains("Test log message"))
         .stderr(predicate::str::is_empty());
 }
@@ -202,10 +206,13 @@ async fn test_json_output_to_stdout() {
         .with_body(
             r#"[{
                 "name": "cpu_usage",
-                "type": "gauge",
+                "description": null,
+                "unit": null,
+                "metric_type": "gauge",
                 "value": 45.2,
-                "timestamp": "2024-01-15T10:30:00Z",
-                "labels": {"host": "server1"}
+                "timestamp": 1705315800000000000,
+                "attributes": {"host": "server1"},
+                "resource": null
             }]"#,
         )
         .create_async()
@@ -239,13 +246,17 @@ async fn test_json_output_is_valid() {
         .with_status(200)
         .with_header("content-type", "application/json")
         .with_body(
-            r#"[{
-                "id": "log-1",
-                "timestamp": "2024-01-15T10:30:00Z",
+            r#"{"logs": [{
+                "timestamp": 1705315800000000000,
                 "severity": "INFO",
-                "message": "Test",
-                "attributes": {}
-            }]"#,
+                "severity_text": "INFO",
+                "body": "Test",
+                "attributes": {},
+                "resource_attributes": {},
+                "scope_name": "test",
+                "trace_id": null,
+                "span_id": null
+            }], "total": 1, "limit": 50, "offset": 0}"#,
         )
         .create_async()
         .await;
@@ -269,7 +280,7 @@ async fn test_json_output_is_valid() {
     assert!(parsed.is_array());
     let array = parsed.as_array().unwrap();
     assert_eq!(array.len(), 1);
-    assert_eq!(array[0]["id"], "log-1");
+    assert_eq!(array[0]["timestamp"], 1705315800000000000_i64);
     assert_eq!(array[0]["severity"], "INFO");
 }
 
@@ -282,13 +293,15 @@ async fn test_json_output_can_be_piped() {
         .with_status(200)
         .with_header("content-type", "application/json")
         .with_body(
-            r#"[{
-                "id": "trace-123",
-                "root_span": "http-request",
-                "duration_ms": 150,
-                "status": "ok",
-                "spans": []
-            }]"#,
+            r#"{"traces": [{
+                "trace_id": "trace-123",
+                "root_span_name": "http-request",
+                "start_time": 1705315800000000000,
+                "duration": 150000000,
+                "span_count": 1,
+                "service_names": [],
+                "has_errors": false
+            }], "total": 1, "limit": 50, "offset": 0}"#,
         )
         .create_async()
         .await;
@@ -309,11 +322,11 @@ async fn test_json_output_can_be_piped() {
     let stdout = String::from_utf8(output.stdout).expect("Invalid UTF-8");
     let parsed: serde_json::Value = serde_json::from_str(&stdout).expect("Invalid JSON");
 
-    let trace_id = parsed[0]["id"].as_str().unwrap();
+    let trace_id = parsed[0]["trace_id"].as_str().unwrap();
     assert_eq!(trace_id, "trace-123");
 
-    let duration = parsed[0]["duration_ms"].as_f64().unwrap();
-    assert_eq!(duration, 150.0);
+    let duration = parsed[0]["duration"].as_i64().unwrap();
+    assert_eq!(duration, 150000000);
 }
 
 #[tokio::test]

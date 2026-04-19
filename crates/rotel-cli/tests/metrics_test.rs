@@ -35,22 +35,28 @@ async fn test_metrics_list_command() {
             r#"[
             {
                 "name": "http_requests_total",
-                "type": "counter",
-                "value": 1234.0,
-                "timestamp": "2024-01-15T10:30:00Z",
-                "labels": {
+                "description": null,
+                "unit": null,
+                "metric_type": "counter",
+                "value": 1234,
+                "timestamp": 1705315800000000000,
+                "attributes": {
                     "method": "GET",
                     "status": "200"
-                }
+                },
+                "resource": null
             },
             {
                 "name": "cpu_usage_percent",
-                "type": "gauge",
+                "description": null,
+                "unit": null,
+                "metric_type": "gauge",
                 "value": 45.2,
-                "timestamp": "2024-01-15T10:30:00Z",
-                "labels": {
+                "timestamp": 1705315800000000000,
+                "attributes": {
                     "host": "server1"
-                }
+                },
+                "resource": null
             }
         ]"#,
         )
@@ -104,10 +110,10 @@ async fn test_metrics_list_with_name_filter() {
             r#"[
             {
                 "name": "http_requests_total",
-                "type": "counter",
-                "value": 1234.0,
-                "timestamp": "2024-01-15T10:30:00Z",
-                "labels": {
+                "metric_type": "counter",
+                "value": 1234,
+                "timestamp": 1705315800000000000,
+                "attributes": {
                     "method": "GET"
                 }
             }
@@ -138,20 +144,27 @@ async fn test_metrics_list_with_name_filter() {
 async fn test_metrics_get_command() {
     let mut server = Server::new_async().await;
     let mock = server
-        .mock("GET", "/api/metrics/http_requests_total")
+        .mock("GET", "/api/metrics")
+        .match_query(mockito::Matcher::UrlEncoded(
+            "name".into(),
+            "http_requests_total".into(),
+        ))
         .with_status(200)
         .with_header("content-type", "application/json")
         .with_body(
             r#"[
             {
                 "name": "http_requests_total",
-                "type": "counter",
-                "value": 1234.0,
-                "timestamp": "2024-01-15T10:30:00Z",
-                "labels": {
+                "description": null,
+                "unit": null,
+                "metric_type": "counter",
+                "value": 1234,
+                "timestamp": 1705315800000000000,
+                "attributes": {
                     "method": "GET",
                     "status": "200"
-                }
+                },
+                "resource": null
             }
         ]"#,
         )
@@ -178,8 +191,14 @@ async fn test_metrics_get_command() {
 async fn test_metrics_get_not_found() {
     let mut server = Server::new_async().await;
     let mock = server
-        .mock("GET", "/api/metrics/nonexistent_metric")
-        .with_status(404)
+        .mock("GET", "/api/metrics")
+        .match_query(mockito::Matcher::UrlEncoded(
+            "name".into(),
+            "nonexistent_metric".into(),
+        ))
+        .with_status(200)
+        .with_header("content-type", "application/json")
+        .with_body(r#"[]"#)
         .create_async()
         .await;
 
@@ -215,10 +234,10 @@ async fn test_metrics_list_with_label_filter() {
             r#"[
             {
                 "name": "http_requests_total",
-                "type": "counter",
-                "value": 1234.0,
-                "timestamp": "2024-01-15T10:30:00Z",
-                "labels": {
+                "metric_type": "counter",
+                "value": 1234,
+                "timestamp": 1705315800000000000,
+                "attributes": {
                     "method": "GET",
                     "status": "200"
                 }
@@ -257,10 +276,10 @@ async fn test_metrics_list_with_multiple_label_filters() {
             r#"[
             {
                 "name": "http_requests_total",
-                "type": "counter",
-                "value": 1234.0,
-                "timestamp": "2024-01-15T10:30:00Z",
-                "labels": {
+                "metric_type": "counter",
+                "value": 1234,
+                "timestamp": 1705315800000000000,
+                "attributes": {
                     "method": "GET",
                     "status": "200"
                 }
@@ -291,24 +310,27 @@ async fn test_metrics_list_with_multiple_label_filters() {
 async fn test_metrics_get_with_label_filter() {
     let mut server = Server::new_async().await;
     let mock = server
-        .mock("GET", "/api/metrics/http_requests_total")
-        .match_query(mockito::Matcher::AllOf(vec![mockito::Matcher::UrlEncoded(
-            "label".into(),
-            "method=GET".into(),
-        )]))
+        .mock("GET", "/api/metrics")
+        .match_query(mockito::Matcher::AllOf(vec![
+            mockito::Matcher::UrlEncoded("name".into(), "http_requests_total".into()),
+            mockito::Matcher::UrlEncoded("label".into(), "method=GET".into()),
+        ]))
         .with_status(200)
         .with_header("content-type", "application/json")
         .with_body(
             r#"[
             {
                 "name": "http_requests_total",
-                "type": "counter",
-                "value": 1234.0,
-                "timestamp": "2024-01-15T10:30:00Z",
-                "labels": {
+                "description": null,
+                "unit": null,
+                "metric_type": "counter",
+                "value": 1234,
+                "timestamp": 1705315800000000000,
+                "attributes": {
                     "method": "GET",
                     "status": "200"
-                }
+                },
+                "resource": null
             }
         ]"#,
         )
@@ -336,37 +358,50 @@ async fn test_metrics_get_with_label_filter() {
 async fn test_metrics_time_series_json_output() {
     let mut server = Server::new_async().await;
     let mock = server
-        .mock("GET", "/api/metrics/cpu_usage_percent")
+        .mock("GET", "/api/metrics")
+        .match_query(mockito::Matcher::UrlEncoded(
+            "name".into(),
+            "cpu_usage_percent".into(),
+        ))
         .with_status(200)
         .with_header("content-type", "application/json")
         .with_body(
             r#"[
             {
                 "name": "cpu_usage_percent",
-                "type": "gauge",
+                "description": null,
+                "unit": null,
+                "metric_type": "gauge",
                 "value": 45.2,
-                "timestamp": "2024-01-15T10:30:00Z",
-                "labels": {
+                "timestamp": 1705315800000000000,
+                "attributes": {
                     "host": "server1"
-                }
+                },
+                "resource": null
             },
             {
                 "name": "cpu_usage_percent",
-                "type": "gauge",
+                "description": null,
+                "unit": null,
+                "metric_type": "gauge",
                 "value": 52.8,
-                "timestamp": "2024-01-15T10:31:00Z",
-                "labels": {
+                "timestamp": 1705315860000000000,
+                "attributes": {
                     "host": "server1"
-                }
+                },
+                "resource": null
             },
             {
                 "name": "cpu_usage_percent",
-                "type": "gauge",
+                "description": null,
+                "unit": null,
+                "metric_type": "gauge",
                 "value": 48.5,
-                "timestamp": "2024-01-15T10:32:00Z",
-                "labels": {
+                "timestamp": 1705315920000000000,
+                "attributes": {
                     "host": "server1"
-                }
+                },
+                "resource": null
             }
         ]"#,
         )
@@ -393,25 +428,26 @@ async fn test_metrics_time_series_json_output() {
 async fn test_metrics_histogram_with_percentiles() {
     let mut server = Server::new_async().await;
     let mock = server
-        .mock("GET", "/api/metrics/response_time_ms")
+        .mock("GET", "/api/metrics")
+        .match_query(mockito::Matcher::UrlEncoded(
+            "name".into(),
+            "response_time_ms".into(),
+        ))
         .with_status(200)
         .with_header("content-type", "application/json")
         .with_body(
             r#"[
             {
                 "name": "response_time_ms",
-                "type": "histogram",
-                "value": 150.5,
-                "timestamp": "2024-01-15T10:30:00Z",
-                "labels": {
+                "description": null,
+                "unit": null,
+                "metric_type": "histogram",
+                "value": {"sum": 150.5, "count": 10, "buckets": []},
+                "timestamp": 1705315800000000000,
+                "attributes": {
                     "endpoint": "/api/users"
                 },
-                "percentiles": {
-                    "p50": 100.0,
-                    "p95": 200.0,
-                    "p99": 300.0,
-                    "p99.9": 500.0
-                }
+                "resource": null
             }
         ]"#,
         )
@@ -445,10 +481,10 @@ async fn test_metrics_json_output_format() {
             r#"[
             {
                 "name": "http_requests_total",
-                "type": "counter",
-                "value": 1234.0,
-                "timestamp": "2024-01-15T10:30:00Z",
-                "labels": {
+                "metric_type": "counter",
+                "value": 1234,
+                "timestamp": 1705315800000000000,
+                "attributes": {
                     "method": "GET"
                 }
             }

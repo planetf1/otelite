@@ -32,22 +32,25 @@ async fn test_logs_list_command() {
         .with_status(200)
         .with_header("content-type", "application/json")
         .with_body(
-            r#"[
-            {
-                "id": "log1",
-                "timestamp": "2024-01-15T10:30:00Z",
-                "severity": "INFO",
-                "message": "Test log 1",
-                "attributes": {}
-            },
-            {
-                "id": "log2",
-                "timestamp": "2024-01-15T10:31:00Z",
-                "severity": "ERROR",
-                "message": "Test log 2",
-                "attributes": {}
-            }
-        ]"#,
+            r#"{
+            "logs": [
+                {
+                    "timestamp": 1705315800000000000,
+                    "severity": "INFO",
+                    "body": "Test log 1",
+                    "attributes": {}
+                },
+                {
+                    "timestamp": 1705315860000000000,
+                    "severity": "ERROR",
+                    "body": "Test log 2",
+                    "attributes": {}
+                }
+            ],
+            "total": 2,
+            "limit": 10,
+            "offset": 0
+        }"#,
         )
         .create_async()
         .await;
@@ -62,8 +65,8 @@ async fn test_logs_list_command() {
     assert!(result.is_ok());
     let logs = result.unwrap();
     assert_eq!(logs.len(), 2);
-    assert_eq!(logs[0].id, "log1");
-    assert_eq!(logs[1].id, "log2");
+    assert_eq!(logs[0].timestamp, 1705315800000000000);
+    assert_eq!(logs[1].timestamp, 1705315860000000000);
 }
 
 #[tokio::test]
@@ -78,15 +81,19 @@ async fn test_logs_list_with_severity_filter() {
         .with_status(200)
         .with_header("content-type", "application/json")
         .with_body(
-            r#"[
-            {
-                "id": "log1",
-                "timestamp": "2024-01-15T10:30:00Z",
-                "severity": "ERROR",
-                "message": "Error message",
-                "attributes": {}
-            }
-        ]"#,
+            r#"{
+            "logs": [
+                {
+                    "timestamp": 1705315800000000000,
+                    "severity": "ERROR",
+                    "body": "Error message",
+                    "attributes": {}
+                }
+            ],
+            "total": 1,
+            "limit": 10,
+            "offset": 0
+        }"#,
         )
         .create_async()
         .await;
@@ -117,7 +124,7 @@ async fn test_logs_list_empty_response() {
         .mock("GET", "/api/logs")
         .with_status(200)
         .with_header("content-type", "application/json")
-        .with_body("[]")
+        .with_body(r#"{"logs": [], "total": 0, "limit": 100, "offset": 0}"#)
         .create_async()
         .await;
 
@@ -136,27 +143,43 @@ async fn test_logs_list_empty_response() {
 async fn test_logs_search_command() {
     let mut server = Server::new_async().await;
     let mock = server
-        .mock("GET", "/api/logs/search")
-        .match_query(mockito::Matcher::UrlEncoded("q".into(), "error".into()))
+        .mock("GET", "/api/logs")
+        .match_query(mockito::Matcher::UrlEncoded(
+            "search".into(),
+            "error".into(),
+        ))
         .with_status(200)
         .with_header("content-type", "application/json")
         .with_body(
-            r#"[
+            r#"{
+            "logs": [
             {
-                "id": "log1",
-                "timestamp": "2024-01-15T10:30:00Z",
+                "timestamp": 1705315800000000000,
                 "severity": "ERROR",
-                "message": "Error in processing",
-                "attributes": {}
+                "severity_text": "ERROR",
+                "body": "Error in processing",
+                "attributes": {},
+                "resource_attributes": {},
+                "scope_name": "test",
+                "trace_id": null,
+                "span_id": null
             },
             {
-                "id": "log2",
-                "timestamp": "2024-01-15T10:31:00Z",
+                "timestamp": 1705315860000000000,
                 "severity": "ERROR",
-                "message": "Another error",
-                "attributes": {}
+                "severity_text": "ERROR",
+                "body": "Another error",
+                "attributes": {},
+                "resource_attributes": {},
+                "scope_name": "test",
+                "trace_id": null,
+                "span_id": null
             }
-        ]"#,
+            ],
+            "total": 2,
+            "limit": 100,
+            "offset": 0
+        }"#,
         )
         .create_async()
         .await;
@@ -171,21 +194,21 @@ async fn test_logs_search_command() {
     assert!(result.is_ok());
     let logs = result.unwrap();
     assert_eq!(logs.len(), 2);
-    assert!(logs[0].message.contains("Error"));
+    assert!(logs[0].body.contains("Error"));
 }
 
 #[tokio::test]
 async fn test_logs_search_with_limit() {
     let mut server = Server::new_async().await;
     let mock = server
-        .mock("GET", "/api/logs/search")
+        .mock("GET", "/api/logs")
         .match_query(mockito::Matcher::AllOf(vec![
-            mockito::Matcher::UrlEncoded("q".into(), "test".into()),
+            mockito::Matcher::UrlEncoded("search".into(), "test".into()),
             mockito::Matcher::UrlEncoded("limit".into(), "5".into()),
         ]))
         .with_status(200)
         .with_header("content-type", "application/json")
-        .with_body("[]")
+        .with_body(r#"{"logs": [], "total": 0, "limit": 5, "offset": 0}"#)
         .create_async()
         .await;
 
@@ -204,19 +227,23 @@ async fn test_logs_search_with_limit() {
 async fn test_logs_show_command() {
     let mut server = Server::new_async().await;
     let mock = server
-        .mock("GET", "/api/logs/log123")
+        .mock("GET", "/api/logs/1705315800000000000")
         .with_status(200)
         .with_header("content-type", "application/json")
         .with_body(
             r#"{
-            "id": "log123",
-            "timestamp": "2024-01-15T10:30:00Z",
+            "timestamp": 1705315800000000000,
             "severity": "ERROR",
-            "message": "Detailed error message",
+            "severity_text": "ERROR",
+            "body": "Detailed error message",
             "attributes": {
                 "user_id": "12345",
                 "request_id": "abc-def"
-            }
+            },
+            "resource_attributes": {},
+            "scope_name": "test",
+            "trace_id": null,
+            "span_id": null
         }"#,
         )
         .create_async()
@@ -225,12 +252,13 @@ async fn test_logs_show_command() {
     let client = create_test_client(server.url()).await;
     let config = create_test_config(server.url(), rotel_cli::config::OutputFormat::Json);
 
-    let result = rotel_cli::commands::logs::handle_show(&client, &config, "log123").await;
+    let result =
+        rotel_cli::commands::logs::handle_show(&client, &config, "1705315800000000000").await;
 
     mock.assert_async().await;
     assert!(result.is_ok());
     let log = result.unwrap();
-    assert_eq!(log.id, "log123");
+    assert_eq!(log.timestamp, 1705315800000000000);
     assert_eq!(log.severity, "ERROR");
     assert_eq!(log.attributes.len(), 2);
 }
@@ -239,7 +267,7 @@ async fn test_logs_show_command() {
 async fn test_logs_show_not_found() {
     let mut server = Server::new_async().await;
     let mock = server
-        .mock("GET", "/api/logs/nonexistent")
+        .mock("GET", "/api/logs/9999999999999999")
         .with_status(404)
         .create_async()
         .await;
@@ -247,7 +275,7 @@ async fn test_logs_show_not_found() {
     let client = create_test_client(server.url()).await;
     let config = create_test_config(server.url(), rotel_cli::config::OutputFormat::Json);
 
-    let result = rotel_cli::commands::logs::handle_show(&client, &config, "nonexistent").await;
+    let result = rotel_cli::commands::logs::handle_show(&client, &config, "9999999999999999").await;
 
     mock.assert_async().await;
     assert!(result.is_err());
@@ -266,15 +294,24 @@ async fn test_json_output_format() {
         .with_status(200)
         .with_header("content-type", "application/json")
         .with_body(
-            r#"[
+            r#"{
+            "logs": [
             {
-                "id": "log1",
-                "timestamp": "2024-01-15T10:30:00Z",
+                "timestamp": 1705315800000000000,
                 "severity": "INFO",
-                "message": "Test message",
-                "attributes": {}
+                "severity_text": "INFO",
+                "body": "Test message",
+                "attributes": {},
+                "resource_attributes": {},
+                "scope_name": "test",
+                "trace_id": null,
+                "span_id": null
             }
-        ]"#,
+            ],
+            "total": 1,
+            "limit": 100,
+            "offset": 0
+        }"#,
         )
         .create_async()
         .await;
@@ -292,7 +329,7 @@ async fn test_json_output_format() {
     let json_str = serde_json::to_string(&logs).unwrap();
     let parsed: Vec<rotel_cli::api::models::LogEntry> = serde_json::from_str(&json_str).unwrap();
     assert_eq!(parsed.len(), 1);
-    assert_eq!(parsed[0].id, "log1");
+    assert_eq!(parsed[0].timestamp, 1705315800000000000);
 }
 
 #[tokio::test]
@@ -303,15 +340,24 @@ async fn test_pretty_output_format() {
         .with_status(200)
         .with_header("content-type", "application/json")
         .with_body(
-            r#"[
+            r#"{
+            "logs": [
             {
-                "id": "log1",
-                "timestamp": "2024-01-15T10:30:00Z",
+                "timestamp": 1705315800000000000,
                 "severity": "INFO",
-                "message": "Test message",
-                "attributes": {}
+                "severity_text": "INFO",
+                "body": "Test message",
+                "attributes": {},
+                "resource_attributes": {},
+                "scope_name": "test",
+                "trace_id": null,
+                "span_id": null
             }
-        ]"#,
+            ],
+            "total": 1,
+            "limit": 100,
+            "offset": 0
+        }"#,
         )
         .create_async()
         .await;
@@ -339,36 +385,57 @@ async fn test_severity_filtering_integration() {
         .with_status(200)
         .with_header("content-type", "application/json")
         .with_body(
-            r#"[
+            r#"{
+            "logs": [
             {
-                "id": "log1",
-                "timestamp": "2024-01-15T10:30:00Z",
+                "timestamp": 1705315800000000000,
                 "severity": "ERROR",
-                "message": "Error",
-                "attributes": {}
+                "severity_text": "ERROR",
+                "body": "Error",
+                "attributes": {},
+                "resource_attributes": {},
+                "scope_name": "test",
+                "trace_id": null,
+                "span_id": null
             },
             {
-                "id": "log2",
-                "timestamp": "2024-01-15T10:31:00Z",
+                "timestamp": 1705315860000000000,
                 "severity": "WARN",
-                "message": "Warning",
-                "attributes": {}
+                "severity_text": "WARN",
+                "body": "Warning",
+                "attributes": {},
+                "resource_attributes": {},
+                "scope_name": "test",
+                "trace_id": null,
+                "span_id": null
             },
             {
-                "id": "log3",
-                "timestamp": "2024-01-15T10:32:00Z",
+                "timestamp": 1705315920000000000,
                 "severity": "INFO",
-                "message": "Info",
-                "attributes": {}
+                "severity_text": "INFO",
+                "body": "Info",
+                "attributes": {},
+                "resource_attributes": {},
+                "scope_name": "test",
+                "trace_id": null,
+                "span_id": null
             },
             {
-                "id": "log4",
-                "timestamp": "2024-01-15T10:33:00Z",
+                "timestamp": 1705315980000000000,
                 "severity": "DEBUG",
-                "message": "Debug",
-                "attributes": {}
+                "severity_text": "DEBUG",
+                "body": "Debug",
+                "attributes": {},
+                "resource_attributes": {},
+                "scope_name": "test",
+                "trace_id": null,
+                "span_id": null
             }
-        ]"#,
+            ],
+            "total": 4,
+            "limit": 100,
+            "offset": 0
+        }"#,
         )
         .create_async()
         .await;

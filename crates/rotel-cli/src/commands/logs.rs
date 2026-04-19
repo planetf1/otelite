@@ -242,11 +242,14 @@ mod tests {
     fn test_filter_by_severity_unknown_level() {
         let mut logs = create_test_logs();
         logs.push(LogEntry {
-            id: "log-unknown".to_string(),
-            timestamp: Utc::now(),
+            timestamp: 1705315800000000000,
             severity: "CUSTOM".to_string(),
-            message: "Custom severity".to_string(),
+            severity_text: Some("CUSTOM".to_string()),
+            body: "Custom severity".to_string(),
             attributes: HashMap::new(),
+            resource: None,
+            trace_id: None,
+            span_id: None,
         });
 
         let filtered = filter_by_severity(logs.clone(), Some("INFO".to_string()));
@@ -257,39 +260,54 @@ mod tests {
     fn create_test_logs() -> Vec<LogEntry> {
         vec![
             LogEntry {
-                id: "log-error".to_string(),
-                timestamp: Utc::now(),
+                timestamp: 1705315800000000000,
                 severity: "ERROR".to_string(),
-                message: "Error message".to_string(),
+                severity_text: Some("ERROR".to_string()),
+                body: "Error message".to_string(),
                 attributes: HashMap::new(),
+                resource: None,
+                trace_id: None,
+                span_id: None,
             },
             LogEntry {
-                id: "log-warn".to_string(),
-                timestamp: Utc::now(),
+                timestamp: 1705315860000000000,
                 severity: "WARN".to_string(),
-                message: "Warning message".to_string(),
+                severity_text: Some("WARN".to_string()),
+                body: "Warning message".to_string(),
                 attributes: HashMap::new(),
+                resource: None,
+                trace_id: None,
+                span_id: None,
             },
             LogEntry {
-                id: "log-info".to_string(),
-                timestamp: Utc::now(),
+                timestamp: 1705315920000000000,
                 severity: "INFO".to_string(),
-                message: "Info message".to_string(),
+                severity_text: Some("INFO".to_string()),
+                body: "Info message".to_string(),
                 attributes: HashMap::new(),
+                resource: None,
+                trace_id: None,
+                span_id: None,
             },
             LogEntry {
-                id: "log-debug".to_string(),
-                timestamp: Utc::now(),
+                timestamp: 1705315980000000000,
                 severity: "DEBUG".to_string(),
-                message: "Debug message".to_string(),
+                severity_text: Some("DEBUG".to_string()),
+                body: "Debug message".to_string(),
                 attributes: HashMap::new(),
+                resource: None,
+                trace_id: None,
+                span_id: None,
             },
             LogEntry {
-                id: "log-trace".to_string(),
-                timestamp: Utc::now(),
+                timestamp: 1705316040000000000,
                 severity: "TRACE".to_string(),
-                message: "Trace message".to_string(),
+                severity_text: Some("TRACE".to_string()),
+                body: "Trace message".to_string(),
                 attributes: HashMap::new(),
+                resource: None,
+                trace_id: None,
+                span_id: None,
             },
         ]
     }

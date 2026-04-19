@@ -32,40 +32,26 @@ async fn test_traces_list_command() {
         .with_status(200)
         .with_header("content-type", "application/json")
         .with_body(
-            r#"[
+            r#"{"traces": [
             {
-                "id": "trace1",
-                "root_span": "http-request",
-                "duration_ms": 1500,
-                "status": "OK",
-                "spans": [
-                    {
-                        "id": "span1",
-                        "name": "http-request",
-                        "parent_id": null,
-                        "start_time": "2024-01-15T10:30:00Z",
-                        "duration_ms": 1500,
-                        "attributes": {}
-                    }
-                ]
+                "trace_id": "trace1",
+                "root_span_name": "http-request",
+                "start_time": 1705315800000000000,
+                "duration": 1500000000,
+                "span_count": 1,
+                "service_names": [],
+                "has_errors": false
             },
             {
-                "id": "trace2",
-                "root_span": "database-query",
-                "duration_ms": 250,
-                "status": "OK",
-                "spans": [
-                    {
-                        "id": "span2",
-                        "name": "database-query",
-                        "parent_id": null,
-                        "start_time": "2024-01-15T10:31:00Z",
-                        "duration_ms": 250,
-                        "attributes": {}
-                    }
-                ]
+                "trace_id": "trace2",
+                "root_span_name": "database-query",
+                "start_time": 1705315860000000000,
+                "duration": 250000000,
+                "span_count": 1,
+                "service_names": [],
+                "has_errors": false
             }
-        ]"#,
+            ], "total": 2, "limit": 10, "offset": 0}"#,
         )
         .create_async()
         .await;
@@ -87,7 +73,7 @@ async fn test_traces_list_empty() {
         .mock("GET", "/api/traces")
         .with_status(200)
         .with_header("content-type", "application/json")
-        .with_body(r#"[]"#)
+        .with_body(r#"{"traces": [], "total": 0, "limit": 100, "offset": 0}"#)
         .create_async()
         .await;
 
@@ -110,28 +96,42 @@ async fn test_traces_show_command() {
         .with_header("content-type", "application/json")
         .with_body(
             r#"{
-            "id": "trace123",
-            "root_span": "http-request",
-            "duration_ms": 1500,
-            "status": "OK",
+            "trace_id": "trace123",
             "spans": [
                 {
-                    "id": "span1",
+                    "span_id": "span1",
+                    "trace_id": "trace123",
+                    "parent_span_id": null,
                     "name": "http-request",
-                    "parent_id": null,
-                    "start_time": "2024-01-15T10:30:00Z",
-                    "duration_ms": 1500,
-                    "attributes": {"http.method": "GET"}
+                    "kind": "Internal",
+                    "start_time": 1705315800000000000,
+                    "end_time": 1705315801500000000,
+                    "duration": 1500000000,
+                    "attributes": {"http.method": "GET"},
+                    "resource": null,
+                    "status": {"code": "OK", "message": null},
+                    "events": []
                 },
                 {
-                    "id": "span2",
+                    "span_id": "span2",
+                    "trace_id": "trace123",
+                    "parent_span_id": "span1",
                     "name": "database-query",
-                    "parent_id": "span1",
-                    "start_time": "2024-01-15T10:30:00.100Z",
-                    "duration_ms": 250,
-                    "attributes": {"db.system": "postgresql"}
+                    "kind": "Internal",
+                    "start_time": 1705315800100000000,
+                    "end_time": 1705315800350000000,
+                    "duration": 250000000,
+                    "attributes": {"db.system": "postgresql"},
+                    "resource": null,
+                    "status": {"code": "OK", "message": null},
+                    "events": []
                 }
-            ]
+            ],
+            "start_time": 1705315800000000000,
+            "end_time": 1705315801500000000,
+            "duration": 1500000000,
+            "span_count": 2,
+            "service_names": []
         }"#,
         )
         .create_async()
@@ -177,15 +177,17 @@ async fn test_traces_list_with_duration_filter() {
         .with_status(200)
         .with_header("content-type", "application/json")
         .with_body(
-            r#"[
+            r#"{"traces": [
             {
-                "id": "trace1",
-                "root_span": "slow-request",
-                "duration_ms": 2000,
-                "status": "OK",
-                "spans": []
+                "trace_id": "trace1",
+                "root_span_name": "slow-request",
+                "start_time": 1705315800000000000,
+                "duration": 2000000000,
+                "span_count": 1,
+                "service_names": [],
+                "has_errors": false
             }
-        ]"#,
+            ], "total": 1, "limit": 100, "offset": 0}"#,
         )
         .create_async()
         .await;
@@ -212,15 +214,17 @@ async fn test_traces_list_with_status_filter() {
         .with_status(200)
         .with_header("content-type", "application/json")
         .with_body(
-            r#"[
+            r#"{"traces": [
             {
-                "id": "trace1",
-                "root_span": "failed-request",
-                "duration_ms": 500,
-                "status": "ERROR",
-                "spans": []
+                "trace_id": "trace1",
+                "root_span_name": "failed-request",
+                "start_time": 1705315800000000000,
+                "duration": 500000000,
+                "span_count": 1,
+                "service_names": [],
+                "has_errors": true
             }
-        ]"#,
+            ], "total": 1, "limit": 100, "offset": 0}"#,
         )
         .create_async()
         .await;
@@ -251,44 +255,18 @@ async fn test_traces_show_with_span_tree() {
         .with_header("content-type", "application/json")
         .with_body(
             r#"{
-            "id": "trace123",
-            "root_span": "http-request",
-            "duration_ms": 1500,
-            "status": "OK",
+            "trace_id": "trace123",
             "spans": [
-                {
-                    "id": "span1",
-                    "name": "http-request",
-                    "parent_id": null,
-                    "start_time": "2024-01-15T10:30:00Z",
-                    "duration_ms": 1500,
-                    "attributes": {}
-                },
-                {
-                    "id": "span2",
-                    "name": "middleware",
-                    "parent_id": "span1",
-                    "start_time": "2024-01-15T10:30:00.100Z",
-                    "duration_ms": 1000,
-                    "attributes": {}
-                },
-                {
-                    "id": "span3",
-                    "name": "handler",
-                    "parent_id": "span2",
-                    "start_time": "2024-01-15T10:30:00.200Z",
-                    "duration_ms": 800,
-                    "attributes": {}
-                },
-                {
-                    "id": "span4",
-                    "name": "database-query",
-                    "parent_id": "span3",
-                    "start_time": "2024-01-15T10:30:00.300Z",
-                    "duration_ms": 250,
-                    "attributes": {}
-                }
-            ]
+                {"span_id": "span1", "trace_id": "trace123", "parent_span_id": null, "name": "http-request", "kind": "Internal", "start_time": 1705315800000000000, "end_time": 1705315801500000000, "duration": 1500000000, "attributes": {}, "resource": null, "status": {"code": "OK", "message": null}, "events": []},
+                {"span_id": "span2", "trace_id": "trace123", "parent_span_id": "span1", "name": "middleware", "kind": "Internal", "start_time": 1705315800100000000, "end_time": 1705315801100000000, "duration": 1000000000, "attributes": {}, "resource": null, "status": {"code": "OK", "message": null}, "events": []},
+                {"span_id": "span3", "trace_id": "trace123", "parent_span_id": "span2", "name": "handler", "kind": "Internal", "start_time": 1705315800200000000, "end_time": 1705315801000000000, "duration": 800000000, "attributes": {}, "resource": null, "status": {"code": "OK", "message": null}, "events": []},
+                {"span_id": "span4", "trace_id": "trace123", "parent_span_id": "span3", "name": "database-query", "kind": "Internal", "start_time": 1705315800300000000, "end_time": 1705315800550000000, "duration": 250000000, "attributes": {}, "resource": null, "status": {"code": "OK", "message": null}, "events": []}
+            ],
+            "start_time": 1705315800000000000,
+            "end_time": 1705315801500000000,
+            "duration": 1500000000,
+            "span_count": 4,
+            "service_names": []
         }"#,
         )
         .create_async()
@@ -313,28 +291,16 @@ async fn test_traces_json_output_with_spans() {
         .with_header("content-type", "application/json")
         .with_body(
             r#"{
-            "id": "trace123",
-            "root_span": "http-request",
-            "duration_ms": 1500,
-            "status": "OK",
+            "trace_id": "trace123",
             "spans": [
-                {
-                    "id": "span1",
-                    "name": "http-request",
-                    "parent_id": null,
-                    "start_time": "2024-01-15T10:30:00Z",
-                    "duration_ms": 1500,
-                    "attributes": {"http.method": "GET", "http.url": "/api/users"}
-                },
-                {
-                    "id": "span2",
-                    "name": "database-query",
-                    "parent_id": "span1",
-                    "start_time": "2024-01-15T10:30:00.100Z",
-                    "duration_ms": 250,
-                    "attributes": {"db.system": "postgresql", "db.statement": "SELECT * FROM users"}
-                }
-            ]
+                {"span_id": "span1", "trace_id": "trace123", "parent_span_id": null, "name": "http-request", "kind": "Internal", "start_time": 1705315800000000000, "end_time": 1705315801500000000, "duration": 1500000000, "attributes": {"http.method": "GET", "http.url": "/api/users"}, "resource": null, "status": {"code": "OK", "message": null}, "events": []},
+                {"span_id": "span2", "trace_id": "trace123", "parent_span_id": "span1", "name": "database-query", "kind": "Internal", "start_time": 1705315800100000000, "end_time": 1705315800350000000, "duration": 250000000, "attributes": {"db.system": "postgresql", "db.statement": "SELECT * FROM users"}, "resource": null, "status": {"code": "OK", "message": null}, "events": []}
+            ],
+            "start_time": 1705315800000000000,
+            "end_time": 1705315801500000000,
+            "duration": 1500000000,
+            "span_count": 2,
+            "service_names": []
         }"#,
         )
         .create_async()
@@ -357,15 +323,17 @@ async fn test_traces_list_pretty_output() {
         .with_status(200)
         .with_header("content-type", "application/json")
         .with_body(
-            r#"[
+            r#"{"traces": [
             {
-                "id": "trace1",
-                "root_span": "http-request",
-                "duration_ms": 1500,
-                "status": "OK",
-                "spans": []
+                "trace_id": "trace1",
+                "root_span_name": "http-request",
+                "start_time": 1705315800000000000,
+                "duration": 1500000000,
+                "span_count": 1,
+                "service_names": [],
+                "has_errors": false
             }
-        ]"#,
+            ], "total": 1, "limit": 100, "offset": 0}"#,
         )
         .create_async()
         .await;

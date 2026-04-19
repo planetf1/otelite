@@ -127,39 +127,45 @@ mod tests {
     #[test]
     fn test_filter_by_duration() {
         let traces = vec![
-            Trace {
-                id: "trace-001".to_string(),
-                root_span: "fast-request".to_string(),
-                duration_ms: 100,
-                status: "OK".to_string(),
-                spans: vec![],
+            TraceEntry {
+                trace_id: "trace-001".to_string(),
+                root_span_name: "fast-request".to_string(),
+                start_time: 1234567890000000000,
+                duration: 100_000_000, // 100ms in nanoseconds
+                span_count: 1,
+                service_names: vec!["service1".to_string()],
+                has_errors: false,
             },
-            Trace {
-                id: "trace-002".to_string(),
-                root_span: "slow-request".to_string(),
-                duration_ms: 2000,
-                status: "OK".to_string(),
-                spans: vec![],
+            TraceEntry {
+                trace_id: "trace-002".to_string(),
+                root_span_name: "slow-request".to_string(),
+                start_time: 1234567890000000000,
+                duration: 2_000_000_000, // 2000ms in nanoseconds
+                span_count: 1,
+                service_names: vec!["service1".to_string()],
+                has_errors: false,
             },
-            Trace {
-                id: "trace-003".to_string(),
-                root_span: "medium-request".to_string(),
-                duration_ms: 500,
-                status: "OK".to_string(),
-                spans: vec![],
+            TraceEntry {
+                trace_id: "trace-003".to_string(),
+                root_span_name: "medium-request".to_string(),
+                start_time: 1234567890000000000,
+                duration: 500_000_000, // 500ms in nanoseconds
+                span_count: 1,
+                service_names: vec!["service1".to_string()],
+                has_errors: false,
             },
         ];
 
         // Filter for traces >= 500ms
         let filtered = filter_by_duration(traces.clone(), 500);
         assert_eq!(filtered.len(), 2);
-        assert_eq!(filtered[0].id, "trace-002");
-        assert_eq!(filtered[1].id, "trace-003");
+        assert_eq!(filtered[0].trace_id, "trace-002");
+        assert_eq!(filtered[1].trace_id, "trace-003");
 
         // Filter for traces >= 1000ms
         let filtered = filter_by_duration(traces.clone(), 1000);
         assert_eq!(filtered.len(), 1);
-        assert_eq!(filtered[0].id, "trace-002");
+        assert_eq!(filtered[0].trace_id, "trace-002");
 
         // Filter for traces >= 0ms (all traces)
         let filtered = filter_by_duration(traces.clone(), 0);
@@ -172,19 +178,21 @@ mod tests {
 
     #[test]
     fn test_filter_by_duration_empty() {
-        let traces: Vec<Trace> = vec![];
+        let traces: Vec<TraceEntry> = vec![];
         let filtered = filter_by_duration(traces, 1000);
         assert_eq!(filtered.len(), 0);
     }
 
     #[test]
     fn test_filter_by_duration_exact_match() {
-        let traces = vec![Trace {
-            id: "trace-001".to_string(),
-            root_span: "request".to_string(),
-            duration_ms: 1000,
-            status: "OK".to_string(),
-            spans: vec![],
+        let traces = vec![TraceEntry {
+            trace_id: "trace-001".to_string(),
+            root_span_name: "request".to_string(),
+            start_time: 1234567890000000000,
+            duration: 1_000_000_000, // 1000ms in nanoseconds
+            span_count: 1,
+            service_names: vec!["service1".to_string()],
+            has_errors: false,
         }];
 
         // Exact match should be included
@@ -199,39 +207,45 @@ mod tests {
     #[test]
     fn test_filter_by_status() {
         let traces = vec![
-            Trace {
-                id: "trace-001".to_string(),
-                root_span: "success-request".to_string(),
-                duration_ms: 100,
-                status: "OK".to_string(),
-                spans: vec![],
+            TraceEntry {
+                trace_id: "trace-001".to_string(),
+                root_span_name: "success-request".to_string(),
+                start_time: 1234567890000000000,
+                duration: 100_000_000,
+                span_count: 1,
+                service_names: vec!["service1".to_string()],
+                has_errors: false,
             },
-            Trace {
-                id: "trace-002".to_string(),
-                root_span: "error-request".to_string(),
-                duration_ms: 200,
-                status: "ERROR".to_string(),
-                spans: vec![],
+            TraceEntry {
+                trace_id: "trace-002".to_string(),
+                root_span_name: "error-request".to_string(),
+                start_time: 1234567890000000000,
+                duration: 200_000_000,
+                span_count: 1,
+                service_names: vec!["service1".to_string()],
+                has_errors: true,
             },
-            Trace {
-                id: "trace-003".to_string(),
-                root_span: "another-success".to_string(),
-                duration_ms: 150,
-                status: "OK".to_string(),
-                spans: vec![],
+            TraceEntry {
+                trace_id: "trace-003".to_string(),
+                root_span_name: "another-success".to_string(),
+                start_time: 1234567890000000000,
+                duration: 150_000_000,
+                span_count: 1,
+                service_names: vec!["service1".to_string()],
+                has_errors: false,
             },
         ];
 
-        // Filter for OK status
+        // Filter for OK status (has_errors: false)
         let filtered = filter_by_status(traces.clone(), "OK");
         assert_eq!(filtered.len(), 2);
-        assert_eq!(filtered[0].id, "trace-001");
-        assert_eq!(filtered[1].id, "trace-003");
+        assert_eq!(filtered[0].trace_id, "trace-001");
+        assert_eq!(filtered[1].trace_id, "trace-003");
 
-        // Filter for ERROR status
+        // Filter for ERROR status (has_errors: true)
         let filtered = filter_by_status(traces.clone(), "ERROR");
         assert_eq!(filtered.len(), 1);
-        assert_eq!(filtered[0].id, "trace-002");
+        assert_eq!(filtered[0].trace_id, "trace-002");
 
         // Case insensitive
         let filtered = filter_by_status(traces.clone(), "ok");

@@ -247,15 +247,24 @@ mod tests {
             .with_status(200)
             .with_header("content-type", "application/json")
             .with_body(
-                r#"[
+                r#"{
+                "logs": [
                 {
-                    "id": "log1",
-                    "timestamp": "2024-01-15T10:30:00Z",
+                    "timestamp": 1705315800000000000,
                     "severity": "INFO",
-                    "message": "Test log message",
-                    "attributes": {}
+                    "severity_text": "INFO",
+                    "body": "Test log message",
+                    "attributes": {},
+                    "resource_attributes": {},
+                    "scope_name": "test",
+                    "trace_id": null,
+                    "span_id": null
                 }
-            ]"#,
+                ],
+                "total": 1,
+                "limit": 10,
+                "offset": 0
+            }"#,
             )
             .create_async()
             .await;
@@ -267,9 +276,9 @@ mod tests {
         mock.assert_async().await;
         assert!(result.is_ok());
         let logs = result.unwrap();
-        assert_eq!(logs.len(), 1);
-        assert_eq!(logs[0].id, "log1");
-        assert_eq!(logs[0].severity, "INFO");
+        assert_eq!(logs.logs.len(), 1);
+        assert_eq!(logs.logs[0].timestamp, 1705315800000000000);
+        assert_eq!(logs.logs[0].severity, "INFO");
     }
 
     #[tokio::test]
@@ -279,7 +288,7 @@ mod tests {
             .mock("GET", "/api/logs")
             .with_status(200)
             .with_header("content-type", "application/json")
-            .with_body("[]")
+            .with_body(r#"{"logs": [], "total": 0, "limit": 100, "offset": 0}"#)
             .create_async()
             .await;
 
@@ -288,7 +297,7 @@ mod tests {
 
         mock.assert_async().await;
         assert!(result.is_ok());
-        assert_eq!(result.unwrap().len(), 0);
+        assert_eq!(result.unwrap().logs.len(), 0);
     }
 
     #[tokio::test]
@@ -316,48 +325,52 @@ mod tests {
     async fn test_fetch_log_by_id_success() {
         let mut server = Server::new_async().await;
         let mock = server
-            .mock("GET", "/api/logs/log123")
+            .mock("GET", "/api/logs/1705315800000000000")
             .with_status(200)
             .with_header("content-type", "application/json")
             .with_body(
                 r#"{
-                "id": "log123",
-                "timestamp": "2024-01-15T10:30:00Z",
+                "timestamp": 1705315800000000000,
                 "severity": "ERROR",
-                "message": "Error occurred",
-                "attributes": {"key": "value"}
+                "severity_text": "ERROR",
+                "body": "Error occurred",
+                "attributes": {"key": "value"},
+                "resource_attributes": {},
+                "scope_name": "test",
+                "trace_id": null,
+                "span_id": null
             }"#,
             )
             .create_async()
             .await;
 
         let client = ApiClient::new(server.url(), Duration::from_secs(30)).unwrap();
-        let result = client.fetch_log_by_id("log123").await;
+        let result = client.fetch_log_by_id(1705315800000000000).await;
 
         mock.assert_async().await;
         assert!(result.is_ok());
         let log = result.unwrap();
-        assert_eq!(log.id, "log123");
+        assert_eq!(log.timestamp, 1705315800000000000);
         assert_eq!(log.severity, "ERROR");
-        assert_eq!(log.message, "Error occurred");
+        assert_eq!(log.body, "Error occurred");
     }
 
     #[tokio::test]
     async fn test_fetch_log_by_id_not_found() {
         let mut server = Server::new_async().await;
         let mock = server
-            .mock("GET", "/api/logs/nonexistent")
+            .mock("GET", "/api/logs/9999999999999999")
             .with_status(404)
             .create_async()
             .await;
 
         let client = ApiClient::new(server.url(), Duration::from_secs(30)).unwrap();
-        let result = client.fetch_log_by_id("nonexistent").await;
+        let result = client.fetch_log_by_id(9999999999999999).await;
 
         mock.assert_async().await;
         assert!(result.is_err());
         match result.unwrap_err() {
-            Error::NotFound(msg) => assert!(msg.contains("nonexistent")),
+            Error::NotFound(msg) => assert!(msg.contains("9999999999999999")),
             _ => panic!("Expected NotFound error"),
         }
     }
@@ -367,30 +380,43 @@ mod tests {
     async fn test_search_logs_success() {
         let mut server = Server::new_async().await;
         let mock = server
-            .mock("GET", "/api/logs/search")
+            .mock("GET", "/api/logs")
             .match_query(mockito::Matcher::AllOf(vec![mockito::Matcher::UrlEncoded(
-                "q".into(),
+                "search".into(),
                 "error".into(),
             )]))
             .with_status(200)
             .with_header("content-type", "application/json")
             .with_body(
-                r#"[
+                r#"{
+                "logs": [
                 {
-                    "id": "log1",
-                    "timestamp": "2024-01-15T10:30:00Z",
+                    "timestamp": 1705315800000000000,
                     "severity": "ERROR",
-                    "message": "Error in processing",
-                    "attributes": {}
+                    "severity_text": "ERROR",
+                    "body": "Error in processing",
+                    "attributes": {},
+                    "resource_attributes": {},
+                    "scope_name": "test",
+                    "trace_id": null,
+                    "span_id": null
                 },
                 {
-                    "id": "log2",
-                    "timestamp": "2024-01-15T10:31:00Z",
+                    "timestamp": 1705315860000000000,
                     "severity": "ERROR",
-                    "message": "Another error",
-                    "attributes": {}
+                    "severity_text": "ERROR",
+                    "body": "Another error",
+                    "attributes": {},
+                    "resource_attributes": {},
+                    "scope_name": "test",
+                    "trace_id": null,
+                    "span_id": null
                 }
-            ]"#,
+                ],
+                "total": 2,
+                "limit": 100,
+                "offset": 0
+            }"#,
             )
             .create_async()
             .await;
@@ -401,23 +427,23 @@ mod tests {
         mock.assert_async().await;
         assert!(result.is_ok());
         let logs = result.unwrap();
-        assert_eq!(logs.len(), 2);
-        assert!(logs[0].message.contains("Error"));
-        assert!(logs[1].message.contains("error"));
+        assert_eq!(logs.logs.len(), 2);
+        assert!(logs.logs[0].body.contains("Error"));
+        assert!(logs.logs[1].body.contains("error"));
     }
 
     #[tokio::test]
     async fn test_search_logs_no_results() {
         let mut server = Server::new_async().await;
         let mock = server
-            .mock("GET", "/api/logs/search")
+            .mock("GET", "/api/logs")
             .match_query(mockito::Matcher::UrlEncoded(
-                "q".into(),
+                "search".into(),
                 "nonexistent".into(),
             ))
             .with_status(200)
             .with_header("content-type", "application/json")
-            .with_body("[]")
+            .with_body(r#"{"logs": [], "total": 0, "limit": 100, "offset": 0}"#)
             .create_async()
             .await;
 
@@ -426,21 +452,21 @@ mod tests {
 
         mock.assert_async().await;
         assert!(result.is_ok());
-        assert_eq!(result.unwrap().len(), 0);
+        assert_eq!(result.unwrap().logs.len(), 0);
     }
 
     #[tokio::test]
     async fn test_search_logs_with_filters() {
         let mut server = Server::new_async().await;
         let mock = server
-            .mock("GET", "/api/logs/search")
+            .mock("GET", "/api/logs")
             .match_query(mockito::Matcher::AllOf(vec![
-                mockito::Matcher::UrlEncoded("q".into(), "error".into()),
+                mockito::Matcher::UrlEncoded("search".into(), "error".into()),
                 mockito::Matcher::UrlEncoded("severity".into(), "ERROR".into()),
             ]))
             .with_status(200)
             .with_header("content-type", "application/json")
-            .with_body("[]")
+            .with_body(r#"{"logs": [], "total": 0, "limit": 100, "offset": 0}"#)
             .create_async()
             .await;
 
@@ -462,24 +488,22 @@ mod tests {
             .with_status(200)
             .with_header("content-type", "application/json")
             .with_body(
-                r#"[
+                r#"{
+                "traces": [
                 {
-                    "id": "trace1",
-                    "root_span": "http-request",
-                    "duration_ms": 1500,
-                    "status": "OK",
-                    "spans": [
-                        {
-                            "id": "span1",
-                            "name": "http-request",
-                            "parent_id": null,
-                            "start_time": "2024-01-15T10:30:00Z",
-                            "duration_ms": 1500,
-                            "attributes": {}
-                        }
-                    ]
+                    "trace_id": "trace1",
+                    "root_span_name": "http-request",
+                    "start_time": 1705315800000000000,
+                    "duration": 1500000000,
+                    "span_count": 1,
+                    "service_names": [],
+                    "has_errors": false
                 }
-            ]"#,
+                ],
+                "total": 1,
+                "limit": 10,
+                "offset": 0
+            }"#,
             )
             .create_async()
             .await;
@@ -491,11 +515,11 @@ mod tests {
         mock.assert_async().await;
         assert!(result.is_ok());
         let traces = result.unwrap();
-        assert_eq!(traces.len(), 1);
-        assert_eq!(traces[0].id, "trace1");
-        assert_eq!(traces[0].root_span, "http-request");
-        assert_eq!(traces[0].duration_ms, 1500);
-        assert_eq!(traces[0].status, "OK");
+        assert_eq!(traces.traces.len(), 1);
+        assert_eq!(traces.traces[0].trace_id, "trace1");
+        assert_eq!(traces.traces[0].root_span_name, "http-request");
+        assert_eq!(traces.traces[0].duration, 1500000000);
+        assert_eq!(traces.traces[0].has_errors, false);
     }
 
     #[tokio::test]
@@ -509,7 +533,7 @@ mod tests {
             ]))
             .with_status(200)
             .with_header("content-type", "application/json")
-            .with_body(r#"[]"#)
+            .with_body(r#"{"traces": [], "total": 0, "limit": 100, "offset": 0}"#)
             .create_async()
             .await;
 
@@ -554,28 +578,42 @@ mod tests {
             .with_header("content-type", "application/json")
             .with_body(
                 r#"{
-                "id": "trace123",
-                "root_span": "database-query",
-                "duration_ms": 250,
-                "status": "OK",
+                "trace_id": "trace123",
                 "spans": [
                     {
-                        "id": "span1",
+                        "span_id": "span1",
+                        "trace_id": "trace123",
+                        "parent_span_id": null,
                         "name": "database-query",
-                        "parent_id": null,
-                        "start_time": "2024-01-15T10:30:00Z",
-                        "duration_ms": 250,
-                        "attributes": {"db.system": "postgresql"}
+                        "kind": "Internal",
+                        "start_time": 1705315800000000000,
+                        "end_time": 1705315800250000000,
+                        "duration": 250000000,
+                        "attributes": {"db.system": "postgresql"},
+                        "resource": null,
+                        "status": {"code": "OK", "message": null},
+                        "events": []
                     },
                     {
-                        "id": "span2",
+                        "span_id": "span2",
+                        "trace_id": "trace123",
+                        "parent_span_id": "span1",
                         "name": "query-execution",
-                        "parent_id": "span1",
-                        "start_time": "2024-01-15T10:30:00.100Z",
-                        "duration_ms": 150,
-                        "attributes": {}
+                        "kind": "Internal",
+                        "start_time": 1705315800100000000,
+                        "end_time": 1705315800250000000,
+                        "duration": 150000000,
+                        "attributes": {},
+                        "resource": null,
+                        "status": {"code": "OK", "message": null},
+                        "events": []
                     }
-                ]
+                ],
+                "start_time": 1705315800000000000,
+                "end_time": 1705315800250000000,
+                "duration": 250000000,
+                "span_count": 2,
+                "service_names": []
             }"#,
             )
             .create_async()
@@ -587,10 +625,10 @@ mod tests {
         mock.assert_async().await;
         assert!(result.is_ok());
         let trace = result.unwrap();
-        assert_eq!(trace.id, "trace123");
-        assert_eq!(trace.root_span, "database-query");
-        assert_eq!(trace.duration_ms, 250);
+        assert_eq!(trace.trace_id, "trace123");
+        assert_eq!(trace.duration, 250000000);
         assert_eq!(trace.spans.len(), 2);
+        assert_eq!(trace.spans[0].name, "database-query");
     }
 
     #[tokio::test]
@@ -645,18 +683,23 @@ mod tests {
                 r#"[
                 {
                     "name": "http_requests_total",
-                    "type": "counter",
-                    "value": 1234.0,
-                    "timestamp": "2024-01-15T10:30:00Z",
-                    "labels": {"method": "GET", "status": "200"}
+                    "description": null,
+                    "unit": null,
+                    "metric_type": "counter",
+                    "value": 1234,
+                    "timestamp": 1705315800000000000,
+                    "attributes": {"method": "GET", "status": "200"},
+                    "resource": null
                 },
                 {
                     "name": "response_time_ms",
-                    "type": "histogram",
-                    "value": 150.5,
-                    "timestamp": "2024-01-15T10:30:00Z",
-                    "labels": {},
-                    "percentiles": {"p50": 100.0, "p95": 200.0, "p99": 300.0}
+                    "description": null,
+                    "unit": null,
+                    "metric_type": "histogram",
+                    "value": {"sum": 150.5, "count": 10, "buckets": []},
+                    "timestamp": 1705315800000000000,
+                    "attributes": {},
+                    "resource": null
                 }
             ]"#,
             )
@@ -672,11 +715,9 @@ mod tests {
         let metrics = result.unwrap();
         assert_eq!(metrics.len(), 2);
         assert_eq!(metrics[0].name, "http_requests_total");
-        assert_eq!(metrics[0].type_, "counter");
-        assert_eq!(metrics[0].value, 1234.0);
+        assert_eq!(metrics[0].metric_type, "counter");
         assert_eq!(metrics[1].name, "response_time_ms");
-        assert_eq!(metrics[1].type_, "histogram");
-        assert!(metrics[1].percentiles.is_some());
+        assert_eq!(metrics[1].metric_type, "histogram");
     }
 
     #[tokio::test]
@@ -723,24 +764,34 @@ mod tests {
     async fn test_fetch_metric_by_name_success() {
         let mut server = Server::new_async().await;
         let mock = server
-            .mock("GET", "/api/metrics/http_requests_total")
+            .mock("GET", "/api/metrics")
+            .match_query(mockito::Matcher::UrlEncoded(
+                "name".into(),
+                "http_requests_total".into(),
+            ))
             .with_status(200)
             .with_header("content-type", "application/json")
             .with_body(
                 r#"[
                 {
                     "name": "http_requests_total",
-                    "type": "counter",
-                    "value": 1234.0,
-                    "timestamp": "2024-01-15T10:30:00Z",
-                    "labels": {"method": "GET", "status": "200"}
+                    "description": null,
+                    "unit": null,
+                    "metric_type": "counter",
+                    "value": 1234,
+                    "timestamp": 1705315800000000000,
+                    "attributes": {"method": "GET", "status": "200"},
+                    "resource": null
                 },
                 {
                     "name": "http_requests_total",
-                    "type": "counter",
-                    "value": 567.0,
-                    "timestamp": "2024-01-15T10:29:00Z",
-                    "labels": {"method": "POST", "status": "201"}
+                    "description": null,
+                    "unit": null,
+                    "metric_type": "counter",
+                    "value": 567,
+                    "timestamp": 1705315740000000000,
+                    "attributes": {"method": "POST", "status": "201"},
+                    "resource": null
                 }
             ]"#,
             )
@@ -757,16 +808,20 @@ mod tests {
         let metrics = result.unwrap();
         assert_eq!(metrics.len(), 2);
         assert_eq!(metrics[0].name, "http_requests_total");
-        assert_eq!(metrics[0].value, 1234.0);
-        assert_eq!(metrics[1].value, 567.0);
     }
 
     #[tokio::test]
     async fn test_fetch_metric_by_name_not_found() {
         let mut server = Server::new_async().await;
         let mock = server
-            .mock("GET", "/api/metrics/nonexistent_metric")
-            .with_status(404)
+            .mock("GET", "/api/metrics")
+            .match_query(mockito::Matcher::UrlEncoded(
+                "name".into(),
+                "nonexistent_metric".into(),
+            ))
+            .with_status(200)
+            .with_header("content-type", "application/json")
+            .with_body(r#"[]"#)
             .create_async()
             .await;
 
@@ -787,14 +842,15 @@ mod tests {
     async fn test_fetch_metric_by_name_with_filters() {
         let mut server = Server::new_async().await;
         let mock = server
-            .mock("GET", "/api/metrics/response_time_ms")
+            .mock("GET", "/api/metrics")
             .match_query(mockito::Matcher::AllOf(vec![
+                mockito::Matcher::UrlEncoded("name".into(), "response_time_ms".into()),
                 mockito::Matcher::UrlEncoded("since".into(), "1h".into()),
                 mockito::Matcher::UrlEncoded("label".into(), "method=GET".into()),
             ]))
             .with_status(200)
             .with_header("content-type", "application/json")
-            .with_body(r#"[]"#)
+            .with_body(r#"[{"name":"response_time_ms","description":null,"unit":null,"metric_type":"gauge","value":42.5,"timestamp":1705315800000000000,"attributes":{},"resource":null}]"#)
             .create_async()
             .await;
 

@@ -328,7 +328,7 @@ pub fn print_metric_details(metric: &MetricResponse, _no_color: bool) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use chrono::Utc;
+    use crate::api::models::{MetricValue, TraceEntry};
     use std::collections::HashMap;
 
     #[test]
@@ -340,14 +340,14 @@ mod tests {
 
     #[test]
     fn test_print_traces_table_empty() {
-        let traces: Vec<Trace> = vec![];
+        let traces: Vec<TraceEntry> = vec![];
         // Should not panic
         print_traces_table(&traces, true, false);
     }
 
     #[test]
     fn test_print_metrics_table_empty() {
-        let metrics: Vec<Metric> = vec![];
+        let metrics: Vec<MetricResponse> = vec![];
         // Should not panic
         print_metrics_table(&metrics, true, false);
     }
@@ -414,10 +414,10 @@ mod tests {
         let severities = vec!["ERROR", "WARN", "INFO", "DEBUG", "TRACE"];
         for severity in severities {
             let logs = vec![LogEntry {
-                id: format!("log-{}", severity),
                 timestamp: 1000000000000000000,
                 severity: severity.to_string(),
-                message: format!("{} message", severity),
+                severity_text: Some(severity.to_string()),
+                body: format!("{} message", severity),
                 attributes: HashMap::new(),
                 resource: None,
                 trace_id: None,
@@ -440,6 +440,9 @@ mod tests {
             severity_text: None,
             body: "Test error with attributes".to_string(),
             attributes,
+            resource: None,
+            trace_id: None,
+            span_id: None,
         };
         // Should not panic and should display attributes
         print_log_details(&log, true);
@@ -466,17 +469,23 @@ mod tests {
     #[test]
     fn test_print_traces_table_with_data() {
         let traces = vec![
-            Trace {
-                root_span: "http-request".to_string(),
-                duration_ms: 1500,
-                status: "OK".to_string(),
-                spans: vec![],
+            TraceEntry {
+                trace_id: "trace-001".to_string(),
+                root_span_name: "http-request".to_string(),
+                start_time: 1000000000000000000,
+                duration: 1_500_000_000,
+                span_count: 1,
+                service_names: vec![],
+                has_errors: false,
             },
-            Trace {
-                root_span: "database-query".to_string(),
-                duration_ms: 250,
-                status: "ERROR".to_string(),
-                spans: vec![],
+            TraceEntry {
+                trace_id: "trace-002".to_string(),
+                root_span_name: "database-query".to_string(),
+                start_time: 1000000000000000000,
+                duration: 250_000_000,
+                span_count: 1,
+                service_names: vec![],
+                has_errors: true,
             },
         ];
         // Should not panic
@@ -485,11 +494,14 @@ mod tests {
 
     #[test]
     fn test_print_traces_table_with_color() {
-        let traces = vec![Trace {
-            root_span: "http-request".to_string(),
-            duration_ms: 1500,
-            status: "OK".to_string(),
-            spans: vec![],
+        let traces = vec![TraceEntry {
+            trace_id: "trace-001".to_string(),
+            root_span_name: "http-request".to_string(),
+            start_time: 1000000000000000000,
+            duration: 1_500_000_000,
+            span_count: 1,
+            service_names: vec![],
+            has_errors: false,
         }];
         // Should not panic with color enabled
         print_traces_table(&traces, false, false);
@@ -671,7 +683,7 @@ mod tests {
                 metric_type: "counter".to_string(),
                 value: MetricValue::Counter(1234.0 as u64),
                 timestamp: 1000000000000000000,
-                labels: HashMap::from([
+                attributes: HashMap::from([
                     ("method".to_string(), "GET".to_string()),
                     ("status".to_string(), "200".to_string()),
                 ]),
@@ -685,11 +697,7 @@ mod tests {
                 value: MetricValue::Counter(150.5 as u64),
                 timestamp: 1000000000000000000,
                 attributes: HashMap::new(),
-                percentiles: Some(HashMap::from([
-                    ("p50".to_string(), 100.0),
-                    ("p95".to_string(), 200.0),
-                    ("p99".to_string(), 300.0),
-                ])),
+                resource: None,
             },
             MetricResponse {
                 name: "memory_usage_bytes".to_string(),
@@ -698,7 +706,7 @@ mod tests {
                 metric_type: "gauge".to_string(),
                 value: MetricValue::Counter(1048576.0 as u64),
                 timestamp: 1000000000000000000,
-                labels: HashMap::from([("host".to_string(), "server1".to_string())]),
+                attributes: HashMap::from([("host".to_string(), "server1".to_string())]),
                 resource: None,
             },
         ];
@@ -708,42 +716,60 @@ mod tests {
     }
 
     #[test]
-    fn test_print_metric_details_with_percentiles() {
-        let metric = Metric {
+    fn test_print_metric_details_with_histogram() {
+        use crate::api::models::HistogramBucket;
+
+        let metric = MetricResponse {
             name: "response_time_ms".to_string(),
             description: None,
             unit: None,
             metric_type: "histogram".to_string(),
-            value: MetricValue::Counter(150.5 as u64),
+            value: MetricValue::Histogram {
+                count: 150,
+                sum: 15000.0,
+                buckets: vec![
+                    HistogramBucket {
+                        upper_bound: 100.0,
+                        count: 50,
+                    },
+                    HistogramBucket {
+                        upper_bound: 200.0,
+                        count: 75,
+                    },
+                    HistogramBucket {
+                        upper_bound: 300.0,
+                        count: 20,
+                    },
+                    HistogramBucket {
+                        upper_bound: 500.0,
+                        count: 5,
+                    },
+                ],
+            },
             timestamp: 1000000000000000000,
-            labels: HashMap::from([
+            attributes: HashMap::from([
                 ("endpoint".to_string(), "/api/users".to_string()),
                 ("method".to_string(), "GET".to_string()),
             ]),
-            percentiles: Some(HashMap::from([
-                ("p50".to_string(), 100.0),
-                ("p95".to_string(), 200.0),
-                ("p99".to_string(), 300.0),
-                ("p99.9".to_string(), 500.0),
-            ])),
+            resource: None,
         };
-        // Should not panic and should display percentiles
+        // Should not panic and should display histogram
         print_metric_details(&metric, true);
     }
 
     #[test]
-    fn test_print_metric_details_without_percentiles() {
-        let metric = Metric {
+    fn test_print_metric_details_without_histogram() {
+        let metric = MetricResponse {
             name: "http_requests_total".to_string(),
             description: None,
             unit: None,
             metric_type: "counter".to_string(),
-            value: MetricValue::Counter(1234.0 as u64),
+            value: MetricValue::Counter(1234),
             timestamp: 1000000000000000000,
-            labels: HashMap::from([("status".to_string(), "200".to_string())]),
+            attributes: HashMap::from([("status".to_string(), "200".to_string())]),
             resource: None,
         };
-        // Should not panic even without percentiles
+        // Should not panic even without histogram
         print_metric_details(&metric, true);
     }
 }
