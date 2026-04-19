@@ -91,4 +91,126 @@ fn handle_key_event(key: KeyEvent) -> AppEvent {
     }
 }
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_quit_events() {
+        let key = KeyEvent::new(KeyCode::Char('q'), KeyModifiers::NONE);
+        assert_eq!(handle_key_event(key), AppEvent::Quit);
+
+        let key = KeyEvent::new(KeyCode::Char('c'), KeyModifiers::CONTROL);
+        assert_eq!(handle_key_event(key), AppEvent::Quit);
+    }
+
+    #[test]
+    fn test_view_switching_events() {
+        let key = KeyEvent::new(KeyCode::Char('l'), KeyModifiers::NONE);
+        assert_eq!(handle_key_event(key), AppEvent::SwitchToLogs);
+
+        let key = KeyEvent::new(KeyCode::Char('t'), KeyModifiers::NONE);
+        assert_eq!(handle_key_event(key), AppEvent::SwitchToTraces);
+
+        let key = KeyEvent::new(KeyCode::Char('m'), KeyModifiers::NONE);
+        assert_eq!(handle_key_event(key), AppEvent::SwitchToMetrics);
+    }
+
+    #[test]
+    fn test_help_events() {
+        let key = KeyEvent::new(KeyCode::Char('?'), KeyModifiers::NONE);
+        assert_eq!(handle_key_event(key), AppEvent::ShowHelp);
+
+        let key = KeyEvent::new(KeyCode::Char('h'), KeyModifiers::NONE);
+        assert_eq!(handle_key_event(key), AppEvent::ShowHelp);
+    }
+
+    #[test]
+    fn test_navigation_events() {
+        let key = KeyEvent::new(KeyCode::Up, KeyModifiers::NONE);
+        assert_eq!(handle_key_event(key), AppEvent::Up);
+
+        let key = KeyEvent::new(KeyCode::Down, KeyModifiers::NONE);
+        assert_eq!(handle_key_event(key), AppEvent::Down);
+
+        let key = KeyEvent::new(KeyCode::Left, KeyModifiers::NONE);
+        assert_eq!(handle_key_event(key), AppEvent::Left);
+
+        let key = KeyEvent::new(KeyCode::Right, KeyModifiers::NONE);
+        assert_eq!(handle_key_event(key), AppEvent::Right);
+
+        let key = KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE);
+        assert_eq!(handle_key_event(key), AppEvent::Select);
+
+        let key = KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE);
+        assert_eq!(handle_key_event(key), AppEvent::Back);
+    }
+
+    #[test]
+    fn test_action_events() {
+        let key = KeyEvent::new(KeyCode::Char('/'), KeyModifiers::NONE);
+        assert_eq!(handle_key_event(key), AppEvent::Search);
+
+        let key = KeyEvent::new(KeyCode::Char('f'), KeyModifiers::NONE);
+        assert_eq!(handle_key_event(key), AppEvent::Filter);
+
+        let key = KeyEvent::new(KeyCode::Char('s'), KeyModifiers::NONE);
+        assert_eq!(handle_key_event(key), AppEvent::ToggleAutoScroll);
+
+        let key = KeyEvent::new(KeyCode::Char('c'), KeyModifiers::NONE);
+        assert_eq!(handle_key_event(key), AppEvent::HighlightCriticalPath);
+
+        let key = KeyEvent::new(KeyCode::Char('r'), KeyModifiers::NONE);
+        assert_eq!(handle_key_event(key), AppEvent::Refresh);
+    }
+
+    #[test]
+    fn test_zoom_events() {
+        let key = KeyEvent::new(KeyCode::Char('+'), KeyModifiers::NONE);
+        assert_eq!(handle_key_event(key), AppEvent::ZoomIn);
+
+        let key = KeyEvent::new(KeyCode::Char('='), KeyModifiers::NONE);
+        assert_eq!(handle_key_event(key), AppEvent::ZoomIn);
+
+        let key = KeyEvent::new(KeyCode::Char('-'), KeyModifiers::NONE);
+        assert_eq!(handle_key_event(key), AppEvent::ZoomOut);
+    }
+
+    #[test]
+    fn test_unknown_key_returns_none() {
+        let key = KeyEvent::new(KeyCode::Char('x'), KeyModifiers::NONE);
+        assert_eq!(handle_key_event(key), AppEvent::None);
+
+        let key = KeyEvent::new(KeyCode::F(1), KeyModifiers::NONE);
+        assert_eq!(handle_key_event(key), AppEvent::None);
+    }
+
+    #[test]
+    fn test_ctrl_c_with_other_modifiers() {
+        // Ctrl+C should work even with other modifiers
+        let key = KeyEvent::new(
+            KeyCode::Char('c'),
+            KeyModifiers::CONTROL | KeyModifiers::SHIFT,
+        );
+        assert_eq!(handle_key_event(key), AppEvent::Quit);
+    }
+
+    #[test]
+    fn test_app_event_clone_and_eq() {
+        let event1 = AppEvent::Quit;
+        let event2 = event1.clone();
+        assert_eq!(event1, event2);
+
+        let event3 = AppEvent::SwitchToLogs;
+        assert_ne!(event1, event3);
+    }
+
+    #[test]
+    fn test_app_event_debug() {
+        let event = AppEvent::Quit;
+        let debug_str = format!("{:?}", event);
+        assert_eq!(debug_str, "Quit");
+    }
+}
+
 // Made with Bob

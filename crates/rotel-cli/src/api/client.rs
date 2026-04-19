@@ -519,7 +519,7 @@ mod tests {
         assert_eq!(traces.traces[0].trace_id, "trace1");
         assert_eq!(traces.traces[0].root_span_name, "http-request");
         assert_eq!(traces.traces[0].duration, 1500000000);
-        assert_eq!(traces.traces[0].has_errors, false);
+        assert!(!traces.traces[0].has_errors);
     }
 
     #[tokio::test]

@@ -576,8 +576,6 @@ fn format_span_detail(span: &Span, trace: &Trace) -> Text<'static> {
         lines.push(Line::from(""));
     }
 
-    // Links section removed - not in current API model
-
     lines.push(Line::from(vec![TextSpan::styled(
         "Press Esc to return to trace view",
         Style::default().fg(Color::DarkGray),
@@ -796,12 +794,52 @@ fn truncate_string(s: &str, max_len: usize) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::api::models::{Resource, SpanStatus};
+    use std::collections::HashMap;
+
+    fn create_test_span(
+        span_id: &str,
+        name: &str,
+        start_time: i64,
+        duration: i64,
+        parent_span_id: Option<String>,
+    ) -> Span {
+        Span {
+            trace_id: "test-trace-123".to_string(),
+            span_id: span_id.to_string(),
+            parent_span_id,
+            name: name.to_string(),
+            kind: "INTERNAL".to_string(),
+            start_time,
+            end_time: start_time + duration,
+            duration,
+            status: Some(SpanStatus {
+                code: "Ok".to_string(),
+                message: None,
+            }),
+            attributes: HashMap::new(),
+            events: vec![],
+            resource: Some(Resource {
+                attributes: HashMap::new(),
+            }),
+        }
+    }
 
     #[test]
     fn test_get_span_status_color() {
         assert_eq!(get_span_status_color("OK"), Color::Green);
         assert_eq!(get_span_status_color("ERROR"), Color::Red);
         assert_eq!(get_span_status_color("UNSET"), Color::DarkGray);
+        assert_eq!(get_span_status_color("SUCCESS"), Color::Green);
+        assert_eq!(get_span_status_color("FAILED"), Color::Red);
+    }
+
+    #[test]
+    fn test_get_timing_bar_color() {
+        assert_eq!(get_timing_bar_color("ERROR", 30.0), Color::Red);
+        assert_eq!(get_timing_bar_color("Ok", 30.0), Color::Green);
+        assert_eq!(get_timing_bar_color("Ok", 60.0), Color::Yellow);
+        assert_eq!(get_timing_bar_color("FAILED", 60.0), Color::Red);
     }
 
     #[test]
@@ -821,6 +859,93 @@ mod tests {
         let truncated = truncate_string(long, 20);
         assert_eq!(truncated.len(), 20);
         assert!(truncated.ends_with("..."));
+    }
+
+    #[test]
+    fn test_render_timing_bar_empty() {
+        let bar = render_timing_bar(0, 100, 0, 40);
+        assert_eq!(bar, "");
+
+        let bar = render_timing_bar(0, 100, 1000, 0);
+        assert_eq!(bar, "");
+    }
+
+    #[test]
+    fn test_render_timing_bar_full_width() {
+        let bar = render_timing_bar(0, 1000, 1000, 10);
+        // Bar uses Unicode characters (3 bytes each for █ and ░)
+        assert!(!bar.is_empty());
+        assert!(bar.contains('█'));
+        // Count actual characters
+        assert_eq!(bar.chars().count(), 10);
+    }
+
+    #[test]
+    fn test_render_timing_bar_partial() {
+        let bar = render_timing_bar(0, 500, 1000, 10);
+        assert!(!bar.is_empty());
+        assert!(bar.contains('█'));
+        assert!(bar.contains('░'));
+        // Count actual characters
+        assert_eq!(bar.chars().count(), 10);
+    }
+
+    #[test]
+    fn test_build_span_tree_single_span() {
+        let span = create_test_span("span1", "test-span", 1000, 100, None);
+        let trace = Trace {
+            trace_id: "test-trace-123".to_string(),
+            start_time: 1000,
+            end_time: 1100,
+            duration: 100,
+            span_count: 1,
+            service_names: vec!["test-service".to_string()],
+            spans: vec![span],
+        };
+
+        let nodes = build_span_tree(&trace);
+        assert_eq!(nodes.len(), 1);
+        assert_eq!(nodes[0].depth, 0);
+        assert_eq!(nodes[0].relative_start, 0);
+    }
+
+    #[test]
+    fn test_build_span_tree_parent_child() {
+        let parent = create_test_span("span1", "parent", 1000, 200, None);
+        let child = create_test_span("span2", "child", 1050, 100, Some("span1".to_string()));
+
+        let trace = Trace {
+            trace_id: "test-trace-123".to_string(),
+            start_time: 1000,
+            end_time: 1200,
+            duration: 200,
+            span_count: 2,
+            service_names: vec!["test-service".to_string()],
+            spans: vec![parent, child],
+        };
+
+        let nodes = build_span_tree(&trace);
+        assert_eq!(nodes.len(), 2);
+        assert_eq!(nodes[0].depth, 0);
+        assert_eq!(nodes[1].depth, 1);
+        assert_eq!(nodes[1].relative_start, 50);
+    }
+
+    #[test]
+    fn test_span_node_duration_percent() {
+        let span = create_test_span("span1", "test", 1000, 500, None);
+        let trace = Trace {
+            trace_id: "test-trace-123".to_string(),
+            start_time: 1000,
+            end_time: 2000,
+            duration: 1000,
+            span_count: 1,
+            service_names: vec!["test-service".to_string()],
+            spans: vec![span],
+        };
+
+        let nodes = build_span_tree(&trace);
+        assert_eq!(nodes[0].duration_percent, 50.0);
     }
 }
 

@@ -169,6 +169,12 @@ impl App {
         self.should_quit
     }
 
+    /// Get current view
+    #[cfg(test)]
+    pub fn current_view(&self) -> &View {
+        &self.current_view
+    }
+
     /// Render the current view
     pub fn render<B: ratatui::backend::Backend>(&self, terminal: &mut Terminal<B>) -> Result<()> {
         terminal.draw(|f| {
@@ -307,6 +313,207 @@ async fn run_event_loop<B: ratatui::backend::Backend>(
     }
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn create_test_config() -> Config {
+        Config {
+            api_url: "http://localhost:8080".to_string(),
+            refresh_interval: Duration::from_secs(5),
+            initial_view: "logs".to_string(),
+            debug: false,
+        }
+    }
+
+    #[test]
+    fn test_app_new_with_default_view() {
+        let config = create_test_config();
+        let app = App::new(config);
+
+        assert_eq!(app.current_view, View::Logs);
+        assert!(!app.should_quit);
+    }
+
+    #[test]
+    fn test_app_new_with_traces_view() {
+        let mut config = create_test_config();
+        config.initial_view = "traces".to_string();
+        let app = App::new(config);
+
+        assert_eq!(app.current_view, View::Traces);
+    }
+
+    #[test]
+    fn test_app_new_with_metrics_view() {
+        let mut config = create_test_config();
+        config.initial_view = "metrics".to_string();
+        let app = App::new(config);
+
+        assert_eq!(app.current_view, View::Metrics);
+    }
+
+    #[test]
+    fn test_quit_event() {
+        let config = create_test_config();
+        let mut app = App::new(config);
+
+        assert!(!app.should_quit());
+        app.handle_event(AppEvent::Quit);
+        assert!(app.should_quit());
+    }
+
+    #[test]
+    fn test_view_switching() {
+        let config = create_test_config();
+        let mut app = App::new(config);
+
+        assert_eq!(app.current_view(), &View::Logs);
+
+        app.handle_event(AppEvent::SwitchToTraces);
+        assert_eq!(app.current_view(), &View::Traces);
+
+        app.handle_event(AppEvent::SwitchToMetrics);
+        assert_eq!(app.current_view(), &View::Metrics);
+
+        app.handle_event(AppEvent::SwitchToLogs);
+        assert_eq!(app.current_view(), &View::Logs);
+    }
+
+    #[test]
+    fn test_help_view_switching() {
+        let config = create_test_config();
+        let mut app = App::new(config);
+
+        app.handle_event(AppEvent::ShowHelp);
+        assert_eq!(app.current_view(), &View::Help);
+
+        // Back from help should go to logs
+        app.handle_event(AppEvent::Back);
+        assert_eq!(app.current_view(), &View::Logs);
+    }
+
+    #[test]
+    fn test_logs_view_navigation() {
+        let config = create_test_config();
+        let mut app = App::new(config);
+
+        // Should be in logs view by default
+        assert_eq!(app.current_view(), &View::Logs);
+
+        // Navigation events should be handled
+        app.handle_event(AppEvent::Down);
+        app.handle_event(AppEvent::Up);
+        app.handle_event(AppEvent::Select);
+
+        // Should still be in logs view
+        assert_eq!(app.current_view(), &View::Logs);
+    }
+
+    #[test]
+    fn test_logs_view_auto_scroll_toggle() {
+        let config = create_test_config();
+        let mut app = App::new(config);
+
+        let initial_auto_scroll = app.logs_state.auto_scroll;
+        app.handle_event(AppEvent::ToggleAutoScroll);
+        assert_ne!(app.logs_state.auto_scroll, initial_auto_scroll);
+    }
+
+    #[test]
+    fn test_traces_view_navigation() {
+        let config = create_test_config();
+        let mut app = App::new(config);
+
+        app.handle_event(AppEvent::SwitchToTraces);
+        assert_eq!(app.current_view(), &View::Traces);
+
+        // Navigation events should be handled
+        app.handle_event(AppEvent::Down);
+        app.handle_event(AppEvent::Up);
+        app.handle_event(AppEvent::Select);
+    }
+
+    #[test]
+    fn test_metrics_view_navigation() {
+        let config = create_test_config();
+        let mut app = App::new(config);
+
+        app.handle_event(AppEvent::SwitchToMetrics);
+        assert_eq!(app.current_view(), &View::Metrics);
+
+        // Navigation events should be handled
+        app.handle_event(AppEvent::Down);
+        app.handle_event(AppEvent::Up);
+        app.handle_event(AppEvent::Select);
+    }
+
+    #[test]
+    fn test_back_closes_detail_panels() {
+        let config = create_test_config();
+        let mut app = App::new(config);
+
+        // Open logs detail
+        app.logs_state.show_detail_panel();
+        assert!(app.logs_state.show_detail);
+
+        // Back should close detail
+        app.handle_event(AppEvent::Back);
+        assert!(!app.logs_state.show_detail);
+    }
+
+    #[test]
+    fn test_unhandled_events_in_wrong_view() {
+        let config = create_test_config();
+        let mut app = App::new(config);
+
+        // Switch to metrics view
+        app.handle_event(AppEvent::SwitchToMetrics);
+
+        // Logs-specific event should be ignored
+        app.handle_event(AppEvent::ToggleAutoScroll);
+
+        // Should still be in metrics view
+        assert_eq!(app.current_view(), &View::Metrics);
+    }
+
+    #[test]
+    fn test_view_enum_equality() {
+        assert_eq!(View::Logs, View::Logs);
+        assert_ne!(View::Logs, View::Traces);
+        assert_ne!(View::Traces, View::Metrics);
+        assert_ne!(View::Metrics, View::Help);
+    }
+
+    #[test]
+    fn test_view_enum_clone() {
+        let view1 = View::Logs;
+        let view2 = view1.clone();
+        assert_eq!(view1, view2);
+    }
+
+    #[test]
+    fn test_view_enum_debug() {
+        let view = View::Logs;
+        let debug_str = format!("{:?}", view);
+        assert_eq!(debug_str, "Logs");
+    }
+
+    #[test]
+    fn test_none_event_does_nothing() {
+        let config = create_test_config();
+        let mut app = App::new(config);
+
+        let initial_view = app.current_view().clone();
+        let initial_quit = app.should_quit();
+
+        app.handle_event(AppEvent::None);
+
+        assert_eq!(app.current_view(), &initial_view);
+        assert_eq!(app.should_quit(), initial_quit);
+    }
 }
 
 // Made with Bob

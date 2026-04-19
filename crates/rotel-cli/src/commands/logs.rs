@@ -181,7 +181,7 @@ fn filter_by_severity(logs: Vec<LogEntry>, min_severity: Option<String>) -> Vec<
 #[cfg(test)]
 mod tests {
     use super::*;
-    use chrono::Utc;
+
     use std::collections::HashMap;
 
     // T019: Unit test for severity filtering logic

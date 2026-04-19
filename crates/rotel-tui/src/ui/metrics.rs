@@ -319,6 +319,21 @@ fn truncate_string(s: &str, max_len: usize) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::api::models::MetricValue;
+    use std::collections::HashMap;
+
+    fn create_test_metric(name: &str, value: MetricValue) -> Metric {
+        Metric {
+            name: name.to_string(),
+            description: Some("Test metric".to_string()),
+            unit: Some("ms".to_string()),
+            metric_type: "gauge".to_string(),
+            value,
+            timestamp: 1713360896789,
+            resource: Some(HashMap::new()),
+            attributes: HashMap::new(),
+        }
+    }
 
     #[test]
     fn test_truncate_string() {
@@ -329,6 +344,170 @@ mod tests {
         let truncated = truncate_string(long, 20);
         assert_eq!(truncated.len(), 20);
         assert!(truncated.ends_with("..."));
+    }
+
+    #[test]
+    fn test_truncate_string_exact_length() {
+        let exact = "Exactly20Characters!";
+        assert_eq!(truncate_string(exact, 20), exact);
+    }
+
+    #[test]
+    fn test_truncate_string_empty() {
+        assert_eq!(truncate_string("", 10), "");
+    }
+
+    #[test]
+    fn test_gauge_metric_formatting() {
+        let metric = create_test_metric("test.gauge", MetricValue::Gauge(42.5));
+
+        // Verify metric structure
+        assert_eq!(metric.name, "test.gauge");
+        assert_eq!(metric.unit, Some("ms".to_string()));
+
+        // Test value formatting
+        if let MetricValue::Gauge(v) = metric.value {
+            let formatted = format!("{:.2}", v);
+            assert_eq!(formatted, "42.50");
+        } else {
+            panic!("Expected Gauge value");
+        }
+    }
+
+    #[test]
+    fn test_counter_metric_formatting() {
+        let metric = create_test_metric("test.counter", MetricValue::Counter(100));
+
+        if let MetricValue::Counter(v) = metric.value {
+            let formatted = format!("{}", v);
+            assert_eq!(formatted, "100");
+        } else {
+            panic!("Expected Counter value");
+        }
+    }
+
+    #[test]
+    fn test_histogram_metric_formatting() {
+        let metric = create_test_metric(
+            "test.histogram",
+            MetricValue::Histogram {
+                count: 10,
+                sum: 123.45,
+                buckets: vec![],
+            },
+        );
+
+        if let MetricValue::Histogram { count, sum, .. } = metric.value {
+            let formatted = format!("sum={:.2}, count={}", sum, count);
+            assert_eq!(formatted, "sum=123.45, count=10");
+        } else {
+            panic!("Expected Histogram value");
+        }
+    }
+
+    #[test]
+    fn test_summary_metric_formatting() {
+        let metric = create_test_metric(
+            "test.summary",
+            MetricValue::Summary {
+                count: 5,
+                sum: 67.89,
+                quantiles: vec![],
+            },
+        );
+
+        if let MetricValue::Summary { count, sum, .. } = metric.value {
+            let formatted = format!("sum={:.2}, count={}", sum, count);
+            assert_eq!(formatted, "sum=67.89, count=5");
+        } else {
+            panic!("Expected Summary value");
+        }
+    }
+
+    #[test]
+    fn test_metric_with_no_unit() {
+        let mut metric = create_test_metric("test.no_unit", MetricValue::Gauge(1.0));
+        metric.unit = None;
+
+        let unit = metric.unit.as_deref().unwrap_or("none");
+        assert_eq!(unit, "none");
+    }
+
+    #[test]
+    fn test_metric_with_no_description() {
+        let mut metric = create_test_metric("test.no_desc", MetricValue::Gauge(1.0));
+        metric.description = None;
+
+        let desc = metric.description.as_deref().unwrap_or("No description");
+        assert_eq!(desc, "No description");
+    }
+
+    #[test]
+    fn test_histogram_with_buckets() {
+        use crate::api::models::HistogramBucket;
+        let metric = create_test_metric(
+            "test.histogram",
+            MetricValue::Histogram {
+                count: 100,
+                sum: 500.0,
+                buckets: vec![
+                    HistogramBucket {
+                        upper_bound: 10.0,
+                        count: 10,
+                    },
+                    HistogramBucket {
+                        upper_bound: 20.0,
+                        count: 20,
+                    },
+                    HistogramBucket {
+                        upper_bound: 30.0,
+                        count: 30,
+                    },
+                    HistogramBucket {
+                        upper_bound: 40.0,
+                        count: 40,
+                    },
+                ],
+            },
+        );
+
+        if let MetricValue::Histogram { buckets, .. } = metric.value {
+            assert_eq!(buckets.len(), 4);
+        } else {
+            panic!("Expected Histogram value");
+        }
+    }
+
+    #[test]
+    fn test_summary_with_quantiles() {
+        use crate::api::models::Quantile;
+        let metric = create_test_metric(
+            "test.summary",
+            MetricValue::Summary {
+                count: 50,
+                sum: 250.0,
+                quantiles: vec![
+                    Quantile {
+                        quantile: 0.5,
+                        value: 100.0,
+                    },
+                    Quantile {
+                        quantile: 0.9,
+                        value: 200.0,
+                    },
+                    Quantile {
+                        quantile: 0.99,
+                        value: 250.0,
+                    },
+                ],
+            },
+        );
+
+        if let MetricValue::Summary { quantiles, .. } = metric.value {
+            assert_eq!(quantiles.len(), 3);
+        } else {
+            panic!("Expected Summary value");
+        }
     }
 }
 
