@@ -46,7 +46,7 @@ fn default_limit() -> usize {
 }
 
 /// Response for log listing
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct LogsResponse {
     pub logs: Vec<LogEntry>,
     pub total: usize,
@@ -55,7 +55,7 @@ pub struct LogsResponse {
 }
 
 /// Individual log entry for API response
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct LogEntry {
     pub timestamp: i64,
     pub severity: String,

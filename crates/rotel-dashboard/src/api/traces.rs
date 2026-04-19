@@ -46,7 +46,7 @@ fn default_limit() -> usize {
 }
 
 /// Response for trace listing
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct TracesResponse {
     pub traces: Vec<TraceEntry>,
     pub total: usize,
@@ -55,7 +55,7 @@ pub struct TracesResponse {
 }
 
 /// Individual trace entry (aggregated from spans)
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct TraceEntry {
     pub trace_id: String,
     pub root_span_name: String,
@@ -67,7 +67,7 @@ pub struct TraceEntry {
 }
 
 /// Detailed trace with all spans
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct TraceDetail {
     pub trace_id: String,
     pub spans: Vec<SpanEntry>,
@@ -79,7 +79,7 @@ pub struct TraceDetail {
 }
 
 /// Individual span entry for API response
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct SpanEntry {
     pub span_id: String,
     pub trace_id: String,
@@ -95,13 +95,13 @@ pub struct SpanEntry {
     pub events: Vec<SpanEvent>,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct SpanStatus {
     pub code: String,
     pub message: Option<String>,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct SpanEvent {
     pub name: String,
     pub timestamp: i64,
