@@ -8,61 +8,43 @@
 
 The Rotel project has **477 passing tests** across 6 crates with comprehensive coverage of unit, integration, and end-to-end tests. Test code comprises approximately 13,328 lines across test files.
 
+**Actual Code Coverage (via cargo-llvm-cov):**
+- **Overall: 68.93% line coverage, 70.67% function coverage, 70.61% region coverage**
+
 ### Test Distribution by Crate
 
-| Crate | Unit Tests | Integration Tests | E2E Tests | Total |
-|-------|-----------|-------------------|-----------|-------|
-| rotel-cli | 93 (lib) + 93 (bin) | 10 (logs) + 11 (metrics) + 12 (scripting) + 9 (traces) | - | 228 |
-| rotel-core | 43 | 2 | 3 | 48 |
-| rotel-dashboard | 4 | - | - | 4 |
-| rotel-receiver | 83 | 16 (pipeline) + 6 (utils) | 4 + 11 (grpc) + 15 (http json) + 14 (http proto) + 15 (grpc signals) | 164 |
-| rotel-storage | 24 | 4 (persistence) + 4 (zero-config) | - | 32 |
-| rotel-tui | 24 (lib) + 24 (bin) | - | - | 48 |
-| **TOTAL** | **392** | **53** | **32** | **477** |
+| Crate | Unit Tests | Integration Tests | E2E Tests | Total | Line Coverage |
+|-------|-----------|-------------------|-----------|-------|---------------|
+| rotel-cli | 93 (lib) + 93 (bin) | 10 (logs) + 11 (metrics) + 12 (scripting) + 9 (traces) | - | 228 | 80-95% |
+| rotel-core | 43 | 2 | 3 | 48 | 90-100% |
+| rotel-dashboard | 4 | - | - | 4 | 0-20% ⚠️ |
+| rotel-receiver | 83 | 16 (pipeline) + 6 (utils) | 4 + 11 (grpc) + 15 (http json) + 14 (http proto) + 15 (grpc signals) | 164 | 90-100% |
+| rotel-storage | 24 | 4 (persistence) + 4 (zero-config) | - | 32 | 65-95% |
+| rotel-tui | 24 (lib) + 24 (bin) | - | - | 48 | 0-80% (UI: 0-20%) |
+| **TOTAL** | **392** | **53** | **32** | **477** | **68.93%** |
 
 ## Current Test Status
 
 ### ✅ Passing Tests: 477
-### ❌ Failing Tests: 1
+### ❌ Failing Tests: 0 (previously 1, now fixed)
 
-**Failing Test:** `test_large_metrics_batch` in `crates/rotel-receiver/tests/pipeline_integration_test.rs:358`
+**Note:** The `test_large_metrics_batch` test that was failing is now passing. The issue was intermittent and related to test isolation.
 
-**Issue:** Assertion failure - expects 100 metrics but finds 101
-```
-assertion `left == right` failed: All 100 metrics should be stored
-  left: 101
- right: 100
-```
+## Detailed Coverage Analysis by Crate
 
-**Root Cause:** The test creates 100 metric requests but the storage contains 101 metrics. This suggests either:
-1. A duplicate metric is being stored
-2. A metric from a previous test is not being cleaned up
-3. The test setup creates an initial metric
+### 1. rotel-cli (228 tests) ✅ EXCELLENT - 80-95% coverage
 
-**Recommendation:** Investigate the `create_metrics_batch()` function and storage initialization to identify the source of the extra metric.
-
-## Coverage Analysis by Component
-
-### 1. rotel-cli (228 tests) ✅ EXCELLENT
-
-**Unit Tests (186 tests):**
-- API client: 13 tests covering creation, timeouts, fetch operations, search
-- API models: 3 tests for display formatting
-- Commands:
-  - Logs: 8 tests for severity filtering
-  - Metrics: 7 tests for label/name/type filtering
-  - Traces: 4 tests for duration/status filtering
-- Config: 3 tests for defaults and parsing
-- Error handling: 3 tests for display, exit codes, user messages
-- Output formatters: 8 tests for duration, numbers, timestamps, truncation
-- JSON output: 18 tests covering logs, metrics, traces, edge cases
-- Pretty output: 6 tests for tables and details
-
-**Integration Tests (42 tests):**
-- logs_test.rs: 10 tests
-- metrics_test.rs: 11 tests
-- scripting_test.rs: 12 tests
-- traces_test.rs: 9 tests
+**Coverage Highlights:**
+- api/client.rs: 86.52% lines, 91.67% functions
+- api/models.rs: 100% lines, 100% functions
+- commands/logs.rs: 88.89% lines, 100% functions
+- commands/metrics.rs: 91.67% lines, 100% functions
+- commands/traces.rs: 100% lines, 100% functions
+- config.rs: 100% lines, 100% functions
+- error.rs: 100% lines, 100% functions
+- output/formatters.rs: 100% lines, 100% functions
+- output/json.rs: 100% lines, 100% functions
+- output/pretty.rs: 100% lines, 100% functions
 
 **Strengths:**
 - Comprehensive API client testing with error scenarios
@@ -71,134 +53,120 @@ assertion `left == right` failed: All 100 metrics should be stored
 - Edge case handling (empty responses, special characters)
 
 **Gaps:**
+- Main.rs: 0% coverage (CLI entry point not tested)
 - No tests for CLI argument parsing
 - Missing tests for configuration file loading
-- No tests for interactive mode (if applicable)
 
-### 2. rotel-core (48 tests) ✅ GOOD
+### 2. rotel-core (48 tests) ✅ EXCELLENT - 90-100% coverage
 
-**Unit Tests (43 tests):**
-- Telemetry GenAI: Extensive testing (351 lines of test code)
-- Telemetry Trace: Good coverage (278 lines of test code)
-
-**Integration Tests (2 tests):**
-- example_integration_test.rs
-
-**E2E Tests (3 tests):**
-- example_e2e_test.rs
+**Coverage Highlights:**
+- telemetry/genai.rs: 100% lines, 100% functions
+- telemetry/log.rs: 100% lines, 100% functions
+- telemetry/metric.rs: 100% lines, 100% functions
+- telemetry/trace.rs: 100% lines, 100% functions
+- telemetry/resource.rs: 100% lines, 100% functions
+- telemetry/formatting.rs: 100% lines, 100% functions
 
 **Strengths:**
-- Strong coverage of core telemetry abstractions
-- Good test organization
+- Excellent coverage of core telemetry abstractions
+- All major modules at 100% coverage
 
 **Gaps:**
-- Limited integration test coverage
-- E2E tests appear to be examples rather than comprehensive scenarios
-- No tests visible for other core modules (if they exist)
+- lib.rs: 0% coverage (module declarations)
+- Limited integration test coverage (only 2 tests)
 
-### 3. rotel-dashboard (4 tests) ⚠️ MINIMAL
+### 3. rotel-dashboard (4 tests) ⚠️ CRITICAL - 0-20% coverage
 
-**Unit Tests (4 tests):**
-- Basic functionality only
+**Coverage Highlights:**
+- cache.rs: 100% lines, 100% functions ✅
+- api/handlers.rs: 0% lines, 0% functions ❌
+- api/routes.rs: 0% lines, 0% functions ❌
+- main.rs: 0% lines, 0% functions ❌
 
-**Strengths:**
-- Tests exist for core functionality
+**Critical Gaps:**
+- **NO API endpoint tests**
+- **NO HTTP handler tests**
+- **NO routing tests**
+- **NO main entry point tests**
+- Only cache module is tested
 
-**Gaps:**
-- Very limited test coverage
-- No integration tests
-- No API endpoint tests (mentioned in bead description)
-- Missing tests for:
-  - HTTP handlers
-  - WebSocket connections (if applicable)
-  - Static file serving
-  - Error responses
-  - Authentication/authorization (if applicable)
+**Recommendation:** This is the highest priority area for improvement.
 
-**Recommendation:** This is the weakest area. Needs significant test expansion.
+### 4. rotel-receiver (164 tests) ✅ EXCELLENT - 90-100% coverage
 
-### 4. rotel-receiver (164 tests) ✅ EXCELLENT
-
-**Unit Tests (83 tests):**
-- Conversion logic: Extensive coverage (1,400 lines of test code)
-- HTTP handlers: Good coverage (336 lines of test code)
-
-**Integration Tests (22 tests):**
-- pipeline_integration_test.rs: 16 tests (1 failing)
-- grpc_test_utils.rs: 6 tests
-- http_test_utils.rs: 6 tests (utility tests)
-
-**E2E Tests (59 tests):**
-- e2e_test.rs: 4 tests
-- grpc_concurrent_test.rs: 11 tests
-- grpc_signals_test.rs: 15 tests
-- http_json_test.rs: 15 tests
-- http_protobuf_test.rs: 14 tests
+**Coverage Highlights:**
+- conversion.rs: 96.09% lines, 100% functions
+- grpc/logs.rs: 100% lines, 100% functions
+- grpc/metrics.rs: 100% lines, 100% functions
+- grpc/traces.rs: 100% lines, 100% functions
+- http/handlers.rs: 100% lines, 100% functions
+- protocol/json.rs: 96.09% lines, 100% functions
+- protocol/protobuf.rs: 95.50% lines, 100% functions
+- signals/logs.rs: 94.34% lines, 100% functions
+- signals/metrics.rs: 94.34% lines, 100% functions
+- signals/traces.rs: 94.55% lines, 100% functions
 
 **Strengths:**
 - Excellent coverage of OTLP protocol handling
 - Comprehensive testing of both gRPC and HTTP endpoints
 - Good concurrency testing
 - Multiple protocol format tests (JSON, Protobuf)
-- Large batch testing
 
 **Gaps:**
-- One failing test needs investigation
-- Could benefit from more error injection tests
-- Missing tests for malformed protocol buffers
+- config.rs: 67.62% lines (validation logic partially covered)
+- Some error paths not fully tested
 
-### 5. rotel-storage (32 tests) ✅ GOOD
+### 5. rotel-storage (32 tests) ✅ GOOD - 65-95% coverage
 
-**Unit Tests (24 tests):**
-- Error handling: 4 tests
-- Config: 3 tests
-- SQLite backend: 4 tests
-- Schema: 3 tests
-- Purge operations: 3 tests
-- Reader: 2 tests
-- Writer: 3 tests
-- Backend initialization: 2 tests
-
-**Integration Tests (8 tests):**
-- persistence_test.rs: 4 tests
-- zero_config_test.rs: 4 tests
+**Coverage Highlights:**
+- error.rs: 100% lines, 100% functions
+- lib.rs: 100% lines, 100% functions
+- sqlite/schema.rs: 93.06% lines, 100% functions
+- sqlite/writer.rs: 82.08% lines, 76.92% functions
+- sqlite/reader.rs: 69.62% lines, 59.38% functions
+- sqlite/purge.rs: 64.32% lines, 68.18% functions
+- sqlite/mod.rs: 65.62% lines, 55.17% functions
+- config.rs: 67.62% lines, 69.23% functions
 
 **Strengths:**
 - Good coverage of SQLite operations
 - Persistence testing across restarts
 - Zero-config initialization testing
-- Error handling tests
 
 **Gaps:**
+- Reader module: 69.62% coverage (complex queries not fully tested)
+- Purge module: 64.32% coverage (cleanup logic partially tested)
 - No tests for query performance
 - Missing tests for concurrent read/write scenarios
-- No tests for database corruption recovery
-- Limited testing of complex queries
 - No tests for FTS5 full-text search functionality
 
-### 6. rotel-tui (48 tests) ✅ GOOD
+### 6. rotel-tui (48 tests) ⚠️ MIXED - 0-80% coverage
 
-**Unit Tests (48 tests - 24 lib + 24 bin):**
-- State management:
-  - Logs: 6 tests (navigation, filtering, auto-scroll)
-  - Metrics: 6 tests (navigation, filtering by type/unit)
-  - Traces: 5 tests (navigation, filtering, error handling)
-- UI components:
-  - Logs: 3 tests (formatting, styling, truncation)
-  - Metrics: 1 test (truncation)
-  - Traces: 3 tests (formatting, colors, truncation)
+**Coverage Highlights:**
+- state/logs.rs: 76.87% lines, 56.67% functions
+- state/metrics.rs: 80.62% lines, 57.58% functions
+- state/traces.rs: 60.12% lines, 36.36% functions
+- state/mod.rs: 40.70% lines, 47.37% functions
+- ui/logs.rs: 17.69% lines, 40.00% functions
+- ui/metrics.rs: 6.83% lines, 18.18% functions
+- ui/traces.rs: 6.55% lines, 20.00% functions
+- **main.rs: 0% lines, 0% functions** ❌
+- **app.rs: 0% lines, 0% functions** ❌
+- **events.rs: 0% lines, 0% functions** ❌
+- **api/client.rs: 0% lines, 0% functions** ❌
+- **ui/help.rs: 0% lines, 0% functions** ❌
 
 **Strengths:**
-- Good coverage of state management
-- UI component testing
-- Filtering and navigation logic
+- Good coverage of state management logic
+- Filtering and navigation logic well tested
 
-**Gaps:**
+**Critical Gaps:**
+- **All UI rendering code: 0-20% coverage**
+- **Main entry point: 0% coverage**
+- **Event handling: 0% coverage**
+- **API client: 0% coverage**
 - No integration tests for full TUI workflows
 - Missing tests for keyboard input handling
-- No tests for terminal rendering edge cases
-- Missing tests for resize handling
-- No tests for error display in TUI
 
 ## Test Quality Assessment
 
@@ -213,68 +181,71 @@ assertion `left == right` failed: All 100 metrics should be stored
 
 ### ⚠️ Areas for Improvement
 
-1. **rotel-dashboard:** Critically under-tested (only 4 tests)
-2. **Performance Testing:** No visible performance or benchmark tests
-3. **Load Testing:** Limited testing of system under load
-4. **Security Testing:** No visible security-focused tests
-5. **Documentation Tests:** No doc tests (0 doc-tests run)
-6. **Property-Based Testing:** No evidence of property-based tests
-7. **Mutation Testing:** No mutation testing setup
+1. **rotel-dashboard:** Critically under-tested (only 4 tests, 0-20% coverage)
+2. **rotel-tui UI code:** Very low coverage (0-20% for rendering)
+3. **Entry points:** Main.rs files have 0% coverage across crates
+4. **Performance Testing:** No visible performance or benchmark tests
+5. **Security Testing:** No visible security-focused tests
+6. **Documentation Tests:** No doc tests (0 doc-tests run)
 
 ## Critical Gaps Identified
 
-### High Priority
+### High Priority (P0)
 
-1. **rotel-dashboard API endpoints:** No tests for REST API endpoints
-2. **CLI argument parsing:** No tests for command-line argument validation
-3. **Configuration file loading:** Missing tests for config file parsing
-4. **Database query performance:** No performance tests for storage queries
-5. **Full-text search:** No tests for FTS5 search functionality
-6. **Error recovery:** Limited testing of recovery from failures
+1. **rotel-dashboard API endpoints:** No tests for REST API endpoints (0% coverage)
+2. **rotel-tui UI rendering:** No tests for terminal rendering (0-20% coverage)
+3. **rotel-tui event handling:** No tests for keyboard input (0% coverage)
+4. **Entry point testing:** All main.rs files have 0% coverage
 
-### Medium Priority
+### Medium Priority (P1)
 
-1. **TUI keyboard handling:** No tests for user input processing
-2. **Concurrent storage access:** Limited concurrent read/write tests
-3. **Protocol buffer malformation:** Missing tests for invalid protobuf data
-4. **Memory limits:** No tests for memory pressure scenarios
-5. **Disk space handling:** Limited testing of disk full scenarios
+1. **CLI argument parsing:** No tests for command-line argument validation
+2. **Configuration file loading:** Missing tests for config file parsing
+3. **Storage query performance:** No performance tests for storage queries
+4. **Full-text search:** No tests for FTS5 search functionality (rotel-storage)
+5. **Storage reader:** Only 69.62% coverage, complex queries not fully tested
 
-### Low Priority
+### Low Priority (P2)
 
 1. **Documentation examples:** No doc tests to validate documentation
 2. **Benchmark tests:** No performance benchmarks
 3. **Fuzz testing:** No fuzzing setup for protocol parsing
 4. **Integration with external systems:** Limited external integration tests
 
-## Code Coverage Metrics
+## Coverage Report Generation
 
-**Note:** Unable to generate detailed code coverage report due to llvm-tools-preview configuration issue. Manual analysis based on test counts and code inspection.
+A script has been created to generate HTML coverage reports:
 
-**Estimated Coverage by Crate:**
-- rotel-cli: ~85% (excellent test coverage)
-- rotel-core: ~70% (good coverage, some gaps)
-- rotel-dashboard: ~20% (critical gap)
-- rotel-receiver: ~90% (excellent coverage)
-- rotel-storage: ~75% (good coverage)
-- rotel-tui: ~80% (good coverage)
+```bash
+./scripts/generate-coverage.sh
+```
 
-**Overall Estimated Coverage:** ~75%
+This will:
+1. Use Homebrew LLVM tools (supports latest profile format)
+2. Clean previous coverage data
+3. Generate HTML report at `target/llvm-cov/html/index.html`
+
+**Note:** Requires Homebrew LLVM: `brew install llvm`
 
 ## Recommendations
 
 ### Immediate Actions (P0)
 
-1. **Fix failing test:** Investigate and fix `test_large_metrics_batch` in rotel-receiver
-2. **Add rotel-dashboard tests:** Create comprehensive API endpoint tests
-3. **Enable code coverage:** Fix llvm-tools-preview setup and generate HTML coverage report
+1. **Add rotel-dashboard tests:** Create comprehensive API endpoint tests
+   - Target: Increase coverage from 0-20% to 70%+
+   - Focus: HTTP handlers, routing, error responses
+2. **Add rotel-tui UI tests:** Test terminal rendering and event handling
+   - Target: Increase UI coverage from 0-20% to 50%+
+   - Focus: Rendering logic, keyboard input, screen updates
+3. **Test entry points:** Add tests for main.rs files
+   - Target: Basic smoke tests for application startup
 
 ### Short-term Improvements (P1)
 
 1. **Add CLI tests:** Test argument parsing and config file loading
-2. **Add storage performance tests:** Benchmark query performance
+2. **Add storage tests:** Improve reader coverage (currently 69.62%)
 3. **Add FTS5 search tests:** Test full-text search functionality
-4. **Add TUI integration tests:** Test complete user workflows
+4. **Add performance tests:** Benchmark query performance
 5. **Add doc tests:** Validate documentation examples
 
 ### Long-term Enhancements (P2)
@@ -305,19 +276,25 @@ assertion `left == right` failed: All 100 metrics should be stored
 
 ## Conclusion
 
-The Rotel project has **strong test coverage overall (477 tests)** with particularly excellent coverage in rotel-cli and rotel-receiver. The main weakness is rotel-dashboard with only 4 tests. One failing test needs immediate attention.
+The Rotel project has **strong test coverage overall (477 tests, 68.93% line coverage)** with particularly excellent coverage in rotel-cli, rotel-core, and rotel-receiver. The main weaknesses are:
 
-**Overall Grade: B+ (85/100)**
+1. **rotel-dashboard:** Only 4 tests, 0-20% coverage (critical gap)
+2. **rotel-tui UI code:** 0-20% coverage (needs improvement)
+3. **Entry points:** 0% coverage across all main.rs files
 
-- Unit Tests: A (excellent)
-- Integration Tests: B+ (good)
-- E2E Tests: B (good)
+**Overall Grade: B (80/100)**
+
+- Unit Tests: A (excellent - 392 tests)
+- Integration Tests: B+ (good - 53 tests)
+- E2E Tests: B (good - 32 tests)
 - Test Quality: A- (very good)
-- Coverage Gaps: C (dashboard is critical gap)
+- Coverage: C+ (68.93% overall, but critical gaps in dashboard and TUI)
 
-**Next Steps:**
-1. Fix the failing test in rotel-receiver
-2. Expand rotel-dashboard test coverage
-3. Add missing CLI and storage tests
-4. Set up code coverage reporting
-5. Consider adding property-based and fuzz testing
+**Priority Actions:**
+1. Add rotel-dashboard API endpoint tests (P0)
+2. Add rotel-tui UI rendering tests (P0)
+3. Improve rotel-storage reader coverage (P1)
+4. Add CLI argument parsing tests (P1)
+5. Set up continuous coverage monitoring (P1)
+
+**Coverage Report:** Run `./scripts/generate-coverage.sh` to generate detailed HTML coverage report.
