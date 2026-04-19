@@ -32,3 +32,6 @@ tracing = "0.1"
 [dev-dependencies]
 # Testing
 tokio-test = "0.4"
+tower = { version = "0.5", features = ["util"] }
+http-body-util = "0.1"
+tempfile = "3.10"
