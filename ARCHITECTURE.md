@@ -1,450 +1,254 @@
 # Rotel Architecture
 
-This document describes the high-level architecture, design decisions, and component interactions in Rotel.
+This document describes the actual architecture, design decisions, and component interactions in Rotel.
 
-## Table of Contents
-
-- [Overview](#overview)
-- [Design Principles](#design-principles)
-- [System Architecture](#system-architecture)
-- [Component Details](#component-details)
-- [Data Flow](#data-flow)
-- [Storage Architecture](#storage-architecture)
-- [Plugin System](#plugin-system)
-- [Performance Considerations](#performance-considerations)
-- [Security](#security)
-- [Future Enhancements](#future-enhancements)
-
-## Overview
-
-Rotel is a lightweight OpenTelemetry receiver and dashboard designed for local LLM users. It provides a complete observability solution with minimal resource footprint, supporting metrics, logs, and traces through standard OTLP protocols.
-
-### Key Goals
-
-1. **Lightweight**: Minimal memory (<100MB) and CPU (<5%) usage
-2. **Standards Compliant**: Full OTLP protocol support
-3. **Easy to Use**: Single binary, zero configuration required
-4. **Extensible**: Pluggable architecture for customization
-5. **Cross-Platform**: Support for macOS and Linux
-
-## Design Principles
-
-### 1. Simplicity First
-
-- Single binary deployment
-- Embedded storage by default (no external dependencies)
-- Sensible defaults requiring zero configuration
-- Clear error messages with actionable guidance
-
-### 2. Performance by Design
-
-- Async I/O throughout (Tokio runtime)
-- Zero-copy parsing where possible
-- Efficient data structures (arena allocation, pooling)
-- Lazy evaluation and streaming processing
-
-### 3. Standards Compliance
-
-- Full OTLP/gRPC and OTLP/HTTP support
-- OpenTelemetry semantic conventions
-- Interoperability with standard exporters
-- No proprietary extensions required
-
-### 4. Extensibility
-
-- Plugin interfaces for storage, parsing, and export
-- Well-defined internal APIs
-- Stable plugin ABI with semantic versioning
-- Core functionality independent of plugins
-
-## System Architecture
-
-```
-┌─────────────────────────────────────────────────────────────┐
-│                      Dashboard UI                            │
-│                   (Web Interface)                            │
-└────────────────────────┬────────────────────────────────────┘
-                         │ HTTP/WebSocket
-                         │
-┌────────────────────────▼────────────────────────────────────┐
-│                   Query Engine                               │
-│  - Query Parser                                              │
-│  - Query Optimizer                                           │
-│  - Result Formatter                                          │
-└────────────────────────┬────────────────────────────────────┘
-                         │
-┌────────────────────────▼────────────────────────────────────┐
-│                 Storage Backend                              │
-│  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐      │
-│  │   Embedded   │  │  PostgreSQL  │  │   Plugin     │      │
-│  │   (Default)  │  │  (Optional)  │  │  (Custom)    │      │
-│  └──────────────┘  └──────────────┘  └──────────────┘      │
-└────────────────────────▲────────────────────────────────────┘
-                         │
-┌────────────────────────┴────────────────────────────────────┐
-│                  Data Pipeline                               │
-│  - Validation                                                │
-│  - Transformation                                            │
-│  - Batching                                                  │
-│  - Compression                                               │
-└────────────────────────▲────────────────────────────────────┘
-                         │
-┌────────────────────────┴────────────────────────────────────┐
-│                  OTLP Receiver                               │
-│  ┌──────────────┐              ┌──────────────┐            │
-│  │ OTLP/gRPC    │              │ OTLP/HTTP    │            │
-│  │ (Port 4317)  │              │ (Port 4318)  │            │
-│  └──────────────┘              └──────────────┘            │
-└─────────────────────────────────────────────────────────────┘
-```
-
-## Component Details
-
-### OTLP Receiver
-
-**Purpose**: Accept telemetry data via OTLP protocol
-
-**Technology**:
-- gRPC: Tonic (high-performance gRPC implementation)
-- HTTP: Axum (ergonomic web framework)
-- Protocol: OpenTelemetry Protocol (OTLP) v1.0+
-
-**Responsibilities**:
-- Accept OTLP/gRPC and OTLP/HTTP requests
-- Validate protocol compliance
-- Parse protobuf messages
-- Forward to data pipeline
-
-**Key Files**:
-- `crates/rotel-receiver/src/grpc.rs` - gRPC endpoint
-- `crates/rotel-receiver/src/http.rs` - HTTP endpoint
-- `crates/rotel-receiver/src/validation.rs` - Protocol validation
-
-**Configuration**:
-```toml
-[receiver]
-grpc_port = 4317
-http_port = 4318
-max_message_size_mb = 4
-compression = ["gzip", "zstd"]
-```
-
-### Data Pipeline
-
-**Purpose**: Transform and prepare data for storage
-
-**Stages**:
-1. **Validation**: Verify data integrity and schema compliance
-2. **Transformation**: Normalize and enrich data
-3. **Batching**: Group data for efficient storage
-4. **Compression**: Reduce storage footprint
-
-**Technology**:
-- Async processing with Tokio channels
-- Backpressure handling with bounded channels
-- Batch processing with configurable windows
-
-**Key Files**:
-- `crates/rotel-pipeline/src/validator.rs` - Data validation
-- `crates/rotel-pipeline/src/transformer.rs` - Data transformation
-- `crates/rotel-pipeline/src/batcher.rs` - Batch processing
-
-**Configuration**:
-```toml
-[pipeline]
-batch_size = 1000
-batch_timeout_ms = 1000
-max_queue_size = 10000
-compression = "zstd"
-```
-
-### Storage Backend
-
-**Purpose**: Persist and retrieve telemetry data
-
-**Embedded Storage (Default)**:
-- Technology: RocksDB or sled (TBD)
-- Features: Embedded, zero-config, efficient indexing
-- Limitations: Single-node only, ~10GB recommended max
-
-**PostgreSQL Backend (Optional)**:
-- Technology: PostgreSQL 14+ with TimescaleDB extension
-- Features: Distributed, scalable, SQL queries
-- Use case: Production deployments, large datasets
-
-**Plugin Interface**:
-```rust
-pub trait StorageBackend: Send + Sync {
-    async fn write_metrics(&self, metrics: Vec<Metric>) -> Result<()>;
-    async fn write_logs(&self, logs: Vec<LogRecord>) -> Result<()>;
-    async fn write_traces(&self, traces: Vec<Span>) -> Result<()>;
-
-    async fn query_metrics(&self, query: MetricQuery) -> Result<Vec<Metric>>;
-    async fn query_logs(&self, query: LogQuery) -> Result<Vec<LogRecord>>;
-    async fn query_traces(&self, query: TraceQuery) -> Result<Vec<Span>>;
-}
-```
-
-**Key Files**:
-- `crates/rotel-storage/src/trait.rs` - Storage trait
-- `crates/rotel-storage/src/embedded.rs` - Embedded backend
-- `crates/rotel-storage/src/postgres.rs` - PostgreSQL backend
-
-### Query Engine
-
-**Purpose**: Execute queries against stored data
-
-**Features**:
-- Time-range queries
-- Attribute filtering
-- Aggregations (sum, avg, count, percentiles)
-- Trace correlation
-- Metric downsampling
-
-**Query Language** (Future):
-```
-metrics{service="api", status="200"} | rate(5m) | avg()
-logs{level="error"} | count() by service
-traces{duration > 1s} | histogram(duration)
-```
-
-**Key Files**:
-- `crates/rotel-query/src/parser.rs` - Query parsing
-- `crates/rotel-query/src/optimizer.rs` - Query optimization
-- `crates/rotel-query/src/executor.rs` - Query execution
-
-### Dashboard UI
-
-**Purpose**: Visualize telemetry data
-
-**Technology**:
-- Backend: Axum (REST API + WebSocket)
-- Frontend: TBD (React/Vue/Svelte)
-- Charts: TBD (Chart.js/D3.js)
-
-**Features**:
-- Real-time metrics visualization
-- Log search and filtering
-- Trace timeline view
-- Service dependency graph
-- Custom dashboards
-
-**Key Files**:
-- `crates/rotel-dashboard/src/api.rs` - REST API
-- `crates/rotel-dashboard/src/websocket.rs` - Real-time updates
-- `crates/rotel-dashboard/static/` - Frontend assets
-
-## Data Flow
-
-### Ingestion Flow
-
-```
-1. Client sends OTLP data
-   ↓
-2. Receiver validates protocol
-   ↓
-3. Pipeline validates data
-   ↓
-4. Pipeline transforms/enriches
-   ↓
-5. Pipeline batches data
-   ↓
-6. Storage backend persists
-   ↓
-7. Acknowledgment sent to client
-```
-
-### Query Flow
-
-```
-1. User submits query (UI/API)
-   ↓
-2. Query engine parses query
-   ↓
-3. Query optimizer plans execution
-   ↓
-4. Storage backend executes query
-   ↓
-5. Query engine formats results
-   ↓
-6. Results returned to user
-```
-
-## Storage Architecture
-
-### Data Model
-
-**Metrics**:
-```rust
-struct Metric {
-    name: String,
-    timestamp: i64,
-    value: f64,
-    attributes: HashMap<String, String>,
-    resource: Resource,
-}
-```
-
-**Logs**:
-```rust
-struct LogRecord {
-    timestamp: i64,
-    severity: Severity,
-    body: String,
-    attributes: HashMap<String, String>,
-    resource: Resource,
-    trace_id: Option<TraceId>,
-    span_id: Option<SpanId>,
-}
-```
-
-**Traces**:
-```rust
-struct Span {
-    trace_id: TraceId,
-    span_id: SpanId,
-    parent_span_id: Option<SpanId>,
-    name: String,
-    start_time: i64,
-    end_time: i64,
-    attributes: HashMap<String, String>,
-    events: Vec<Event>,
-    links: Vec<Link>,
-    status: Status,
-}
-```
-
-### Indexing Strategy
-
-**Time-based Indexing**:
-- Primary index on timestamp
-- Partitioning by time range (daily/hourly)
-- Automatic retention and compaction
-
-**Attribute Indexing**:
-- Secondary indexes on common attributes
-- Inverted index for text search
-- Bloom filters for existence checks
-
-**Trace Indexing**:
-- Index on trace_id for trace assembly
-- Index on span_id for parent-child relationships
-- Index on duration for latency queries
-
-## Plugin System
-
-### Plugin Types
-
-1. **Storage Plugins**: Custom storage backends
-2. **Parser Plugins**: Custom data formats
-3. **Exporter Plugins**: Forward data to external systems
-4. **Transformer Plugins**: Custom data transformations
-
-### Plugin Interface
-
-```rust
-pub trait Plugin: Send + Sync {
-    fn name(&self) -> &str;
-    fn version(&self) -> &str;
-    fn init(&mut self, config: &Config) -> Result<()>;
-    fn shutdown(&mut self) -> Result<()>;
-}
-```
-
-### Plugin Loading
-
-- Dynamic loading via `libloading`
-- Plugin discovery in `~/.rotel/plugins/`
-- Version compatibility checking
-- Graceful degradation on plugin failure
-
-## Performance Considerations
-
-### Memory Management
-
-- **Arena Allocation**: Batch allocations for related data
-- **Object Pooling**: Reuse buffers and objects
-- **Zero-Copy**: Avoid unnecessary data copies
-- **Streaming**: Process data in chunks, not all at once
-
-### Concurrency
-
-- **Async I/O**: Non-blocking operations throughout
-- **Work Stealing**: Tokio's work-stealing scheduler
-- **Bounded Channels**: Backpressure handling
-- **Lock-Free Structures**: Where possible (e.g., metrics counters)
-
-### Optimization Techniques
-
-- **Batch Processing**: Group operations for efficiency
-- **Compression**: Reduce storage and network overhead
-- **Caching**: Query result caching with TTL
-- **Lazy Evaluation**: Defer work until needed
-
-### Performance Targets
-
-| Metric | Target | Measurement |
-|--------|--------|-------------|
-| Memory (idle) | <100MB | RSS |
-| CPU (idle) | <5% | Average over 1 minute |
-| Throughput | 1000 events/s | On commodity hardware |
-| Latency (p99) | <100ms | End-to-end ingestion |
-| Startup time | <3s | From launch to ready |
-
-## Security
-
-### Authentication & Authorization
-
-- API key authentication (optional)
-- Role-based access control (RBAC)
-- TLS/SSL for all network communication
-- Token-based session management
-
-### Data Protection
-
-- Encryption at rest (optional)
-- Encryption in transit (TLS)
-- Secret detection in CI/CD
-- No secrets in logs or error messages
-
-### Input Validation
-
-- Protocol validation (OTLP compliance)
-- Schema validation (protobuf)
-- Size limits (max message size)
-- Rate limiting (per-client quotas)
-
-## Future Enhancements
-
-### Planned Features
-
-1. **Query Language**: Advanced filtering and aggregation
-2. **Alerting**: Threshold-based alerts and notifications
-3. **Distributed Tracing**: Enhanced trace visualization
-4. **Metrics Aggregation**: Downsampling and rollups
-5. **Plugin Marketplace**: Community-contributed plugins
-
-### Scalability Roadmap
-
-1. **Horizontal Scaling**: Multi-node deployment
-2. **Sharding**: Distribute data across nodes
-3. **Replication**: High availability and fault tolerance
-4. **Federation**: Connect multiple Rotel instances
-
-### Integration Roadmap
-
-1. **Prometheus**: Metrics export to Prometheus
-2. **Grafana**: Grafana data source plugin
-3. **Jaeger**: Trace export to Jaeger
-4. **Elasticsearch**: Log export to Elasticsearch
-
-## Contributing
-
-See [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines on contributing to Rotel's architecture.
-
-For questions or discussions about architecture decisions, please open a [GitHub Discussion](https://github.com/YOUR_USERNAME/rotel/discussions).
+**Last Updated**: 2026-04-19
 
 ---
 
-**Last Updated**: 2026-04-17  
-**Version**: 0.1.0-alpha
+## Overview
+
+Rotel is a lightweight OpenTelemetry receiver and local observability server for LLM developers. It accepts telemetry via OTLP (gRPC and HTTP), stores it in embedded SQLite, and exposes it via a REST API consumed by the CLI, TUI, and web interface.
+
+Single binary, zero external dependencies, embedded storage.
+
+---
+
+## Crate Structure
+
+```
+rotel-core        ← telemetry domain types (no deps on other crates)
+rotel-storage     ← SQLite persistence (depends on: rotel-core)
+rotel-receiver    ← OTLP ingest (depends on: rotel-core, rotel-storage)
+rotel-dashboard   ← HTTP server: REST API + static web UI (depends on: rotel-core, rotel-storage)
+rotel-cli         ← CLI binary (depends on: rotel-core, rotel-dashboard, rotel-receiver, rotel-storage)
+rotel-tui         ← ratatui terminal UI (depends on: rotel-core)
+```
+
+> **Note:** `rotel-dashboard` is misnamed — it is the HTTP server, not just a dashboard. The name should be `rotel-server`. See bead rotel-jfa.
+
+The CLI is the integration point: it wires receiver + server + storage into one process for the `dashboard` subcommand.
+
+---
+
+## Data Flow
+
+```
+LLM / OpenTelemetry SDK
+        │ OTLP/gRPC (4317) or OTLP/HTTP (4318)
+        ▼
+rotel-receiver
+  - Validates OTLP protobuf
+  - Converts to rotel-core types (LogRecord, Span, Metric)
+  - Writes via StorageBackend trait
+        │
+        ▼
+rotel-storage (SQLite, WAL mode, FTS5)
+  - Tables: logs, spans, metrics
+  - Full-text search on log body via FTS5
+  - Configurable retention + auto-purge
+        │
+        ▼
+rotel-dashboard (HTTP server, port 3000)
+  - REST API: /api/logs, /api/traces, /api/metrics (+ export, aggregate endpoints)
+  - Converts storage types to JSON response types
+  - LRU query cache (100 entries, 5-min TTL)
+  - Serves embedded static web UI (HTML/CSS/JS)
+        │
+   ┌────┴─────┐
+   ▼          ▼
+rotel-cli   rotel-tui
+(CLI)       (ratatui terminal UI)
+```
+
+---
+
+## Ports
+
+| Port | Protocol | Purpose |
+|------|----------|---------|
+| 4317 | gRPC     | OTLP telemetry ingest |
+| 4318 | HTTP     | OTLP telemetry ingest |
+| 3000 | HTTP     | REST API + web UI |
+
+---
+
+## Component Details
+
+### rotel-core
+
+**Path:** `crates/rotel-core/`
+
+Canonical domain types shared across all crates. No HTTP, no storage deps — pure data.
+
+Key types:
+- `LogRecord` — timestamp, severity (Trace/Debug/Info/Warn/Error/Fatal), body, attributes, resource, optional trace/span correlation
+- `Span` — trace_id, span_id, parent_span_id, name, kind, start_time, end_time, attributes, events, status. **No `links` field.**
+- `Metric` — name, MetricType (Gauge/Counter/Histogram/Summary), timestamp, attributes, resource
+- `Resource` — `HashMap<String, String>` wrapper with `service.name` helpers
+- `GenAiSpanInfo` — detects and extracts `gen_ai.*` attributes from spans for LLM observability
+
+> **Known issue:** `lib.rs` contains scaffolding functions `add()`, `divide()`, and a `Config` struct that are not real functionality and should be removed (bead rotel-y90).
+
+---
+
+### rotel-storage
+
+**Path:** `crates/rotel-storage/`
+
+Embedded SQLite storage with async trait abstraction.
+
+**`StorageBackend` trait** (`src/lib.rs` lines 73-105):
+```rust
+#[async_trait]
+pub trait StorageBackend: Send + Sync {
+    async fn initialize(&mut self) -> Result<()>;    // &mut self
+    async fn write_log(&self, log: &LogRecord) -> Result<()>;
+    async fn write_span(&self, span: &Span) -> Result<()>;
+    async fn write_metric(&self, metric: &Metric) -> Result<()>;
+    async fn query_logs(&self, params: &QueryParams) -> Result<Vec<LogRecord>>;
+    async fn query_spans(&self, params: &QueryParams) -> Result<Vec<Span>>;
+    async fn query_metrics(&self, params: &QueryParams) -> Result<Vec<Metric>>;
+    async fn stats(&self) -> Result<StorageStats>;
+    async fn purge(&self, options: &PurgeOptions) -> Result<u64>;
+    async fn close(&mut self) -> Result<()>;         // &mut self
+}
+```
+
+Only implementation: `SqliteBackend` (`src/sqlite/mod.rs`). Uses WAL mode, FTS5 for log full-text search, `tempfile::TempDir` for test databases.
+
+**There is no mock implementation.** Tests use `SqliteBackend` with an in-memory or temp-dir database.
+
+---
+
+### rotel-receiver
+
+**Path:** `crates/rotel-receiver/`
+
+OTLP ingest layer. Accepts telemetry, converts protobuf to rotel-core types, writes to storage.
+
+- `GrpcServer` — tonic-based, handles `ExportLogsService`, `ExportTracesService`, `ExportMetricsService`
+- `HttpServer` — axum-based, same signals via OTLP/HTTP JSON or protobuf
+- `conversion.rs` — converts `opentelemetry_proto` types to `rotel_core::telemetry::*`
+
+Does not depend on `rotel-dashboard` — decoupled from the query layer.
+
+---
+
+### rotel-dashboard
+
+**Path:** `crates/rotel-dashboard/`
+
+HTTP server exposing the REST API and serving the embedded web UI. Despite the name, this is a server crate, not a frontend crate.
+
+**`AppState`**: `Arc<dyn StorageBackend>` + `QueryCache` (LRU cache, 100 entries, 5-min TTL).
+
+**Routes** (all GET):
+
+| Endpoint | Handler |
+|----------|---------|
+| `/api/health` | health check, no storage |
+| `/api/logs` | list logs with filters (severity, resource, search, time range, limit/offset) |
+| `/api/logs/:timestamp` | get single log by timestamp |
+| `/api/logs/export` | export logs as JSON or CSV |
+| `/api/traces` | list traces with filters |
+| `/api/traces/:trace_id` | get full trace with all spans |
+| `/api/traces/export` | export traces as JSON |
+| `/api/metrics` | list metrics with filters |
+| `/api/metrics/names` | list unique metric names |
+| `/api/metrics/aggregate` | aggregate metrics (sum/avg/count/min/max, optional time bucketing) |
+| `/api/metrics/export` | export metrics as JSON or CSV |
+| fallback | serve embedded static files |
+
+**API response types** are defined in `src/api/{logs,traces,metrics}.rs`. These types are duplicated in `rotel-cli/src/api/models.rs` and `rotel-tui/src/api/models.rs` — a known technical debt (bead rotel-d9q).
+
+> **Missing derives:** `LogsResponse`, `LogEntry`, `TracesResponse`, `TraceEntry`, `TraceDetail`, `SpanEntry`, `SpanStatus`, `SpanEvent` currently only derive `Serialize`, not `Deserialize`. This blocks test writing (bead rotel-6e8).
+
+---
+
+### rotel-cli
+
+**Path:** `crates/rotel-cli/`
+
+clap-based CLI binary. Subcommands:
+
+| Command | Action |
+|---------|--------|
+| `rotel dashboard` | Start full server (receiver + REST API + web UI). This is the default subcommand. |
+| `rotel logs list` | List logs with filters |
+| `rotel logs search <query>` | Full-text search across logs |
+| `rotel logs show <timestamp>` | Show single log by timestamp |
+| `rotel logs export` | Export logs |
+| `rotel traces list` | List traces |
+| `rotel traces show <trace_id>` | Show full trace with spans |
+| `rotel traces export` | Export traces |
+| `rotel metrics list` | List metrics |
+| `rotel metrics show <name>` | Show metric by name |
+| `rotel metrics export` | Export metrics |
+
+Global flags: `--endpoint` (default: `http://localhost:3000`), `--format` (pretty/json), `--no-color`, `--no-header`, `--timeout`.
+
+> **Bug:** Default endpoint is currently hardcoded to `localhost:8080` in `src/config.rs` but the server binds to `:3000`. See bead rotel-2h2.
+
+`ApiClient` (`src/api/client.rs`) wraps `reqwest::Client`. Query params are passed as `Vec<(&str, String)>` — less type-safe than the TUI's approach.
+
+---
+
+### rotel-tui
+
+**Path:** `crates/rotel-tui/`
+
+ratatui-based terminal UI. Standalone binary, connects to rotel-dashboard REST API via HTTP.
+
+Default endpoint: `http://localhost:3000`.
+
+Views: Logs / Traces / Metrics / Help. Auto-refreshes on configurable interval.
+
+Maintains its own copy of API response types in `src/api/models.rs` with different names from the dashboard types:
+- Dashboard: `TraceEntry`, `TraceDetail`, `SpanEntry`, `MetricResponse`
+- TUI: `TraceSummary`, `Trace`, `Span`, `Metric`
+
+This divergence is tracked in bead rotel-d9q.
+
+---
+
+## Known Technical Debt
+
+| Issue | Bead | Priority |
+|-------|------|----------|
+| API response types duplicated in dashboard/CLI/TUI | rotel-d9q | P2 |
+| `rotel-dashboard` misnamed — should be `rotel-server` | rotel-jfa | P2 |
+| CLI default endpoint is `:8080`, server binds `:3000` | rotel-2h2 | P1 (bug) |
+| `rotel-core` contains scaffolding functions (add, divide, Config) | rotel-y90 | P2 |
+| ARCHITECTURE.md was outdated (now fixed) | rotel-nyg | P2 |
+| Dashboard API response types missing `Deserialize` | rotel-6e8 | P1 |
+| TUI type names diverge from dashboard/CLI names | rotel-d9q | P2 |
+
+---
+
+## Testing Patterns
+
+### Storage tests
+Use `SqliteBackend` with `tempfile::TempDir`:
+```rust
+let tmp = TempDir::new().unwrap();
+let config = StorageConfig::default().with_data_dir(tmp.path().to_path_buf());
+let mut storage = SqliteBackend::new(config);
+storage.initialize().await.unwrap();
+let storage: Arc<dyn StorageBackend> = Arc::new(storage);
+// tmp must stay alive for the test duration
+```
+
+See `crates/rotel-receiver/tests/pipeline_integration_test.rs` lines 21-36 for the pattern.
+
+Test data helpers (create_test_log, create_test_span, create_test_metric) are in `crates/rotel-storage/tests/integration/persistence_test.rs` lines 264-348.
+
+### Dashboard API tests
+Use `tower::ServiceExt::oneshot()` to test the axum router without a TCP listener. Requires:
+- `tower = { version = "0.5", features = ["util"] }` in dev-dependencies
+- `http-body-util` for reading response bodies
+
+See bead rotel-9mx for full test implementation guidance.
+
+### Receiver tests
+`crates/rotel-receiver/tests/` has integration tests for gRPC and HTTP ingest, with test data builders in `grpc_test_utils.rs` and `http_test_utils.rs`.

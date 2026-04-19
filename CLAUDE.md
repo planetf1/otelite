@@ -30,17 +30,25 @@ All four must pass before every commit.
 
 ## Architecture Overview
 
-Rotel is an OpenTelemetry receiver and dashboard for local LLM users.
+Rotel is an OpenTelemetry receiver and local observability server for LLM developers. See ARCHITECTURE.md for full detail.
 
 **Crate structure:**
-- `crates/rotel-core` — telemetry data types (LogRecord, Span, Metric, Resource)
-- `crates/rotel-receiver` — OTLP gRPC (4317) and HTTP (4318) receiver
-- `crates/rotel-storage` — embedded SQLite backend (WAL mode, FTS5)
-- `crates/rotel-dashboard` — axum web dashboard with REST API (port 3000)
-- `crates/rotel-cli` — CLI with logs/traces/metrics/dashboard subcommands
-- `crates/rotel-tui` — ratatui terminal UI
+- `crates/rotel-core` — telemetry domain types (LogRecord, Span, Metric, Resource, GenAiSpanInfo). No HTTP/storage deps.
+- `crates/rotel-receiver` — OTLP ingest: gRPC (4317) and HTTP (4318), converts protobuf → rotel-core types
+- `crates/rotel-storage` — SQLite backend (WAL mode, FTS5). `StorageBackend` async trait with 10 methods. Only impl: `SqliteBackend`.
+- `crates/rotel-dashboard` — HTTP server (port 3000): REST API + embedded static web UI. **Note: misnamed — it's a server, not just a dashboard. Rename tracked in bead rotel-jfa.**
+- `crates/rotel-cli` — clap CLI binary: `dashboard` (starts everything), `logs`/`traces`/`metrics` (query subcommands)
+- `crates/rotel-tui` — ratatui terminal UI, polls rotel-dashboard REST API
 
-**Data flow:** OTLP Source -> Receiver -> Storage (SQLite) -> Dashboard API -> CLI/TUI/Web
+**Data flow:** OTLP Source → Receiver → Storage (SQLite) → rotel-dashboard REST API → CLI / TUI / Web browser
+
+**Known gotchas for agents:**
+- `Span` has no `links` field
+- `LogRecord` has `observed_timestamp: Option<i64>`
+- CLI default endpoint is `localhost:8080` but server binds `:3000` (bug: rotel-2h2)
+- API response types (`LogEntry`, `TraceEntry`, etc.) are duplicated in dashboard/CLI/TUI (debt: rotel-d9q)
+- `rotel-core/src/lib.rs` contains scaffolding `add()`/`divide()`/`Config` to be removed (rotel-y90)
+- No MockStorage exists — tests use real `SqliteBackend` with `tempfile::TempDir`
 
 ## Conventions & Patterns
 
