@@ -9,7 +9,7 @@ license = "Apache-2.0"
 [dependencies]
 # Web framework
 axum = "0.7"
-tower = "0.4"
+tower = "0.5"
 tower-http = { version = "0.5", features = ["fs", "trace", "cors"] }
 
 # Async runtime (already used by rotel-receiver)

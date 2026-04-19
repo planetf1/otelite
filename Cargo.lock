@@ -2108,14 +2108,16 @@ name = "rotel-dashboard"
 version = "0.1.0"
 dependencies = [
  "axum 0.7.9",
+ "http-body-util",
  "mime_guess",
  "rotel-core",
  "rotel-storage",
  "serde",
  "serde_json",
+ "tempfile",
  "tokio",
  "tokio-test",
- "tower 0.4.13",
+ "tower 0.5.3",
  "tower-http",
  "tracing",
 ]
