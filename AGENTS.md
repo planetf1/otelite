@@ -170,10 +170,12 @@ If you resume after compaction: run `bd ready` and `git status` to understand cu
 
 Before ending a session:
 
-1. Ensure all work is committed and pushed (`git push` must succeed)
-2. Close completed beads, file new beads for unfinished work
-3. Push beads: `bd dolt push`
-4. Run retrospective (see below)
+1. Check for uncommitted changes: `git status` (should show "nothing to commit, working tree clean")
+2. If there are uncommitted changes, commit and push them immediately
+3. Ensure all work is committed and pushed (`git push` must succeed)
+4. Close completed beads, file new beads for unfinished work
+5. Push beads: `bd dolt push`
+6. Run retrospective (see below)
 
 ## Retrospective
 
