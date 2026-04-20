@@ -1311,25 +1311,101 @@ body {
 
 .span-detail-panel {
     flex-shrink: 0;
-    height: 300px;
+    height: 360px;
+    min-height: 120px;
+    max-height: 80vh;
     background-color: var(--bg-primary);
     border-top: 2px solid var(--accent-color);
-    padding: 1rem;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    user-select: none; /* prevents text selection while dragging */
+}
+
+.span-panel-drag-handle {
+    flex-shrink: 0;
+    height: 6px;
+    background-color: var(--bg-tertiary);
+    cursor: ns-resize;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: background-color 0.15s;
+}
+
+.span-panel-drag-handle:hover,
+.span-panel-drag-handle.dragging {
+    background-color: var(--accent-color);
+}
+
+.span-panel-drag-handle::after {
+    content: '⠿';
+    font-size: 0.65rem;
+    color: var(--text-secondary);
+    letter-spacing: 2px;
+}
+
+.span-detail-scroll {
+    flex: 1;
     overflow-y: auto;
-    display: grid;
-    grid-template-columns: 1fr 1fr 1fr;
-    gap: 1rem;
-    align-content: start;
+    padding: 0.75rem 1rem;
 }
 
 .span-detail-header-row {
-    grid-column: 1 / -1;
     display: flex;
     justify-content: space-between;
     align-items: center;
     padding-bottom: 0.5rem;
     border-bottom: 1px solid var(--border-color);
-    margin-bottom: 0.25rem;
+    margin-bottom: 0.75rem;
+    gap: 1rem;
+}
+
+.span-detail-header-row h4 {
+    font-size: 0.95rem;
+    font-weight: 600;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+/* Two-column attribute grid for wide panels */
+.span-attrs-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+    gap: 0.35rem 1rem;
+    margin-top: 0.5rem;
+}
+
+.span-attr-row {
+    display: flex;
+    gap: 0.4rem;
+    font-size: 0.82rem;
+    min-width: 0;
+    align-items: baseline;
+}
+
+.span-attr-key {
+    font-family: 'Courier New', monospace;
+    font-size: 0.75rem;
+    color: var(--text-secondary);
+    flex-shrink: 0;
+    white-space: nowrap;
+}
+
+.span-attr-val {
+    font-family: 'Courier New', monospace;
+    font-size: 0.78rem;
+    color: var(--text-primary);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    flex: 1;
+}
+
+.span-attr-val.long {
+    white-space: normal;
+    word-break: break-all;
 }
 
 .span-detail-header {

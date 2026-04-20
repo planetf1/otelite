@@ -597,7 +597,7 @@ class TracesView {
      */
     showSpanDetail(span, trace) {
         const panel = document.getElementById('span-detail-panel');
-        panel.style.display = 'block';
+        panel.style.display = 'flex';
 
         const duration = (span.duration / 1000000).toFixed(2);
         const startTime = new Date(span.start_time / 1000000);
@@ -605,7 +605,6 @@ class TracesView {
             ? span.status.toUpperCase() === 'ERROR'
             : span.status && span.status.code === 'Error';
 
-        // Find parent and children
         const parent = span.parent_span_id
             ? trace.spans.find(s => s.span_id === span.parent_span_id)
             : null;
@@ -618,32 +617,66 @@ class TracesView {
         const attrEntries = Object.entries(span.attributes || {});
         const genaiInfo = this.extractGenAiInfo(span.attributes || {});
 
-        panel.innerHTML = `
-            <div class="span-detail-header-row">
-                <div style="display:flex;align-items:center;gap:0.75rem;min-width:0;">
-                    <span class="span-kind span-kind-${this.spanKindClass(span.kind).replace('span-kind-','')}">${kindLabel}</span>
-                    <strong style="font-size:0.9rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${this.escapeHtml(span.name)}">${this.escapeHtml(span.name)}</strong>
-                    <span class="${hasError ? 'status-error' : 'status-ok'}" style="font-size:0.8rem;">${hasError ? '⚠ ERROR' : '✓ OK'}</span>
-                </div>
-                <button id="close-span-detail" class="btn btn-secondary btn-sm" style="flex-shrink:0;">×</button>
-            </div>
+        const scrollContent = this.buildSpanDetailHTML(span, trace, {
+            duration, startTime, hasError, parent, children, kindLabel, attrEntries, genaiInfo
+        });
 
+        panel.innerHTML = `
+            <div class="span-panel-drag-handle" id="span-panel-drag"></div>
+            <div class="span-detail-scroll">
+                <div class="span-detail-header-row">
+                    <h4 title="${this.escapeHtml(span.name)}">
+                        <span class="span-kind">${this.escapeHtml(kindLabel)}</span>
+                        ${this.escapeHtml(span.name)}
+                        <span class="${hasError ? 'status-error' : 'status-ok'}" style="font-size:0.8rem;font-weight:400;margin-left:0.5rem;">${hasError ? '⚠ ERROR' : '✓ OK'}</span>
+                    </h4>
+                    <div style="display:flex;gap:0.5rem;flex-shrink:0;">
+                        <button id="expand-span-detail" class="btn btn-secondary btn-sm" title="Full screen">&#x26F6;</button>
+                        <button id="close-span-detail" class="btn btn-secondary btn-sm" title="Close">×</button>
+                    </div>
+                </div>
+                ${scrollContent}
+            </div>
+        `;
+
+        document.getElementById('close-span-detail').addEventListener('click', () => {
+            panel.style.display = 'none';
+        });
+
+        document.getElementById('expand-span-detail').addEventListener('click', () => {
+            this.openSpanModal(span, trace, { duration, startTime, hasError, parent, children, kindLabel, attrEntries, genaiInfo });
+        });
+
+        this.attachDragResize(panel, document.getElementById('span-panel-drag'));
+    }
+
+    buildSpanDetailHTML(span, trace, { duration, startTime, hasError, parent, children, kindLabel, attrEntries, genaiInfo }) {
+        return `
             <div class="span-detail-section">
-                <h5>Timing</h5>
-                <div class="span-detail-item"><strong>Duration:</strong> ${duration}ms</div>
-                <div class="span-detail-item"><strong>Start:</strong> ${startTime.toISOString()}</div>
-                <div class="span-detail-item"><strong>Span ID:</strong> <code>${span.span_id.substring(0,16)}</code></div>
-                ${parent ? `<div class="span-detail-item"><strong>Parent:</strong> ${this.escapeHtml(parent.name)}</div>` : ''}
-                ${children.length > 0 ? `<div class="span-detail-item"><strong>Children:</strong> ${children.map(c => this.escapeHtml(c.name)).join(', ')}</div>` : ''}
+                <h5>Info</h5>
+                <div class="span-attrs-grid">
+                    <div class="span-attr-row"><span class="span-attr-key">duration</span><span class="span-attr-val">${duration}ms</span></div>
+                    <div class="span-attr-row"><span class="span-attr-key">start</span><span class="span-attr-val">${startTime.toISOString()}</span></div>
+                    <div class="span-attr-row"><span class="span-attr-key">span_id</span><span class="span-attr-val">${span.span_id}</span></div>
+                    <div class="span-attr-row"><span class="span-attr-key">trace_id</span><span class="span-attr-val">${span.trace_id}</span></div>
+                    ${parent ? `<div class="span-attr-row"><span class="span-attr-key">parent</span><span class="span-attr-val">${this.escapeHtml(parent.name)}</span></div>` : ''}
+                    ${children.length > 0 ? `<div class="span-attr-row" style="grid-column:1/-1"><span class="span-attr-key">children</span><span class="span-attr-val">${children.map(c => this.escapeHtml(c.name)).join(', ')}</span></div>` : ''}
+                </div>
             </div>
 
             ${genaiInfo ? `<div class="span-detail-section">${this.renderGenAiInfo(genaiInfo)}</div>` : ''}
 
             ${attrEntries.length > 0 ? `
-                <div class="span-detail-section" style="grid-column: ${genaiInfo ? '1 / -1' : 'auto'};">
+                <div class="span-detail-section">
                     <h5>Attributes (${attrEntries.length})</h5>
-                    <div style="display:flex;flex-wrap:wrap;gap:4px;">
-                        ${attrEntries.map(([k, v]) => `<span class="label-tag">${this.escapeHtml(k)}: <strong>${this.escapeHtml(String(v))}</strong></span>`).join('')}
+                    <div class="span-attrs-grid">
+                        ${attrEntries.map(([k, v]) => {
+                            const isLong = String(v).length > 80;
+                            return `<div class="span-attr-row${isLong ? ' ' : ''}" ${isLong ? 'style="grid-column:1/-1"' : ''}>
+                                <span class="span-attr-key">${this.escapeHtml(k)}</span>
+                                <span class="span-attr-val${isLong ? ' long' : ''}">${this.escapeHtml(String(v))}</span>
+                            </div>`;
+                        }).join('')}
                     </div>
                 </div>
             ` : ''}
@@ -655,10 +688,79 @@ class TracesView {
                 </div>
             ` : ''}
         `;
+    }
 
-        document.getElementById('close-span-detail').addEventListener('click', () => {
-            panel.style.display = 'none';
+    /**
+     * Drag-to-resize the span detail panel
+     */
+    attachDragResize(panel, handle) {
+        let startY, startH;
+        handle.addEventListener('mousedown', e => {
+            startY = e.clientY;
+            startH = panel.offsetHeight;
+            handle.classList.add('dragging');
+            const onMove = e => {
+                const delta = startY - e.clientY; // drag up = taller
+                panel.style.height = Math.max(120, Math.min(window.innerHeight * 0.85, startH + delta)) + 'px';
+            };
+            const onUp = () => {
+                handle.classList.remove('dragging');
+                document.removeEventListener('mousemove', onMove);
+                document.removeEventListener('mouseup', onUp);
+            };
+            document.addEventListener('mousemove', onMove);
+            document.addEventListener('mouseup', onUp);
+            e.preventDefault();
         });
+    }
+
+    /**
+     * Open span details in a full-screen modal overlay
+     */
+    openSpanModal(span, trace, context) {
+        const existing = document.getElementById('span-modal');
+        if (existing) existing.remove();
+
+        const modal = document.createElement('div');
+        modal.id = 'span-modal';
+        modal.style.cssText = `
+            position: fixed; inset: 0; z-index: 9999;
+            background: rgba(0,0,0,0.85);
+            display: flex; align-items: center; justify-content: center;
+            padding: 2rem;
+        `;
+
+        const box = document.createElement('div');
+        box.style.cssText = `
+            background: var(--bg-secondary);
+            border: 1px solid var(--accent-color);
+            border-radius: 8px;
+            width: 100%; max-width: 1100px;
+            max-height: 90vh;
+            display: flex; flex-direction: column;
+            overflow: hidden;
+        `;
+
+        const { duration, startTime, hasError, parent, children, kindLabel, attrEntries, genaiInfo } = context;
+        box.innerHTML = `
+            <div style="display:flex;align-items:center;justify-content:space-between;padding:1rem 1.25rem;border-bottom:1px solid var(--border-color);flex-shrink:0;">
+                <h3 style="font-size:1rem;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${this.escapeHtml(span.name)}">
+                    <span class="span-kind">${this.escapeHtml(kindLabel)}</span>
+                    ${this.escapeHtml(span.name)}
+                    <span class="${hasError ? 'status-error' : 'status-ok'}" style="font-size:0.85rem;font-weight:400;margin-left:0.5rem;">${hasError ? '⚠ ERROR' : '✓ OK'}</span>
+                </h3>
+                <button id="close-span-modal" class="btn btn-secondary btn-sm" style="flex-shrink:0;">× Close</button>
+            </div>
+            <div style="flex:1;overflow-y:auto;padding:1.25rem;">
+                ${this.buildSpanDetailHTML(span, trace, context)}
+            </div>
+        `;
+
+        modal.appendChild(box);
+        document.body.appendChild(modal);
+
+        document.getElementById('close-span-modal').addEventListener('click', () => modal.remove());
+        modal.addEventListener('click', e => { if (e.target === modal) modal.remove(); });
     }
 
     /**
