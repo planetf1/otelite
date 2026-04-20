@@ -75,17 +75,17 @@ pub async fn list_logs(
     // Validate and cap limit
     let limit = params.limit.min(1000);
 
-    // Build query parameters
+    // Build query parameters (treat empty strings as absent filters)
     let mut query = QueryParams {
         start_time: params.start_time,
         end_time: params.end_time,
         limit: Some(limit),
-        search_text: params.search.clone(),
+        search_text: params.search.filter(|s| !s.is_empty()),
         ..Default::default()
     };
 
     // Parse severity filter if provided
-    if let Some(severity_str) = &params.severity {
+    if let Some(severity_str) = params.severity.as_deref().filter(|s| !s.is_empty()) {
         query.min_severity = parse_severity(severity_str);
     }
 
@@ -98,13 +98,14 @@ pub async fn list_logs(
     })?;
 
     // Filter by resource if specified (post-query filtering for now)
-    let filtered_logs: Vec<LogRecord> = if let Some(resource_filter) = &params.resource {
-        logs.into_iter()
-            .filter(|log| matches_resource_filter(log, resource_filter))
-            .collect()
-    } else {
-        logs
-    };
+    let filtered_logs: Vec<LogRecord> =
+        if let Some(resource_filter) = params.resource.as_deref().filter(|s| !s.is_empty()) {
+            logs.into_iter()
+                .filter(|log| matches_resource_filter(log, resource_filter))
+                .collect()
+        } else {
+            logs
+        };
 
     // Apply offset for pagination
     let total = filtered_logs.len();

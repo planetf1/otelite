@@ -24,9 +24,16 @@ fn test_cli_version_flag() {
 #[test]
 fn test_cli_invalid_log_level() {
     let mut cmd = Command::cargo_bin("rotel-cli").unwrap();
-    cmd.args(["--log-level", "invalid", "logs", "list"]);
+    cmd.args([
+        "--endpoint",
+        "http://localhost:1",
+        "--log-level",
+        "invalid",
+        "logs",
+        "list",
+    ]);
     // Should still run but use default log level
-    // This will fail because no server is running, but it validates argument parsing
+    // Uses unreachable endpoint so test is environment-independent
     cmd.assert().failure();
 }
 
@@ -177,24 +184,44 @@ fn test_cli_invalid_subcommand() {
 #[test]
 fn test_cli_global_format_flag() {
     let mut cmd = Command::cargo_bin("rotel-cli").unwrap();
-    cmd.args(["--format", "json", "logs", "list"]);
-    // Will fail due to no server, but validates argument parsing
+    cmd.args([
+        "--endpoint",
+        "http://localhost:1",
+        "--format",
+        "json",
+        "logs",
+        "list",
+    ]);
+    // Will fail due to unreachable endpoint, but validates argument parsing
     cmd.assert().failure();
 }
 
 #[test]
 fn test_cli_global_no_color_flag() {
     let mut cmd = Command::cargo_bin("rotel-cli").unwrap();
-    cmd.args(["--no-color", "logs", "list"]);
-    // Will fail due to no server, but validates argument parsing
+    cmd.args([
+        "--endpoint",
+        "http://localhost:1",
+        "--no-color",
+        "logs",
+        "list",
+    ]);
+    // Will fail due to unreachable endpoint, but validates argument parsing
     cmd.assert().failure();
 }
 
 #[test]
 fn test_cli_global_timeout_flag() {
     let mut cmd = Command::cargo_bin("rotel-cli").unwrap();
-    cmd.args(["--timeout", "60", "logs", "list"]);
-    // Will fail due to no server, but validates argument parsing
+    cmd.args([
+        "--endpoint",
+        "http://localhost:1",
+        "--timeout",
+        "5",
+        "logs",
+        "list",
+    ]);
+    // Will fail due to unreachable endpoint, but validates argument parsing
     cmd.assert().failure();
 }
 
@@ -209,56 +236,105 @@ fn test_cli_global_endpoint_flag() {
 #[test]
 fn test_cli_logs_list_with_limit() {
     let mut cmd = Command::cargo_bin("rotel-cli").unwrap();
-    cmd.args(["logs", "list", "--limit", "10"]);
-    // Will fail due to no server, but validates argument parsing
+    cmd.args([
+        "--endpoint",
+        "http://localhost:1",
+        "logs",
+        "list",
+        "--limit",
+        "10",
+    ]);
+    // Will fail due to unreachable endpoint, but validates argument parsing
     cmd.assert().failure();
 }
 
 #[test]
 fn test_cli_logs_list_with_severity() {
     let mut cmd = Command::cargo_bin("rotel-cli").unwrap();
-    cmd.args(["logs", "list", "--severity", "ERROR"]);
-    // Will fail due to no server, but validates argument parsing
+    cmd.args([
+        "--endpoint",
+        "http://localhost:1",
+        "logs",
+        "list",
+        "--severity",
+        "ERROR",
+    ]);
+    // Will fail due to unreachable endpoint, but validates argument parsing
     cmd.assert().failure();
 }
 
 #[test]
 fn test_cli_logs_list_with_since() {
     let mut cmd = Command::cargo_bin("rotel-cli").unwrap();
-    cmd.args(["logs", "list", "--since", "24h"]);
-    // Will fail due to no server, but validates argument parsing
+    cmd.args([
+        "--endpoint",
+        "http://localhost:1",
+        "logs",
+        "list",
+        "--since",
+        "24h",
+    ]);
+    // Will fail due to unreachable endpoint, but validates argument parsing
     cmd.assert().failure();
 }
 
 #[test]
 fn test_cli_traces_list_with_status() {
     let mut cmd = Command::cargo_bin("rotel-cli").unwrap();
-    cmd.args(["traces", "list", "--status", "ERROR"]);
-    // Will fail due to no server, but validates argument parsing
+    cmd.args([
+        "--endpoint",
+        "http://localhost:1",
+        "traces",
+        "list",
+        "--status",
+        "ERROR",
+    ]);
+    // Will fail due to unreachable endpoint, but validates argument parsing
     cmd.assert().failure();
 }
 
 #[test]
 fn test_cli_traces_list_with_min_duration() {
     let mut cmd = Command::cargo_bin("rotel-cli").unwrap();
-    cmd.args(["traces", "list", "--min-duration", "1s"]);
-    // Will fail due to no server, but validates argument parsing
+    cmd.args([
+        "--endpoint",
+        "http://localhost:1",
+        "traces",
+        "list",
+        "--min-duration",
+        "1s",
+    ]);
+    // Will fail due to unreachable endpoint, but validates argument parsing
     cmd.assert().failure();
 }
 
 #[test]
 fn test_cli_metrics_list_with_name() {
     let mut cmd = Command::cargo_bin("rotel-cli").unwrap();
-    cmd.args(["metrics", "list", "--name", "http"]);
-    // Will fail due to no server, but validates argument parsing
+    cmd.args([
+        "--endpoint",
+        "http://localhost:1",
+        "metrics",
+        "list",
+        "--name",
+        "http",
+    ]);
+    // Will fail due to unreachable endpoint, but validates argument parsing
     cmd.assert().failure();
 }
 
 #[test]
 fn test_cli_metrics_list_with_label() {
     let mut cmd = Command::cargo_bin("rotel-cli").unwrap();
-    cmd.args(["metrics", "list", "--label", "method=GET"]);
-    // Will fail due to no server, but validates argument parsing
+    cmd.args([
+        "--endpoint",
+        "http://localhost:1",
+        "metrics",
+        "list",
+        "--label",
+        "method=GET",
+    ]);
+    // Will fail due to unreachable endpoint, but validates argument parsing
     cmd.assert().failure();
 }
 

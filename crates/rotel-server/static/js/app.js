@@ -9,6 +9,8 @@ class App {
     constructor() {
         this.currentView = 'logs';
         this.connectionCheckInterval = null;
+        this.renderedViews = new Set();
+        this.views = {};
         this.init();
     }
 
@@ -16,6 +18,12 @@ class App {
      * Initialize the application
      */
     init() {
+        this.views = {
+            logs: new window.LogsView(api),
+            traces: new window.TracesView(api),
+            metrics: new window.MetricsView(api),
+            // setup is static HTML — no view class needed
+        };
         this.setupNavigation();
         this.setupConnectionMonitoring();
         this.loadInitialView();
@@ -50,6 +58,12 @@ class App {
         });
 
         this.currentView = viewName;
+
+        // Render the view on first visit; subsequent visits use the view's own auto-refresh
+        if (this.views[viewName] && !this.renderedViews.has(viewName)) {
+            this.renderedViews.add(viewName);
+            this.views[viewName].render();
+        }
 
         // Trigger view-specific initialization
         this.dispatchViewChange(viewName);
