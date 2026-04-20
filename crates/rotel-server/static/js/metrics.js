@@ -7,6 +7,8 @@ class MetricsView {
         this.selectedMetric = null;
         this.interval = 60; // 1 minute buckets
         this.autoRefreshInterval = null;
+        this.timeWindowHours = 1;  // how many hours to show
+        this.timeOffsetWindows = 0; // how many windows back in time (0 = now)
     }
 
     async render() {
@@ -65,34 +67,46 @@ class MetricsView {
             return;
         }
 
-        sidebar.innerHTML = this.metricNames.map(name => {
-            // Find the most recent value for this metric name
+        const searchVal = (document.getElementById('metrics-search')?.value ?? '').toLowerCase();
+        const filteredNames = searchVal
+            ? this.metricNames.filter(n => n.toLowerCase().includes(searchVal))
+            : this.metricNames;
+
+        // Keep search box, replace items below it
+        const existingSearch = sidebar.querySelector('.metrics-sidebar-search');
+        if (!existingSearch) {
+            sidebar.innerHTML = `<input type="text" id="metrics-search" class="metrics-sidebar-search" placeholder="Filter metrics...">`;
+            document.getElementById('metrics-search').addEventListener('input', () => this.renderSidebar());
+        }
+
+        // Remove old items
+        sidebar.querySelectorAll('.metric-sidebar-item').forEach(el => el.remove());
+
+        filteredNames.forEach(name => {
             const points = this.metrics.filter(m => m.name === name);
             const latest = points.reduce((a, b) => a.timestamp > b.timestamp ? a : b, points[0]);
             const valueStr = this.formatValue(latest);
             const isSelected = name === this.selectedMetric;
 
-            return `
-                <div class="metric-sidebar-item ${isSelected ? 'selected' : ''}"
-                     data-metric="${this.escapeHtml(name)}">
-                    <div class="metric-sidebar-name">${this.escapeHtml(name)}</div>
-                    <div class="metric-sidebar-meta">
-                        <span class="metric-type-badge metric-type-${latest.metric_type}">${latest.metric_type}</span>
-                        <span class="metric-sidebar-value">${valueStr}</span>
-                    </div>
+            const item = document.createElement('div');
+            item.className = `metric-sidebar-item${isSelected ? ' selected' : ''}`;
+            item.dataset.metric = name;
+            item.innerHTML = `
+                <div class="metric-sidebar-name">${this.escapeHtml(name)}</div>
+                <div class="metric-sidebar-meta">
+                    <span class="metric-type-badge metric-type-${latest.metric_type}">${latest.metric_type}</span>
+                    <span class="metric-sidebar-value">${valueStr}</span>
                 </div>
             `;
-        }).join('');
-
-        // Attach click handlers
-        sidebar.querySelectorAll('.metric-sidebar-item').forEach(el => {
-            el.addEventListener('click', () => {
-                this.selectedMetric = el.dataset.metric;
+            item.addEventListener('click', () => {
+                this.selectedMetric = name;
                 sidebar.querySelectorAll('.metric-sidebar-item').forEach(i => i.classList.remove('selected'));
-                el.classList.add('selected');
-                this.renderDetail(this.selectedMetric);
+                item.classList.add('selected');
+                this.renderDetail(name);
             });
+            sidebar.appendChild(item);
         });
+
     }
 
     async renderDetail(metricName) {
@@ -101,17 +115,33 @@ class MetricsView {
             <div class="metric-detail-header">
                 <h3>${this.escapeHtml(metricName)}</h3>
                 <div class="metric-detail-controls">
-                    <label>Bucket size:
+                    <label>Bucket:
                         <select id="interval-select" class="filter-select">
                             <option value="10">10s</option>
                             <option value="60" selected>1 min</option>
                             <option value="300">5 min</option>
-                            <option value="3600">1 hour</option>
+                            <option value="3600">1 hr</option>
+                        </select>
+                    </label>
+                    <label>Window:
+                        <select id="window-select" class="filter-select">
+                            <option value="0.25">15 min</option>
+                            <option value="1" selected>1 hr</option>
+                            <option value="6">6 hr</option>
+                            <option value="24">24 hr</option>
                         </select>
                     </label>
                 </div>
             </div>
             <div class="metric-chart-area">
+                <div class="chart-time-nav">
+                    <span id="chart-time-range">—</span>
+                    <div class="chart-time-nav-controls">
+                        <button class="btn-icon" id="chart-prev" title="Earlier">&#8592;</button>
+                        <button class="btn-icon" id="chart-now" title="Jump to now">Now</button>
+                        <button class="btn-icon" id="chart-next" title="Later">&#8594;</button>
+                    </div>
+                </div>
                 <canvas id="metrics-chart"></canvas>
             </div>
             <div class="metric-data-table">
@@ -124,9 +154,36 @@ class MetricsView {
             this.interval = parseInt(e.target.value);
             this.loadTimeseries(metricName);
         });
+        document.getElementById('window-select').addEventListener('change', (e) => {
+            this.timeWindowHours = parseFloat(e.target.value);
+            this.timeOffsetWindows = 0;
+            this.loadTimeseries(metricName);
+        });
+        document.getElementById('chart-prev').addEventListener('click', () => {
+            this.timeOffsetWindows++;
+            this.loadTimeseries(metricName);
+        });
+        document.getElementById('chart-next').addEventListener('click', () => {
+            if (this.timeOffsetWindows > 0) this.timeOffsetWindows--;
+            this.loadTimeseries(metricName);
+        });
+        document.getElementById('chart-now').addEventListener('click', () => {
+            this.timeOffsetWindows = 0;
+            this.loadTimeseries(metricName);
+        });
 
         this.renderDataTable(metricName);
         await this.loadTimeseries(metricName);
+    }
+
+    timeWindow() {
+        const windowMs = this.timeWindowHours * 3600 * 1000;
+        const endMs = Date.now() - this.timeOffsetWindows * windowMs;
+        const startMs = endMs - windowMs;
+        return {
+            start_time: startMs * 1_000_000,   // nanoseconds
+            end_time: endMs * 1_000_000,
+        };
     }
 
     renderDataTable(metricName) {
@@ -182,10 +239,22 @@ class MetricsView {
 
     async loadTimeseries(metricName) {
         try {
+            const { start_time, end_time } = this.timeWindow();
             const buckets = await this.apiClient.getMetricTimeseries(metricName, {
-                step: this.interval
+                step: this.interval,
+                start_time,
+                end_time,
             });
             this.renderChart(metricName, buckets);
+            // Update time range label
+            const label = document.getElementById('chart-time-range');
+            if (label) {
+                const fmt = t => new Date(t / 1_000_000).toLocaleTimeString();
+                label.textContent = `${fmt(start_time)} – ${fmt(end_time)}`;
+            }
+            // Disable "next" button when at now
+            const nextBtn = document.getElementById('chart-next');
+            if (nextBtn) nextBtn.disabled = this.timeOffsetWindows === 0;
         } catch (error) {
             console.error('Failed to load timeseries:', error);
         }
@@ -196,8 +265,8 @@ class MetricsView {
         if (!canvas) return;
         const ctx = canvas.getContext('2d');
 
-        canvas.width = canvas.offsetWidth || 600;
-        canvas.height = 200;
+        canvas.width = canvas.offsetWidth || 700;
+        canvas.height = 280;
         ctx.clearRect(0, 0, canvas.width, canvas.height);
 
         if (!buckets || buckets.length === 0) {

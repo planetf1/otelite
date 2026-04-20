@@ -18,20 +18,20 @@
     --shadow: 0 2px 8px rgba(0, 0, 0, 0.12);
 }
 
-/* Dark mode */
-@media (prefers-color-scheme: dark) {
+/* Dark mode (and default for this developer tool) */
+@media (prefers-color-scheme: dark), (prefers-color-scheme: no-preference) {
     :root {
-        --bg-primary: #0f0f1a;
-        --bg-secondary: #1a1a2e;
-        --bg-tertiary: #252540;
+        --bg-primary: #000000;
+        --bg-secondary: #0d0d0d;
+        --bg-tertiary: #1a1a1a;
         --text-primary: #e2e8f0;
-        --text-secondary: #94a3b8;
-        --border-color: #2d2d4e;
+        --text-secondary: #64748b;
+        --border-color: #222222;
         --accent-color: #818cf8;
         --accent-hover: #6366f1;
-        --header-bg: #0a0a15;
+        --header-bg: #000000;
         --header-text: #e2e8f0;
-        --shadow: 0 2px 8px rgba(0, 0, 0, 0.4);
+        --shadow: 0 2px 8px rgba(0, 0, 0, 0.6);
     }
 }
 
@@ -224,14 +224,8 @@ body {
     border-radius: 4px;
 }
 
-/* Traces Container */
-.traces-container {
-    flex: 1;
-    overflow-y: auto;
-    background-color: var(--bg-secondary);
-    border: 1px solid var(--border-color);
-    border-radius: 4px;
-}
+/* Traces Container - first rule (overridden below) */
+.traces-container-placeholder { display: none; }
 
 /* Metrics Layout */
 .metrics-layout {
@@ -496,7 +490,43 @@ body {
     border: 1px solid var(--border-color);
     border-radius: 4px;
     padding: 0.5rem;
-    min-height: 220px;
+    min-height: 320px;
+}
+
+.chart-time-nav {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.5rem;
+    padding: 0.4rem 0.5rem;
+    background-color: var(--bg-secondary);
+    border-bottom: 1px solid var(--border-color);
+    border-radius: 4px 4px 0 0;
+    font-size: 0.78rem;
+    color: var(--text-secondary);
+}
+
+.chart-time-nav-controls {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+}
+
+.btn-icon {
+    padding: 0.2rem 0.5rem;
+    background-color: var(--bg-tertiary);
+    border: 1px solid var(--border-color);
+    border-radius: 3px;
+    color: var(--text-primary);
+    cursor: pointer;
+    font-size: 0.8rem;
+    transition: all 0.15s;
+    line-height: 1.4;
+}
+
+.btn-icon:hover {
+    background-color: rgba(129, 140, 248, 0.2);
+    border-color: var(--accent-color);
 }
 
 .metric-chart-area canvas {
@@ -781,37 +811,37 @@ body {
     text-align: center;
 }
 
-.severity-trace {
+.log-severity.severity-trace {
     background-color: #1e293b;
     color: #94a3b8;
     border: 1px solid #334155;
 }
 
-.severity-debug {
+.log-severity.severity-debug {
     background-color: #0c2a3e;
     color: #38bdf8;
     border: 1px solid #0369a1;
 }
 
-.severity-info {
+.log-severity.severity-info {
     background-color: #052e16;
     color: #4ade80;
     border: 1px solid #166534;
 }
 
-.severity-warn {
+.log-severity.severity-warn {
     background-color: #2d1a00;
     color: #fbbf24;
     border: 1px solid #92400e;
 }
 
-.severity-error {
+.log-severity.severity-error {
     background-color: #2d0a0a;
     color: #f87171;
     border: 1px solid #991b1b;
 }
 
-.severity-fatal {
+.log-severity.severity-fatal {
     background-color: #1e0a2e;
     color: #c084fc;
     border: 1px solid #6b21a8;
@@ -1002,38 +1032,45 @@ body {
 
 /* Trace-specific styles */
 .traces-container {
-    display: flex;
+    display: grid;
+    grid-template-columns: 340px 1fr;
     gap: 1rem;
     flex: 1;
     overflow: hidden;
+    min-height: 0;
 }
 
 .traces-list {
-    flex: 1;
     overflow-y: auto;
     background-color: var(--bg-secondary);
     border: 1px solid var(--border-color);
     border-radius: 4px;
-    padding: 1rem;
+    padding: 0.5rem;
 }
 
 .trace-entry {
     background-color: var(--bg-primary);
     border: 1px solid var(--border-color);
+    border-left: 3px solid #3b82f6;
     border-radius: 4px;
-    padding: 0.75rem;
-    margin-bottom: 0.5rem;
+    padding: 0.5rem 0.75rem;
+    margin-bottom: 4px;
     cursor: pointer;
-    transition: all 0.2s;
+    transition: all 0.15s;
 }
 
 .trace-entry:hover {
-    box-shadow: var(--shadow);
+    background-color: var(--bg-tertiary);
     border-color: var(--accent-color);
 }
 
+.trace-entry.selected {
+    border-color: var(--accent-color);
+    background-color: rgba(129, 140, 248, 0.08);
+}
+
 .trace-entry.trace-error {
-    border-left: 3px solid var(--error-color);
+    border-left-color: var(--error-color);
 }
 
 .trace-header {
@@ -1096,12 +1133,12 @@ body {
 }
 
 .trace-detail {
-    flex: 1;
     overflow-y: auto;
     background-color: var(--bg-secondary);
     border: 1px solid var(--border-color);
     border-radius: 4px;
     padding: 1rem;
+    min-height: 0;
 }
 
 .trace-detail-header {
@@ -1203,16 +1240,51 @@ body {
     height: 100%;
     background-color: var(--accent-color);
     border-radius: 3px;
-    opacity: 0.7;
+    opacity: 0.8;
     transition: opacity 0.2s;
+    cursor: pointer;
 }
 
 .span-bar:hover {
     opacity: 1;
 }
 
-.span-bar-error {
-    background-color: var(--error-color);
+/* Span kind colors */
+.span-bar.span-kind-server   { background-color: #3b82f6; }
+.span-bar.span-kind-client   { background-color: #a855f7; }
+.span-bar.span-kind-internal { background-color: #6366f1; }
+.span-bar.span-kind-producer { background-color: #f59e0b; }
+.span-bar.span-kind-consumer { background-color: #22c55e; }
+
+.span-bar.span-bar-error {
+    background-color: var(--error-color) !important;
+}
+
+/* Span kind legend */
+.span-kind-legend {
+    display: flex;
+    gap: 1rem;
+    flex-wrap: wrap;
+    margin-bottom: 0.75rem;
+    padding: 0.5rem 0.75rem;
+    background-color: var(--bg-secondary);
+    border-radius: 4px;
+    border: 1px solid var(--border-color);
+    font-size: 0.72rem;
+}
+
+.span-kind-legend-item {
+    display: flex;
+    align-items: center;
+    gap: 0.35rem;
+    color: var(--text-secondary);
+}
+
+.span-kind-dot {
+    width: 10px;
+    height: 10px;
+    border-radius: 2px;
+    flex-shrink: 0;
 }
 
 .span-attributes {
@@ -1235,14 +1307,14 @@ body {
 }
 
 .span-detail-panel {
-    width: 400px;
+    width: 440px;
     flex-shrink: 0;
-    background-color: var(--bg-primary);
+    background-color: var(--bg-secondary);
     border: 1px solid var(--border-color);
+    border-left: 2px solid var(--accent-color);
     border-radius: 4px;
     padding: 1rem;
     overflow-y: auto;
-    max-height: 600px;
 }
 
 .span-detail-header {
@@ -1371,14 +1443,27 @@ body {
     margin-top: 0.5rem;
 }
 
+.metrics-sidebar-search {
+    padding: 0.4rem 0.6rem;
+    margin-bottom: 6px;
+    border: 1px solid var(--border-color);
+    border-radius: 4px;
+    background-color: var(--bg-primary);
+    color: var(--text-primary);
+    font-size: 0.8rem;
+    width: 100%;
+}
+
+.metrics-sidebar-search:focus {
+    outline: none;
+    border-color: var(--accent-color);
+}
+
 /* Responsive design for traces */
 @media (max-width: 1024px) {
     .traces-container {
-        flex-direction: column;
-    }
-
-    .trace-detail {
-        max-height: 50vh;
+        grid-template-columns: 1fr;
+        grid-template-rows: 1fr 1fr;
     }
 
     .span-info {
@@ -1391,63 +1476,7 @@ body {
 
     .span-detail-panel {
         width: 100%;
-        max-height: 400px;
     }
-}
-
-/* Rotel Dashboard Styles */
-
-/* CSS Variables for theming */
-:root {
-    --bg-primary: #ffffff;
-    --bg-secondary: #f5f5f5;
-    --bg-tertiary: #e0e0e0;
-    --text-primary: #212121;
-    --text-secondary: #757575;
-    --border-color: #e0e0e0;
-    --accent-color: #2196f3;
-    --accent-hover: #1976d2;
-    --success-color: #4caf50;
-    --warning-color: #ff9800;
-    --error-color: #f44336;
-    --genai-color: #9c27b0;
-    --genai-bg: #f3e5f5;
-    --shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
-}
-
-/* Dark mode */
-@media (prefers-color-scheme: dark) {
-    :root {
-        --bg-primary: #1e1e1e;
-        --bg-secondary: #2d2d2d;
-        --bg-tertiary: #3d3d3d;
-        --text-primary: #e0e0e0;
-        --text-secondary: #b0b0b0;
-        --border-color: #3d3d3d;
-        --genai-bg: #4a148c;
-        --shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
-    }
-}
-
-/* Reset and base styles */
-* {
-    margin: 0;
-    padding: 0;
-    box-sizing: border-box;
-}
-
-body {
-    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
-    background-color: var(--bg-primary);
-    color: var(--text-primary);
-    line-height: 1.6;
-}
-
-/* Layout */
-#app {
-    display: flex;
-    flex-direction: column;
-    height: 100vh;
 }
 
 /* GenAI/LLM Information Card */

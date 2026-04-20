@@ -48,7 +48,11 @@ class TracesView {
 
             <div class="traces-container">
                 <div id="traces-list" class="traces-list"></div>
-                <div id="trace-detail" class="trace-detail" style="display: none;"></div>
+                <div id="trace-detail" class="trace-detail">
+                    <div class="empty-state" style="height:100%; display:flex; align-items:center; justify-content:center; color:var(--text-secondary);">
+                        Select a trace to view details
+                    </div>
+                </div>
             </div>
 
             <div class="pagination">
@@ -145,6 +149,10 @@ class TracesView {
      */
     async selectTrace(traceId) {
         try {
+            // Mark the selected entry
+            document.querySelectorAll('.trace-entry').forEach(el => {
+                el.classList.toggle('selected', el.dataset.traceId === traceId);
+            });
             const trace = await this.apiClient.getTrace(traceId);
             this.selectedTrace = trace;
             this.renderTraceDetail(trace);
@@ -159,7 +167,6 @@ class TracesView {
      */
     renderTraceDetail(trace) {
         const container = document.getElementById('trace-detail');
-        container.style.display = 'block';
 
         const duration = (trace.duration / 1000000).toFixed(2);
         const startTime = new Date(trace.start_time / 1000000);
@@ -170,7 +177,6 @@ class TracesView {
         container.innerHTML = `
             <div class="trace-detail-header">
                 <h3>Trace Details</h3>
-                <button id="close-trace-detail" class="btn btn-secondary">Close</button>
             </div>
             <div class="trace-info">
                 <div class="trace-info-item"><strong>Trace ID:</strong> ${trace.trace_id}</div>
@@ -181,6 +187,14 @@ class TracesView {
             </div>
             <div class="trace-waterfall">
                 <h4>Span Waterfall</h4>
+                <div class="span-kind-legend">
+                    <span class="span-kind-legend-item"><span class="span-kind-dot" style="background:#3b82f6"></span>server</span>
+                    <span class="span-kind-legend-item"><span class="span-kind-dot" style="background:#a855f7"></span>client</span>
+                    <span class="span-kind-legend-item"><span class="span-kind-dot" style="background:#6366f1"></span>internal</span>
+                    <span class="span-kind-legend-item"><span class="span-kind-dot" style="background:#f59e0b"></span>producer</span>
+                    <span class="span-kind-legend-item"><span class="span-kind-dot" style="background:#22c55e"></span>consumer</span>
+                    <span class="span-kind-legend-item"><span class="span-kind-dot" style="background:#ef4444"></span>error</span>
+                </div>
                 <div class="waterfall-container">
                     <div class="waterfall-spans">
                         ${this.renderSpanTree(spanTree, trace.start_time, trace.duration)}
@@ -189,11 +203,6 @@ class TracesView {
                 </div>
             </div>
         `;
-
-        document.getElementById('close-trace-detail').addEventListener('click', () => {
-            container.style.display = 'none';
-            this.selectedTrace = null;
-        });
 
         // Attach click handlers to span bars
         this.attachSpanClickHandlers(trace);
@@ -225,26 +234,41 @@ class TracesView {
     }
 
     /**
+     * Map span kind number/string to a CSS class name
+     */
+    spanKindClass(kind) {
+        const kindNames = ['unspecified', 'internal', 'server', 'client', 'producer', 'consumer'];
+        if (typeof kind === 'number') {
+            return `span-kind-${kindNames[kind] ?? 'unspecified'}`;
+        }
+        return `span-kind-${String(kind).toLowerCase()}`;
+    }
+
+    /**
      * Render span tree as waterfall
      */
     renderSpanTree(spans, traceStart, traceDuration, depth = 0) {
         return spans.map(span => {
             const startOffset = ((span.start_time - traceStart) / traceDuration) * 100;
-            const width = ((span.duration) / traceDuration) * 100;
+            const width = Math.max((span.duration / traceDuration) * 100, 0.5);
             const duration = (span.duration / 1000000).toFixed(2);
             const hasError = typeof span.status === 'string'
                 ? span.status.toUpperCase() === 'ERROR'
                 : span.status && span.status.code === 'Error';
+            const kindClass = this.spanKindClass(span.kind);
+            const kindLabel = typeof span.kind === 'number'
+                ? ['?', 'internal', 'server', 'client', 'producer', 'consumer'][span.kind] ?? '?'
+                : String(span.kind ?? '?');
 
             return `
-                <div class="span-row" style="padding-left: ${depth * 20}px;">
+                <div class="span-row" style="padding-left: ${depth * 16 + 4}px;">
                     <div class="span-info">
-                        <span class="span-name ${hasError ? 'span-error' : ''}">${this.escapeHtml(span.name)}</span>
-                        <span class="span-kind">${this.escapeHtml(String(span.kind ?? 'unknown'))}</span>
+                        <span class="span-name ${hasError ? 'span-error' : ''}" title="${this.escapeHtml(span.name)}">${this.escapeHtml(span.name)}</span>
+                        <span class="span-kind">${this.escapeHtml(kindLabel)}</span>
                         <span class="span-duration">${duration}ms</span>
                     </div>
                     <div class="span-bar-container">
-                        <div class="span-bar ${hasError ? 'span-bar-error' : ''}"
+                        <div class="span-bar ${hasError ? 'span-bar-error' : kindClass}"
                              style="left: ${startOffset}%; width: ${width}%;"
                              data-span-id="${span.span_id}"
                              title="${this.escapeHtml(span.name)}: ${duration}ms">
