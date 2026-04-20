@@ -188,7 +188,7 @@ pub fn filter_by_type(metrics: Vec<MetricResponse>, metric_type: &str) -> Vec<Me
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::api::models::{MetricResponse, MetricValue};
+    use crate::api::models::{HistogramValue, MetricResponse, MetricValue};
     use std::collections::HashMap;
 
     // T065: Unit tests for label filtering logic

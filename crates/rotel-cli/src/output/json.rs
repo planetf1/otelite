@@ -103,7 +103,7 @@ pub fn print_metric_json(metric: &MetricResponse) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::api::models::{MetricValue, SpanEntry};
+    use crate::api::models::{HistogramValue, MetricValue, SpanEntry, SpanStatus};
     use std::collections::HashMap;
 
     #[test]

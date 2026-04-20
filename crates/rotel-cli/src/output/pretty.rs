@@ -361,7 +361,7 @@ pub fn print_metric_details(metric: &MetricResponse, _no_color: bool) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::api::models::{MetricValue, TraceEntry};
+    use crate::api::models::{MetricValue, SpanStatus, TraceEntry};
     use std::collections::HashMap;
 
     #[test]
