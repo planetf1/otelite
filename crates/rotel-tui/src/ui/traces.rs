@@ -792,10 +792,10 @@ mod tests {
             start_time,
             end_time: start_time + duration,
             duration,
-            status: Some(SpanStatus {
+            status: SpanStatus {
                 code: "Ok".to_string(),
                 message: None,
-            }),
+            },
             attributes: HashMap::new(),
             events: vec![],
             resource: Some(Resource {

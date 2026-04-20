@@ -10,7 +10,9 @@ pub use rotel_core::api::{
 
 // Re-export types used in tests
 #[cfg(test)]
-pub use rotel_core::api::{HistogramBucket, Quantile, Resource, SpanStatus};
+pub use rotel_core::api::{
+    HistogramBucket, HistogramValue, Quantile, Resource, SpanStatus, SummaryValue,
+};
 
 // Type aliases for backward compatibility with TUI code
 pub type TraceSummary = TraceEntry;

@@ -311,7 +311,7 @@ fn truncate_string(s: &str, max_len: usize) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::api::models::MetricValue;
+    use crate::api::models::{MetricValue, Resource};
     use std::collections::HashMap;
 
     fn create_test_metric(name: &str, value: MetricValue) -> Metric {
@@ -322,7 +322,9 @@ mod tests {
             metric_type: "gauge".to_string(),
             value,
             timestamp: 1713360896789,
-            resource: Some(HashMap::new()),
+            resource: Some(Resource {
+                attributes: HashMap::new(),
+            }),
             attributes: HashMap::new(),
         }
     }
@@ -380,17 +382,19 @@ mod tests {
 
     #[test]
     fn test_histogram_metric_formatting() {
+        use rotel_core::api::HistogramValue;
+
         let metric = create_test_metric(
             "test.histogram",
-            MetricValue::Histogram {
+            MetricValue::Histogram(HistogramValue {
                 count: 10,
                 sum: 123.45,
                 buckets: vec![],
-            },
+            }),
         );
 
-        if let MetricValue::Histogram { count, sum, .. } = metric.value {
-            let formatted = format!("sum={:.2}, count={}", sum, count);
+        if let MetricValue::Histogram(h) = metric.value {
+            let formatted = format!("sum={:.2}, count={}", h.sum, h.count);
             assert_eq!(formatted, "sum=123.45, count=10");
         } else {
             panic!("Expected Histogram value");
@@ -399,17 +403,19 @@ mod tests {
 
     #[test]
     fn test_summary_metric_formatting() {
+        use rotel_core::api::SummaryValue;
+
         let metric = create_test_metric(
             "test.summary",
-            MetricValue::Summary {
+            MetricValue::Summary(SummaryValue {
                 count: 5,
                 sum: 67.89,
                 quantiles: vec![],
-            },
+            }),
         );
 
-        if let MetricValue::Summary { count, sum, .. } = metric.value {
-            let formatted = format!("sum={:.2}, count={}", sum, count);
+        if let MetricValue::Summary(s) = metric.value {
+            let formatted = format!("sum={:.2}, count={}", s.sum, s.count);
             assert_eq!(formatted, "sum=67.89, count=5");
         } else {
             panic!("Expected Summary value");
@@ -436,10 +442,10 @@ mod tests {
 
     #[test]
     fn test_histogram_with_buckets() {
-        use crate::api::models::HistogramBucket;
+        use crate::api::models::{HistogramBucket, HistogramValue};
         let metric = create_test_metric(
             "test.histogram",
-            MetricValue::Histogram {
+            MetricValue::Histogram(HistogramValue {
                 count: 100,
                 sum: 500.0,
                 buckets: vec![
@@ -460,11 +466,11 @@ mod tests {
                         count: 40,
                     },
                 ],
-            },
+            }),
         );
 
-        if let MetricValue::Histogram { buckets, .. } = metric.value {
-            assert_eq!(buckets.len(), 4);
+        if let MetricValue::Histogram(h) = metric.value {
+            assert_eq!(h.buckets.len(), 4);
         } else {
             panic!("Expected Histogram value");
         }
@@ -472,10 +478,10 @@ mod tests {
 
     #[test]
     fn test_summary_with_quantiles() {
-        use crate::api::models::Quantile;
+        use crate::api::models::{Quantile, SummaryValue};
         let metric = create_test_metric(
             "test.summary",
-            MetricValue::Summary {
+            MetricValue::Summary(SummaryValue {
                 count: 50,
                 sum: 250.0,
                 quantiles: vec![
@@ -492,11 +498,11 @@ mod tests {
                         value: 250.0,
                     },
                 ],
-            },
+            }),
         );
 
-        if let MetricValue::Summary { quantiles, .. } = metric.value {
-            assert_eq!(quantiles.len(), 3);
+        if let MetricValue::Summary(s) = metric.value {
+            assert_eq!(s.quantiles.len(), 3);
         } else {
             panic!("Expected Summary value");
         }
