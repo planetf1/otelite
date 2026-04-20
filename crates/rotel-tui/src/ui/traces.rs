@@ -278,6 +278,14 @@ fn render_detail_panel(frame: &mut Frame, area: Rect, state: &TracesState) {
         }
     } else if let Some(trace_details) = state.selected_trace_details() {
         format_trace_detail(trace_details, state)
+    } else if state.pending_detail_load.is_some() {
+        Text::from(vec![
+            Line::from(""),
+            Line::from(TextSpan::styled(
+                "  Loading trace details...",
+                Style::default().fg(Color::Yellow),
+            )),
+        ])
     } else if let Some(summary) = state.selected_trace() {
         format_trace_summary(summary)
     } else {

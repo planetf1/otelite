@@ -5,7 +5,7 @@ use ratatui::{
     layout::{Constraint, Direction, Layout, Rect},
     style::{Color, Modifier, Style},
     text::{Line, Span, Text},
-    widgets::{Block, Borders, Paragraph, Row, Table, Wrap},
+    widgets::{Block, Borders, Cell, Paragraph, Row, Table, Wrap},
     Frame,
 };
 
@@ -43,7 +43,8 @@ fn render_logs_table(frame: &mut Frame, area: Rect, state: &LogsState) {
         .iter()
         .enumerate()
         .map(|(idx, log)| {
-            let style = if idx == state.selected_index {
+            let is_selected = idx == state.selected_index;
+            let row_style = if is_selected {
                 Style::default()
                     .fg(Color::Black)
                     .bg(Color::Cyan)
@@ -52,14 +53,19 @@ fn render_logs_table(frame: &mut Frame, area: Rect, state: &LogsState) {
                 Style::default()
             };
 
-            let _severity_style = get_severity_style(&log.severity);
+            // Apply severity color only when not selected (selected row uses Cyan bg)
+            let severity_style = if is_selected {
+                Style::default().fg(Color::Black)
+            } else {
+                get_severity_style(&log.severity)
+            };
 
             Row::new(vec![
-                format_timestamp(log.timestamp),
-                log.severity.clone(),
-                truncate_string(&log.body, 80),
+                Cell::from(format_timestamp(log.timestamp)),
+                Cell::from(log.severity.clone()).style(severity_style),
+                Cell::from(truncate_string(&log.body, 80)),
             ])
-            .style(style)
+            .style(row_style)
             .height(1)
         })
         .collect();

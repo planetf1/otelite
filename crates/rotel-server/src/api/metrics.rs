@@ -570,8 +570,30 @@ pub async fn get_metric_timeseries(
     // Filter by name
     let metrics: Vec<_> = metrics.into_iter().filter(|m| m.name == name).collect();
 
-    // Return empty array if no data in the requested time window (not 404 — metric exists)
+    // If time-filtered query is empty, check if metric exists at all (without time filter)
     if metrics.is_empty() {
+        let all_params = QueryParams::default();
+        let all_metrics = state
+            .storage
+            .query_metrics(&all_params)
+            .await
+            .map_err(|e| {
+                (
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    Json(ErrorResponse::storage_error(format!(
+                        "check metric existence: {}",
+                        e
+                    ))),
+                )
+            })?;
+        let exists = all_metrics.iter().any(|m| m.name == name);
+        if !exists {
+            return Err((
+                StatusCode::NOT_FOUND,
+                Json(ErrorResponse::not_found(format!("Metric '{}'", name))),
+            ));
+        }
+        // Metric exists but no data in the requested time window — return empty
         return Ok(Json(vec![]));
     }
 

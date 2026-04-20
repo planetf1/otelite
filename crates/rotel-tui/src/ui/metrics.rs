@@ -5,7 +5,7 @@ use ratatui::{
     layout::{Constraint, Direction, Layout, Rect},
     style::{Color, Modifier, Style},
     text::{Line, Span},
-    widgets::{Block, Borders, Paragraph, Row, Sparkline, Table, Wrap},
+    widgets::{Block, Borders, Cell, Paragraph, Row, Sparkline, Table, Wrap},
     Frame,
 };
 
@@ -36,14 +36,17 @@ pub fn render_metrics_view(frame: &mut Frame, area: Rect, state: &MetricsState) 
 
 /// Render metrics table only
 fn render_metrics_table(frame: &mut Frame, area: Rect, state: &MetricsState) {
-    let filtered_metrics = state.filtered_metrics();
+    use crate::api::models::MetricValue;
 
-    // Create table rows
-    let rows: Vec<Row> = filtered_metrics
+    // Deduplicated list: one row per unique metric name
+    let unique_metrics = state.unique_filtered_metrics();
+
+    let rows: Vec<Row> = unique_metrics
         .iter()
         .enumerate()
-        .map(|(idx, metric)| {
-            let style = if idx == state.selected_index {
+        .map(|(idx, (metric, count))| {
+            let is_selected = idx == state.selected_index;
+            let style = if is_selected {
                 Style::default()
                     .fg(Color::Black)
                     .bg(Color::Cyan)
@@ -52,53 +55,60 @@ fn render_metrics_table(frame: &mut Frame, area: Rect, state: &MetricsState) {
                 Style::default()
             };
 
-            use crate::api::models::MetricValue;
-
             let latest_value = match &metric.value {
                 MetricValue::Gauge(v) => format!("{:.2}", v),
                 MetricValue::Counter(v) => format!("{}", v),
-                MetricValue::Histogram(h) => {
-                    format!("sum={:.2}, count={}", h.sum, h.count)
+                MetricValue::Histogram(h) if h.count > 0 => {
+                    format!("avg {:.1}", h.sum / h.count as f64)
                 },
-                MetricValue::Summary(s) => {
-                    format!("sum={:.2}, count={}", s.sum, s.count)
+                MetricValue::Histogram(h) => format!("count={}", h.count),
+                MetricValue::Summary(s) if s.count > 0 => {
+                    format!("avg {:.1}", s.sum / s.count as f64)
                 },
+                MetricValue::Summary(s) => format!("count={}", s.count),
             };
 
             let unit = metric.unit.as_deref().unwrap_or("");
-            let data_point_count = 1; // Single data point per metric now
+            let value_with_unit = if unit.is_empty() {
+                latest_value
+            } else {
+                format!("{} {}", latest_value, unit)
+            };
+
+            let type_color = if is_selected {
+                Color::Black
+            } else {
+                get_metric_type_color(&metric.metric_type)
+            };
+            let type_cell = Cell::from(metric.metric_type.clone())
+                .style(Style::default().fg(type_color).add_modifier(Modifier::BOLD));
 
             Row::new(vec![
-                truncate_string(&metric.name, 40),
-                metric.metric_type.clone(),
-                format!("{} {}", latest_value, unit),
-                data_point_count.to_string(),
-                metric.description.as_deref().unwrap_or("").to_string(),
+                Cell::from(truncate_string(&metric.name, 38)),
+                type_cell,
+                Cell::from(value_with_unit),
+                Cell::from(count.to_string()),
+                Cell::from(truncate_string(
+                    metric.description.as_deref().unwrap_or(""),
+                    40,
+                )),
             ])
             .style(style)
             .height(1)
         })
         .collect();
 
-    // Create table header
-    let header = Row::new(vec![
-        "Name",
-        "Type",
-        "Latest Value",
-        "Points",
-        "Description",
-    ])
-    .style(Style::default().add_modifier(Modifier::BOLD))
-    .bottom_margin(1);
+    let header = Row::new(vec!["Name", "Type", "Latest Value", "Pts", "Description"])
+        .style(Style::default().add_modifier(Modifier::BOLD))
+        .bottom_margin(1);
 
-    // Create table widget
     let table = Table::new(
         rows,
         [
             Constraint::Min(30),    // Name
-            Constraint::Length(12), // Type
-            Constraint::Length(15), // Latest Value
-            Constraint::Length(8),  // Points
+            Constraint::Length(10), // Type
+            Constraint::Length(16), // Latest Value
+            Constraint::Length(5),  // Points
             Constraint::Min(20),    // Description
         ],
     )
@@ -106,7 +116,7 @@ fn render_metrics_table(frame: &mut Frame, area: Rect, state: &MetricsState) {
     .block(
         Block::default()
             .borders(Borders::ALL)
-            .title(format!(" Metrics ({}) ", filtered_metrics.len())),
+            .title(format!(" Metrics ({}) ", unique_metrics.len())),
     )
     .row_highlight_style(
         Style::default()
@@ -402,6 +412,17 @@ fn render_status_bar(frame: &mut Frame, area: Rect, state: &MetricsState) {
     let status_line = Line::from(status_parts);
     let paragraph = Paragraph::new(status_line);
     frame.render_widget(paragraph, area);
+}
+
+/// Color coding for metric types
+fn get_metric_type_color(metric_type: &str) -> Color {
+    match metric_type.to_lowercase().as_str() {
+        "counter" => Color::Green,
+        "gauge" => Color::Blue,
+        "histogram" => Color::Magenta,
+        "summary" => Color::Yellow,
+        _ => Color::White,
+    }
 }
 
 /// Truncate string to max length with ellipsis

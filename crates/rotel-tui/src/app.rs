@@ -144,10 +144,9 @@ impl App {
                     // In trace detail view, show span detail
                     self.traces_state.toggle_span_detail();
                 } else {
-                    // In trace list view, show trace detail
+                    // In trace list view, show trace detail (triggers API load via pending_detail_load)
                     self.traces_state.show_detail_panel();
                     self.traces_state.reset_span_selection();
-                    // TODO: Load full trace details from API
                 }
             },
             // Metrics view events
@@ -202,6 +201,20 @@ impl App {
 
     /// Refresh data from API if needed
     pub async fn refresh_if_needed(&mut self) -> Result<()> {
+        // Handle pending trace detail load immediately (don't wait for refresh interval)
+        if let Some(trace_id) = self.traces_state.pending_detail_load.take() {
+            match self.api_client.get_trace(&trace_id).await {
+                Ok(trace) => {
+                    self.traces_state.set_trace_details(trace);
+                    self.traces_state.clear_error();
+                },
+                Err(e) => {
+                    self.traces_state
+                        .set_error(format!("Failed to load trace: {}", e));
+                },
+            }
+        }
+
         let elapsed = self.last_refresh.elapsed();
         if elapsed >= self.config.refresh_interval {
             self.refresh_data().await?;

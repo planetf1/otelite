@@ -108,6 +108,28 @@ impl MetricsState {
         self.update_tracker.should_update()
     }
 
+    /// Get deduplicated metrics: one entry per unique name (latest value + count of data points).
+    /// This is what the TUI list should display — not raw individual data points.
+    pub fn unique_filtered_metrics(&self) -> Vec<(&Metric, usize)> {
+        // Apply search/filter first to get candidates
+        let candidates = self.filtered_metrics();
+
+        // Group by name, keep latest timestamp, count occurrences
+        let mut by_name: std::collections::HashMap<&str, (&Metric, usize)> =
+            std::collections::HashMap::new();
+        for metric in candidates {
+            let entry = by_name.entry(metric.name.as_str()).or_insert((metric, 0));
+            entry.1 += 1;
+            if metric.timestamp > entry.0.timestamp {
+                entry.0 = metric;
+            }
+        }
+
+        let mut result: Vec<(&Metric, usize)> = by_name.into_values().collect();
+        result.sort_by(|a, b| a.0.name.cmp(&b.0.name));
+        result
+    }
+
     /// Get filtered metrics based on search query and filters
     pub fn filtered_metrics(&self) -> Vec<&Metric> {
         self.metrics
@@ -155,10 +177,10 @@ impl MetricsState {
             .collect()
     }
 
-    /// Get currently selected metric
+    /// Get currently selected metric (from deduplicated list)
     pub fn selected_metric(&self) -> Option<&Metric> {
-        let filtered = self.filtered_metrics();
-        filtered.get(self.selected_index).copied()
+        let unique = self.unique_filtered_metrics();
+        unique.get(self.selected_index).map(|(m, _)| *m)
     }
 
     /// Move selection up
@@ -170,8 +192,8 @@ impl MetricsState {
 
     /// Move selection down
     pub fn select_next(&mut self) {
-        let filtered_count = self.filtered_metrics().len();
-        if filtered_count > 0 && self.selected_index < filtered_count - 1 {
+        let count = self.unique_filtered_metrics().len();
+        if count > 0 && self.selected_index < count - 1 {
             self.selected_index += 1;
         }
     }

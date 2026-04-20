@@ -21,6 +21,8 @@ pub struct TracesState {
     trace_details: HashMap<String, ResponseCache<Trace>>,
     /// Whether detail panel is shown
     pub show_detail: bool,
+    /// Trace ID that needs full details fetched from API (None when not needed)
+    pub pending_detail_load: Option<String>,
     /// Selected span index within the trace detail view
     pub selected_span_index: usize,
     /// Scroll offset for span list in detail view
@@ -46,6 +48,7 @@ impl Default for TracesState {
             selected_index: 0,
             trace_details: HashMap::new(),
             show_detail: false,
+            pending_detail_load: None,
             selected_span_index: 0,
             span_scroll_offset: 0,
             show_span_detail: false,
@@ -194,9 +197,15 @@ impl TracesState {
         self.show_detail = !self.show_detail;
     }
 
-    /// Show detail panel
+    /// Show detail panel and trigger API load if details not cached
     pub fn show_detail_panel(&mut self) {
         self.show_detail = true;
+        // If we don't have cached details, request a load
+        if let Some(summary) = self.selected_trace() {
+            if !self.has_cached_trace(&summary.trace_id) {
+                self.pending_detail_load = Some(summary.trace_id.clone());
+            }
+        }
     }
 
     /// Hide detail panel
