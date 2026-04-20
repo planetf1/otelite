@@ -17,28 +17,23 @@ use rotel_receiver::signals::{LogsHandler, MetricsHandler, TracesHandler};
 use rotel_storage::{sqlite::SqliteBackend, QueryParams, StorageBackend, StorageConfig};
 use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
+use tempfile::TempDir;
 
-async fn create_test_storage() -> Arc<SqliteBackend> {
-    // Use in-memory database with unique name for test isolation
-    let unique_id = std::time::SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .unwrap()
-        .as_nanos();
-    let db_path = format!(":memory:?cache=shared&mode=memory&name=test_{}", unique_id);
-
-    let config = StorageConfig::default().with_data_dir(db_path.into());
+async fn create_test_storage() -> (Arc<SqliteBackend>, TempDir) {
+    let temp_dir = TempDir::new().unwrap();
+    let config = StorageConfig::default().with_data_dir(temp_dir.path().to_path_buf());
     let mut storage = SqliteBackend::new(config);
     storage
         .initialize()
         .await
         .expect("Failed to initialize storage");
-    Arc::new(storage)
+    (Arc::new(storage), temp_dir)
 }
 
 #[tokio::test]
 async fn test_logs_pipeline_roundtrip() {
     // Create storage and handler
-    let storage = create_test_storage().await;
+    let (storage, _temp_dir) = create_test_storage().await;
     let handler = Arc::new(LogsHandler::new(storage.clone() as Arc<dyn StorageBackend>));
 
     // Create request with known data
@@ -94,7 +89,7 @@ async fn test_logs_pipeline_roundtrip() {
 #[tokio::test]
 async fn test_traces_pipeline_roundtrip() {
     // Create storage and handler
-    let storage = create_test_storage().await;
+    let (storage, _temp_dir) = create_test_storage().await;
     let handler = Arc::new(TracesHandler::new(
         storage.clone() as Arc<dyn StorageBackend>
     ));
@@ -157,7 +152,7 @@ async fn test_traces_pipeline_roundtrip() {
 #[tokio::test]
 async fn test_metrics_pipeline_roundtrip() {
     // Create storage and handler
-    let storage = create_test_storage().await;
+    let (storage, _temp_dir) = create_test_storage().await;
     let handler = Arc::new(MetricsHandler::new(
         storage.clone() as Arc<dyn StorageBackend>
     ));
@@ -226,7 +221,7 @@ async fn test_metrics_pipeline_roundtrip() {
 
 #[tokio::test]
 async fn test_empty_logs_request() {
-    let storage = create_test_storage().await;
+    let (storage, _temp_dir) = create_test_storage().await;
     let handler = Arc::new(LogsHandler::new(storage.clone() as Arc<dyn StorageBackend>));
 
     let request = ExportLogsServiceRequest {
@@ -249,7 +244,7 @@ async fn test_empty_logs_request() {
 
 #[tokio::test]
 async fn test_empty_traces_request() {
-    let storage = create_test_storage().await;
+    let (storage, _temp_dir) = create_test_storage().await;
     let handler = Arc::new(TracesHandler::new(
         storage.clone() as Arc<dyn StorageBackend>
     ));
@@ -274,7 +269,7 @@ async fn test_empty_traces_request() {
 
 #[tokio::test]
 async fn test_empty_metrics_request() {
-    let storage = create_test_storage().await;
+    let (storage, _temp_dir) = create_test_storage().await;
     let handler = Arc::new(MetricsHandler::new(
         storage.clone() as Arc<dyn StorageBackend>
     ));
@@ -302,7 +297,7 @@ async fn test_empty_metrics_request() {
 
 #[tokio::test]
 async fn test_large_logs_batch() {
-    let storage = create_test_storage().await;
+    let (storage, _temp_dir) = create_test_storage().await;
     let handler = Arc::new(LogsHandler::new(storage.clone() as Arc<dyn StorageBackend>));
 
     // Create and process 100 log requests
@@ -319,7 +314,7 @@ async fn test_large_logs_batch() {
 
 #[tokio::test]
 async fn test_large_traces_batch() {
-    let storage = create_test_storage().await;
+    let (storage, _temp_dir) = create_test_storage().await;
     let handler = Arc::new(TracesHandler::new(
         storage.clone() as Arc<dyn StorageBackend>
     ));
@@ -338,7 +333,7 @@ async fn test_large_traces_batch() {
 
 #[tokio::test]
 async fn test_large_metrics_batch() {
-    let storage = create_test_storage().await;
+    let (storage, _temp_dir) = create_test_storage().await;
     let handler = Arc::new(MetricsHandler::new(
         storage.clone() as Arc<dyn StorageBackend>
     ));
@@ -360,7 +355,7 @@ async fn test_large_metrics_batch() {
 
 #[tokio::test]
 async fn test_logs_with_custom_attributes() {
-    let storage = create_test_storage().await;
+    let (storage, _temp_dir) = create_test_storage().await;
     let handler = Arc::new(LogsHandler::new(storage.clone() as Arc<dyn StorageBackend>));
 
     // Create a log with multiple custom attributes
