@@ -48,6 +48,7 @@ class TracesView {
 
             <div class="traces-container">
                 <div id="traces-list" class="traces-list"></div>
+                <div id="traces-h-handle" class="layout-drag-handle-v"></div>
                 <div id="trace-detail" class="trace-detail">
                     <div class="empty-state" style="height:100%; display:flex; align-items:center; justify-content:center; color:var(--text-secondary);">
                         Select a trace to view details
@@ -77,6 +78,32 @@ class TracesView {
         document.getElementById('clear-trace-filters').addEventListener('click', () => this.clearFilters());
         document.getElementById('prev-trace-page').addEventListener('click', () => this.previousPage());
         document.getElementById('next-trace-page').addEventListener('click', () => this.nextPage());
+        this.attachHorizontalDragResize(
+            document.getElementById('traces-list'),
+            document.getElementById('traces-h-handle')
+        );
+    }
+
+    attachHorizontalDragResize(leftPanel, handle) {
+        if (!leftPanel || !handle) return;
+        let startX, startW;
+        handle.addEventListener('mousedown', e => {
+            startX = e.clientX;
+            startW = leftPanel.offsetWidth;
+            handle.classList.add('dragging');
+            const onMove = e => {
+                const newW = Math.max(180, Math.min(600, startW + (e.clientX - startX)));
+                leftPanel.style.width = newW + 'px';
+            };
+            const onUp = () => {
+                handle.classList.remove('dragging');
+                document.removeEventListener('mousemove', onMove);
+                document.removeEventListener('mouseup', onUp);
+            };
+            document.addEventListener('mousemove', onMove);
+            document.addEventListener('mouseup', onUp);
+            e.preventDefault();
+        });
     }
 
     /**

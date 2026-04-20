@@ -231,11 +231,24 @@ body {
 
 /* Metrics Layout */
 .metrics-layout {
-    display: grid;
-    grid-template-columns: 240px 1fr;
-    gap: 1rem;
+    display: flex;
+    flex-direction: row;
     height: calc(100% - 60px);
     overflow: hidden;
+}
+
+.layout-drag-handle-v {
+    flex-shrink: 0;
+    width: 6px;
+    cursor: ew-resize;
+    background-color: var(--bg-tertiary);
+    transition: background-color 0.1s;
+    margin: 0 2px;
+}
+
+.layout-drag-handle-v:hover,
+.layout-drag-handle-v.dragging {
+    background-color: var(--accent-color);
 }
 
 .metrics-list {
@@ -399,6 +412,8 @@ body {
 
 /* Metrics sidebar/detail redesign */
 .metrics-sidebar {
+    width: 240px;
+    flex-shrink: 0;
     overflow-y: auto;
     background-color: var(--bg-secondary);
     border: 1px solid var(--border-color);
@@ -458,6 +473,8 @@ body {
 }
 
 .metrics-detail {
+    flex: 1;
+    min-width: 0;
     overflow-y: auto;
     background-color: var(--bg-secondary);
     border: 1px solid var(--border-color);
@@ -1034,15 +1051,16 @@ body {
 
 /* Trace-specific styles */
 .traces-container {
-    display: grid;
-    grid-template-columns: 340px 1fr;
-    gap: 1rem;
+    display: flex;
+    flex-direction: row;
     flex: 1;
     overflow: hidden;
     min-height: 0;
 }
 
 .traces-list {
+    width: 340px;
+    flex-shrink: 0;
     overflow-y: auto;
     background-color: var(--bg-secondary);
     border: 1px solid var(--border-color);
@@ -1135,6 +1153,8 @@ body {
 }
 
 .trace-detail {
+    flex: 1;
+    min-width: 0;
     display: flex;
     flex-direction: column;
     background-color: var(--bg-secondary);
@@ -1553,8 +1573,17 @@ body {
 /* Responsive design for traces */
 @media (max-width: 900px) {
     .traces-container {
-        grid-template-columns: 1fr;
-        grid-template-rows: 280px 1fr;
+        flex-direction: column;
+    }
+
+    .traces-list {
+        width: 100% !important;
+        height: 280px;
+        flex-shrink: 0;
+    }
+
+    #traces-h-handle {
+        display: none;
     }
 
     .span-info {
@@ -1562,7 +1591,6 @@ body {
     }
 
     .span-detail-panel {
-        grid-template-columns: 1fr 1fr;
         height: 240px;
     }
 }

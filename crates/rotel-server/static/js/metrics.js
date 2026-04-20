@@ -29,6 +29,7 @@ class MetricsView {
                 <div class="metrics-sidebar" id="metrics-sidebar">
                     <div class="empty-state">Loading...</div>
                 </div>
+                <div id="metrics-h-handle" class="layout-drag-handle-v"></div>
                 <div class="metrics-detail" id="metrics-detail">
                     <div class="empty-state">Select a metric to view</div>
                 </div>
@@ -565,6 +566,32 @@ class MetricsView {
         });
         document.getElementById('auto-refresh-metrics').addEventListener('change', (e) => {
             e.target.checked ? this.startAutoRefresh() : this.stopAutoRefresh();
+        });
+        this.attachHorizontalDragResize(
+            document.getElementById('metrics-sidebar'),
+            document.getElementById('metrics-h-handle')
+        );
+    }
+
+    attachHorizontalDragResize(leftPanel, handle) {
+        if (!leftPanel || !handle) return;
+        let startX, startW;
+        handle.addEventListener('mousedown', e => {
+            startX = e.clientX;
+            startW = leftPanel.offsetWidth;
+            handle.classList.add('dragging');
+            const onMove = e => {
+                const newW = Math.max(160, Math.min(500, startW + (e.clientX - startX)));
+                leftPanel.style.width = newW + 'px';
+            };
+            const onUp = () => {
+                handle.classList.remove('dragging');
+                document.removeEventListener('mousemove', onMove);
+                document.removeEventListener('mouseup', onUp);
+            };
+            document.addEventListener('mousemove', onMove);
+            document.addEventListener('mouseup', onUp);
+            e.preventDefault();
         });
     }
 
