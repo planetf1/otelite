@@ -535,5 +535,3 @@ pub async fn export_metrics(
 
     Ok((StatusCode::OK, [("Content-Type", "application/json")], json))
 }
-
-// Made with Bob

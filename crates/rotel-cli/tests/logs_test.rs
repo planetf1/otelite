@@ -464,5 +464,3 @@ async fn test_severity_filtering_integration() {
     assert!(!logs.iter().any(|l| l.severity == "INFO"));
     assert!(!logs.iter().any(|l| l.severity == "DEBUG"));
 }
-
-// Made with Bob

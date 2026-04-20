@@ -362,5 +362,3 @@ async fn test_empty_json_array_is_valid() {
     assert!(parsed.is_array());
     assert_eq!(parsed.as_array().unwrap().len(), 0);
 }
-
-// Made with Bob

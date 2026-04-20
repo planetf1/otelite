@@ -174,5 +174,3 @@ mod tests {
         assert_eq!(SeverityLevel::Error.as_str(), "ERROR");
     }
 }
-
-// Made with Bob

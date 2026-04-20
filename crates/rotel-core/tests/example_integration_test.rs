@@ -16,5 +16,3 @@ fn test_component_interaction() {
     let result = 2 + 2;
     assert_eq!(result, 4, "Basic arithmetic should work");
 }
-
-// Made with Bob

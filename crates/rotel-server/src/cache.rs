@@ -187,5 +187,3 @@ mod tests {
         assert_eq!(cache.len(), 0);
     }
 }
-
-// Made with Bob

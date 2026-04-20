@@ -212,5 +212,3 @@ mod tests {
         assert_eq!(debug_str, "Quit");
     }
 }
-
-// Made with Bob

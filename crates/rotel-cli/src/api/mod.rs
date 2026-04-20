@@ -8,5 +8,3 @@ pub use models::{
     LogEntry, LogsResponse, MetricResponse, MetricValue, SpanEntry, TraceDetail, TraceEntry,
     TracesResponse,
 };
-
-// Made with Bob

@@ -475,5 +475,3 @@ async fn test_logs_severity_filter() {
         );
     }
 }
-
-// Made with Bob

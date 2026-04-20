@@ -13,5 +13,3 @@ pub use log::LogRecord;
 pub use metric::Metric;
 pub use resource::Resource;
 pub use trace::{Span, Trace};
-
-// Made with Bob

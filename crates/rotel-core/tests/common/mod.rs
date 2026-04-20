@@ -94,5 +94,3 @@ mod tests {
         assert_err(result);
     }
 }
-
-// Made with Bob

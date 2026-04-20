@@ -30,5 +30,3 @@ pub async fn health_check() -> Result<Json<HealthResponse>, StatusCode> {
 
     Ok(Json(response))
 }
-
-// Made with Bob

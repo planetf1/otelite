@@ -830,5 +830,3 @@ mod tests {
         print_metric_details(&metric, true);
     }
 }
-
-// Made with Bob

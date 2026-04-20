@@ -7,5 +7,3 @@ pub use help::render_help_view;
 pub use logs::render_logs_view;
 pub use metrics::render_metrics_view;
 pub use traces::render_traces_view;
-
-// Made with Bob

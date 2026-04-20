@@ -264,5 +264,3 @@ async fn test_server_graceful_shutdown_under_load() {
     // Verify health checker reflects shutdown
     assert!(!server.health_checker().is_ready());
 }
-
-// Made with Bob

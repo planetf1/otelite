@@ -15,5 +15,3 @@ pub use pretty::{
     print_log_details, print_logs_table, print_metric_details, print_metrics_table,
     print_trace_tree, print_traces_table,
 };
-
-// Made with Bob

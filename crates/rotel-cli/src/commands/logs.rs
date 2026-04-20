@@ -312,5 +312,3 @@ mod tests {
         ]
     }
 }
-
-// Made with Bob

@@ -225,5 +225,3 @@ mod tests {
         assert_eq!(count, 3); // insert, delete, update triggers
     }
 }
-
-// Made with Bob

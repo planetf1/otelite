@@ -147,5 +147,3 @@ mod tests {
         assert!(formatted.contains(":"));
     }
 }
-
-// Made with Bob

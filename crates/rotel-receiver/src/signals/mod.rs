@@ -13,5 +13,3 @@ pub trait SignalHandler {
     /// Process incoming signal data
     fn process(&self, data: &[u8]) -> crate::Result<()>;
 }
-
-// Made with Bob

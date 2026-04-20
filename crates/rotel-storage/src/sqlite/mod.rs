@@ -297,5 +297,3 @@ mod tests {
         assert!(stats.storage_size_bytes > 0);
     }
 }
-
-// Made with Bob

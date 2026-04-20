@@ -61,5 +61,3 @@ impl DashboardConfig {
         self
     }
 }
-
-// Made with Bob

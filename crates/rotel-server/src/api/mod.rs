@@ -6,5 +6,3 @@ pub mod metrics;
 pub mod traces;
 
 pub use health::health_check;
-
-// Made with Bob

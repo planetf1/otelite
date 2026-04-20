@@ -68,5 +68,3 @@ fn get_static_file(path: &str) -> Option<(&'static [u8], &'static str)> {
         _ => None,
     }
 }
-
-// Made with Bob

@@ -115,5 +115,3 @@ impl DashboardServer {
         Ok(())
     }
 }
-
-// Made with Bob

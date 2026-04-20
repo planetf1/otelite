@@ -98,5 +98,3 @@ mod tests {
         assert_eq!(config.max_message_size, 5 * 1024 * 1024);
     }
 }
-
-// Made with Bob

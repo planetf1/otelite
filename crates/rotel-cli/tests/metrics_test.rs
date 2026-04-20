@@ -502,5 +502,3 @@ async fn test_metrics_json_output_format() {
     mock.assert_async().await;
     assert!(result.is_ok());
 }
-
-// Made with Bob

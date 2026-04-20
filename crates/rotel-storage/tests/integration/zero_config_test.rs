@@ -201,5 +201,3 @@ fn create_test_metric() -> Metric {
         }),
     }
 }
-
-// Made with Bob

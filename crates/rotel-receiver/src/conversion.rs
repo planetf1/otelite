@@ -1412,5 +1412,3 @@ mod tests {
         assert_eq!(metrics[0].metric_type, MetricType::Gauge(0.0));
     }
 }
-
-// Made with Bob

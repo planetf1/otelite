@@ -170,5 +170,3 @@ mod tests {
         assert_eq!(err.to_http_status(), 413);
     }
 }
-
-// Made with Bob

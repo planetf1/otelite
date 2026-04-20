@@ -27,5 +27,3 @@ impl Default for Config {
         }
     }
 }
-
-// Made with Bob

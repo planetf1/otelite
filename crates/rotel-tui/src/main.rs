@@ -46,5 +46,3 @@ async fn main() -> Result<()> {
 
     Ok(())
 }
-
-// Made with Bob

@@ -235,5 +235,3 @@ async fn test_http_protobuf_encoding_decoding() {
     assert!(logs_result.is_ok());
     assert!(traces_result.is_ok());
 }
-
-// Made with Bob

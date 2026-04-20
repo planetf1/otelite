@@ -222,5 +222,3 @@ mod tests {
         assert_eq!(count, 1);
     }
 }
-
-// Made with Bob

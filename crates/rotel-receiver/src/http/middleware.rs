@@ -104,5 +104,3 @@ mod tests {
         // This test ensures the module compiles correctly
     }
 }
-
-// Made with Bob

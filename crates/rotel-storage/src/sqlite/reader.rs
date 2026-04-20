@@ -343,5 +343,3 @@ mod tests {
         assert_eq!(stats.metric_count, 0);
     }
 }
-
-// Made with Bob

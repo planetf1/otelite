@@ -151,5 +151,3 @@ mod tests {
         assert!(!config.auto_purge_enabled);
     }
 }
-
-// Made with Bob

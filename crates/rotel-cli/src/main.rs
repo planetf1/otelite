@@ -566,5 +566,3 @@ async fn handle_metrics_command(command: MetricsCommands, config: &Config) -> Re
 
     Ok(())
 }
-
-// Made with Bob

@@ -595,5 +595,3 @@ async fn test_fts5_combined_filters() {
 
     backend.close().await.unwrap();
 }
-
-// Made with Bob

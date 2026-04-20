@@ -110,5 +110,3 @@ mod tests {
         assert!(matches!(error, ReceiverError::ProtobufParseError(_)));
     }
 }
-
-// Made with Bob

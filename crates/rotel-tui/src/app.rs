@@ -515,5 +515,3 @@ mod tests {
         assert_eq!(app.should_quit(), initial_quit);
     }
 }
-
-// Made with Bob

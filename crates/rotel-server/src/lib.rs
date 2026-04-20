@@ -15,5 +15,3 @@ pub use server::DashboardServer;
 
 /// Dashboard version
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");
-
-// Made with Bob

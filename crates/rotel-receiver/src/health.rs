@@ -113,5 +113,3 @@ mod tests {
         assert_eq!(checker.status(), HealthStatus::Unhealthy);
     }
 }
-
-// Made with Bob

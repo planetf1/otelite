@@ -323,5 +323,3 @@ mod tests {
         assert!(state.auto_scroll);
     }
 }
-
-// Made with Bob

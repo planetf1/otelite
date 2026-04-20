@@ -332,5 +332,3 @@ mod tests {
         assert!(validate_content_type(&headers, "application/x-protobuf").is_err());
     }
 }
-
-// Made with Bob

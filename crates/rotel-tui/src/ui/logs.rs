@@ -319,5 +319,3 @@ mod tests {
         assert!(truncated.ends_with("..."));
     }
 }
-
-// Made with Bob

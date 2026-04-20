@@ -141,5 +141,3 @@ mod tests {
         assert_ne!(SignalType::Logs, SignalType::Traces);
     }
 }
-
-// Made with Bob

@@ -96,5 +96,3 @@ mod tests {
         assert!(response.is_ok());
     }
 }
-
-// Made with Bob

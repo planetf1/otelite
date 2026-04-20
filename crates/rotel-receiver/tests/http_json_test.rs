@@ -251,5 +251,3 @@ async fn test_http_json_concurrent_requests() {
         assert_eq!(response.status(), StatusCode::OK);
     }
 }
-
-// Made with Bob

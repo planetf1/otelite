@@ -580,5 +580,3 @@ mod tests {
         assert_eq!(parsed[2].name, "cpu_usage_percent");
     }
 }
-
-// Made with Bob

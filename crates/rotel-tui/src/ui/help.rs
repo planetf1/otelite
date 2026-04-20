@@ -171,5 +171,3 @@ fn create_help_text() -> Text<'static> {
 
     Text::from(lines)
 }
-
-// Made with Bob

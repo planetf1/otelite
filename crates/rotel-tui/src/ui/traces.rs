@@ -927,5 +927,3 @@ mod tests {
         assert_eq!(nodes[0].duration_percent, 50.0);
     }
 }
-
-// Made with Bob

@@ -83,5 +83,3 @@ impl Default for TracesQuery {
         }
     }
 }
-
-// Made with Bob

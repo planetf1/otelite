@@ -123,5 +123,3 @@ mod tests {
         assert!(config.no_header);
     }
 }
-
-// Made with Bob

@@ -146,5 +146,3 @@ async fn test_multiple_traces_requests() {
         );
     }
 }
-
-// Made with Bob

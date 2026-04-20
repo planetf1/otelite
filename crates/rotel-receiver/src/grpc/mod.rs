@@ -9,5 +9,3 @@ pub mod server;
 pub mod traces;
 
 pub use server::GrpcServer;
-
-// Made with Bob

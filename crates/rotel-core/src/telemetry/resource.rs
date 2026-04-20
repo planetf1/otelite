@@ -90,5 +90,3 @@ mod tests {
         assert_eq!(resource.get_attribute("nonexistent"), None);
     }
 }
-
-// Made with Bob

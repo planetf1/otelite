@@ -346,5 +346,3 @@ async fn test_traces_list_pretty_output() {
     mock.assert_async().await;
     assert!(result.is_ok());
 }
-
-// Made with Bob

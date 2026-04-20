@@ -111,5 +111,3 @@ mod tests {
         assert!(validate_required_field(None::<&str>, "field").is_err());
     }
 }
-
-// Made with Bob

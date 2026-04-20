@@ -68,5 +68,3 @@ mod tests {
         assert!(handler.process(request).await.is_ok());
     }
 }
-
-// Made with Bob

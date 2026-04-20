@@ -277,5 +277,3 @@ pub async fn export_traces(
         )),
     }
 }
-
-// Made with Bob

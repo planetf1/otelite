@@ -110,5 +110,3 @@ mod tests {
         assert!(!err.is_disk_full());
     }
 }
-
-// Made with Bob

@@ -169,5 +169,3 @@ mod tests {
         assert_eq!(server.request_semaphore().available_permits(), 1000);
     }
 }
-
-// Made with Bob

@@ -29,5 +29,3 @@ fn test_error_handling_workflow() {
     let error_handled = true;
     assert!(error_handled, "System should handle errors gracefully");
 }
-
-// Made with Bob

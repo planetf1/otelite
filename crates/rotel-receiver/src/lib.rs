@@ -27,5 +27,3 @@ mod tests {
         let _config = ReceiverConfig::default();
     }
 }
-
-// Made with Bob

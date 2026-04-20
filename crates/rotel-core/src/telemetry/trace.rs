@@ -274,5 +274,3 @@ mod tests {
         assert_eq!(trace.trace_id, "trace123");
     }
 }
-
-// Made with Bob

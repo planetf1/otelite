@@ -157,5 +157,3 @@ mod tests {
         assert!(msg.contains("Verify the ID is correct"));
     }
 }
-
-// Made with Bob

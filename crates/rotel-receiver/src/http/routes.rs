@@ -75,5 +75,3 @@ mod tests {
         // Router created successfully - test passes if no panic
     }
 }
-
-// Made with Bob

@@ -315,5 +315,3 @@ mod tests {
         assert_eq!(filtered.len(), 2);
     }
 }
-
-// Made with Bob

@@ -18,5 +18,3 @@ mod tests {
         // Test passes if module compiles without errors
     }
 }
-
-// Made with Bob

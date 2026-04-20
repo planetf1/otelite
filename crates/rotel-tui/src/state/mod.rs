@@ -177,5 +177,3 @@ impl<T> Default for PaginatedList<T> {
         Self::new(MAX_ITEMS_IN_MEMORY)
     }
 }
-
-// Made with Bob

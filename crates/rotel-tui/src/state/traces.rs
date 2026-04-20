@@ -371,5 +371,3 @@ mod tests {
         assert!(filtered[0].has_errors);
     }
 }
-
-// Made with Bob

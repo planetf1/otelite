@@ -20,5 +20,3 @@ pub mod ui;
 pub use app::{App, View};
 pub use config::Config;
 pub use events::{poll_event, AppEvent};
-
-// Made with Bob

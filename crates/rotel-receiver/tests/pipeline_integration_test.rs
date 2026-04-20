@@ -436,5 +436,3 @@ async fn test_logs_with_custom_attributes() {
     assert_eq!(log.attributes.get("error.code"), Some(&"500".to_string()));
     assert_eq!(log.attributes.get("user.id"), Some(&"user123".to_string()));
 }
-
-// Made with Bob

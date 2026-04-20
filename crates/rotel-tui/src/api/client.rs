@@ -161,5 +161,3 @@ impl ApiClient {
         }
     }
 }
-
-// Made with Bob

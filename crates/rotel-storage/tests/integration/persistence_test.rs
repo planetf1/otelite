@@ -346,5 +346,3 @@ fn create_test_metric(name: &str, value: f64) -> Metric {
         }),
     }
 }
-
-// Made with Bob

@@ -279,5 +279,3 @@ fn matches_resource_filter(log: &LogRecord, filter: &str) -> bool {
     }
     false
 }
-
-// Made with Bob
