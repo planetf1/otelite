@@ -4,7 +4,7 @@ use ratatui::{
     layout::{Constraint, Direction, Layout, Rect},
     style::{Color, Modifier, Style},
     text::{Line, Span},
-    widgets::{Block, Borders, Paragraph, Row, Table, Wrap},
+    widgets::{Block, Borders, Paragraph, Row, Sparkline, Table, Wrap},
     Frame,
 };
 
@@ -146,7 +146,7 @@ fn render_detail_panel(frame: &mut Frame, area: Rect, state: &MetricsState) {
         render_metric_info(frame, chunks[0], metric);
 
         // Render sparkline chart
-        render_metric_chart(frame, chunks[1], metric);
+        render_metric_chart(frame, chunks[1], metric, state);
     } else {
         let paragraph = Paragraph::new("No metric selected").block(
             Block::default()
@@ -208,10 +208,101 @@ fn render_metric_info(frame: &mut Frame, area: Rect, metric: &Metric) {
 }
 
 /// Render metric chart (sparkline)
-fn render_metric_chart(frame: &mut Frame, area: Rect, metric: &Metric) {
+fn render_metric_chart(frame: &mut Frame, area: Rect, metric: &Metric, state: &MetricsState) {
     use crate::api::models::MetricValue;
 
-    // For single-value metrics, show a simple display instead of sparkline
+    // Get metric history for sparkline
+    if let Some(history) = state.get_metric_history(&metric.name) {
+        if history.len() > 1 {
+            // Split area for sparkline and stats
+            let chunks = Layout::default()
+                .direction(Direction::Vertical)
+                .constraints([
+                    Constraint::Min(3),    // Sparkline
+                    Constraint::Length(3), // Stats
+                ])
+                .split(area);
+
+            // Calculate min, max, current
+            let min = history.iter().copied().fold(f64::INFINITY, f64::min);
+            let max = history.iter().copied().fold(f64::NEG_INFINITY, f64::max);
+            let current = history.last().copied().unwrap_or(0.0);
+
+            // Determine trend and color
+            let (trend_color, trend_indicator) = if history.len() >= 2 {
+                let prev = history[history.len() - 2];
+                let change = current - prev;
+                let change_pct = if prev != 0.0 {
+                    (change / prev) * 100.0
+                } else {
+                    0.0
+                };
+
+                // Color logic based on metric type and trend
+                let color = match &metric.metric_type.to_lowercase().as_str() {
+                    &"counter" if metric.name.contains("error") || metric.name.contains("fail") => {
+                        if current > 0.0 {
+                            Color::Red
+                        } else {
+                            Color::Green
+                        }
+                    },
+                    _ => {
+                        if change_pct.abs() < 1.0 {
+                            Color::Green // Stable
+                        } else if change > 0.0 {
+                            Color::Yellow // Increasing
+                        } else {
+                            Color::Cyan // Decreasing
+                        }
+                    },
+                };
+
+                let indicator = if change > 0.0 {
+                    "↑"
+                } else if change < 0.0 {
+                    "↓"
+                } else {
+                    "→"
+                };
+                (color, indicator)
+            } else {
+                (Color::Green, "→")
+            };
+
+            // Convert f64 history to u64 for Sparkline widget
+            let sparkline_data: Vec<u64> = history.iter().map(|&v| v.max(0.0) as u64).collect();
+            let max_u64 = max.max(0.0) as u64;
+
+            // Render sparkline
+            let sparkline = Sparkline::default()
+                .block(
+                    Block::default()
+                        .borders(Borders::ALL)
+                        .title(format!(" Trend (last {} points) ", history.len())),
+                )
+                .data(&sparkline_data)
+                .style(Style::default().fg(trend_color))
+                .max(max_u64)
+                .direction(ratatui::widgets::RenderDirection::LeftToRight);
+
+            frame.render_widget(sparkline, chunks[0]);
+
+            // Render stats
+            let stats_text = format!(
+                "Min: {:.2}  Max: {:.2}  Current: {:.2} {}",
+                min, max, current, trend_indicator
+            );
+            let stats = Paragraph::new(stats_text)
+                .style(Style::default().fg(trend_color))
+                .block(Block::default().borders(Borders::ALL).title(" Stats "));
+
+            frame.render_widget(stats, chunks[1]);
+            return;
+        }
+    }
+
+    // Fallback: show current value only (no history yet)
     let display_text = match &metric.value {
         MetricValue::Gauge(v) => format!("Current: {:.2}", v),
         MetricValue::Counter(v) => format!("Total: {}", v),
@@ -233,7 +324,15 @@ fn render_metric_chart(frame: &mut Frame, area: Rect, metric: &Metric) {
         },
     };
 
-    let paragraph = Paragraph::new(display_text).block(
+    let paragraph = Paragraph::new(vec![
+        Line::from(display_text),
+        Line::from(""),
+        Line::from(Span::styled(
+            "Waiting for more data points...",
+            Style::default().fg(Color::DarkGray),
+        )),
+    ])
+    .block(
         Block::default()
             .borders(Borders::ALL)
             .title(" Current Value "),

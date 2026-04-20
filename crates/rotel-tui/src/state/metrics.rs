@@ -1,7 +1,7 @@
 // Metrics state implementation - waiting for UI integration
 #![allow(dead_code)]
 
-use crate::api::models::Metric;
+use crate::api::models::{Metric, MetricValue};
 use std::collections::HashMap;
 
 use super::{
@@ -27,6 +27,9 @@ pub struct MetricsState {
     pub error: Option<String>,
     /// Update tracker for debouncing
     update_tracker: UpdateTracker,
+    /// Metric history for sparkline charts (metric_name -> recent values)
+    /// Stores last 60 data points (1 minute at 1s refresh)
+    metric_history: HashMap<String, Vec<f64>>,
 }
 
 impl Default for MetricsState {
@@ -40,6 +43,7 @@ impl Default for MetricsState {
             scroll_offset: 0,
             error: None,
             update_tracker: UpdateTracker::new(MIN_REFRESH_INTERVAL),
+            metric_history: HashMap::new(),
         }
     }
 }
@@ -57,6 +61,19 @@ impl MetricsState {
             return;
         }
 
+        // Update metric history before replacing metrics
+        for metric in &new_metrics {
+            if let Some(value) = Self::extract_numeric_value(&metric.value) {
+                let history = self.metric_history.entry(metric.name.clone()).or_default();
+                history.push(value);
+
+                // Keep only last 60 data points (1 minute at 1s refresh)
+                if history.len() > 60 {
+                    history.remove(0);
+                }
+            }
+        }
+
         self.metrics.replace(new_metrics);
         self.update_tracker.mark_updated();
 
@@ -64,6 +81,21 @@ impl MetricsState {
         if self.selected_index >= self.metrics.len() && !self.metrics.is_empty() {
             self.selected_index = self.metrics.len() - 1;
         }
+    }
+
+    /// Extract a numeric value from a MetricValue for history tracking
+    fn extract_numeric_value(value: &MetricValue) -> Option<f64> {
+        match value {
+            MetricValue::Gauge(v) => Some(*v),
+            MetricValue::Counter(v) => Some(*v as f64),
+            MetricValue::Histogram(h) => Some(h.sum / h.count as f64), // Average
+            MetricValue::Summary(s) => Some(s.sum / s.count as f64),   // Average
+        }
+    }
+
+    /// Get metric history for sparkline rendering
+    pub fn get_metric_history(&self, metric_name: &str) -> Option<&Vec<f64>> {
+        self.metric_history.get(metric_name)
     }
 
     /// Get all metrics (will be used by UI components)
