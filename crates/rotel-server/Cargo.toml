@@ -8,7 +8,7 @@ license = "Apache-2.0"
 
 [dependencies]
 # Web framework
-axum = "0.7"
+axum = { workspace = true }
 tower = "0.5"
 tower-http = { version = "0.5", features = ["fs", "trace", "cors"] }
 

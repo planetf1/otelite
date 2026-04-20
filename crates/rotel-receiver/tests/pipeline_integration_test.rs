@@ -403,6 +403,7 @@ async fn test_logs_with_custom_attributes() {
         flags: 0,
         trace_id: vec![],
         span_id: vec![],
+        event_name: String::new(),
     };
 
     let request = ExportLogsServiceRequest {

@@ -13,16 +13,16 @@ homepage.workspace = true
 tokio = { workspace = true }
 
 # gRPC server
-tonic = "0.11"
-prost = "0.12"
+tonic = "0.14"
+prost = "0.14"
 
 # HTTP server
-axum = "0.7"
+axum = { workspace = true }
 hyper = "1.0"
 tower = { version = "0.4", features = ["limit", "timeout"] }
 
 # OTLP protocol definitions
-opentelemetry-proto = { version = "0.5", features = ["gen-tonic", "metrics", "logs", "trace"] }
+opentelemetry-proto = { version = "0.31", features = ["gen-tonic", "metrics", "logs", "trace"] }
 
 # Internal crates
 rotel-core = { path = "../rotel-core" }
@@ -37,7 +37,7 @@ tracing = { workspace = true }
 tracing-subscriber = { workspace = true }
 
 # Error handling
-thiserror = "1.0"
+thiserror = { workspace = true }
 anyhow = "1.0"
 
 # Compression
@@ -48,5 +48,5 @@ async-compression = { version = "0.4", features = ["tokio", "gzip", "deflate"] }
 tokio-test = "0.4"
 pretty_assertions = { workspace = true }
 tempfile = { workspace = true }
-reqwest = { version = "0.11", features = ["json"] }
+reqwest = { workspace = true }
 rotel-server = { path = "../rotel-server" }

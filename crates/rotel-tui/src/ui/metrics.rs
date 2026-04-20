@@ -103,7 +103,7 @@ fn render_metrics_table(frame: &mut Frame, area: Rect, state: &MetricsState) {
             .borders(Borders::ALL)
             .title(format!(" Metrics ({}) ", filtered_metrics.len())),
     )
-    .highlight_style(
+    .row_highlight_style(
         Style::default()
             .bg(Color::DarkGray)
             .add_modifier(Modifier::BOLD),

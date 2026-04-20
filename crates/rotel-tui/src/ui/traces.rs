@@ -229,7 +229,7 @@ fn render_traces_table(frame: &mut Frame, area: Rect, state: &TracesState) {
             .borders(Borders::ALL)
             .title(format!(" Traces ({}) ", filtered_traces.len())),
     )
-    .highlight_style(
+    .row_highlight_style(
         Style::default()
             .bg(Color::DarkGray)
             .add_modifier(Modifier::BOLD),

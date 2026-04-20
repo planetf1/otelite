@@ -46,6 +46,7 @@ pub fn create_sample_metrics_request() -> ExportMetricsServiceRequest {
         description: "A test metric".to_string(),
         unit: "1".to_string(),
         data: Some(Data::Gauge(gauge)),
+        metadata: vec![],
     };
 
     let scope_metrics = ScopeMetrics {
@@ -72,6 +73,7 @@ pub fn create_sample_metrics_request() -> ExportMetricsServiceRequest {
                 }),
             }],
             dropped_attributes_count: 0,
+            entity_refs: vec![],
         }),
         scope_metrics: vec![scope_metrics],
         schema_url: "".to_string(),
@@ -115,6 +117,7 @@ pub fn create_sample_logs_request() -> ExportLogsServiceRequest {
         flags: 0,
         trace_id: vec![],
         span_id: vec![],
+        event_name: "".to_string(),
     };
 
     let scope_logs = ScopeLogs {
@@ -141,6 +144,7 @@ pub fn create_sample_logs_request() -> ExportLogsServiceRequest {
                 }),
             }],
             dropped_attributes_count: 0,
+            entity_refs: vec![],
         }),
         scope_logs: vec![scope_logs],
         schema_url: "".to_string(),
@@ -210,6 +214,7 @@ pub fn create_sample_traces_request() -> ExportTraceServiceRequest {
                 }),
             }],
             dropped_attributes_count: 0,
+            entity_refs: vec![],
         }),
         scope_spans: vec![scope_spans],
         schema_url: "".to_string(),

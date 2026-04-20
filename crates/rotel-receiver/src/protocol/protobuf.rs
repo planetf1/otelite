@@ -100,7 +100,11 @@ mod tests {
 
     #[test]
     fn test_handle_parse_error() {
-        let decode_error = prost::DecodeError::new("test error");
+        // Create a DecodeError by attempting to decode invalid data
+        let invalid_data = [0xFF, 0xFF, 0xFF];
+        let decode_result = ExportLogsServiceRequest::decode(&invalid_data[..]);
+
+        let decode_error = decode_result.unwrap_err();
         let error = handle_parse_error(decode_error, "test context");
 
         assert!(matches!(error, ReceiverError::ProtobufParseError(_)));

@@ -178,7 +178,7 @@ impl App {
     /// Render the current view
     pub fn render<B: ratatui::backend::Backend>(&self, terminal: &mut Terminal<B>) -> Result<()> {
         terminal.draw(|f| {
-            let area = f.size();
+            let area = f.area();
 
             // Render based on current view
             match self.current_view {

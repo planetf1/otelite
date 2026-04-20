@@ -105,6 +105,7 @@ async fn test_logs_e2e_flow() {
         flags: 0,
         trace_id: vec![],
         span_id: vec![],
+        event_name: String::new(),
     };
 
     let request = ExportLogsServiceRequest {
@@ -299,6 +300,7 @@ async fn test_metrics_e2e_flow() {
                 flags: 0,
             }],
         })),
+        metadata: vec![],
     };
 
     let request = ExportMetricsServiceRequest {
@@ -400,6 +402,7 @@ async fn test_logs_severity_filter() {
             flags: 0,
             trace_id: vec![],
             span_id: vec![],
+            event_name: String::new(),
         };
 
         let request = ExportLogsServiceRequest {

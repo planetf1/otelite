@@ -79,7 +79,7 @@ fn render_logs_table(frame: &mut Frame, area: Rect, state: &LogsState) {
             .borders(Borders::ALL)
             .title(format!(" Logs ({}) ", filtered_logs.len())),
     )
-    .highlight_style(
+    .row_highlight_style(
         Style::default()
             .bg(Color::DarkGray)
             .add_modifier(Modifier::BOLD),

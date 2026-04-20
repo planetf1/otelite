@@ -489,6 +489,7 @@ mod tests {
                 }),
             }],
             dropped_attributes_count: 0,
+            entity_refs: vec![],
         };
 
         let resource = convert_resource(Some(otlp_resource)).unwrap();
@@ -534,6 +535,7 @@ mod tests {
                         }),
                     }],
                     dropped_attributes_count: 0,
+                    entity_refs: vec![],
                 }),
                 scope_logs: vec![ScopeLogs {
                     scope: Some(InstrumentationScope {
@@ -558,6 +560,7 @@ mod tests {
                         }],
                         dropped_attributes_count: 0,
                         flags: 0,
+                        event_name: String::new(),
                         trace_id: vec![],
                         span_id: vec![],
                     }],
@@ -604,6 +607,7 @@ mod tests {
                             }),
                         }],
                         dropped_attributes_count: 0,
+                        entity_refs: vec![],
                     }),
                     scope_logs: vec![ScopeLogs {
                         scope: None,
@@ -618,6 +622,7 @@ mod tests {
                             attributes: vec![],
                             dropped_attributes_count: 0,
                             flags: 0,
+                            event_name: String::new(),
                             trace_id: vec![],
                             span_id: vec![],
                         }],
@@ -634,6 +639,7 @@ mod tests {
                             }),
                         }],
                         dropped_attributes_count: 0,
+                        entity_refs: vec![],
                     }),
                     scope_logs: vec![ScopeLogs {
                         scope: None,
@@ -648,6 +654,7 @@ mod tests {
                             attributes: vec![],
                             dropped_attributes_count: 0,
                             flags: 0,
+                            event_name: String::new(),
                             trace_id: vec![],
                             span_id: vec![],
                         }],
@@ -697,6 +704,7 @@ mod tests {
                         attributes: vec![],
                         dropped_attributes_count: 0,
                         flags: 0,
+                        event_name: String::new(),
                         trace_id: vec![],
                         span_id: vec![],
                     }],
@@ -736,6 +744,7 @@ mod tests {
                         attributes: vec![],
                         dropped_attributes_count: 0,
                         flags: 0,
+                        event_name: String::new(),
                         trace_id: vec![1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16],
                         span_id: vec![1, 2, 3, 4, 5, 6, 7, 8],
                     }],
@@ -779,6 +788,7 @@ mod tests {
                         }),
                     }],
                     dropped_attributes_count: 0,
+                    entity_refs: vec![],
                 }),
                 scope_spans: vec![ScopeSpans {
                     scope: Some(InstrumentationScope {
@@ -1140,6 +1150,7 @@ mod tests {
                         name: "test.gauge".to_string(),
                         description: "A test gauge".to_string(),
                         unit: "1".to_string(),
+                        metadata: vec![],
                         data: Some(Data::Gauge(Gauge {
                             data_points: vec![NumberDataPoint {
                                 attributes: vec![],
@@ -1179,6 +1190,7 @@ mod tests {
                         name: "test.counter".to_string(),
                         description: "".to_string(),
                         unit: "".to_string(),
+                        metadata: vec![],
                         data: Some(Data::Sum(Sum {
                             data_points: vec![NumberDataPoint {
                                 attributes: vec![],
@@ -1217,6 +1229,7 @@ mod tests {
                         name: "test.histogram".to_string(),
                         description: "".to_string(),
                         unit: "ms".to_string(),
+                        metadata: vec![],
                         data: Some(Data::Histogram(Histogram {
                             data_points: vec![HistogramDataPoint {
                                 attributes: vec![],
@@ -1272,6 +1285,7 @@ mod tests {
                         name: "test.summary".to_string(),
                         description: "".to_string(),
                         unit: "".to_string(),
+                        metadata: vec![],
                         data: Some(Data::Summary(Summary {
                             data_points: vec![SummaryDataPoint {
                                 attributes: vec![],
@@ -1330,6 +1344,7 @@ mod tests {
                         name: "test.gauge".to_string(),
                         description: "".to_string(),
                         unit: "".to_string(),
+                        metadata: vec![],
                         data: Some(Data::Gauge(Gauge {
                             data_points: vec![
                                 NumberDataPoint {
@@ -1374,6 +1389,7 @@ mod tests {
                         name: "test.gauge".to_string(),
                         description: "".to_string(),
                         unit: "".to_string(),
+                        metadata: vec![],
                         data: Some(Data::Gauge(Gauge {
                             data_points: vec![NumberDataPoint {
                                 attributes: vec![],
