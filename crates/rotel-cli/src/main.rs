@@ -7,7 +7,7 @@ use std::net::SocketAddr;
 use std::path::PathBuf;
 use std::sync::Arc;
 use tracing::{info, Level};
-use tracing_subscriber::FmtSubscriber;
+use tracing_subscriber::{fmt, layer::SubscriberExt, util::SubscriberInitExt, EnvFilter};
 
 pub mod api;
 pub mod commands;
@@ -46,6 +46,14 @@ struct Cli {
     /// Log level (trace, debug, info, warn, error)
     #[arg(long, default_value = "info", global = true)]
     log_level: String,
+
+    /// Log output file path (logs to stderr if not specified)
+    #[arg(long, global = true)]
+    log_file: Option<PathBuf>,
+
+    /// Log format (text or json)
+    #[arg(long, default_value = "text", global = true)]
+    log_format: String,
 
     #[command(subcommand)]
     command: Option<Commands>,
@@ -298,9 +306,52 @@ async fn run_cli() -> Result<()> {
         _ => Level::INFO,
     };
 
-    let subscriber = FmtSubscriber::builder().with_max_level(level).finish();
-    tracing::subscriber::set_global_default(subscriber)
-        .map_err(|e| Error::InvalidArgument(format!("Failed to set tracing subscriber: {}", e)))?;
+    // Build the EnvFilter (respects RUST_LOG env var)
+    let env_filter =
+        EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new(level.to_string()));
+
+    // Configure output destination and format
+    if let Some(log_file) = &cli.log_file {
+        // Log to file with daily rotation
+        let file_appender = tracing_appender::rolling::daily(
+            log_file
+                .parent()
+                .unwrap_or_else(|| std::path::Path::new(".")),
+            log_file
+                .file_name()
+                .unwrap_or_else(|| std::ffi::OsStr::new("rotel.log")),
+        );
+        let (non_blocking, _guard) = tracing_appender::non_blocking(file_appender);
+
+        // Choose format based on --log-format flag
+        if cli.log_format.to_lowercase() == "json" {
+            tracing_subscriber::registry()
+                .with(env_filter)
+                .with(fmt::layer().json().with_writer(non_blocking))
+                .init();
+        } else {
+            tracing_subscriber::registry()
+                .with(env_filter)
+                .with(fmt::layer().with_writer(non_blocking))
+                .init();
+        }
+
+        // Keep the guard alive by leaking it - this is intentional for the lifetime of the program
+        std::mem::forget(_guard);
+    } else {
+        // Log to stderr (default)
+        if cli.log_format.to_lowercase() == "json" {
+            tracing_subscriber::registry()
+                .with(env_filter)
+                .with(fmt::layer().json())
+                .init();
+        } else {
+            tracing_subscriber::registry()
+                .with(env_filter)
+                .with(fmt::layer())
+                .init();
+        }
+    }
 
     // Build config from CLI args
     let config = Config {
