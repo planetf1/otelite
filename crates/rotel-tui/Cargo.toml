@@ -1,11 +1,11 @@
 [package]
 name = "rotel-tui"
-version = "0.1.0"
-edition = "2021"
-authors = ["Rotel Contributors"]
-license = "Apache-2.0"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
 description = "Terminal User Interface for Rotel OpenTelemetry receiver"
-repository = "https://github.com/planetf1/rotel"
+repository.workspace = true
 
 [[bin]]
 name = "rotel-tui"
@@ -21,23 +21,23 @@ ratatui = { workspace = true }
 crossterm = { workspace = true }
 
 # Async runtime
-tokio = { version = "1.35", features = ["full"] }
+tokio = { workspace = true }
 
 # HTTP client
 reqwest = { workspace = true }
 
 # Serialization
-serde = { version = "1.0", features = ["derive"] }
-serde_json = "1.0"
+serde = { workspace = true }
+serde_json = { workspace = true }
 
 # Time handling
-chrono = "0.4"
+chrono = { workspace = true }
 
 # Error handling
 anyhow = "1.0"
 
 # CLI parsing
-clap = { version = "4.4", features = ["derive"] }
+clap = { workspace = true }
 rotel-core = { path = "../rotel-core" }
 
 [dev-dependencies]

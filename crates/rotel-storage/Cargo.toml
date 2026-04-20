@@ -1,11 +1,11 @@
 [package]
 name = "rotel-storage"
-version = "0.1.0"
-edition = "2021"
-authors = ["Rotel Contributors"]
-license = "Apache-2.0"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
 description = "Embedded storage layer for Rotel OTLP receiver"
-repository = "https://github.com/rotel/rotel"
+repository.workspace = true
 
 [dependencies]
 # Core dependencies
@@ -15,28 +15,28 @@ rotel-core = { path = "../rotel-core" }
 rusqlite = { version = "0.31", features = ["bundled", "chrono"] }
 
 # Async runtime
-tokio = { version = "1.36", features = ["full"] }
+tokio = { workspace = true }
 async-trait = "0.1"
 
 # Serialization
-serde = { version = "1.0", features = ["derive"] }
-serde_json = "1.0"
+serde = { workspace = true }
+serde_json = { workspace = true }
 
 # Error handling
 thiserror = { workspace = true }
 
 # Time handling
-chrono = { version = "0.4", features = ["serde"] }
+chrono = { workspace = true }
 
 # Logging
-tracing = "0.1"
+tracing = { workspace = true }
 
 # Directory utilities
 dirs = "5.0"
 
 [dev-dependencies]
 # Testing utilities
-tempfile = "3.10"
+tempfile = { workspace = true }
 tokio-test = "0.4"
 
 [lib]

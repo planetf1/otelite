@@ -1,10 +1,12 @@
 [package]
 name = "rotel-server"
-version = "0.1.0"
-edition = "2021"
-authors = ["Rotel Contributors"]
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
 description = "Lightweight web dashboard for visualizing OpenTelemetry logs, traces, and metrics"
-license = "Apache-2.0"
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
 
 [dependencies]
 # Web framework
@@ -13,11 +15,11 @@ tower = "0.5"
 tower-http = { version = "0.5", features = ["fs", "trace", "cors"] }
 
 # Async runtime (already used by rotel-receiver)
-tokio = { version = "1", features = ["full"] }
+tokio = { workspace = true }
 
 # Serialization
-serde = { version = "1", features = ["derive"] }
-serde_json = "1"
+serde = { workspace = true }
+serde_json = { workspace = true }
 
 # MIME type detection for static files
 mime_guess = "2.0"
@@ -27,11 +29,11 @@ rotel-storage = { path = "../rotel-storage" }
 rotel-core = { path = "../rotel-core" }
 
 # Logging
-tracing = "0.1"
+tracing = { workspace = true }
 
 [dev-dependencies]
 # Testing
 tokio-test = "0.4"
 tower = { version = "0.5", features = ["util"] }
 http-body-util = "0.1"
-tempfile = "3.10"
+tempfile = { workspace = true }
