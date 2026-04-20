@@ -1,148 +1,26 @@
-use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
+//! API response models for Rotel TUI
+//!
+//! Re-exports shared types from rotel-core with TUI-specific aliases and helpers.
 
-/// Log entry from the API
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct LogEntry {
-    pub timestamp: i64,
-    pub severity: String,
-    pub severity_text: Option<String>,
-    pub body: String,
-    pub attributes: HashMap<String, String>,
-    pub resource: Option<Resource>,
-    pub trace_id: Option<String>,
-    pub span_id: Option<String>,
-}
+// Re-export shared API types from rotel-core
+pub use rotel_core::api::{
+    LogEntry, LogsResponse, MetricResponse, MetricValue, SpanEntry, TraceDetail, TraceEntry,
+    TracesResponse,
+};
 
-/// Trace summary from the API
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct TraceSummary {
-    pub trace_id: String,
-    pub root_span_name: String,
-    pub start_time: i64,
-    pub duration: i64,
-    pub span_count: usize,
-    pub has_errors: bool,
-    pub service_names: Vec<String>,
-}
+// Re-export types used in tests
+#[cfg(test)]
+pub use rotel_core::api::{HistogramBucket, Quantile, Resource, SpanStatus};
 
-/// Full trace with spans
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct Trace {
-    pub trace_id: String,
-    pub spans: Vec<Span>,
-    pub start_time: i64,
-    pub end_time: i64,
-    pub duration: i64,
-    pub span_count: usize,
-    pub service_names: Vec<String>,
-}
-
-/// Span within a trace
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct Span {
-    pub span_id: String,
-    pub trace_id: String,
-    pub parent_span_id: Option<String>,
-    pub name: String,
-    pub kind: String,
-    pub start_time: i64,
-    pub end_time: i64,
-    pub duration: i64,
-    pub attributes: HashMap<String, String>,
-    pub resource: Option<Resource>,
-    pub status: Option<SpanStatus>,
-    pub events: Vec<SpanEvent>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct SpanStatus {
-    pub code: String,
-    pub message: Option<String>,
-}
-
-/// Span event
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct SpanEvent {
-    pub name: String,
-    pub timestamp: i64,
-    pub attributes: HashMap<String, String>,
-}
-
-/// Metric from the API
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct Metric {
-    pub name: String,
-    pub description: Option<String>,
-    pub unit: Option<String>,
-    pub metric_type: String,
-    pub value: MetricValue,
-    pub timestamp: i64,
-    pub attributes: HashMap<String, String>,
-    pub resource: Option<HashMap<String, String>>,
-}
-
-/// Metric value (varies by type)
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(untagged)]
-pub enum MetricValue {
-    Gauge(f64),
-    Counter(u64),
-    Histogram {
-        count: u64,
-        sum: f64,
-        buckets: Vec<HistogramBucket>,
-    },
-    Summary {
-        count: u64,
-        sum: f64,
-        quantiles: Vec<Quantile>,
-    },
-}
-
-/// Histogram bucket
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct HistogramBucket {
-    pub upper_bound: f64,
-    pub count: u64,
-}
-
-/// Summary quantile
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct Quantile {
-    pub quantile: f64,
-    pub value: f64,
-}
-
-/// Resource information
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct Resource {
-    pub attributes: HashMap<String, String>,
-}
-
-/// API response for logs list
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct LogsResponse {
-    pub logs: Vec<LogEntry>,
-    pub total: usize,
-    pub limit: usize,
-    pub offset: usize,
-}
-
-/// API response for traces list
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct TracesResponse {
-    pub traces: Vec<TraceSummary>,
-    pub total: usize,
-    pub limit: usize,
-    pub offset: usize,
-}
-
-/// API response for metrics list (just a Vec, no wrapper in dashboard API)
-pub type MetricsResponse = Vec<Metric>;
+// Type aliases for backward compatibility with TUI code
+pub type TraceSummary = TraceEntry;
+pub type Trace = TraceDetail;
+pub type Span = SpanEntry;
+pub type Metric = MetricResponse;
+pub type MetricsResponse = Vec<MetricResponse>;
 
 /// Query parameters for logs
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, serde::Serialize)]
 pub struct LogsQuery {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub severity: Option<String>,
@@ -172,7 +50,7 @@ impl Default for LogsQuery {
 }
 
 /// Query parameters for traces
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, serde::Serialize)]
 pub struct TracesQuery {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub min_duration: Option<i64>,

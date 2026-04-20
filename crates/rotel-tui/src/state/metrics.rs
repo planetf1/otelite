@@ -103,10 +103,8 @@ impl MetricsState {
                 // Apply filters
                 for (field, value) in &self.filters {
                     match field.as_str() {
-                        "type" => {
-                            if !metric.metric_type.eq_ignore_ascii_case(value) {
-                                return false;
-                            }
+                        "type" if !metric.metric_type.eq_ignore_ascii_case(value) => {
+                            return false;
                         },
                         "unit" => {
                             if let Some(unit) = &metric.unit {

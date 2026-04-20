@@ -141,14 +141,13 @@ impl TracesState {
                                 return false;
                             }
                         },
-                        "service" => {
+                        "service"
                             if !trace
                                 .service_names
                                 .iter()
-                                .any(|s: &String| s.eq_ignore_ascii_case(value.as_str()))
-                            {
-                                return false;
-                            }
+                                .any(|s: &String| s.eq_ignore_ascii_case(value.as_str())) =>
+                        {
+                            return false;
                         },
                         _ => {},
                     }

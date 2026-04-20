@@ -6,6 +6,9 @@
 // Telemetry data types
 pub mod telemetry;
 
+// API response types
+pub mod api;
+
 // Re-exports for convenience
 pub use telemetry::{
     format_attribute_preview, format_attribute_value, LogRecord, Metric, Resource, Span, Trace,

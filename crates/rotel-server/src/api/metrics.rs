@@ -4,6 +4,7 @@ use axum::{
     http::StatusCode,
     response::{IntoResponse, Json},
 };
+use rotel_core::api::{HistogramBucket, MetricResponse, MetricValue, Quantile};
 use rotel_core::telemetry::metric::MetricType;
 use rotel_core::telemetry::Metric;
 use rotel_storage::QueryParams;
@@ -40,51 +41,6 @@ pub struct AggregateQuery {
     pub start_time: Option<i64>,
     /// End time (nanoseconds since Unix epoch)
     pub end_time: Option<i64>,
-}
-
-/// Response structure for a single metric
-#[derive(Debug, Serialize, Deserialize)]
-pub struct MetricResponse {
-    pub name: String,
-    pub description: Option<String>,
-    pub unit: Option<String>,
-    pub metric_type: String,
-    pub value: MetricValue,
-    pub timestamp: i64,
-    pub attributes: HashMap<String, String>,
-    pub resource: Option<HashMap<String, String>>,
-}
-
-/// Metric value (varies by type)
-#[derive(Debug, Serialize, Deserialize)]
-#[serde(untagged)]
-pub enum MetricValue {
-    Gauge(f64),
-    Counter(u64),
-    Histogram {
-        count: u64,
-        sum: f64,
-        buckets: Vec<HistogramBucket>,
-    },
-    Summary {
-        count: u64,
-        sum: f64,
-        quantiles: Vec<Quantile>,
-    },
-}
-
-/// Histogram bucket
-#[derive(Debug, Serialize, Deserialize)]
-pub struct HistogramBucket {
-    pub upper_bound: f64,
-    pub count: u64,
-}
-
-/// Summary quantile
-#[derive(Debug, Serialize, Deserialize)]
-pub struct Quantile {
-    pub quantile: f64,
-    pub value: f64,
 }
 
 /// Response structure for aggregated metrics

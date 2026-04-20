@@ -5,6 +5,7 @@ use axum::{
     response::IntoResponse,
     Json,
 };
+use rotel_core::api::{SpanEntry, TraceDetail, TraceEntry, TracesResponse};
 use rotel_core::telemetry::Span;
 use rotel_storage::QueryParams;
 use serde::{Deserialize, Serialize};
@@ -43,99 +44,6 @@ pub struct TracesQuery {
 
 fn default_limit() -> usize {
     100
-}
-
-/// Response for trace listing
-#[derive(Debug, Serialize, Deserialize)]
-pub struct TracesResponse {
-    pub traces: Vec<TraceEntry>,
-    pub total: usize,
-    pub limit: usize,
-    pub offset: usize,
-}
-
-/// Individual trace entry (aggregated from spans)
-#[derive(Debug, Serialize, Deserialize)]
-pub struct TraceEntry {
-    pub trace_id: String,
-    pub root_span_name: String,
-    pub start_time: i64,
-    pub duration: i64,
-    pub span_count: usize,
-    pub service_names: Vec<String>,
-    pub has_errors: bool,
-}
-
-/// Detailed trace with all spans
-#[derive(Debug, Serialize, Deserialize)]
-pub struct TraceDetail {
-    pub trace_id: String,
-    pub spans: Vec<SpanEntry>,
-    pub start_time: i64,
-    pub end_time: i64,
-    pub duration: i64,
-    pub span_count: usize,
-    pub service_names: Vec<String>,
-}
-
-/// Individual span entry for API response
-#[derive(Debug, Serialize, Deserialize)]
-pub struct SpanEntry {
-    pub span_id: String,
-    pub trace_id: String,
-    pub parent_span_id: Option<String>,
-    pub name: String,
-    pub kind: String,
-    pub start_time: i64,
-    pub end_time: i64,
-    pub duration: i64,
-    pub attributes: std::collections::HashMap<String, String>,
-    pub resource: Option<rotel_core::telemetry::Resource>,
-    pub status: Option<SpanStatus>,
-    pub events: Vec<SpanEvent>,
-}
-
-#[derive(Debug, Serialize, Deserialize)]
-pub struct SpanStatus {
-    pub code: String,
-    pub message: Option<String>,
-}
-
-#[derive(Debug, Serialize, Deserialize)]
-pub struct SpanEvent {
-    pub name: String,
-    pub timestamp: i64,
-    pub attributes: std::collections::HashMap<String, String>,
-}
-
-impl From<Span> for SpanEntry {
-    fn from(span: Span) -> Self {
-        Self {
-            span_id: span.span_id,
-            trace_id: span.trace_id,
-            parent_span_id: span.parent_span_id,
-            name: span.name,
-            kind: format!("{:?}", span.kind),
-            start_time: span.start_time,
-            end_time: span.end_time,
-            duration: span.end_time - span.start_time,
-            attributes: span.attributes,
-            resource: None, // Resource is on Trace, not Span
-            status: Some(SpanStatus {
-                code: format!("{:?}", span.status.code),
-                message: span.status.message,
-            }),
-            events: span
-                .events
-                .into_iter()
-                .map(|e| SpanEvent {
-                    name: e.name,
-                    timestamp: e.timestamp,
-                    attributes: e.attributes,
-                })
-                .collect(),
-        }
-    }
 }
 
 /// Handler for GET /api/traces
@@ -224,7 +132,7 @@ pub async fn list_traces(
         .collect();
 
     // Sort by start time (newest first)
-    trace_entries.sort_by(|a, b| b.start_time.cmp(&a.start_time));
+    trace_entries.sort_by_key(|b| std::cmp::Reverse(b.start_time));
 
     // Apply pagination
     let total = trace_entries.len();

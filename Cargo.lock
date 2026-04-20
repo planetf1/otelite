@@ -2095,6 +2095,7 @@ name = "rotel-core"
 version = "0.1.0"
 dependencies = [
  "assert_matches",
+ "chrono",
  "env_logger",
  "mockall",
  "pretty_assertions",

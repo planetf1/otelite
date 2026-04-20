@@ -5,7 +5,8 @@ use axum::{
     response::IntoResponse,
     Json,
 };
-use rotel_core::telemetry::{LogRecord, Resource};
+use rotel_core::api::{LogEntry, LogsResponse};
+use rotel_core::telemetry::LogRecord;
 use rotel_storage::QueryParams;
 use serde::{Deserialize, Serialize};
 
@@ -43,43 +44,6 @@ pub struct LogsQuery {
 
 fn default_limit() -> usize {
     100
-}
-
-/// Response for log listing
-#[derive(Debug, Serialize, Deserialize)]
-pub struct LogsResponse {
-    pub logs: Vec<LogEntry>,
-    pub total: usize,
-    pub limit: usize,
-    pub offset: usize,
-}
-
-/// Individual log entry for API response
-#[derive(Debug, Serialize, Deserialize)]
-pub struct LogEntry {
-    pub timestamp: i64,
-    pub severity: String,
-    pub severity_text: Option<String>,
-    pub body: String,
-    pub attributes: std::collections::HashMap<String, String>,
-    pub resource: Option<Resource>,
-    pub trace_id: Option<String>,
-    pub span_id: Option<String>,
-}
-
-impl From<LogRecord> for LogEntry {
-    fn from(log: LogRecord) -> Self {
-        Self {
-            timestamp: log.timestamp,
-            severity: log.severity.as_str().to_string(),
-            severity_text: log.severity_text,
-            body: log.body,
-            attributes: log.attributes,
-            resource: log.resource,
-            trace_id: log.trace_id,
-            span_id: log.span_id,
-        }
-    }
 }
 
 /// Handler for GET /api/logs
