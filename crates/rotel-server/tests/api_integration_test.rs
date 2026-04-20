@@ -6,11 +6,11 @@ use rotel_core::telemetry::log::{LogRecord, SeverityLevel};
 use rotel_core::telemetry::metric::{Metric, MetricType};
 use rotel_core::telemetry::trace::{Span, SpanKind, SpanStatus, StatusCode as SpanStatusCode};
 use rotel_core::telemetry::Resource;
-use rotel_dashboard::api::health::HealthResponse;
-use rotel_dashboard::api::logs::{LogEntry, LogsResponse};
-use rotel_dashboard::api::metrics::{AggregateResponse, MetricResponse};
-use rotel_dashboard::api::traces::{TraceDetail, TracesResponse};
-use rotel_dashboard::server::{AppState, QueryCache};
+use rotel_server::api::health::HealthResponse;
+use rotel_server::api::logs::{LogEntry, LogsResponse};
+use rotel_server::api::metrics::{AggregateResponse, MetricResponse};
+use rotel_server::api::traces::{TraceDetail, TracesResponse};
+use rotel_server::server::{AppState, QueryCache};
 use rotel_storage::sqlite::SqliteBackend;
 use rotel_storage::{StorageBackend, StorageConfig};
 use std::collections::HashMap;
@@ -36,47 +36,47 @@ fn build_test_router(storage: Arc<dyn StorageBackend>) -> Router {
     Router::new()
         .route(
             "/api/health",
-            axum::routing::get(rotel_dashboard::api::health::health_check),
+            axum::routing::get(rotel_server::api::health::health_check),
         )
         .route(
             "/api/logs",
-            axum::routing::get(rotel_dashboard::api::logs::list_logs),
+            axum::routing::get(rotel_server::api::logs::list_logs),
         )
         .route(
             "/api/logs/export",
-            axum::routing::get(rotel_dashboard::api::logs::export_logs),
+            axum::routing::get(rotel_server::api::logs::export_logs),
         )
         .route(
             "/api/logs/:timestamp",
-            axum::routing::get(rotel_dashboard::api::logs::get_log),
+            axum::routing::get(rotel_server::api::logs::get_log),
         )
         .route(
             "/api/traces",
-            axum::routing::get(rotel_dashboard::api::traces::list_traces),
+            axum::routing::get(rotel_server::api::traces::list_traces),
         )
         .route(
             "/api/traces/export",
-            axum::routing::get(rotel_dashboard::api::traces::export_traces),
+            axum::routing::get(rotel_server::api::traces::export_traces),
         )
         .route(
             "/api/traces/:trace_id",
-            axum::routing::get(rotel_dashboard::api::traces::get_trace),
+            axum::routing::get(rotel_server::api::traces::get_trace),
         )
         .route(
             "/api/metrics",
-            axum::routing::get(rotel_dashboard::api::metrics::list_metrics),
+            axum::routing::get(rotel_server::api::metrics::list_metrics),
         )
         .route(
             "/api/metrics/names",
-            axum::routing::get(rotel_dashboard::api::metrics::list_metric_names),
+            axum::routing::get(rotel_server::api::metrics::list_metric_names),
         )
         .route(
             "/api/metrics/aggregate",
-            axum::routing::get(rotel_dashboard::api::metrics::aggregate_metrics),
+            axum::routing::get(rotel_server::api::metrics::aggregate_metrics),
         )
         .route(
             "/api/metrics/export",
-            axum::routing::get(rotel_dashboard::api::metrics::export_metrics),
+            axum::routing::get(rotel_server::api::metrics::export_metrics),
         )
         .with_state(state)
 }

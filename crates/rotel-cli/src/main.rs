@@ -1,7 +1,7 @@
 //! Rotel CLI - OpenTelemetry receiver and dashboard
 
 use clap::{Parser, Subcommand};
-use rotel_dashboard::{DashboardConfig, DashboardServer};
+use rotel_server::{DashboardConfig, DashboardServer};
 use rotel_storage::{sqlite::SqliteBackend, StorageBackend, StorageConfig};
 use std::net::SocketAddr;
 use std::path::PathBuf;

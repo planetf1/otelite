@@ -2080,8 +2080,8 @@ dependencies = [
  "predicates",
  "reqwest",
  "rotel-core",
- "rotel-dashboard",
  "rotel-receiver",
+ "rotel-server",
  "rotel-storage",
  "serde",
  "serde_json",
@@ -2104,7 +2104,35 @@ dependencies = [
 ]
 
 [[package]]
-name = "rotel-dashboard"
+name = "rotel-receiver"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "async-compression",
+ "axum 0.7.9",
+ "flate2",
+ "hyper 1.9.0",
+ "opentelemetry-proto",
+ "pretty_assertions",
+ "prost",
+ "reqwest",
+ "rotel-core",
+ "rotel-server",
+ "rotel-storage",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "thiserror",
+ "tokio",
+ "tokio-test",
+ "tonic",
+ "tower 0.4.13",
+ "tracing",
+ "tracing-subscriber",
+]
+
+[[package]]
+name = "rotel-server"
 version = "0.1.0"
 dependencies = [
  "axum 0.7.9",
@@ -2120,34 +2148,6 @@ dependencies = [
  "tower 0.5.3",
  "tower-http",
  "tracing",
-]
-
-[[package]]
-name = "rotel-receiver"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "async-compression",
- "axum 0.7.9",
- "flate2",
- "hyper 1.9.0",
- "opentelemetry-proto",
- "pretty_assertions",
- "prost",
- "reqwest",
- "rotel-core",
- "rotel-dashboard",
- "rotel-storage",
- "serde",
- "serde_json",
- "tempfile",
- "thiserror",
- "tokio",
- "tokio-test",
- "tonic",
- "tower 0.4.13",
- "tracing",
- "tracing-subscriber",
 ]
 
 [[package]]

@@ -49,4 +49,4 @@ tokio-test = "0.4"
 pretty_assertions = { workspace = true }
 tempfile = { workspace = true }
 reqwest = { version = "0.11", features = ["json"] }
-rotel-dashboard = { path = "../rotel-dashboard" }
+rotel-server = { path = "../rotel-server" }

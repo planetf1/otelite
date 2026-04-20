@@ -20,12 +20,12 @@ Single binary, zero external dependencies, embedded storage.
 rotel-core        ← telemetry domain types (no deps on other crates)
 rotel-storage     ← SQLite persistence (depends on: rotel-core)
 rotel-receiver    ← OTLP ingest (depends on: rotel-core, rotel-storage)
-rotel-dashboard   ← HTTP server: REST API + static web UI (depends on: rotel-core, rotel-storage)
-rotel-cli         ← CLI binary (depends on: rotel-core, rotel-dashboard, rotel-receiver, rotel-storage)
+rotel-server      ← HTTP server: REST API + static web UI (depends on: rotel-core, rotel-storage)
+rotel-cli         ← CLI binary (depends on: rotel-core, rotel-server, rotel-receiver, rotel-storage)
 rotel-tui         ← ratatui terminal UI (depends on: rotel-core)
 ```
 
-> **Note:** `rotel-dashboard` is misnamed — it is the HTTP server, not just a dashboard. The name should be `rotel-server`. See bead rotel-jfa.
+
 
 The CLI is the integration point: it wires receiver + server + storage into one process for the `dashboard` subcommand.
 
@@ -49,7 +49,7 @@ rotel-storage (SQLite, WAL mode, FTS5)
   - Configurable retention + auto-purge
         │
         ▼
-rotel-dashboard (HTTP server, port 3000)
+rotel-server (HTTP server, port 3000)
   - REST API: /api/logs, /api/traces, /api/metrics (+ export, aggregate endpoints)
   - Converts storage types to JSON response types
   - LRU query cache (100 entries, 5-min TTL)
@@ -131,13 +131,13 @@ OTLP ingest layer. Accepts telemetry, converts protobuf to rotel-core types, wri
 - `HttpServer` — axum-based, same signals via OTLP/HTTP JSON or protobuf
 - `conversion.rs` — converts `opentelemetry_proto` types to `rotel_core::telemetry::*`
 
-Does not depend on `rotel-dashboard` — decoupled from the query layer.
+Does not depend on `rotel-server` — decoupled from the query layer.
 
 ---
 
-### rotel-dashboard
+### rotel-server
 
-**Path:** `crates/rotel-dashboard/`
+**Path:** `crates/rotel-server/`
 
 HTTP server exposing the REST API and serving the embedded web UI. Despite the name, this is a server crate, not a frontend crate.
 
@@ -198,7 +198,7 @@ Global flags: `--endpoint` (default: `http://localhost:3000`), `--format` (prett
 
 **Path:** `crates/rotel-tui/`
 
-ratatui-based terminal UI. Standalone binary, connects to rotel-dashboard REST API via HTTP.
+ratatui-based terminal UI. Standalone binary, connects to rotel-server REST API via HTTP.
 
 Default endpoint: `http://localhost:3000`.
 
@@ -217,7 +217,7 @@ This divergence is tracked in bead rotel-d9q.
 | Issue | Bead | Priority |
 |-------|------|----------|
 | API response types duplicated in dashboard/CLI/TUI | rotel-d9q | P2 |
-| `rotel-dashboard` misnamed — should be `rotel-server` | rotel-jfa | P2 |
+
 | CLI default endpoint is `:8080`, server binds `:3000` | rotel-2h2 | P1 (bug) |
 | `rotel-core` contains scaffolding functions (add, divide, Config) | rotel-y90 | P2 |
 | ARCHITECTURE.md was outdated (now fixed) | rotel-nyg | P2 |

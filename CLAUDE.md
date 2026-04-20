@@ -36,11 +36,11 @@ Rotel is an OpenTelemetry receiver and local observability server for LLM develo
 - `crates/rotel-core` — telemetry domain types (LogRecord, Span, Metric, Resource, GenAiSpanInfo). No HTTP/storage deps.
 - `crates/rotel-receiver` — OTLP ingest: gRPC (4317) and HTTP (4318), converts protobuf → rotel-core types
 - `crates/rotel-storage` — SQLite backend (WAL mode, FTS5). `StorageBackend` async trait with 10 methods. Only impl: `SqliteBackend`.
-- `crates/rotel-dashboard` — HTTP server (port 3000): REST API + embedded static web UI. **Note: misnamed — it's a server, not just a dashboard. Rename tracked in bead rotel-jfa.**
+- `crates/rotel-server` — HTTP server (port 3000): REST API + embedded static web UI.
 - `crates/rotel-cli` — clap CLI binary: `dashboard` (starts everything), `logs`/`traces`/`metrics` (query subcommands)
-- `crates/rotel-tui` — ratatui terminal UI, polls rotel-dashboard REST API
+- `crates/rotel-tui` — ratatui terminal UI, polls rotel-server REST API
 
-**Data flow:** OTLP Source → Receiver → Storage (SQLite) → rotel-dashboard REST API → CLI / TUI / Web browser
+**Data flow:** OTLP Source → Receiver → Storage (SQLite) → rotel-server REST API → CLI / TUI / Web browser
 
 **Known gotchas for agents:**
 - `Span` has no `links` field

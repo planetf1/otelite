@@ -13,9 +13,9 @@ use opentelemetry_proto::tonic::metrics::v1::{
 use opentelemetry_proto::tonic::trace::v1::{
     span::SpanKind, ResourceSpans, ScopeSpans, Span, Status,
 };
-use rotel_dashboard::config::DashboardConfig;
-use rotel_dashboard::server::DashboardServer;
 use rotel_receiver::signals::{LogsHandler, MetricsHandler, TracesHandler};
+use rotel_server::config::DashboardConfig;
+use rotel_server::server::DashboardServer;
 use rotel_storage::{sqlite::SqliteBackend, StorageBackend, StorageConfig};
 use serde_json::Value as JsonValue;
 use std::net::SocketAddr;

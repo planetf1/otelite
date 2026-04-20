@@ -54,3 +54,7 @@ path = "tests/integration/persistence_test.rs"
 [[test]]
 name = "fts5_search_test"
 path = "tests/integration/fts5_search_test.rs"
+
+[[test]]
+name = "reader_coverage_test"
+path = "tests/integration/reader_coverage_test.rs"

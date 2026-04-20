@@ -29,7 +29,7 @@ chrono = { version = "0.4", features = ["serde"] }
 
 # Internal dependencies
 rotel-core = { path = "../rotel-core" }
-rotel-dashboard = { path = "../rotel-dashboard" }
+rotel-server = { path = "../rotel-server" }
 rotel-receiver = { path = "../rotel-receiver" }
 rotel-storage = { path = "../rotel-storage" }
 
