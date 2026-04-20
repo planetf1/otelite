@@ -3,6 +3,7 @@
 pub mod colors;
 pub mod formatters;
 pub mod json;
+pub mod pager;
 pub mod pretty;
 
 pub use formatters::{

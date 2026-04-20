@@ -21,6 +21,7 @@ fn test_config_with_custom_endpoint() {
         format: OutputFormat::Pretty,
         no_color: false,
         no_header: false,
+        no_pager: false,
     };
     assert_eq!(config.endpoint, "http://custom:3000");
 }
@@ -33,6 +34,7 @@ fn test_config_with_json_format() {
         format: OutputFormat::Json,
         no_color: false,
         no_header: false,
+        no_pager: false,
     };
     assert_eq!(config.format, OutputFormat::Json);
 }
@@ -45,6 +47,7 @@ fn test_config_with_no_color() {
         format: OutputFormat::Pretty,
         no_color: true,
         no_header: false,
+        no_pager: false,
     };
     assert!(config.no_color);
 }
@@ -57,6 +60,7 @@ fn test_config_with_no_header() {
         format: OutputFormat::Pretty,
         no_color: false,
         no_header: true,
+        no_pager: false,
     };
     assert!(config.no_header);
 }
@@ -69,6 +73,7 @@ fn test_config_with_custom_timeout() {
         format: OutputFormat::Pretty,
         no_color: false,
         no_header: false,
+        no_pager: false,
     };
     assert_eq!(config.timeout, Duration::from_secs(60));
 }
@@ -113,6 +118,7 @@ fn test_config_builder_pattern() {
         format: OutputFormat::Json,
         no_color: true,
         no_header: true,
+        no_pager: false,
     };
 
     assert_eq!(config.endpoint, "http://test:8080");
@@ -130,6 +136,7 @@ fn test_config_all_options_combined() {
         format: OutputFormat::Json,
         no_color: true,
         no_header: true,
+        no_pager: false,
     };
 
     assert_eq!(config.endpoint, "http://prod:9000");

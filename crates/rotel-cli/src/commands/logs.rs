@@ -55,7 +55,7 @@ pub async fn handle_list(
     // Output based on format
     match config.format {
         OutputFormat::Pretty => {
-            pretty::print_logs_table(&filtered_logs, !config.no_color, config.no_header);
+            pretty::print_logs_table(&filtered_logs, config)?;
         },
         OutputFormat::Json => {
             json::print_logs_json(&filtered_logs)?;
@@ -94,7 +94,7 @@ pub async fn handle_search(
     // Output based on format
     match config.format {
         OutputFormat::Pretty => {
-            pretty::print_logs_table(&filtered_logs, !config.no_color, config.no_header);
+            pretty::print_logs_table(&filtered_logs, config)?;
         },
         OutputFormat::Json => {
             json::print_logs_json(&filtered_logs)?;
@@ -117,7 +117,7 @@ pub async fn handle_show(client: &ApiClient, config: &Config, id: &str) -> Resul
     // Output based on format
     match config.format {
         OutputFormat::Pretty => {
-            pretty::print_log_details(&log, !config.no_color);
+            pretty::print_log_details(&log, config)?;
         },
         OutputFormat::Json => {
             json::print_log_json(&log)?;

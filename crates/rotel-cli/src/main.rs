@@ -39,6 +39,10 @@ struct Cli {
     #[arg(long, global = true)]
     no_header: bool,
 
+    /// Disable automatic paging of long output
+    #[arg(long, global = true)]
+    no_pager: bool,
+
     /// Request timeout in seconds
     #[arg(long, default_value = "30", global = true)]
     timeout: u64,
@@ -429,6 +433,7 @@ async fn run_cli() -> Result<()> {
         format: cli.format.unwrap_or_default(),
         no_color: cli.no_color,
         no_header: cli.no_header,
+        no_pager: cli.no_pager,
     };
 
     // Handle commands

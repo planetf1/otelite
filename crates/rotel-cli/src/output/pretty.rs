@@ -1,10 +1,12 @@
 //! Pretty-print table formatting for CLI output
 
 use crate::api::models::{LogEntry, MetricResponse, SpanEntry, TraceDetail, TraceEntry};
-use crate::output::colors;
+use crate::config::Config;
+use crate::output::{colors, pager};
 use comfy_table::{presets::UTF8_FULL, Cell, ContentArrangement, Table};
 use rotel_core::telemetry::{format_attribute_value, GenAiSpanInfo};
 use std::collections::HashMap;
+use std::io;
 
 /// A span node in the tree for display
 #[derive(Debug, Clone)]
@@ -53,10 +55,10 @@ fn build_node(span: SpanEntry, span_map: &HashMap<String, Vec<SpanEntry>>) -> Sp
 }
 
 /// Print logs in a pretty table format
-pub fn print_logs_table(logs: &[LogEntry], no_color: bool, no_header: bool) {
+pub fn print_logs_table(logs: &[LogEntry], config: &Config) -> io::Result<()> {
     if logs.is_empty() {
         println!("No logs found");
-        return;
+        return Ok(());
     }
 
     let mut table = Table::new();
@@ -65,13 +67,13 @@ pub fn print_logs_table(logs: &[LogEntry], no_color: bool, no_header: bool) {
         .set_content_arrangement(ContentArrangement::Dynamic);
 
     // Add header (unless disabled)
-    if !no_header {
+    if !config.no_header {
         table.set_header(vec!["ID", "Timestamp", "Severity", "Message"]);
     }
 
     // Add rows
     for log in logs {
-        let severity_cell = if no_color {
+        let severity_cell = if config.no_color {
             Cell::new(&log.severity)
         } else {
             let color = colors::severity_color(&log.severity);
@@ -90,47 +92,62 @@ pub fn print_logs_table(logs: &[LogEntry], no_color: bool, no_header: bool) {
         ]);
     }
 
-    println!("{}", table);
+    let output = format!("{}\n", table);
+    pager::write_with_pager(config, &output)
 }
 
 /// Print a single log entry with full details
-pub fn print_log_details(log: &LogEntry, no_color: bool) {
-    let severity_color = if no_color {
+pub fn print_log_details(log: &LogEntry, config: &Config) -> io::Result<()> {
+    use std::fmt::Write;
+    let mut output = String::new();
+
+    let severity_color = if config.no_color {
         ""
     } else {
         colors::ansi::severity_color(&log.severity)
     };
-    let reset = if no_color { "" } else { colors::ansi::RESET };
+    let reset = if config.no_color {
+        ""
+    } else {
+        colors::ansi::RESET
+    };
 
     use chrono::{DateTime, Utc};
     let dt = DateTime::<Utc>::from_timestamp_nanos(log.timestamp);
     let timestamp_str = dt.format("%Y-%m-%d %H:%M:%S").to_string();
 
-    println!("Timestamp: {}", timestamp_str);
-    println!("Severity:  {}{}{}", severity_color, log.severity, reset);
-    println!("Body:      {}", log.body);
+    writeln!(output, "Timestamp: {}", timestamp_str).unwrap();
+    writeln!(
+        output,
+        "Severity:  {}{}{}",
+        severity_color, log.severity, reset
+    )
+    .unwrap();
+    writeln!(output, "Body:      {}", log.body).unwrap();
 
     if let Some(trace_id) = &log.trace_id {
-        println!("Trace ID:  {}", trace_id);
+        writeln!(output, "Trace ID:  {}", trace_id).unwrap();
     }
     if let Some(span_id) = &log.span_id {
-        println!("Span ID:   {}", span_id);
+        writeln!(output, "Span ID:   {}", span_id).unwrap();
     }
 
     if !log.attributes.is_empty() {
-        println!("\nAttributes:");
+        writeln!(output, "\nAttributes:").unwrap();
         for (key, value) in &log.attributes {
             let formatted = format_attribute_value(value);
-            print_key_value_block(key, &formatted, 2);
+            format_key_value_block(&mut output, key, &formatted, 2);
         }
     }
+
+    pager::write_with_pager(config, &output)
 }
 
 /// Print traces in a pretty table format
-pub fn print_traces_table(traces: &[TraceEntry], no_color: bool, no_header: bool) {
+pub fn print_traces_table(traces: &[TraceEntry], config: &Config) -> io::Result<()> {
     if traces.is_empty() {
         println!("No traces found");
-        return;
+        return Ok(());
     }
 
     let mut table = Table::new();
@@ -139,14 +156,14 @@ pub fn print_traces_table(traces: &[TraceEntry], no_color: bool, no_header: bool
         .set_content_arrangement(ContentArrangement::Dynamic);
 
     // Add header (unless disabled)
-    if !no_header {
+    if !config.no_header {
         table.set_header(vec!["Trace ID", "Root Span", "Duration", "Status", "Spans"]);
     }
 
     // Add rows
     for trace in traces {
         let status = if trace.has_errors { "ERROR" } else { "OK" };
-        let status_cell = if no_color {
+        let status_cell = if config.no_color {
             Cell::new(status)
         } else {
             let color = colors::trace_status_color(trace.has_errors);
@@ -164,29 +181,36 @@ pub fn print_traces_table(traces: &[TraceEntry], no_color: bool, no_header: bool
         ]);
     }
 
-    println!("{}", table);
+    let output = format!("{}\n", table);
+    pager::write_with_pager(config, &output)
 }
 
 /// Print a trace with span tree
-pub fn print_trace_tree(trace: &TraceDetail, _no_color: bool) {
-    println!("Trace ID: {}", trace.trace_id);
+pub fn print_trace_tree(trace: &TraceDetail, config: &Config) -> io::Result<()> {
+    use std::fmt::Write;
+    let mut output = String::new();
+
+    writeln!(output, "Trace ID: {}", trace.trace_id).unwrap();
     let duration_ms = trace.duration / 1_000_000;
-    println!("Duration: {}ms", duration_ms);
+    writeln!(output, "Duration: {}ms", duration_ms).unwrap();
     let status = if trace.spans.iter().any(|s| s.status.code == "Error") {
         "ERROR"
     } else {
         "OK"
     };
-    println!("Status:   {}", status);
-    println!("\nSpans:");
+    writeln!(output, "Status:   {}", status).unwrap();
+    writeln!(output, "\nSpans:").unwrap();
 
     let tree = build_span_tree(&trace.spans);
     for node in &tree {
-        print_span_node(node, 0);
+        format_span_node(&mut output, node, 0);
     }
+
+    pager::write_with_pager(config, &output)
 }
 
-fn print_span_node(node: &SpanNode, depth: usize) {
+fn format_span_node(output: &mut String, node: &SpanNode, depth: usize) {
+    use std::fmt::Write;
     let indent = "  ".repeat(depth);
     let prefix = if depth > 0 { "├─ " } else { "" };
 
@@ -214,44 +238,47 @@ fn print_span_node(node: &SpanNode, depth: usize) {
 
     let duration_ms = node.span.duration / 1_000_000;
 
-    println!(
+    writeln!(
+        output,
         "{}{}{} ({}ms){}",
         indent, prefix, node.span.name, duration_ms, genai_suffix
-    );
+    )
+    .unwrap();
 
     if !node.span.attributes.is_empty() {
         for (key, value) in &node.span.attributes {
             let formatted = format_attribute_value(value);
-            print_key_value_block(key, &formatted, depth + 1);
+            format_key_value_block(output, key, &formatted, depth + 1);
         }
     }
 
     for child in &node.children {
-        print_span_node(child, depth + 1);
+        format_span_node(output, child, depth + 1);
     }
 }
 
-fn print_key_value_block(key: &str, value: &str, indent_level: usize) {
+fn format_key_value_block(output: &mut String, key: &str, value: &str, indent_level: usize) {
+    use std::fmt::Write;
     let indent = "  ".repeat(indent_level);
     let continuation_indent = format!("{indent}    ");
     let mut lines = value.lines();
 
     if let Some(first_line) = lines.next() {
-        println!("{indent}{key}: {first_line}");
+        writeln!(output, "{indent}{key}: {first_line}").unwrap();
     } else {
-        println!("{indent}{key}:");
+        writeln!(output, "{indent}{key}:").unwrap();
     }
 
     for line in lines {
-        println!("{continuation_indent}{line}");
+        writeln!(output, "{continuation_indent}{line}").unwrap();
     }
 }
 
 /// Print metrics in a pretty table format
-pub fn print_metrics_table(metrics: &[MetricResponse], no_color: bool, no_header: bool) {
+pub fn print_metrics_table(metrics: &[MetricResponse], config: &Config) -> io::Result<()> {
     if metrics.is_empty() {
         println!("No metrics found");
-        return;
+        return Ok(());
     }
 
     let mut table = Table::new();
@@ -260,13 +287,13 @@ pub fn print_metrics_table(metrics: &[MetricResponse], no_color: bool, no_header
         .set_content_arrangement(ContentArrangement::Dynamic);
 
     // Add header (unless disabled)
-    if !no_header {
+    if !config.no_header {
         table.set_header(vec!["Name", "Type", "Value", "Timestamp"]);
     }
 
     // Add rows
     for metric in metrics {
-        let type_cell = if no_color {
+        let type_cell = if config.no_color {
             Cell::new(&metric.metric_type)
         } else {
             let color = colors::metric_type_color(&metric.metric_type);
@@ -294,47 +321,52 @@ pub fn print_metrics_table(metrics: &[MetricResponse], no_color: bool, no_header
         ]);
     }
 
-    println!("{}", table);
+    let output = format!("{}\n", table);
+    pager::write_with_pager(config, &output)
 }
 
 /// Print a single metric with full details including percentiles
-pub fn print_metric_details(metric: &MetricResponse, _no_color: bool) {
+pub fn print_metric_details(metric: &MetricResponse, config: &Config) -> io::Result<()> {
     use crate::api::models::MetricValue;
     use chrono::{DateTime, Utc};
+    use std::fmt::Write;
+    let mut output = String::new();
 
-    println!("Name:      {}", metric.name);
-    println!("Type:      {}", metric.metric_type);
+    writeln!(output, "Name:      {}", metric.name).unwrap();
+    writeln!(output, "Type:      {}", metric.metric_type).unwrap();
 
     match &metric.value {
-        MetricValue::Gauge(v) => println!("Value:     {:.2}", v),
-        MetricValue::Counter(v) => println!("Value:     {}", v),
+        MetricValue::Gauge(v) => writeln!(output, "Value:     {:.2}", v).unwrap(),
+        MetricValue::Counter(v) => writeln!(output, "Value:     {}", v).unwrap(),
         MetricValue::Histogram(h) => {
-            println!("Count:     {}", h.count);
-            println!("Sum:       {:.2}", h.sum);
-            println!("Buckets:");
+            writeln!(output, "Count:     {}", h.count).unwrap();
+            writeln!(output, "Sum:       {:.2}", h.sum).unwrap();
+            writeln!(output, "Buckets:").unwrap();
             for bucket in &h.buckets {
-                println!("  <= {:.2}: {}", bucket.upper_bound, bucket.count);
+                writeln!(output, "  <= {:.2}: {}", bucket.upper_bound, bucket.count).unwrap();
             }
         },
         MetricValue::Summary(s) => {
-            println!("Count:     {}", s.count);
-            println!("Sum:       {:.2}", s.sum);
-            println!("Quantiles:");
+            writeln!(output, "Count:     {}", s.count).unwrap();
+            writeln!(output, "Sum:       {:.2}", s.sum).unwrap();
+            writeln!(output, "Quantiles:").unwrap();
             for q in &s.quantiles {
-                println!("  p{}: {:.4}", (q.quantile * 100.0) as u32, q.value);
+                writeln!(output, "  p{}: {:.4}", (q.quantile * 100.0) as u32, q.value).unwrap();
             }
         },
     }
 
     let dt = DateTime::<Utc>::from_timestamp_nanos(metric.timestamp);
-    println!("Timestamp: {}", dt.format("%Y-%m-%d %H:%M:%S"));
+    writeln!(output, "Timestamp: {}", dt.format("%Y-%m-%d %H:%M:%S")).unwrap();
 
     if !metric.attributes.is_empty() {
-        println!("\nAttributes:");
+        writeln!(output, "\nAttributes:").unwrap();
         for (key, value) in &metric.attributes {
-            println!("  {}: {}", key, value);
+            writeln!(output, "  {}: {}", key, value).unwrap();
         }
     }
+
+    pager::write_with_pager(config, &output)
 }
 
 #[cfg(test)]
@@ -343,30 +375,45 @@ mod tests {
     use crate::api::models::{MetricValue, SpanStatus, TraceEntry};
     use std::collections::HashMap;
 
+    fn test_config() -> Config {
+        Config {
+            endpoint: "http://localhost:3000".to_string(),
+            timeout: std::time::Duration::from_secs(30),
+            format: crate::config::OutputFormat::Pretty,
+            no_color: true,
+            no_header: false,
+            no_pager: true,
+        }
+    }
+
     #[test]
     fn test_print_logs_table_empty() {
         let logs: Vec<LogEntry> = vec![];
+        let config = test_config();
         // Should not panic
-        print_logs_table(&logs, true, false);
+        let _ = print_logs_table(&logs, &config);
     }
 
     #[test]
     fn test_print_traces_table_empty() {
         let traces: Vec<TraceEntry> = vec![];
+        let config = test_config();
         // Should not panic
-        print_traces_table(&traces, true, false);
+        let _ = print_traces_table(&traces, &config);
     }
 
     #[test]
     fn test_print_metrics_table_empty() {
         let metrics: Vec<MetricResponse> = vec![];
+        let config = test_config();
         // Should not panic
-        print_metrics_table(&metrics, true, false);
+        let _ = print_metrics_table(&metrics, &config);
     }
 
     // T017: Unit test for logs pretty-print formatter
     #[test]
     fn test_print_log_details() {
+        let config = test_config();
         let log = LogEntry {
             timestamp: 1000000000000000000,
             severity: "ERROR".to_string(),
@@ -378,11 +425,12 @@ mod tests {
             span_id: None,
         };
         // Should not panic
-        print_log_details(&log, true);
+        let _ = print_log_details(&log, &config);
     }
 
     #[test]
     fn test_print_logs_table_with_data() {
+        let config = test_config();
         let logs = vec![
             LogEntry {
                 timestamp: 1000000000000000000,
@@ -416,12 +464,17 @@ mod tests {
             },
         ];
         // Should not panic and should handle different severity levels
-        print_logs_table(&logs, true, false);
-        print_logs_table(&logs, false, false); // Test without colors
+        let _ = print_logs_table(&logs, &config);
+        let config_color = Config {
+            no_color: false,
+            ..config
+        };
+        let _ = print_logs_table(&logs, &config_color);
     }
 
     #[test]
     fn test_print_logs_table_severity_colors() {
+        let config = test_config();
         // Test that different severities are handled
         let severities = vec!["ERROR", "WARN", "INFO", "DEBUG", "TRACE"];
         for severity in severities {
@@ -436,12 +489,13 @@ mod tests {
                 span_id: None,
             }];
             // Should not panic for any severity level
-            print_logs_table(&logs, true, false);
+            let _ = print_logs_table(&logs, &config);
         }
     }
 
     #[test]
     fn test_print_log_details_with_attributes() {
+        let config = test_config();
         let mut attributes = HashMap::new();
         attributes.insert("user_id".to_string(), "12345".to_string());
         attributes.insert("request_id".to_string(), "abc-def-ghi".to_string());
@@ -457,11 +511,12 @@ mod tests {
             span_id: None,
         };
         // Should not panic and should display attributes
-        print_log_details(&log, true);
+        let _ = print_log_details(&log, &config);
     }
 
     #[test]
     fn test_print_logs_table_long_messages() {
+        let config = test_config();
         let logs = vec![LogEntry {
 
             timestamp: 1000000000000000000,
@@ -474,12 +529,13 @@ mod tests {
             span_id: None,
         }];
         // Should not panic and should truncate long messages
-        print_logs_table(&logs, true, false);
+        let _ = print_logs_table(&logs, &config);
     }
 
     // T040: Unit test for traces pretty-print formatter
     #[test]
     fn test_print_traces_table_with_data() {
+        let config = test_config();
         let traces = vec![
             TraceEntry {
                 trace_id: "trace-001".to_string(),
@@ -501,11 +557,15 @@ mod tests {
             },
         ];
         // Should not panic
-        print_traces_table(&traces, true, false);
+        let _ = print_traces_table(&traces, &config);
     }
 
     #[test]
     fn test_print_traces_table_with_color() {
+        let config = Config {
+            no_color: false,
+            ..test_config()
+        };
         let traces = vec![TraceEntry {
             trace_id: "trace-001".to_string(),
             root_span_name: "http-request".to_string(),
@@ -516,13 +576,14 @@ mod tests {
             has_errors: false,
         }];
         // Should not panic with color enabled
-        print_traces_table(&traces, false, false);
+        let _ = print_traces_table(&traces, &config);
     }
 
     // T041: Unit test for span tree formatter
     #[test]
     fn test_print_trace_tree_simple() {
         use crate::api::models::SpanEntry;
+        let config = test_config();
 
         let trace = TraceDetail {
             trace_id: "trace-001".to_string(),
@@ -550,12 +611,13 @@ mod tests {
             service_names: vec![],
         };
         // Should not panic
-        print_trace_tree(&trace, true);
+        let _ = print_trace_tree(&trace, &config);
     }
 
     #[test]
     fn test_print_trace_tree_with_hierarchy() {
         use crate::api::models::SpanEntry;
+        let config = test_config();
 
         let trace = TraceDetail {
             trace_id: "trace-001".to_string(),
@@ -619,12 +681,13 @@ mod tests {
             service_names: vec![],
         };
         // Should not panic and should show hierarchy
-        print_trace_tree(&trace, true);
+        let _ = print_trace_tree(&trace, &config);
     }
 
     #[test]
     fn test_print_trace_tree_deep_hierarchy() {
         use crate::api::models::SpanEntry;
+        let config = test_config();
 
         let trace = TraceDetail {
             trace_id: "trace-001".to_string(),
@@ -705,12 +768,13 @@ mod tests {
             service_names: vec![],
         };
         // Should not panic and should show deep hierarchy
-        print_trace_tree(&trace, true);
+        let _ = print_trace_tree(&trace, &config);
     }
 
     // T063: Unit test for metrics pretty-print formatter
     #[test]
     fn test_print_metrics_table_with_data() {
+        let config = test_config();
         let metrics = vec![
             MetricResponse {
                 name: "http_requests_total".to_string(),
@@ -747,13 +811,18 @@ mod tests {
             },
         ];
         // Should not panic and should handle different metric types
-        print_metrics_table(&metrics, true, false);
-        print_metrics_table(&metrics, false, false); // Test with colors
+        let _ = print_metrics_table(&metrics, &config);
+        let config_color = Config {
+            no_color: false,
+            ..config
+        };
+        let _ = print_metrics_table(&metrics, &config_color);
     }
 
     #[test]
     fn test_print_metric_details_with_histogram() {
         use crate::api::models::{HistogramBucket, HistogramValue};
+        let config = test_config();
 
         let metric = MetricResponse {
             name: "response_time_ms".to_string(),
@@ -790,11 +859,12 @@ mod tests {
             resource: None,
         };
         // Should not panic and should display histogram
-        print_metric_details(&metric, true);
+        let _ = print_metric_details(&metric, &config);
     }
 
     #[test]
     fn test_print_metric_details_without_histogram() {
+        let config = test_config();
         let metric = MetricResponse {
             name: "http_requests_total".to_string(),
             description: None,
@@ -806,6 +876,6 @@ mod tests {
             resource: None,
         };
         // Should not panic even without histogram
-        print_metric_details(&metric, true);
+        let _ = print_metric_details(&metric, &config);
     }
 }

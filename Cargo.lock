@@ -2174,6 +2174,7 @@ dependencies = [
  "rotel-tui",
  "serde",
  "serde_json",
+ "term_size",
  "tokio",
  "tracing",
  "tracing-appender",
@@ -2677,6 +2678,16 @@ dependencies = [
  "once_cell",
  "rustix 1.1.4",
  "windows-sys 0.61.2",
+]
+
+[[package]]
+name = "term_size"
+version = "0.3.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "1e4129646ca0ed8f45d09b929036bafad5377103edd06e50bf574b353d2b08d9"
+dependencies = [
+ "libc",
+ "winapi",
 ]
 
 [[package]]

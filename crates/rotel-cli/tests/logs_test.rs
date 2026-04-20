@@ -19,6 +19,7 @@ fn create_test_config(
         format,
         no_color: true, // Disable colors for testing
         no_header: false,
+        no_pager: true,
     }
 }
 

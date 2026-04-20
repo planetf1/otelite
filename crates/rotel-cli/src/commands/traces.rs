@@ -49,7 +49,7 @@ pub async fn handle_list(
 
     match config.format {
         crate::config::OutputFormat::Pretty => {
-            pretty::print_traces_table(&traces_response.traces, config.no_color, config.no_header);
+            pretty::print_traces_table(&traces_response.traces, config)?;
         },
         crate::config::OutputFormat::Json => {
             json::print_traces_json(&traces_response.traces)?;
@@ -68,7 +68,7 @@ pub async fn handle_show(client: &ApiClient, config: &Config, id: &str) -> Resul
 
     match config.format {
         crate::config::OutputFormat::Pretty => {
-            pretty::print_trace_tree(&trace, config.no_color);
+            pretty::print_trace_tree(&trace, config)?;
         },
         crate::config::OutputFormat::Json => {
             json::print_trace_json(&trace)?;

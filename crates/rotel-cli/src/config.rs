@@ -44,6 +44,8 @@ pub struct Config {
     pub no_color: bool,
     /// Disable table headers
     pub no_header: bool,
+    /// Disable automatic paging
+    pub no_pager: bool,
 }
 
 impl Default for Config {
@@ -54,18 +56,21 @@ impl Default for Config {
             format: OutputFormat::Pretty,
             no_color: false,
             no_header: false,
+            no_pager: false,
         }
     }
 }
 
 impl Config {
     /// Create a new configuration with custom values
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         endpoint: String,
         timeout: Duration,
         format: OutputFormat,
         no_color: bool,
         no_header: bool,
+        no_pager: bool,
     ) -> Self {
         Self {
             endpoint,
@@ -73,6 +78,7 @@ impl Config {
             format,
             no_color,
             no_header,
+            no_pager,
         }
     }
 
@@ -178,11 +184,13 @@ mod tests {
             OutputFormat::Json,
             true,
             true,
+            true,
         );
         assert_eq!(config.endpoint, "http://example.com:9090");
         assert_eq!(config.timeout, Duration::from_secs(60));
         assert_eq!(config.format, OutputFormat::Json);
         assert!(config.no_color);
         assert!(config.no_header);
+        assert!(config.no_pager);
     }
 }
