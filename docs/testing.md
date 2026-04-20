@@ -352,39 +352,41 @@ fn test_with_mock() {
 ### Generating Coverage Reports
 
 ```bash
-# Install cargo-llvm-cov
+# Install cargo-llvm-cov (one-time)
 cargo install cargo-llvm-cov
 
-# Generate HTML report
-cargo llvm-cov --all-features --workspace --html
+# Text summary (use rustup run stable — see macOS note below)
+rustup run stable cargo llvm-cov --workspace --all-features --summary-only
 
-# Open report
+# HTML report
+rustup run stable cargo llvm-cov --workspace --all-features --html
 open target/llvm-cov/html/index.html
 
-# Generate text summary
-cargo llvm-cov --all-features --workspace
-
-# Generate JSON report
-cargo llvm-cov --all-features --workspace --json --output-path coverage.json
+# JSON report
+rustup run stable cargo llvm-cov --workspace --all-features --json --output-path coverage.json
 ```
+
+**macOS note — why `rustup run stable`:** On macOS with Homebrew Rust installed, the system `cargo` command typically resolves to Homebrew's binary, which does not bundle `llvm-tools`. `cargo llvm-cov` requires `llvm-tools` from the rustup-managed toolchain. The repo's `rust-toolchain.toml` pins `channel = "stable"` with `llvm-tools` as a component, but the Homebrew `cargo` binary won't respect this file. Using `rustup run stable cargo llvm-cov` bypasses Homebrew and directly invokes the rustup toolchain that has `llvm-tools` installed.
+
+CI has no Homebrew, so it runs `cargo llvm-cov` directly without this prefix.
+
+### Current Coverage (as of 2026-04-20)
+
+Workspace total: **73.4% line coverage**
+
+| Crate | Line Coverage |
+|-------|--------------|
+| rotel-core | ~94% |
+| rotel-storage | ~78% |
+| rotel-receiver | ~80% |
+| rotel-dashboard | ~20% (API handlers untested — see bead rotel-9mx) |
+| rotel-cli | ~83% |
+| rotel-tui | ~60% |
 
 ### Coverage Requirements
 
-- **Minimum**: 80% overall coverage
-- **Critical paths**: 100% coverage for security and data integrity code
-- **New code**: Must maintain or improve coverage percentage
-
-### Checking Coverage
-
-```bash
-# Check if coverage meets threshold
-./scripts/check-coverage.sh
-
-# Output:
-# Current coverage: 85.2%
-# Threshold: 80.0%
-# ✅ Coverage check passed
-```
+- **New code**: Must maintain or improve the crate-level threshold
+- **CI enforces per-crate minimums** (see CI/CD section below)
 
 ### Coverage in CI
 
@@ -511,8 +513,9 @@ Current enforced minimums:
 
 3. **Check Rust version**:
    ```bash
-   rustc --version
-   # Should be 1.77+
+   rustup run stable rustc --version
+   # Should be 1.85+ (for edition 2024 dependency support)
+   # If rustup stable is outdated: rustup update stable
    ```
 
 ### Tests Passing Locally but Failing in CI
@@ -559,8 +562,8 @@ Current enforced minimums:
 
 2. **Coverage too low**:
    ```bash
-   # Generate detailed report
-   cargo llvm-cov --all-features --workspace --html
+   # Generate detailed HTML report (see macOS note in Code Coverage section)
+   rustup run stable cargo llvm-cov --workspace --all-features --html
    open target/llvm-cov/html/index.html
    # Identify uncovered lines and add tests
    ```
