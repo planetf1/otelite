@@ -442,6 +442,127 @@ fn parse_metric_row(row: &Row) -> rusqlite::Result<Metric> {
     })
 }
 
+/// Query token usage statistics for GenAI/LLM spans
+///
+/// Returns aggregated token usage grouped by model and system (provider).
+/// Only includes spans with `gen_ai.system` attribute.
+pub fn query_token_usage(
+    conn: &Connection,
+    start_time: Option<i64>,
+    end_time: Option<i64>,
+) -> Result<(
+    rotel_core::api::TokenUsageSummary,
+    Vec<rotel_core::api::ModelUsage>,
+    Vec<rotel_core::api::SystemUsage>,
+)> {
+    // Build WHERE clause for time filtering
+    let mut where_clause =
+        String::from("WHERE json_extract(attributes, '$.\"gen_ai.system\"') IS NOT NULL");
+    let mut params: Vec<Box<dyn rusqlite::ToSql>> = Vec::new();
+
+    if let Some(start) = start_time {
+        where_clause.push_str(" AND start_time >= ?");
+        params.push(Box::new(start));
+    }
+    if let Some(end) = end_time {
+        where_clause.push_str(" AND end_time <= ?");
+        params.push(Box::new(end));
+    }
+
+    // Query overall summary
+    let summary_query = format!(
+        "SELECT
+            COALESCE(SUM(CAST(json_extract(attributes, '$.\"gen_ai.usage.input_tokens\"') AS INTEGER)), 0) as total_input,
+            COALESCE(SUM(CAST(json_extract(attributes, '$.\"gen_ai.usage.output_tokens\"') AS INTEGER)), 0) as total_output,
+            COUNT(*) as total_requests
+        FROM spans
+        {}",
+        where_clause
+    );
+
+    let param_refs: Vec<&dyn rusqlite::ToSql> = params.iter().map(|p| p.as_ref()).collect();
+
+    let summary = conn
+        .query_row(&summary_query, param_refs.as_slice(), |row| {
+            Ok(rotel_core::api::TokenUsageSummary {
+                total_input_tokens: row.get::<_, i64>(0)? as u64,
+                total_output_tokens: row.get::<_, i64>(1)? as u64,
+                total_requests: row.get::<_, i64>(2)? as usize,
+            })
+        })
+        .map_err(|e| StorageError::QueryError(format!("Failed to query token summary: {}", e)))?;
+
+    // Query by model
+    let model_query = format!(
+        "SELECT
+            json_extract(attributes, '$.\"gen_ai.request.model\"') as model,
+            COALESCE(SUM(CAST(json_extract(attributes, '$.\"gen_ai.usage.input_tokens\"') AS INTEGER)), 0) as input_tokens,
+            COALESCE(SUM(CAST(json_extract(attributes, '$.\"gen_ai.usage.output_tokens\"') AS INTEGER)), 0) as output_tokens,
+            COUNT(*) as requests
+        FROM spans
+        {}
+        GROUP BY model
+        HAVING model IS NOT NULL
+        ORDER BY input_tokens + output_tokens DESC",
+        where_clause
+    );
+
+    let mut stmt = conn
+        .prepare(&model_query)
+        .map_err(|e| StorageError::QueryError(format!("Failed to prepare model query: {}", e)))?;
+
+    let param_refs: Vec<&dyn rusqlite::ToSql> = params.iter().map(|p| p.as_ref()).collect();
+
+    let by_model = stmt
+        .query_map(param_refs.as_slice(), |row| {
+            Ok(rotel_core::api::ModelUsage {
+                model: row.get(0)?,
+                input_tokens: row.get::<_, i64>(1)? as u64,
+                output_tokens: row.get::<_, i64>(2)? as u64,
+                requests: row.get::<_, i64>(3)? as usize,
+            })
+        })
+        .map_err(|e| StorageError::QueryError(format!("Failed to execute model query: {}", e)))?
+        .collect::<std::result::Result<Vec<_>, _>>()
+        .map_err(|e| StorageError::QueryError(format!("Failed to parse model results: {}", e)))?;
+
+    // Query by system
+    let system_query = format!(
+        "SELECT
+            json_extract(attributes, '$.\"gen_ai.system\"') as system,
+            COALESCE(SUM(CAST(json_extract(attributes, '$.\"gen_ai.usage.input_tokens\"') AS INTEGER)), 0) as input_tokens,
+            COALESCE(SUM(CAST(json_extract(attributes, '$.\"gen_ai.usage.output_tokens\"') AS INTEGER)), 0) as output_tokens,
+            COUNT(*) as requests
+        FROM spans
+        {}
+        GROUP BY system
+        HAVING system IS NOT NULL
+        ORDER BY input_tokens + output_tokens DESC",
+        where_clause
+    );
+
+    let mut stmt = conn
+        .prepare(&system_query)
+        .map_err(|e| StorageError::QueryError(format!("Failed to prepare system query: {}", e)))?;
+
+    let param_refs: Vec<&dyn rusqlite::ToSql> = params.iter().map(|p| p.as_ref()).collect();
+
+    let by_system = stmt
+        .query_map(param_refs.as_slice(), |row| {
+            Ok(rotel_core::api::SystemUsage {
+                system: row.get(0)?,
+                input_tokens: row.get::<_, i64>(1)? as u64,
+                output_tokens: row.get::<_, i64>(2)? as u64,
+                requests: row.get::<_, i64>(3)? as usize,
+            })
+        })
+        .map_err(|e| StorageError::QueryError(format!("Failed to execute system query: {}", e)))?
+        .collect::<std::result::Result<Vec<_>, _>>()
+        .map_err(|e| StorageError::QueryError(format!("Failed to parse system results: {}", e)))?;
+
+    Ok((summary, by_model, by_system))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

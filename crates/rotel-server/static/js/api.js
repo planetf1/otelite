@@ -104,6 +104,13 @@ class ApiClient {
     }
 
     /**
+     * Fetch time-series data for a specific metric
+     */
+    async getMetricTimeseries(name, params = {}) {
+        return this.get(`/metrics/${encodeURIComponent(name)}/timeseries`, params);
+    }
+
+    /**
      * Export metrics
      */
     async exportMetrics(format = 'json', filters = {}) {

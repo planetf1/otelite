@@ -103,11 +103,17 @@ class MetricsView {
         if (!this.selectedMetric) return;
 
         try {
-            const data = await this.apiClient.getAggregatedMetrics({
+            // Use the new timeseries endpoint
+            const buckets = await this.apiClient.getMetricTimeseries(this.selectedMetric, {
+                step: this.interval
+            });
+
+            // Wrap in data structure expected by renderChart
+            const data = {
                 name: this.selectedMetric,
                 function: this.aggregation,
-                bucket_size: this.interval
-            });
+                buckets: buckets
+            };
 
             this.renderChart(data);
         } catch (error) {

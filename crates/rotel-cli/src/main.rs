@@ -129,6 +129,11 @@ enum Commands {
         #[command(subcommand)]
         command: MetricsCommands,
     },
+    /// Show token usage statistics for GenAI/LLM spans
+    #[command(
+        after_help = "Examples:\n  rotel usage --since 24h\n  rotel usage --model gpt-4 --by-model\n  rotel usage --system openai --since 7d"
+    )]
+    Usage(commands::usage::UsageCommand),
     /// Launch the Terminal User Interface
     #[command(
         after_help = "Examples:\n  rotel tui\n  rotel tui --api-url http://localhost:3000\n  rotel tui --view traces --refresh-interval 5"
@@ -448,6 +453,11 @@ async fn run_cli() -> Result<()> {
         Some(Commands::Logs { command }) => handle_logs_command(command, &config).await,
         Some(Commands::Traces { command }) => handle_traces_command(command, &config).await,
         Some(Commands::Metrics { command }) => handle_metrics_command(command, &config).await,
+        Some(Commands::Usage(cmd)) => {
+            let storage = create_storage(&config)?;
+            cmd.execute(storage)?;
+            Ok(())
+        },
         Some(Commands::Tui {
             api_url,
             refresh_interval,
@@ -459,6 +469,21 @@ async fn run_cli() -> Result<()> {
             run_dashboard("127.0.0.1:3000".parse().unwrap(), "rotel.db".to_string()).await
         },
     }
+}
+
+/// Create storage backend from config
+fn create_storage(_config: &Config) -> Result<Arc<dyn StorageBackend>> {
+    let storage_path = "rotel.db";
+    let storage_config = StorageConfig::default().with_data_dir(PathBuf::from(storage_path));
+
+    let mut storage = SqliteBackend::new(storage_config);
+    // Initialize synchronously using tokio runtime
+    tokio::runtime::Runtime::new()
+        .unwrap()
+        .block_on(storage.initialize())
+        .map_err(|e| Error::ApiError(format!("Failed to initialize storage: {}", e)))?;
+
+    Ok(Arc::new(storage))
 }
 
 async fn run_dashboard(addr: SocketAddr, storage_path: String) -> Result<()> {

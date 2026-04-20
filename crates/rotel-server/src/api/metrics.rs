@@ -517,6 +517,139 @@ pub async fn aggregate_metrics(
     Ok(Json(result))
 }
 
+/// Get time-series data for a specific metric
+#[utoipa::path(
+    get,
+    path = "/api/metrics/{name}/timeseries",
+    params(
+        ("name" = String, Path, description = "Metric name"),
+        ("start_time" = Option<i64>, Query, description = "Start time (nanoseconds since Unix epoch)"),
+        ("end_time" = Option<i64>, Query, description = "End time (nanoseconds since Unix epoch)"),
+        ("step" = Option<i64>, Query, description = "Time step in seconds (default: 60)")
+    ),
+    responses(
+        (status = 200, description = "Time-series data points", body = Vec<TimeBucket>),
+        (status = 404, description = "Metric not found", body = ErrorResponse),
+        (status = 500, description = "Internal server error", body = ErrorResponse)
+    ),
+    tag = "metrics"
+)]
+pub async fn get_metric_timeseries(
+    State(state): State<AppState>,
+    axum::extract::Path(name): axum::extract::Path<String>,
+    Query(query): Query<TimeseriesQuery>,
+) -> Result<Json<Vec<TimeBucket>>, (StatusCode, Json<ErrorResponse>)> {
+    // Check cache first
+    let cache_key = QueryCache::make_key(&(&name, &query));
+    if let Some(cached) = state.cache.metrics.get(&cache_key) {
+        if let Ok(response) = serde_json::from_str(&cached) {
+            return Ok(Json(response));
+        }
+    }
+
+    // Build query parameters
+    let mut params = QueryParams::default();
+    if let Some(start) = query.start_time {
+        params.start_time = Some(start);
+    }
+    if let Some(end) = query.end_time {
+        params.end_time = Some(end);
+    }
+
+    // Query metrics from storage
+    let metrics = state.storage.query_metrics(&params).await.map_err(|e| {
+        (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(ErrorResponse::storage_error(format!(
+                "query metric timeseries: {}",
+                e
+            ))),
+        )
+    })?;
+
+    // Filter by name
+    let metrics: Vec<_> = metrics.into_iter().filter(|m| m.name == name).collect();
+
+    if metrics.is_empty() {
+        return Err((
+            StatusCode::NOT_FOUND,
+            Json(ErrorResponse::not_found(format!("Metric '{}'", name))),
+        ));
+    }
+
+    // Group by time buckets
+    let step_seconds = query.step.unwrap_or(60);
+    let bucket_size_ns = step_seconds * 1_000_000_000;
+
+    let mut buckets: HashMap<i64, Vec<&Metric>> = HashMap::new();
+    for metric in &metrics {
+        let bucket_timestamp = (metric.timestamp / bucket_size_ns) * bucket_size_ns;
+        buckets.entry(bucket_timestamp).or_default().push(metric);
+    }
+
+    // Calculate average value per bucket
+    let mut time_buckets: Vec<TimeBucket> = buckets
+        .into_iter()
+        .map(|(timestamp, bucket_metrics)| {
+            let mut sum = 0.0;
+            let mut count = 0;
+
+            for metric in bucket_metrics {
+                match &metric.metric_type {
+                    MetricType::Gauge(v) => {
+                        sum += v;
+                        count += 1;
+                    },
+                    MetricType::Counter(v) => {
+                        sum += *v as f64;
+                        count += 1;
+                    },
+                    MetricType::Histogram {
+                        sum: s, count: c, ..
+                    } => {
+                        sum += s;
+                        count += *c as usize;
+                    },
+                    MetricType::Summary {
+                        sum: s, count: c, ..
+                    } => {
+                        sum += s;
+                        count += *c as usize;
+                    },
+                }
+            }
+
+            let value = if count > 0 { sum / count as f64 } else { 0.0 };
+
+            TimeBucket {
+                timestamp,
+                value,
+                count,
+            }
+        })
+        .collect();
+
+    time_buckets.sort_by_key(|b| b.timestamp);
+
+    // Cache the result
+    if let Ok(json) = serde_json::to_string(&time_buckets) {
+        state.cache.metrics.insert(cache_key, json);
+    }
+
+    Ok(Json(time_buckets))
+}
+
+/// Query parameters for time-series data
+#[derive(Debug, Deserialize, Serialize, utoipa::IntoParams, utoipa::ToSchema)]
+pub struct TimeseriesQuery {
+    /// Start time (nanoseconds since Unix epoch)
+    pub start_time: Option<i64>,
+    /// End time (nanoseconds since Unix epoch)
+    pub end_time: Option<i64>,
+    /// Time step in seconds (default: 60)
+    pub step: Option<i64>,
+}
+
 /// Export metrics as JSON
 #[utoipa::path(
     get,

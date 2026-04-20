@@ -426,3 +426,55 @@ mod tests {
         assert_eq!(err.details, Some("test details".to_string()));
     }
 }
+
+/// Token usage summary response for GenAI/LLM spans
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
+pub struct TokenUsageResponse {
+    /// Overall token usage summary
+    pub summary: TokenUsageSummary,
+    /// Token usage grouped by model
+    pub by_model: Vec<ModelUsage>,
+    /// Token usage grouped by system (provider)
+    pub by_system: Vec<SystemUsage>,
+}
+
+/// Overall token usage summary
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
+pub struct TokenUsageSummary {
+    /// Total input tokens across all requests
+    pub total_input_tokens: u64,
+    /// Total output tokens across all requests
+    pub total_output_tokens: u64,
+    /// Total number of GenAI requests
+    pub total_requests: usize,
+}
+
+/// Token usage for a specific model
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
+pub struct ModelUsage {
+    /// Model name (e.g., "gpt-4", "claude-sonnet-4-20250514")
+    pub model: String,
+    /// Input tokens for this model
+    pub input_tokens: u64,
+    /// Output tokens for this model
+    pub output_tokens: u64,
+    /// Number of requests for this model
+    pub requests: usize,
+}
+
+/// Token usage for a specific system (provider)
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
+pub struct SystemUsage {
+    /// System name (e.g., "openai", "anthropic")
+    pub system: String,
+    /// Input tokens for this system
+    pub input_tokens: u64,
+    /// Output tokens for this system
+    pub output_tokens: u64,
+    /// Number of requests for this system
+    pub requests: usize,
+}

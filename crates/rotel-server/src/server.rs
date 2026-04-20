@@ -27,7 +27,9 @@ use utoipa::OpenApi;
         crate::api::metrics::list_metrics,
         crate::api::metrics::list_metric_names,
         crate::api::metrics::aggregate_metrics,
+        crate::api::metrics::get_metric_timeseries,
         crate::api::metrics::export_metrics,
+        crate::api::genai::get_token_usage,
     ),
     components(
         schemas(
@@ -42,9 +44,15 @@ use utoipa::OpenApi;
             rotel_core::api::SpanStatus,
             rotel_core::api::SpanEvent,
             rotel_core::api::MetricResponse,
+            rotel_core::api::TokenUsageResponse,
+            rotel_core::api::TokenUsageSummary,
+            rotel_core::api::ModelUsage,
+            rotel_core::api::SystemUsage,
             crate::api::health::HealthResponse,
             crate::api::metrics::AggregateResponse,
             crate::api::metrics::TimeBucket,
+            crate::api::metrics::TimeseriesQuery,
+            crate::api::genai::TokenUsageQuery,
         )
     ),
     tags(
@@ -52,7 +60,8 @@ use utoipa::OpenApi;
         (name = "help", description = "API documentation and help"),
         (name = "logs", description = "Log query and export endpoints"),
         (name = "traces", description = "Trace query and export endpoints"),
-        (name = "metrics", description = "Metric query and aggregation endpoints")
+        (name = "metrics", description = "Metric query and aggregation endpoints"),
+        (name = "genai", description = "GenAI/LLM token usage and analytics endpoints")
     ),
     info(
         title = "Rotel API",
@@ -150,7 +159,10 @@ impl DashboardServer {
             .route("/api/metrics", get(crate::api::metrics::list_metrics))
             .route("/api/metrics/names", get(crate::api::metrics::list_metric_names))
             .route("/api/metrics/aggregate", get(crate::api::metrics::aggregate_metrics))
+            .route("/api/metrics/:name/timeseries", get(crate::api::metrics::get_metric_timeseries))
             .route("/api/metrics/export", get(crate::api::metrics::export_metrics))
+            // API routes - GenAI
+            .route("/api/genai/usage", get(crate::api::get_token_usage))
             // OpenAPI spec endpoint
             .route("/api/openapi.json", get(|| async {
                 axum::Json(ApiDoc::openapi())
