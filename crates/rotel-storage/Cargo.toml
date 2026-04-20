@@ -58,3 +58,7 @@ path = "tests/integration/fts5_search_test.rs"
 [[test]]
 name = "reader_coverage_test"
 path = "tests/integration/reader_coverage_test.rs"
+
+[[test]]
+name = "structured_query_test"
+path = "tests/integration/structured_query_test.rs"

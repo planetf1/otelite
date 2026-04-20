@@ -16,6 +16,8 @@ pub enum Error {
     NotFound(String),
     /// Invalid argument or configuration
     InvalidArgument(String),
+    /// Configuration or service management error
+    ConfigError(String),
     /// HTTP request error
     HttpError(reqwest::Error),
     /// JSON parsing error
@@ -31,6 +33,7 @@ impl fmt::Display for Error {
             Error::ConnectionError(msg) => write!(f, "Connection error: {}", msg),
             Error::NotFound(msg) => write!(f, "Not found: {}", msg),
             Error::InvalidArgument(msg) => write!(f, "Invalid argument: {}", msg),
+            Error::ConfigError(msg) => write!(f, "Configuration error: {}", msg),
             Error::HttpError(err) => write!(f, "HTTP error: {}", err),
             Error::JsonError(err) => write!(f, "JSON error: {}", err),
             Error::IoError(err) => write!(f, "IO error: {}", err),

@@ -158,6 +158,7 @@ async fn test_query_logs_with_all_filters() {
         min_severity: Some(SeverityLevel::Debug),
         limit: Some(5),
         search_text: None,
+        predicates: Vec::new(),
     };
     let logs = backend.query_logs(&params).await.unwrap();
     assert!(logs.len() <= 5);

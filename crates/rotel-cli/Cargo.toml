@@ -28,6 +28,10 @@ tracing-subscriber = { workspace = true, features = ["env-filter", "json"] }
 tracing-appender = "0.2"
 chrono = { workspace = true }
 
+# Unix signal handling for daemon management
+[target.'cfg(unix)'.dependencies]
+nix = { version = "0.29", features = ["signal", "process"] }
+
 # Internal dependencies
 rotel-core = { path = "../rotel-core" }
 rotel-server = { path = "../rotel-server" }

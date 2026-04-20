@@ -2,6 +2,7 @@
 
 use crate::error::{Result, StorageError};
 use crate::{QueryParams, StorageStats};
+use rotel_core::query::{Operator, QueryPredicate, QueryValue};
 use rotel_core::telemetry::log::SeverityLevel;
 use rotel_core::telemetry::trace::{SpanKind, SpanStatus, StatusCode};
 use rotel_core::telemetry::{LogRecord, Metric, Span};
@@ -43,6 +44,8 @@ pub fn query_logs(conn: &Connection, params: &QueryParams) -> Result<Vec<LogReco
         query.push_str(" AND id IN (SELECT rowid FROM logs_fts WHERE body MATCH ?)");
         sql_params.push(Box::new(search.clone()));
     }
+
+    append_predicates("logs", &params.predicates, &mut query, &mut sql_params)?;
 
     // Add ordering and limit
     query.push_str(" ORDER BY timestamp DESC");
@@ -87,6 +90,8 @@ pub fn query_spans(conn: &Connection, params: &QueryParams) -> Result<Vec<Span>>
         sql_params.push(Box::new(trace_id.clone()));
     }
 
+    append_predicates("spans", &params.predicates, &mut query, &mut sql_params)?;
+
     // Add ordering and limit
     query.push_str(" ORDER BY start_time DESC");
     if let Some(limit) = params.limit {
@@ -123,6 +128,8 @@ pub fn query_metrics(conn: &Connection, params: &QueryParams) -> Result<Vec<Metr
         query.push_str(" AND timestamp <= ?");
         sql_params.push(Box::new(end));
     }
+
+    append_predicates("metrics", &params.predicates, &mut query, &mut sql_params)?;
 
     // Add ordering and limit
     query.push_str(" ORDER BY timestamp DESC");
@@ -203,6 +210,126 @@ pub fn get_stats(conn: &Connection) -> Result<StorageStats> {
         newest_timestamp,
         storage_size_bytes: total_size_bytes as u64,
     })
+}
+
+fn append_predicates(
+    signal_type: &str,
+    predicates: &[QueryPredicate],
+    query: &mut String,
+    sql_params: &mut Vec<Box<dyn rusqlite::ToSql>>,
+) -> Result<()> {
+    for predicate in predicates {
+        let clause = predicate_to_sql(signal_type, predicate, sql_params)?;
+        query.push_str(" AND ");
+        query.push_str(&clause);
+    }
+
+    Ok(())
+}
+
+fn predicate_to_sql(
+    signal_type: &str,
+    predicate: &QueryPredicate,
+    sql_params: &mut Vec<Box<dyn rusqlite::ToSql>>,
+) -> Result<String> {
+    let lhs = field_to_sql(signal_type, &predicate.field)?;
+    let operator = sql_operator(&predicate.operator);
+
+    match (&predicate.field[..], &predicate.operator, &predicate.value) {
+        ("duration", op, QueryValue::Duration(value)) if signal_type == "spans" => {
+            sql_params.push(Box::new(*value as i64));
+            Ok(format!("((end_time - start_time) {} ?)", sql_operator(op)))
+        },
+        ("duration", _, _) if signal_type == "spans" => Err(StorageError::QueryError(
+            "Structured query field 'duration' for spans requires a duration value like 500ms"
+                .to_string(),
+        )),
+        (_, Operator::Contains, QueryValue::String(value)) => {
+            sql_params.push(Box::new(format!("%{}%", value)));
+            Ok(format!("{} LIKE ?", lhs))
+        },
+        (_, Operator::Contains, _) => Err(StorageError::QueryError(format!(
+            "Structured query operator 'contains' for field '{}' requires a quoted string value",
+            predicate.field
+        ))),
+        (_, _, QueryValue::String(value)) => {
+            sql_params.push(Box::new(value.clone()));
+            Ok(format!("{} {} ?", lhs, operator))
+        },
+        (_, _, QueryValue::Number(value)) => {
+            sql_params.push(Box::new(*value));
+            Ok(format!("{} {} ?", lhs, operator))
+        },
+        (_, _, QueryValue::Duration(value)) => {
+            sql_params.push(Box::new(*value as i64));
+            Ok(format!("{} {} ?", lhs, operator))
+        },
+    }
+}
+
+fn field_to_sql(signal_type: &str, field: &str) -> Result<String> {
+    let direct_column = match (signal_type, field) {
+        ("logs", "timestamp") => Some("timestamp"),
+        ("logs", "trace_id") => Some("trace_id"),
+        ("logs", "span_id") => Some("span_id"),
+        ("logs", "severity") | ("logs", "severity_number") => Some("severity_number"),
+        ("logs", "body") => Some("body"),
+        ("spans", "trace_id") => Some("trace_id"),
+        ("spans", "span_id") => Some("span_id"),
+        ("spans", "parent_span_id") => Some("parent_span_id"),
+        ("spans", "name") => Some("name"),
+        ("spans", "kind") => Some("kind"),
+        ("spans", "start_time") => Some("start_time"),
+        ("spans", "end_time") => Some("end_time"),
+        ("metrics", "name") => Some("name"),
+        ("metrics", "description") => Some("description"),
+        ("metrics", "unit") => Some("unit"),
+        ("metrics", "timestamp") => Some("timestamp"),
+        _ => None,
+    };
+
+    if let Some(column) = direct_column {
+        return Ok(column.to_string());
+    }
+
+    if let Some(attribute_field) = field.strip_prefix("attributes.") {
+        return Ok(format!(
+            "json_extract(attributes, '{}')",
+            json_path_for_key(attribute_field)
+        ));
+    }
+
+    if let Some(resource_field) = field.strip_prefix("resource.") {
+        return Ok(format!(
+            "json_extract(resource, '$.attributes{}')",
+            json_key_accessor(resource_field)
+        ));
+    }
+
+    Ok(format!(
+        "json_extract(attributes, '{}')",
+        json_path_for_key(field)
+    ))
+}
+
+fn json_path_for_key(field: &str) -> String {
+    format!("$.\"{}\"", field)
+}
+
+fn json_key_accessor(field: &str) -> String {
+    format!(".\"{}\"", field)
+}
+
+fn sql_operator(operator: &Operator) -> &'static str {
+    match operator {
+        Operator::Equal => "=",
+        Operator::NotEqual => "!=",
+        Operator::GreaterThan => ">",
+        Operator::LessThan => "<",
+        Operator::GreaterThanOrEqual => ">=",
+        Operator::LessThanOrEqual => "<=",
+        Operator::Contains => "LIKE",
+    }
 }
 
 // Helper functions to parse rows into telemetry types
@@ -341,5 +468,150 @@ mod tests {
         assert_eq!(stats.log_count, 0);
         assert_eq!(stats.span_count, 0);
         assert_eq!(stats.metric_count, 0);
+    }
+
+    #[test]
+    fn test_field_to_sql_for_attribute_field() {
+        let sql = field_to_sql("logs", "gen_ai.system").unwrap();
+        assert_eq!(sql, "json_extract(attributes, '$.\"gen_ai.system\"')");
+    }
+
+    #[test]
+    fn test_field_to_sql_for_explicit_attribute_prefix() {
+        let sql = field_to_sql("logs", "attributes.http.method").unwrap();
+        assert_eq!(sql, "json_extract(attributes, '$.\"http.method\"')");
+    }
+
+    #[test]
+    fn test_field_to_sql_for_resource_prefix() {
+        let sql = field_to_sql("logs", "resource.service.name").unwrap();
+        assert_eq!(
+            sql,
+            "json_extract(resource, '$.attributes.\"service.name\"')"
+        );
+    }
+
+    #[test]
+    fn test_json_key_accessor_quotes_dotted_keys() {
+        assert_eq!(json_key_accessor("service.name"), ".\"service.name\"");
+    }
+
+    #[test]
+    fn test_predicate_to_sql_for_attribute_equality() {
+        let mut params: Vec<Box<dyn rusqlite::ToSql>> = Vec::new();
+        let sql = predicate_to_sql(
+            "logs",
+            &QueryPredicate {
+                field: "gen_ai.system".to_string(),
+                operator: Operator::Equal,
+                value: QueryValue::String("anthropic".to_string()),
+            },
+            &mut params,
+        )
+        .unwrap();
+
+        assert_eq!(sql, "json_extract(attributes, '$.\"gen_ai.system\"') = ?");
+        assert_eq!(params.len(), 1);
+    }
+
+    #[test]
+    fn test_predicate_to_sql_for_resource_equality() {
+        let mut params: Vec<Box<dyn rusqlite::ToSql>> = Vec::new();
+        let sql = predicate_to_sql(
+            "logs",
+            &QueryPredicate {
+                field: "resource.service.name".to_string(),
+                operator: Operator::Equal,
+                value: QueryValue::String("gateway".to_string()),
+            },
+            &mut params,
+        )
+        .unwrap();
+
+        assert_eq!(
+            sql,
+            "json_extract(resource, '$.attributes.\"service.name\"') = ?"
+        );
+        assert_eq!(params.len(), 1);
+    }
+
+    #[test]
+    fn test_span_duration_predicate_requires_duration_value() {
+        let mut params = Vec::new();
+        let err = predicate_to_sql(
+            "spans",
+            &QueryPredicate {
+                field: "duration".to_string(),
+                operator: Operator::GreaterThan,
+                value: QueryValue::Number(100.0),
+            },
+            &mut params,
+        )
+        .unwrap_err();
+
+        assert!(err
+            .to_string()
+            .contains("requires a duration value like 500ms"));
+    }
+
+    #[test]
+    fn test_query_logs_with_structured_attribute_and_resource_predicates() {
+        let conn = setup_test_db();
+        conn.execute(
+            "INSERT INTO logs (
+                timestamp, observed_timestamp, trace_id, span_id,
+                severity_number, severity_text, body, attributes, resource, scope
+            ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
+            rusqlite::params![
+                1000_i64,
+                1000_i64,
+                "trace-a",
+                "span-a",
+                SeverityLevel::Info.to_i32(),
+                "INFO",
+                "matching log body",
+                r#"{"gen_ai.system":"anthropic"}"#,
+                r#"{"attributes":{"service.name":"gateway"}}"#,
+                "{}",
+            ],
+        )
+        .unwrap();
+
+        let params = QueryParams {
+            predicates: vec![
+                QueryPredicate {
+                    field: "gen_ai.system".to_string(),
+                    operator: Operator::Equal,
+                    value: QueryValue::String("anthropic".to_string()),
+                },
+                QueryPredicate {
+                    field: "resource.service.name".to_string(),
+                    operator: Operator::Equal,
+                    value: QueryValue::String("gateway".to_string()),
+                },
+            ],
+            ..Default::default()
+        };
+
+        let attr_match: Option<String> = conn
+            .query_row(
+                "SELECT json_extract(attributes, '$.\"gen_ai.system\"') FROM logs WHERE timestamp = 1000",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        let resource_match: Option<String> = conn
+            .query_row(
+                "SELECT json_extract(resource, '$.attributes.\"service.name\"') FROM logs WHERE timestamp = 1000",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(attr_match.as_deref(), Some("anthropic"));
+        assert_eq!(resource_match.as_deref(), Some("gateway"));
+
+        let logs = query_logs(&conn, &params).unwrap();
+        assert_eq!(logs.len(), 1);
+        assert_eq!(logs[0].body, "matching log body");
     }
 }

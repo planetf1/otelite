@@ -74,6 +74,33 @@ enum Commands {
         #[arg(long, default_value = "rotel.db")]
         storage_path: String,
     },
+    /// Start rotel as a background daemon
+    #[command(
+        after_help = "Examples:\n  rotel start\n  rotel start --addr 0.0.0.0:3000 --storage-path /data/rotel.db"
+    )]
+    Start {
+        /// Dashboard bind address
+        #[arg(long, default_value = "127.0.0.1:3000")]
+        addr: String,
+
+        /// Storage database path
+        #[arg(long, default_value = "rotel.db")]
+        storage_path: String,
+    },
+    /// Stop the background daemon
+    #[command(after_help = "Examples:\n  rotel stop")]
+    Stop,
+    /// Show daemon status
+    #[command(after_help = "Examples:\n  rotel status")]
+    Status,
+    /// Manage system service installation
+    #[command(
+        after_help = "Examples:\n  rotel service install\n\nThis creates a launchd plist (macOS) or systemd unit (Linux) for auto-start."
+    )]
+    Service {
+        #[command(subcommand)]
+        command: ServiceCommands,
+    },
     /// Manage log entries
     #[command(
         after_help = "Use 'rotel logs <command> --help' for more information on a specific command."
@@ -98,6 +125,15 @@ enum Commands {
         #[command(subcommand)]
         command: MetricsCommands,
     },
+}
+
+#[derive(Subcommand, Debug)]
+enum ServiceCommands {
+    /// Install rotel as a system service (launchd on macOS, systemd on Linux)
+    #[command(
+        after_help = "Examples:\n  rotel service install\n\nCreates a service configuration for auto-start on boot."
+    )]
+    Install,
 }
 
 #[derive(Subcommand, Debug)]
@@ -377,6 +413,12 @@ async fn run_cli() -> Result<()> {
     // Handle commands
     match cli.command {
         Some(Commands::Dashboard { addr, storage_path }) => run_dashboard(addr, storage_path).await,
+        Some(Commands::Start { addr, storage_path }) => {
+            commands::service::handle_start(storage_path, addr).await
+        },
+        Some(Commands::Stop) => commands::service::handle_stop().await,
+        Some(Commands::Status) => commands::service::handle_status().await,
+        Some(Commands::Service { command }) => handle_service_command(command).await,
         Some(Commands::Logs { command }) => handle_logs_command(command, &config).await,
         Some(Commands::Traces { command }) => handle_traces_command(command, &config).await,
         Some(Commands::Metrics { command }) => handle_metrics_command(command, &config).await,
@@ -581,4 +623,10 @@ async fn handle_metrics_command(command: MetricsCommands, config: &Config) -> Re
     }
 
     Ok(())
+}
+
+async fn handle_service_command(command: ServiceCommands) -> Result<()> {
+    match command {
+        ServiceCommands::Install => commands::service::handle_service_install().await,
+    }
 }

@@ -9,6 +9,7 @@ pub mod error;
 pub mod sqlite;
 
 use async_trait::async_trait;
+use rotel_core::query::QueryPredicate;
 use rotel_core::telemetry::log::SeverityLevel;
 use rotel_core::telemetry::{LogRecord, Metric, Span};
 
@@ -49,6 +50,8 @@ pub struct QueryParams {
     pub min_severity: Option<SeverityLevel>,
     /// Full-text search query (for logs)
     pub search_text: Option<String>,
+    /// Structured query predicates parsed from query expressions
+    pub predicates: Vec<QueryPredicate>,
 }
 
 /// Purge options for manual data cleanup
@@ -133,6 +136,7 @@ mod tests {
         assert!(params.span_id.is_none());
         assert!(params.min_severity.is_none());
         assert!(params.search_text.is_none());
+        assert!(params.predicates.is_empty());
     }
 
     #[test]
