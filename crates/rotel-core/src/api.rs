@@ -8,6 +8,66 @@
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
+/// Standard error response for all API endpoints
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ErrorResponse {
+    /// Human-readable error message
+    pub error: String,
+    /// Machine-readable error code
+    pub code: String,
+    /// Optional additional details
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub details: Option<String>,
+}
+
+impl ErrorResponse {
+    /// Create a new error response
+    pub fn new(code: impl Into<String>, error: impl Into<String>) -> Self {
+        Self {
+            error: error.into(),
+            code: code.into(),
+            details: None,
+        }
+    }
+
+    /// Create an error response with details
+    pub fn with_details(
+        code: impl Into<String>,
+        error: impl Into<String>,
+        details: impl Into<String>,
+    ) -> Self {
+        Self {
+            error: error.into(),
+            code: code.into(),
+            details: Some(details.into()),
+        }
+    }
+
+    /// Create a bad request error
+    pub fn bad_request(message: impl Into<String>) -> Self {
+        Self::new("BAD_REQUEST", message)
+    }
+
+    /// Create a not found error
+    pub fn not_found(resource: impl Into<String>) -> Self {
+        Self::new("NOT_FOUND", format!("{} not found", resource.into()))
+    }
+
+    /// Create an internal server error
+    pub fn internal_error(message: impl Into<String>) -> Self {
+        Self::new("INTERNAL_ERROR", message)
+    }
+
+    /// Create a storage error
+    pub fn storage_error(operation: impl Into<String>) -> Self {
+        Self::with_details(
+            "STORAGE_ERROR",
+            format!("Storage operation failed: {}", operation.into()),
+            "Check storage configuration and disk space",
+        )
+    }
+}
+
 /// Response for log listing
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct LogsResponse {
@@ -70,7 +130,7 @@ pub struct TraceDetail {
     pub service_names: Vec<String>,
 }
 
-/// Individual span entry for API response
+/// Individual span entry
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SpanEntry {
     pub span_id: String,
@@ -84,16 +144,18 @@ pub struct SpanEntry {
     #[serde(default)]
     pub attributes: HashMap<String, String>,
     pub resource: Option<Resource>,
-    pub status: Option<SpanStatus>,
+    pub status: SpanStatus,
     pub events: Vec<SpanEvent>,
 }
 
+/// Span status
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SpanStatus {
     pub code: String,
     pub message: Option<String>,
 }
 
+/// Span event
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SpanEvent {
     pub name: String,
@@ -102,7 +164,7 @@ pub struct SpanEvent {
     pub attributes: HashMap<String, String>,
 }
 
-/// Response structure for a single metric
+/// Metric response
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct MetricResponse {
     pub name: String,
@@ -113,25 +175,25 @@ pub struct MetricResponse {
     pub timestamp: i64,
     #[serde(default)]
     pub attributes: HashMap<String, String>,
-    pub resource: Option<HashMap<String, String>>,
+    pub resource: Option<Resource>,
 }
 
-/// Metric value (varies by type)
+/// Metric value (can be different types)
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(untagged)]
 pub enum MetricValue {
     Gauge(f64),
-    Counter(u64),
-    Histogram {
-        count: u64,
-        sum: f64,
-        buckets: Vec<HistogramBucket>,
-    },
-    Summary {
-        count: u64,
-        sum: f64,
-        quantiles: Vec<Quantile>,
-    },
+    Counter(i64),
+    Histogram(HistogramValue),
+    Summary(SummaryValue),
+}
+
+/// Histogram value
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct HistogramValue {
+    pub sum: f64,
+    pub count: u64,
+    pub buckets: Vec<HistogramBucket>,
 }
 
 /// Histogram bucket
@@ -141,48 +203,79 @@ pub struct HistogramBucket {
     pub count: u64,
 }
 
-/// Summary quantile
+/// Summary value
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SummaryValue {
+    pub sum: f64,
+    pub count: u64,
+    pub quantiles: Vec<Quantile>,
+}
+
+/// Quantile
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Quantile {
     pub quantile: f64,
     pub value: f64,
 }
 
-// Conversion implementations from domain types to API types
+// Conversion implementations from telemetry types
+
 impl From<crate::telemetry::LogRecord> for LogEntry {
     fn from(log: crate::telemetry::LogRecord) -> Self {
         Self {
             timestamp: log.timestamp,
             severity: log.severity.as_str().to_string(),
-            severity_text: log.severity_text,
+            severity_text: Some(log.severity.as_str().to_string()),
             body: log.body,
             attributes: log.attributes,
-            resource: log.resource.map(|r| Resource {
-                attributes: r.attributes,
-            }),
+            resource: log.resource.map(Resource::from),
             trace_id: log.trace_id,
             span_id: log.span_id,
         }
     }
 }
 
+impl From<crate::telemetry::Resource> for Resource {
+    fn from(resource: crate::telemetry::Resource) -> Self {
+        Self {
+            attributes: resource.attributes,
+        }
+    }
+}
+
 impl From<crate::telemetry::Span> for SpanEntry {
     fn from(span: crate::telemetry::Span) -> Self {
+        use crate::telemetry::trace::{SpanKind, StatusCode};
+
+        let kind_str = match span.kind {
+            SpanKind::Internal => "Internal",
+            SpanKind::Server => "Server",
+            SpanKind::Client => "Client",
+            SpanKind::Producer => "Producer",
+            SpanKind::Consumer => "Consumer",
+        };
+
+        let status_code_str = match span.status.code {
+            StatusCode::Unset => "Unset",
+            StatusCode::Ok => "Ok",
+            StatusCode::Error => "Error",
+        };
+
         Self {
             span_id: span.span_id,
             trace_id: span.trace_id,
             parent_span_id: span.parent_span_id,
             name: span.name,
-            kind: format!("{:?}", span.kind),
+            kind: kind_str.to_string(),
             start_time: span.start_time,
             end_time: span.end_time,
             duration: span.end_time - span.start_time,
             attributes: span.attributes,
-            resource: None, // Resource is on Trace, not Span
-            status: Some(SpanStatus {
-                code: format!("{:?}", span.status.code),
+            resource: None, // Span doesn't have resource, it's on Trace
+            status: SpanStatus {
+                code: status_code_str.to_string(),
                 message: span.status.message,
-            }),
+            },
             events: span
                 .events
                 .into_iter()
@@ -196,104 +289,61 @@ impl From<crate::telemetry::Span> for SpanEntry {
     }
 }
 
-// Helper methods for API types
-impl LogEntry {
-    /// Get a short display string for the log
-    pub fn short_display(&self) -> String {
-        use chrono::{DateTime, Utc};
-        let dt = DateTime::<Utc>::from_timestamp_nanos(self.timestamp);
-        format!(
-            "{} [{}] {}",
-            dt.format("%Y-%m-%d %H:%M:%S"),
-            self.severity,
-            self.body
-        )
-    }
-}
+impl From<crate::telemetry::Metric> for MetricResponse {
+    fn from(metric: crate::telemetry::Metric) -> Self {
+        use crate::telemetry::metric::MetricType;
 
-impl TraceEntry {
-    /// Get a short display string for the trace
-    pub fn short_display(&self) -> String {
-        let duration_ms = self.duration / 1_000_000;
-        let status = if self.has_errors { "ERROR" } else { "OK" };
-        format!("{} ({}ms) [{}]", self.root_span_name, duration_ms, status)
-    }
-}
-
-impl SpanEntry {
-    /// Build a tree structure of spans from a flat list
-    pub fn build_span_tree(spans: &[SpanEntry]) -> Vec<SpanNode> {
-        let mut nodes: std::collections::HashMap<String, SpanNode> =
-            std::collections::HashMap::new();
-        let mut root_nodes = Vec::new();
-
-        // Create nodes for all spans
-        for span in spans {
-            nodes.insert(
-                span.span_id.clone(),
-                SpanNode {
-                    span: span.clone(),
-                    children: Vec::new(),
-                },
-            );
-        }
-
-        // Build tree structure - collect parent-child relationships first
-        let mut parent_child_map: std::collections::HashMap<String, Vec<String>> =
-            std::collections::HashMap::new();
-        for span in spans {
-            if let Some(parent_id) = &span.parent_span_id {
-                parent_child_map
-                    .entry(parent_id.clone())
-                    .or_default()
-                    .push(span.span_id.clone());
-            }
-        }
-
-        // Now build the tree by adding children to parents
-        for (parent_id, child_ids) in parent_child_map {
-            // First collect all child nodes
-            let children: Vec<SpanNode> = child_ids
-                .iter()
-                .filter_map(|child_id| nodes.get(child_id).cloned())
-                .collect();
-
-            // Then add them to the parent
-            if let Some(parent_node) = nodes.get_mut(&parent_id) {
-                parent_node.children.extend(children);
-            }
-        }
-
-        // Collect root nodes (spans without parents)
-        for span in spans {
-            if span.parent_span_id.is_none() {
-                if let Some(node) = nodes.get(&span.span_id).cloned() {
-                    root_nodes.push(node);
-                }
-            }
-        }
-
-        root_nodes
-    }
-}
-
-/// Span node in a tree structure
-#[derive(Debug, Clone)]
-pub struct SpanNode {
-    pub span: SpanEntry,
-    pub children: Vec<SpanNode>,
-}
-
-impl MetricResponse {
-    /// Get a short display string for the metric
-    pub fn short_display(&self) -> String {
-        let value_str = match &self.value {
-            MetricValue::Gauge(v) => format!("{}", v),
-            MetricValue::Counter(v) => format!("{}", v),
-            MetricValue::Histogram { count, sum, .. } => format!("count={}, sum={}", count, sum),
-            MetricValue::Summary { count, sum, .. } => format!("count={}, sum={}", count, sum),
+        let (metric_type_str, value) = match metric.metric_type {
+            MetricType::Gauge(v) => ("gauge", MetricValue::Gauge(v)),
+            MetricType::Counter(v) => ("counter", MetricValue::Counter(v as i64)),
+            MetricType::Histogram {
+                count,
+                sum,
+                buckets,
+            } => (
+                "histogram",
+                MetricValue::Histogram(HistogramValue {
+                    sum,
+                    count,
+                    buckets: buckets
+                        .into_iter()
+                        .map(|b| HistogramBucket {
+                            upper_bound: b.upper_bound,
+                            count: b.count,
+                        })
+                        .collect(),
+                }),
+            ),
+            MetricType::Summary {
+                count,
+                sum,
+                quantiles,
+            } => (
+                "summary",
+                MetricValue::Summary(SummaryValue {
+                    sum,
+                    count,
+                    quantiles: quantiles
+                        .into_iter()
+                        .map(|q| Quantile {
+                            quantile: q.quantile,
+                            value: q.value,
+                        })
+                        .collect(),
+                }),
+            ),
         };
-        format!("{} = {} ({})", self.name, value_str, self.metric_type)
+
+        Self {
+            name: metric.name,
+            description: metric.description,
+            unit: metric.unit,
+            metric_type: metric_type_str.to_string(),
+            value,
+            timestamp: metric.timestamp,
+            attributes: metric.attributes,
+            resource: metric.resource.map(Resource::from),
+        }
     }
 }
 
@@ -302,69 +352,66 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_logs_response_serde() {
-        let response = LogsResponse {
-            logs: vec![LogEntry {
-                timestamp: 1_000_000_000_000_000_000,
-                severity: "ERROR".to_string(),
-                severity_text: None,
-                body: "Test error".to_string(),
-                attributes: HashMap::new(),
-                resource: None,
-                trace_id: None,
-                span_id: None,
-            }],
-            total: 1,
-            limit: 100,
-            offset: 0,
-        };
-
-        let json = serde_json::to_string(&response).unwrap();
-        let deserialized: LogsResponse = serde_json::from_str(&json).unwrap();
-        assert_eq!(deserialized.total, 1);
-        assert_eq!(deserialized.logs.len(), 1);
+    fn test_error_response_new() {
+        let err = ErrorResponse::new("TEST_ERROR", "Test error message");
+        assert_eq!(err.code, "TEST_ERROR");
+        assert_eq!(err.error, "Test error message");
+        assert!(err.details.is_none());
     }
 
     #[test]
-    fn test_traces_response_serde() {
-        let response = TracesResponse {
-            traces: vec![TraceEntry {
-                trace_id: "trace-001".to_string(),
-                root_span_name: "http-request".to_string(),
-                start_time: 1_000_000_000_000_000_000,
-                duration: 1_500_000_000,
-                span_count: 5,
-                service_names: vec!["api".to_string()],
-                has_errors: false,
-            }],
-            total: 1,
-            limit: 100,
-            offset: 0,
-        };
-
-        let json = serde_json::to_string(&response).unwrap();
-        let deserialized: TracesResponse = serde_json::from_str(&json).unwrap();
-        assert_eq!(deserialized.total, 1);
-        assert_eq!(deserialized.traces.len(), 1);
+    fn test_error_response_with_details() {
+        let err =
+            ErrorResponse::with_details("TEST_ERROR", "Test error message", "Additional details");
+        assert_eq!(err.code, "TEST_ERROR");
+        assert_eq!(err.error, "Test error message");
+        assert_eq!(err.details, Some("Additional details".to_string()));
     }
 
     #[test]
-    fn test_metric_response_serde() {
-        let metric = MetricResponse {
-            name: "http_requests_total".to_string(),
-            description: None,
-            unit: None,
-            metric_type: "counter".to_string(),
-            value: MetricValue::Counter(1234),
-            timestamp: 1_000_000_000_000_000_000,
-            attributes: HashMap::new(),
-            resource: None,
-        };
+    fn test_error_response_bad_request() {
+        let err = ErrorResponse::bad_request("Invalid parameter");
+        assert_eq!(err.code, "BAD_REQUEST");
+        assert_eq!(err.error, "Invalid parameter");
+    }
 
-        let json = serde_json::to_string(&metric).unwrap();
-        let deserialized: MetricResponse = serde_json::from_str(&json).unwrap();
-        assert_eq!(deserialized.name, "http_requests_total");
+    #[test]
+    fn test_error_response_not_found() {
+        let err = ErrorResponse::not_found("Log entry");
+        assert_eq!(err.code, "NOT_FOUND");
+        assert_eq!(err.error, "Log entry not found");
+    }
+
+    #[test]
+    fn test_error_response_internal_error() {
+        let err = ErrorResponse::internal_error("Database connection failed");
+        assert_eq!(err.code, "INTERNAL_ERROR");
+        assert_eq!(err.error, "Database connection failed");
+    }
+
+    #[test]
+    fn test_error_response_storage_error() {
+        let err = ErrorResponse::storage_error("write");
+        assert_eq!(err.code, "STORAGE_ERROR");
+        assert!(err.error.contains("write"));
+        assert!(err.details.is_some());
+    }
+
+    #[test]
+    fn test_error_response_serialization() {
+        let err = ErrorResponse::with_details("TEST", "message", "details");
+        let json = serde_json::to_string(&err).unwrap();
+        assert!(json.contains("\"code\":\"TEST\""));
+        assert!(json.contains("\"error\":\"message\""));
+        assert!(json.contains("\"details\":\"details\""));
+    }
+
+    #[test]
+    fn test_error_response_deserialization() {
+        let json = r#"{"error":"test message","code":"TEST_CODE","details":"test details"}"#;
+        let err: ErrorResponse = serde_json::from_str(json).unwrap();
+        assert_eq!(err.code, "TEST_CODE");
+        assert_eq!(err.error, "test message");
+        assert_eq!(err.details, Some("test details".to_string()));
     }
 }
-
-// Made with Bob

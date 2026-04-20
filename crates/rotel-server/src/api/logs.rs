@@ -5,7 +5,7 @@ use axum::{
     response::IntoResponse,
     Json,
 };
-use rotel_core::api::{LogEntry, LogsResponse};
+use rotel_core::api::{ErrorResponse, LogEntry, LogsResponse};
 use rotel_core::telemetry::LogRecord;
 use rotel_storage::QueryParams;
 use serde::{Deserialize, Serialize};
@@ -50,7 +50,7 @@ fn default_limit() -> usize {
 pub async fn list_logs(
     State(state): State<AppState>,
     Query(params): Query<LogsQuery>,
-) -> Result<impl IntoResponse, (StatusCode, String)> {
+) -> Result<impl IntoResponse, (StatusCode, Json<ErrorResponse>)> {
     // Check cache first
     let cache_key = QueryCache::make_key(&params);
     if let Some(cached) = state.cache.logs.get(&cache_key) {
@@ -80,11 +80,12 @@ pub async fn list_logs(
     }
 
     // Query logs from storage
-    let logs = state
-        .storage
-        .query_logs(&query)
-        .await
-        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+    let logs = state.storage.query_logs(&query).await.map_err(|e| {
+        (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(ErrorResponse::storage_error(format!("query logs: {}", e))),
+        )
+    })?;
 
     // Filter by resource if specified (post-query filtering for now)
     let filtered_logs: Vec<LogRecord> = if let Some(resource_filter) = &params.resource {
@@ -127,7 +128,7 @@ pub async fn list_logs(
 pub async fn get_log(
     State(state): State<AppState>,
     Path(timestamp): Path<i64>,
-) -> Result<impl IntoResponse, (StatusCode, String)> {
+) -> Result<impl IntoResponse, (StatusCode, Json<ErrorResponse>)> {
     // Query logs around this timestamp
     let query = QueryParams {
         start_time: Some(timestamp),
@@ -136,16 +137,25 @@ pub async fn get_log(
         ..Default::default()
     };
 
-    let logs = state
-        .storage
-        .query_logs(&query)
-        .await
-        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+    let logs = state.storage.query_logs(&query).await.map_err(|e| {
+        (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(ErrorResponse::storage_error(format!(
+                "query log by timestamp: {}",
+                e
+            ))),
+        )
+    })?;
 
-    let log = logs
-        .into_iter()
-        .next()
-        .ok_or_else(|| (StatusCode::NOT_FOUND, "Log not found".to_string()))?;
+    let log = logs.into_iter().next().ok_or_else(|| {
+        (
+            StatusCode::NOT_FOUND,
+            Json(ErrorResponse::not_found(format!(
+                "Log at timestamp {}",
+                timestamp
+            ))),
+        )
+    })?;
 
     Ok(Json(LogEntry::from(log)))
 }
@@ -170,7 +180,7 @@ fn default_format() -> String {
 pub async fn export_logs(
     State(state): State<AppState>,
     Query(params): Query<ExportQuery>,
-) -> Result<impl IntoResponse, (StatusCode, String)> {
+) -> Result<impl IntoResponse, (StatusCode, Json<ErrorResponse>)> {
     // Build query parameters (no limit for export, but cap at 10000)
     let mut query = QueryParams {
         start_time: params.filters.start_time,
@@ -184,11 +194,12 @@ pub async fn export_logs(
         query.min_severity = parse_severity(severity_str);
     }
 
-    let logs = state
-        .storage
-        .query_logs(&query)
-        .await
-        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+    let logs = state.storage.query_logs(&query).await.map_err(|e| {
+        (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(ErrorResponse::storage_error(format!("export logs: {}", e))),
+        )
+    })?;
 
     // Filter by resource if specified
     let filtered_logs: Vec<LogRecord> = if let Some(resource_filter) = &params.filters.resource {
@@ -238,7 +249,9 @@ pub async fn export_logs(
         },
         _ => Err((
             StatusCode::BAD_REQUEST,
-            "Invalid format. Use 'json' or 'csv'".to_string(),
+            Json(ErrorResponse::bad_request(
+                "Invalid format parameter. Use 'json' or 'csv'",
+            )),
         )),
     }
 }

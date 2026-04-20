@@ -366,15 +366,7 @@ fn format_span_detail(span: &Span, trace: &Trace) -> Text<'static> {
     let mut lines = vec![
         Line::from(vec![
             TextSpan::styled("Span: ", Style::default().add_modifier(Modifier::BOLD)),
-            TextSpan::styled(
-                span.name.clone(),
-                get_span_status_color(
-                    span.status
-                        .as_ref()
-                        .map(|s| s.code.as_str())
-                        .unwrap_or("Ok"),
-                ),
-            ),
+            TextSpan::styled(span.name.clone(), get_span_status_color(&span.status.code)),
         ]),
         Line::from(""),
         Line::from(vec![
@@ -393,16 +385,8 @@ fn format_span_detail(span: &Span, trace: &Trace) -> Text<'static> {
         Line::from(vec![
             TextSpan::styled("Status: ", Style::default().add_modifier(Modifier::BOLD)),
             TextSpan::styled(
-                span.status
-                    .as_ref()
-                    .map(|s| s.code.clone())
-                    .unwrap_or_else(|| "Ok".to_string()),
-                get_span_status_color(
-                    span.status
-                        .as_ref()
-                        .map(|s| s.code.as_str())
-                        .unwrap_or("Ok"),
-                ),
+                span.status.code.clone(),
+                get_span_status_color(&span.status.code),
             ),
         ]),
         Line::from(""),
@@ -646,12 +630,7 @@ fn format_trace_detail(trace: &Trace, state: &TracesState) -> Text<'static> {
             bar_width,
         );
 
-        let status_str = node
-            .span
-            .status
-            .as_ref()
-            .map(|s| s.code.as_str())
-            .unwrap_or("Ok");
+        let status_str = &node.span.status.code;
         let bar_color = get_timing_bar_color(status_str, node.duration_percent);
         let mut status_color = get_span_status_color(status_str);
 

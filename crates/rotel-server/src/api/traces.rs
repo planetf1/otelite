@@ -5,7 +5,7 @@ use axum::{
     response::IntoResponse,
     Json,
 };
-use rotel_core::api::{SpanEntry, TraceDetail, TraceEntry, TracesResponse};
+use rotel_core::api::{ErrorResponse, SpanEntry, TraceDetail, TraceEntry, TracesResponse};
 use rotel_core::telemetry::Span;
 use rotel_storage::QueryParams;
 use serde::{Deserialize, Serialize};
@@ -50,7 +50,7 @@ fn default_limit() -> usize {
 pub async fn list_traces(
     State(state): State<AppState>,
     Query(params): Query<TracesQuery>,
-) -> Result<impl IntoResponse, (StatusCode, String)> {
+) -> Result<impl IntoResponse, (StatusCode, Json<ErrorResponse>)> {
     // Check cache first
     let cache_key = QueryCache::make_key(&params);
     if let Some(cached) = state.cache.traces.get(&cache_key) {
@@ -75,11 +75,12 @@ pub async fn list_traces(
     };
 
     // Query spans from storage
-    let spans = state
-        .storage
-        .query_spans(&query)
-        .await
-        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+    let spans = state.storage.query_spans(&query).await.map_err(|e| {
+        (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(ErrorResponse::storage_error(format!("query spans: {}", e))),
+        )
+    })?;
 
     // Group spans by trace_id
     let mut traces_map: std::collections::HashMap<String, Vec<Span>> =
@@ -162,7 +163,7 @@ pub async fn list_traces(
 pub async fn get_trace(
     State(state): State<AppState>,
     Path(trace_id): Path<String>,
-) -> Result<impl IntoResponse, (StatusCode, String)> {
+) -> Result<impl IntoResponse, (StatusCode, Json<ErrorResponse>)> {
     // Query all spans for this trace
     let query = QueryParams {
         trace_id: Some(trace_id.clone()),
@@ -170,14 +171,21 @@ pub async fn get_trace(
         ..Default::default()
     };
 
-    let spans = state
-        .storage
-        .query_spans(&query)
-        .await
-        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+    let spans = state.storage.query_spans(&query).await.map_err(|e| {
+        (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(ErrorResponse::storage_error(format!(
+                "query trace spans: {}",
+                e
+            ))),
+        )
+    })?;
 
     if spans.is_empty() {
-        return Err((StatusCode::NOT_FOUND, "Trace not found".to_string()));
+        return Err((
+            StatusCode::NOT_FOUND,
+            Json(ErrorResponse::not_found(format!("Trace '{}'", trace_id))),
+        ));
     }
 
     let start_time = spans.iter().map(|s| s.start_time).min().unwrap_or(0);
@@ -225,7 +233,7 @@ fn default_format() -> String {
 pub async fn export_traces(
     State(state): State<AppState>,
     Query(params): Query<ExportQuery>,
-) -> Result<impl IntoResponse, (StatusCode, String)> {
+) -> Result<impl IntoResponse, (StatusCode, Json<ErrorResponse>)> {
     // Build query parameters (no limit for export, but cap at 10000)
     let query = QueryParams {
         start_time: params.filters.start_time,
@@ -235,11 +243,15 @@ pub async fn export_traces(
         ..Default::default()
     };
 
-    let spans = state
-        .storage
-        .query_spans(&query)
-        .await
-        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+    let spans = state.storage.query_spans(&query).await.map_err(|e| {
+        (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(ErrorResponse::storage_error(format!(
+                "export traces: {}",
+                e
+            ))),
+        )
+    })?;
 
     match params.format.as_str() {
         "json" => {
@@ -259,7 +271,9 @@ pub async fn export_traces(
         },
         _ => Err((
             StatusCode::BAD_REQUEST,
-            "Invalid format. Use 'json'".to_string(),
+            Json(ErrorResponse::bad_request(
+                "Invalid format parameter. Use 'json'",
+            )),
         )),
     }
 }

@@ -5,8 +5,8 @@ pub mod models;
 
 pub use client::ApiClient;
 pub use models::{
-    LogEntry, LogsResponse, MetricResponse, MetricValue, SpanEntry, SpanNode, TraceDetail,
-    TraceEntry, TracesResponse,
+    LogEntry, LogsResponse, MetricResponse, MetricValue, SpanEntry, TraceDetail, TraceEntry,
+    TracesResponse,
 };
 
 // Made with Bob

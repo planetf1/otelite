@@ -4,7 +4,10 @@ use axum::{
     http::StatusCode,
     response::{IntoResponse, Json},
 };
-use rotel_core::api::{HistogramBucket, MetricResponse, MetricValue, Quantile};
+use rotel_core::api::{
+    ErrorResponse, HistogramBucket, HistogramValue, MetricResponse, MetricValue, Quantile,
+    Resource, SummaryValue,
+};
 use rotel_core::telemetry::metric::MetricType;
 use rotel_core::telemetry::Metric;
 use rotel_storage::QueryParams;
@@ -65,7 +68,7 @@ pub struct TimeBucket {
 pub async fn list_metrics(
     State(state): State<AppState>,
     Query(query): Query<MetricsQuery>,
-) -> Result<Json<Vec<MetricResponse>>, StatusCode> {
+) -> Result<Json<Vec<MetricResponse>>, (StatusCode, Json<ErrorResponse>)> {
     // Check cache first
     let cache_key = QueryCache::make_key(&query);
     if let Some(cached) = state.cache.metrics.get(&cache_key) {
@@ -88,11 +91,15 @@ pub async fn list_metrics(
     }
 
     // Query metrics from storage
-    let mut metrics = state
-        .storage
-        .query_metrics(&params)
-        .await
-        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    let mut metrics = state.storage.query_metrics(&params).await.map_err(|e| {
+        (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(ErrorResponse::storage_error(format!(
+                "query metrics: {}",
+                e
+            ))),
+        )
+    })?;
 
     // Filter by name if specified
     if let Some(name_filter) = &query.name {
@@ -124,14 +131,14 @@ pub async fn list_metrics(
         .map(|metric| {
             let (metric_type_str, value) = match &metric.metric_type {
                 MetricType::Gauge(v) => ("gauge", MetricValue::Gauge(*v)),
-                MetricType::Counter(v) => ("counter", MetricValue::Counter(*v)),
+                MetricType::Counter(v) => ("counter", MetricValue::Counter(*v as i64)),
                 MetricType::Histogram {
                     count,
                     sum,
                     buckets,
                 } => (
                     "histogram",
-                    MetricValue::Histogram {
+                    MetricValue::Histogram(HistogramValue {
                         count: *count,
                         sum: *sum,
                         buckets: buckets
@@ -141,7 +148,7 @@ pub async fn list_metrics(
                                 count: b.count,
                             })
                             .collect(),
-                    },
+                    }),
                 ),
                 MetricType::Summary {
                     count,
@@ -149,7 +156,7 @@ pub async fn list_metrics(
                     quantiles,
                 } => (
                     "summary",
-                    MetricValue::Summary {
+                    MetricValue::Summary(SummaryValue {
                         count: *count,
                         sum: *sum,
                         quantiles: quantiles
@@ -159,7 +166,7 @@ pub async fn list_metrics(
                                 value: q.value,
                             })
                             .collect(),
-                    },
+                    }),
                 ),
             };
 
@@ -171,7 +178,9 @@ pub async fn list_metrics(
                 value,
                 timestamp: metric.timestamp,
                 attributes: metric.attributes,
-                resource: metric.resource.map(|r| r.attributes),
+                resource: metric.resource.map(|r| Resource {
+                    attributes: r.attributes,
+                }),
             }
         })
         .collect();
@@ -182,14 +191,18 @@ pub async fn list_metrics(
 /// Get list of unique metric names
 pub async fn list_metric_names(
     State(state): State<AppState>,
-) -> Result<Json<Vec<String>>, StatusCode> {
+) -> Result<Json<Vec<String>>, (StatusCode, Json<ErrorResponse>)> {
     // Query all metrics
     let params = QueryParams::default();
-    let metrics = state
-        .storage
-        .query_metrics(&params)
-        .await
-        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    let metrics = state.storage.query_metrics(&params).await.map_err(|e| {
+        (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(ErrorResponse::storage_error(format!(
+                "list metric names: {}",
+                e
+            ))),
+        )
+    })?;
 
     // Extract unique names
     let mut names: Vec<String> = metrics
@@ -207,7 +220,7 @@ pub async fn list_metric_names(
 pub async fn aggregate_metrics(
     State(state): State<AppState>,
     Query(query): Query<AggregateQuery>,
-) -> Result<Json<AggregateResponse>, StatusCode> {
+) -> Result<Json<AggregateResponse>, (StatusCode, Json<ErrorResponse>)> {
     // Check cache first
     let cache_key = QueryCache::make_key(&query);
     if let Some(cached) = state.cache.metrics.get(&cache_key) {
@@ -227,11 +240,15 @@ pub async fn aggregate_metrics(
     }
 
     // Query metrics from storage
-    let metrics = state
-        .storage
-        .query_metrics(&params)
-        .await
-        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    let metrics = state.storage.query_metrics(&params).await.map_err(|e| {
+        (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(ErrorResponse::storage_error(format!(
+                "aggregate metrics: {}",
+                e
+            ))),
+        )
+    })?;
 
     // Filter by name
     let metrics: Vec<_> = metrics
@@ -240,7 +257,10 @@ pub async fn aggregate_metrics(
         .collect();
 
     if metrics.is_empty() {
-        return Err(StatusCode::NOT_FOUND);
+        return Err((
+            StatusCode::NOT_FOUND,
+            Json(ErrorResponse::not_found(format!("Metric '{}'", query.name))),
+        ));
     }
 
     // Perform aggregation based on function
@@ -360,7 +380,15 @@ pub async fn aggregate_metrics(
                 buckets: None,
             }
         },
-        _ => return Err(StatusCode::BAD_REQUEST),
+        _ => {
+            return Err((
+                StatusCode::BAD_REQUEST,
+                Json(ErrorResponse::bad_request(format!(
+                    "Invalid aggregation function '{}'. Use: sum, avg, min, max",
+                    query.function
+                ))),
+            ))
+        },
     };
 
     // If bucket_size is specified, perform time-series aggregation
@@ -462,7 +490,7 @@ pub async fn aggregate_metrics(
 pub async fn export_metrics(
     State(state): State<AppState>,
     Query(query): Query<MetricsQuery>,
-) -> Result<impl IntoResponse, StatusCode> {
+) -> Result<impl IntoResponse, (StatusCode, Json<ErrorResponse>)> {
     // Build query parameters
     let mut params = QueryParams::default();
 
@@ -474,11 +502,15 @@ pub async fn export_metrics(
     }
 
     // Query metrics from storage
-    let metrics = state
-        .storage
-        .query_metrics(&params)
-        .await
-        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    let metrics = state.storage.query_metrics(&params).await.map_err(|e| {
+        (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(ErrorResponse::storage_error(format!(
+                "export metrics: {}",
+                e
+            ))),
+        )
+    })?;
 
     // Filter by name if specified
     let metrics: Vec<_> = if let Some(name_filter) = &query.name {
@@ -491,8 +523,15 @@ pub async fn export_metrics(
     };
 
     // Convert to JSON
-    let json =
-        serde_json::to_string_pretty(&metrics).map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    let json = serde_json::to_string_pretty(&metrics).map_err(|e| {
+        (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(ErrorResponse::internal_error(format!(
+                "Failed to serialize metrics: {}",
+                e
+            ))),
+        )
+    })?;
 
     Ok((StatusCode::OK, [("Content-Type", "application/json")], json))
 }

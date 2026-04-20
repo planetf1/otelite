@@ -1,8 +1,55 @@
 //! Pretty-print table formatting for CLI output
 
-use crate::api::models::{LogEntry, MetricResponse, SpanNode, TraceDetail, TraceEntry};
+use crate::api::models::{LogEntry, MetricResponse, SpanEntry, TraceDetail, TraceEntry};
 use comfy_table::{presets::UTF8_FULL, Cell, Color, ContentArrangement, Table};
 use rotel_core::telemetry::{format_attribute_value, GenAiSpanInfo};
+use std::collections::HashMap;
+
+/// A span node in the tree for display
+#[derive(Debug, Clone)]
+struct SpanNode {
+    span: SpanEntry,
+    children: Vec<SpanNode>,
+}
+
+/// Build a simple span tree from flat list
+fn build_span_tree(spans: &[SpanEntry]) -> Vec<SpanNode> {
+    let mut span_map: HashMap<String, Vec<SpanEntry>> = HashMap::new();
+
+    // Group spans by parent
+    for span in spans {
+        if let Some(parent_id) = &span.parent_span_id {
+            span_map
+                .entry(parent_id.clone())
+                .or_default()
+                .push(span.clone());
+        }
+    }
+
+    // Find root spans and build tree
+    let mut nodes = Vec::new();
+    for span in spans {
+        if span.parent_span_id.is_none() {
+            nodes.push(build_node(span.clone(), &span_map));
+        }
+    }
+
+    nodes
+}
+
+fn build_node(span: SpanEntry, span_map: &HashMap<String, Vec<SpanEntry>>) -> SpanNode {
+    let children = span_map
+        .get(&span.span_id)
+        .map(|children| {
+            children
+                .iter()
+                .map(|child| build_node(child.clone(), span_map))
+                .collect()
+        })
+        .unwrap_or_default();
+
+    SpanNode { span, children }
+}
 
 /// Print logs in a pretty table format
 pub fn print_logs_table(logs: &[LogEntry], no_color: bool, no_header: bool) {
@@ -140,12 +187,7 @@ pub fn print_trace_tree(trace: &TraceDetail, _no_color: bool) {
     println!("Trace ID: {}", trace.trace_id);
     let duration_ms = trace.duration / 1_000_000;
     println!("Duration: {}ms", duration_ms);
-    let status = if trace.spans.iter().any(|s| {
-        s.status
-            .as_ref()
-            .map(|st| st.code == "Error")
-            .unwrap_or(false)
-    }) {
+    let status = if trace.spans.iter().any(|s| s.status.code == "Error") {
         "ERROR"
     } else {
         "OK"
@@ -153,8 +195,7 @@ pub fn print_trace_tree(trace: &TraceDetail, _no_color: bool) {
     println!("Status:   {}", status);
     println!("\nSpans:");
 
-    use crate::api::models::SpanEntry;
-    let tree = SpanEntry::build_span_tree(&trace.spans);
+    let tree = build_span_tree(&trace.spans);
     for node in &tree {
         print_span_node(node, 0);
     }
@@ -259,8 +300,8 @@ pub fn print_metrics_table(metrics: &[MetricResponse], no_color: bool, no_header
         let value_str = match &metric.value {
             MetricValue::Gauge(v) => format!("{:.2}", v),
             MetricValue::Counter(v) => format!("{}", v),
-            MetricValue::Histogram { count, sum, .. } => format!("count={}, sum={:.2}", count, sum),
-            MetricValue::Summary { count, sum, .. } => format!("count={}, sum={:.2}", count, sum),
+            MetricValue::Histogram(h) => format!("count={}, sum={:.2}", h.count, h.sum),
+            MetricValue::Summary(s) => format!("count={}, sum={:.2}", s.count, s.sum),
         };
 
         let dt = DateTime::<Utc>::from_timestamp_nanos(metric.timestamp);
@@ -288,27 +329,19 @@ pub fn print_metric_details(metric: &MetricResponse, _no_color: bool) {
     match &metric.value {
         MetricValue::Gauge(v) => println!("Value:     {:.2}", v),
         MetricValue::Counter(v) => println!("Value:     {}", v),
-        MetricValue::Histogram {
-            count,
-            sum,
-            buckets,
-        } => {
-            println!("Count:     {}", count);
-            println!("Sum:       {:.2}", sum);
+        MetricValue::Histogram(h) => {
+            println!("Count:     {}", h.count);
+            println!("Sum:       {:.2}", h.sum);
             println!("Buckets:");
-            for bucket in buckets {
+            for bucket in &h.buckets {
                 println!("  <= {:.2}: {}", bucket.upper_bound, bucket.count);
             }
         },
-        MetricValue::Summary {
-            count,
-            sum,
-            quantiles,
-        } => {
-            println!("Count:     {}", count);
-            println!("Sum:       {:.2}", sum);
+        MetricValue::Summary(s) => {
+            println!("Count:     {}", s.count);
+            println!("Sum:       {:.2}", s.sum);
             println!("Quantiles:");
-            for q in quantiles {
+            for q in &s.quantiles {
                 println!("  p{}: {:.4}", (q.quantile * 100.0) as u32, q.value);
             }
         },
@@ -717,14 +750,14 @@ mod tests {
 
     #[test]
     fn test_print_metric_details_with_histogram() {
-        use crate::api::models::HistogramBucket;
+        use crate::api::models::{HistogramBucket, HistogramValue};
 
         let metric = MetricResponse {
             name: "response_time_ms".to_string(),
             description: None,
             unit: None,
             metric_type: "histogram".to_string(),
-            value: MetricValue::Histogram {
+            value: MetricValue::Histogram(HistogramValue {
                 count: 150,
                 sum: 15000.0,
                 buckets: vec![
@@ -745,7 +778,7 @@ mod tests {
                         count: 5,
                     },
                 ],
-            },
+            }),
             timestamp: 1000000000000000000,
             attributes: HashMap::from([
                 ("endpoint".to_string(), "/api/users".to_string()),

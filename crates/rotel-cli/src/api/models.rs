@@ -4,8 +4,9 @@
 
 // Re-export shared API types from rotel-core
 pub use rotel_core::api::{
-    HistogramBucket, LogEntry, LogsResponse, MetricResponse, MetricValue, Quantile, Resource,
-    SpanEntry, SpanEvent, SpanNode, SpanStatus, TraceDetail, TraceEntry, TracesResponse,
+    HistogramBucket, HistogramValue, LogEntry, LogsResponse, MetricResponse, MetricValue, Quantile,
+    Resource, SpanEntry, SpanEvent, SpanStatus, SummaryValue, TraceDetail, TraceEntry,
+    TracesResponse,
 };
 
 #[cfg(test)]
