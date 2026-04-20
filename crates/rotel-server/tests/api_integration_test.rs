@@ -38,6 +38,10 @@ fn build_test_router(storage: Arc<dyn StorageBackend>) -> Router {
             axum::routing::get(rotel_server::api::health::health_check),
         )
         .route(
+            "/api/help",
+            axum::routing::get(rotel_server::api::help::api_help),
+        )
+        .route(
             "/api/logs",
             axum::routing::get(rotel_server::api::logs::list_logs),
         )
@@ -80,6 +84,19 @@ fn build_test_router(storage: Arc<dyn StorageBackend>) -> Router {
         .route(
             "/api/metrics/{name}/timeseries",
             axum::routing::get(rotel_server::api::metrics::get_metric_timeseries),
+        )
+        .route(
+            "/api/openapi.json",
+            axum::routing::get(|| async {
+                use utoipa::OpenApi;
+                #[derive(OpenApi)]
+                #[openapi(
+                    paths(rotel_server::api::health::health_check,),
+                    info(title = "Rotel API", version = "1.0.0",)
+                )]
+                struct ApiDoc;
+                axum::Json(ApiDoc::openapi())
+            }),
         )
         .with_state(state)
 }
@@ -163,6 +180,35 @@ async fn test_health_check() {
     assert_eq!(health.status, "healthy");
     assert_eq!(health.storage, "connected");
     assert!(!health.version.is_empty());
+}
+
+// NEW TEST: GET /api/help
+#[tokio::test]
+async fn test_help_endpoint() {
+    let (storage, _tmp) = setup_test_storage().await;
+    let app = build_test_router(storage);
+
+    let response = app
+        .oneshot(
+            Request::builder()
+                .uri("/api/help")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), StatusCode::OK);
+    assert_eq!(
+        response.headers().get("content-type").unwrap(),
+        "text/plain; charset=utf-8"
+    );
+
+    let body = response.into_body().collect().await.unwrap().to_bytes();
+    let help_text = String::from_utf8(body.to_vec()).unwrap();
+
+    assert!(!help_text.is_empty());
+    assert!(help_text.contains("API"));
 }
 
 #[tokio::test]
@@ -372,12 +418,17 @@ async fn test_export_logs_json() {
     );
 }
 
+// ENHANCED TEST: GET /api/logs/export CSV with proper validation
 #[tokio::test]
-async fn test_export_logs_csv() {
+async fn test_export_logs_csv_with_validation() {
     let (storage, _tmp) = setup_test_storage().await;
 
     storage
         .write_log(&create_test_log(1000, SeverityLevel::Info, "Log 1"))
+        .await
+        .unwrap();
+    storage
+        .write_log(&create_test_log(2000, SeverityLevel::Error, "Log 2"))
         .await
         .unwrap();
 
@@ -399,7 +450,38 @@ async fn test_export_logs_csv() {
     let body = response.into_body().collect().await.unwrap().to_bytes();
     let csv = String::from_utf8(body.to_vec()).unwrap();
 
-    assert!(csv.contains("timestamp,severity,body"));
+    // Parse CSV and validate structure
+    let lines: Vec<&str> = csv.lines().collect();
+    assert!(
+        lines.len() >= 3,
+        "Expected at least 3 lines (header + 2 data rows), got {}",
+        lines.len()
+    ); // header + 2 data rows
+
+    // Validate header - actual format is: timestamp,severity,body,trace_id,span_id
+    let header = lines[0];
+    assert_eq!(header, "timestamp,severity,body,trace_id,span_id");
+
+    // Validate data rows exist - logs may be in any order
+    let csv_content = lines[1..].join("\n");
+    assert!(
+        csv_content.contains("1000"),
+        "CSV should contain timestamp 1000"
+    );
+    assert!(
+        csv_content.contains("INFO"),
+        "CSV should contain INFO severity"
+    );
+    assert!(csv_content.contains("Log 1"), "CSV should contain 'Log 1'");
+    assert!(
+        csv_content.contains("2000"),
+        "CSV should contain timestamp 2000"
+    );
+    assert!(
+        csv_content.contains("ERROR"),
+        "CSV should contain ERROR severity"
+    );
+    assert!(csv_content.contains("Log 2"), "CSV should contain 'Log 2'");
 }
 
 #[tokio::test]
@@ -498,6 +580,87 @@ async fn test_get_trace_by_id() {
     assert_eq!(trace_detail.span_count, 2);
 }
 
+// NEW TEST: GET /api/traces/export - empty state
+#[tokio::test]
+async fn test_export_traces_empty() {
+    let (storage, _tmp) = setup_test_storage().await;
+    let app = build_test_router(storage);
+
+    let response = app
+        .oneshot(
+            Request::builder()
+                .uri("/api/traces/export")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), StatusCode::OK);
+
+    let body = response.into_body().collect().await.unwrap().to_bytes();
+    let traces: Vec<serde_json::Value> = serde_json::from_slice(&body).unwrap();
+
+    assert_eq!(traces.len(), 0);
+}
+
+// NEW TEST: GET /api/traces/export - with data
+#[tokio::test]
+async fn test_export_traces_with_data() {
+    let (storage, _tmp) = setup_test_storage().await;
+
+    storage
+        .write_span(&create_test_span("trace1", "span1", "root", 1000, 2000))
+        .await
+        .unwrap();
+    storage
+        .write_span(&create_test_span("trace2", "span2", "root", 3000, 4000))
+        .await
+        .unwrap();
+
+    let app = build_test_router(storage);
+
+    let response = app
+        .oneshot(
+            Request::builder()
+                .uri("/api/traces/export")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), StatusCode::OK);
+    assert_eq!(
+        response.headers().get("content-type").unwrap(),
+        "application/json"
+    );
+
+    let body = response.into_body().collect().await.unwrap().to_bytes();
+    let traces: Vec<serde_json::Value> = serde_json::from_slice(&body).unwrap();
+
+    assert_eq!(traces.len(), 2);
+}
+
+// NEW TEST: GET /api/traces/export - invalid format
+#[tokio::test]
+async fn test_export_traces_invalid_format() {
+    let (storage, _tmp) = setup_test_storage().await;
+    let app = build_test_router(storage);
+
+    let response = app
+        .oneshot(
+            Request::builder()
+                .uri("/api/traces/export?format=invalid")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+}
+
 #[tokio::test]
 async fn test_list_metrics_empty() {
     let (storage, _tmp) = setup_test_storage().await;
@@ -556,6 +719,176 @@ async fn test_list_metrics_with_data() {
     let metrics_response: Vec<MetricResponse> = serde_json::from_slice(&body).unwrap();
 
     assert_eq!(metrics_response.len(), 3);
+}
+
+// NEW TEST: GET /api/metrics/names - empty DB
+#[tokio::test]
+async fn test_list_metric_names_empty() {
+    let (storage, _tmp) = setup_test_storage().await;
+    let app = build_test_router(storage);
+
+    let response = app
+        .oneshot(
+            Request::builder()
+                .uri("/api/metrics/names")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), StatusCode::OK);
+
+    let body = response.into_body().collect().await.unwrap().to_bytes();
+    let names: Vec<String> = serde_json::from_slice(&body).unwrap();
+
+    assert_eq!(names.len(), 0);
+}
+
+// NEW TEST: GET /api/metrics/names - with distinct names
+#[tokio::test]
+async fn test_list_metric_names_with_data() {
+    let (storage, _tmp) = setup_test_storage().await;
+
+    storage
+        .write_metric(&create_test_metric("cpu.usage", 1000, 45.5))
+        .await
+        .unwrap();
+    storage
+        .write_metric(&create_test_metric("memory.usage", 2000, 78.2))
+        .await
+        .unwrap();
+    storage
+        .write_metric(&create_test_metric("disk.usage", 3000, 62.1))
+        .await
+        .unwrap();
+
+    let app = build_test_router(storage);
+
+    let response = app
+        .oneshot(
+            Request::builder()
+                .uri("/api/metrics/names")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), StatusCode::OK);
+
+    let body = response.into_body().collect().await.unwrap().to_bytes();
+    let names: Vec<String> = serde_json::from_slice(&body).unwrap();
+
+    assert_eq!(names.len(), 3);
+    assert!(names.contains(&"cpu.usage".to_string()));
+    assert!(names.contains(&"memory.usage".to_string()));
+    assert!(names.contains(&"disk.usage".to_string()));
+}
+
+// NEW TEST: GET /api/metrics/names - deduplication
+#[tokio::test]
+async fn test_list_metric_names_deduplicated() {
+    let (storage, _tmp) = setup_test_storage().await;
+
+    storage
+        .write_metric(&create_test_metric("requests", 1000, 10.0))
+        .await
+        .unwrap();
+    storage
+        .write_metric(&create_test_metric("requests", 2000, 20.0))
+        .await
+        .unwrap();
+    storage
+        .write_metric(&create_test_metric("errors", 3000, 5.0))
+        .await
+        .unwrap();
+
+    let app = build_test_router(storage);
+
+    let response = app
+        .oneshot(
+            Request::builder()
+                .uri("/api/metrics/names")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), StatusCode::OK);
+
+    let body = response.into_body().collect().await.unwrap().to_bytes();
+    let names: Vec<String> = serde_json::from_slice(&body).unwrap();
+
+    assert_eq!(names.len(), 2); // Only unique names
+    assert!(names.contains(&"requests".to_string()));
+    assert!(names.contains(&"errors".to_string()));
+}
+
+// NEW TEST: GET /api/metrics/export - empty
+#[tokio::test]
+async fn test_export_metrics_empty() {
+    let (storage, _tmp) = setup_test_storage().await;
+    let app = build_test_router(storage);
+
+    let response = app
+        .oneshot(
+            Request::builder()
+                .uri("/api/metrics/export")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), StatusCode::OK);
+
+    let body = response.into_body().collect().await.unwrap().to_bytes();
+    let metrics: Vec<serde_json::Value> = serde_json::from_slice(&body).unwrap();
+
+    assert_eq!(metrics.len(), 0);
+}
+
+// NEW TEST: GET /api/metrics/export - with data
+#[tokio::test]
+async fn test_export_metrics_with_data() {
+    let (storage, _tmp) = setup_test_storage().await;
+
+    storage
+        .write_metric(&create_test_metric("cpu.usage", 1000, 45.5))
+        .await
+        .unwrap();
+    storage
+        .write_metric(&create_test_metric("memory.usage", 2000, 78.2))
+        .await
+        .unwrap();
+
+    let app = build_test_router(storage);
+
+    let response = app
+        .oneshot(
+            Request::builder()
+                .uri("/api/metrics/export")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), StatusCode::OK);
+    assert_eq!(
+        response.headers().get("content-type").unwrap(),
+        "application/json"
+    );
+
+    let body = response.into_body().collect().await.unwrap().to_bytes();
+    let metrics: Vec<serde_json::Value> = serde_json::from_slice(&body).unwrap();
+
+    assert_eq!(metrics.len(), 2);
+    // Verify it's parseable JSON
+    assert!(metrics[0].is_object());
+    assert!(metrics[1].is_object());
 }
 
 #[tokio::test]
@@ -702,4 +1035,34 @@ async fn test_get_metric_timeseries_with_time_range() {
     assert!(timeseries
         .iter()
         .all(|b| b.timestamp >= 1_000_000_000 && b.timestamp <= 3_000_000_000));
+}
+
+// NEW TEST: GET /api/openapi.json
+#[tokio::test]
+async fn test_openapi_spec() {
+    let (storage, _tmp) = setup_test_storage().await;
+    let app = build_test_router(storage);
+
+    let response = app
+        .oneshot(
+            Request::builder()
+                .uri("/api/openapi.json")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), StatusCode::OK);
+    assert_eq!(
+        response.headers().get("content-type").unwrap(),
+        "application/json"
+    );
+
+    let body = response.into_body().collect().await.unwrap().to_bytes();
+    let spec: serde_json::Value = serde_json::from_slice(&body).unwrap();
+
+    // Verify it's valid OpenAPI JSON
+    assert!(spec.is_object());
+    assert!(spec.get("openapi").is_some());
 }
