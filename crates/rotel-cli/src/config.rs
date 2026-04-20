@@ -45,7 +45,7 @@ pub struct Config {
 impl Default for Config {
     fn default() -> Self {
         Self {
-            endpoint: "http://localhost:8080".to_string(),
+            endpoint: "http://localhost:3000".to_string(),
             timeout: Duration::from_secs(30),
             format: OutputFormat::Pretty,
             no_color: false,
@@ -74,7 +74,7 @@ impl Config {
 
     /// Get endpoint from environment variable or use default
     pub fn endpoint_from_env() -> String {
-        std::env::var("ROTEL_ENDPOINT").unwrap_or_else(|_| "http://localhost:8080".to_string())
+        std::env::var("ROTEL_ENDPOINT").unwrap_or_else(|_| "http://localhost:3000".to_string())
     }
 }
 
@@ -100,7 +100,7 @@ mod tests {
     #[test]
     fn test_config_default() {
         let config = Config::default();
-        assert_eq!(config.endpoint, "http://localhost:8080");
+        assert_eq!(config.endpoint, "http://localhost:3000");
         assert_eq!(config.timeout, Duration::from_secs(30));
         assert_eq!(config.format, OutputFormat::Pretty);
         assert!(!config.no_color);
