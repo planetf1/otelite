@@ -7,17 +7,20 @@ Rotel is a single-binary observability tool that receives OpenTelemetry data (lo
 ## Quick Start
 
 ```bash
-# Install
-cargo install --path crates/rotel-cli
+# Build
+cargo build --workspace
 
 # Start dashboard (opens OTLP receivers on 4317/4318, web UI on 3000)
-rotel dashboard
+./target/debug/rotel-cli dashboard
 
-# View data
-open http://localhost:3000
+# Or run directly with cargo
+cargo run --bin rotel-cli -- dashboard
 ```
 
-![Rotel Dashboard](docs/assets/dashboard-screenshot.png)
+The dashboard starts three services:
+- **OTLP gRPC receiver** on `localhost:4317`
+- **OTLP HTTP receiver** on `localhost:4318`
+- **Web UI and REST API** on `http://localhost:3000`
 
 ## Features
 
@@ -33,13 +36,21 @@ open http://localhost:3000
 
 - [**Quick Start Guide**](docs/quickstart.md) - Installation and first run
 - [**Architecture**](ARCHITECTURE.md) - System design and components
-- [**CLI Reference**](crates/rotel-cli/README.md) - Command-line interface
 - [**TUI Guide**](docs/tui-quickstart.md) - Terminal user interface
-- [**API Documentation**](crates/rotel-api/README.md) - REST API reference
 - [**Testing Guide**](docs/testing.md) - Running and writing tests
 - [**Contributing**](CONTRIBUTING.md) - Development workflow
 
 ## Sending Data
+
+### Using otel-cli (easiest for testing)
+
+```bash
+# Install otel-cli
+go install github.com/equinix-labs/otel-cli@latest
+
+# Send a test trace
+otel-cli exec --endpoint http://localhost:4318 --protocol http/protobuf -- echo "hello"
+```
 
 ### Python
 
@@ -105,32 +116,38 @@ tp := trace.NewTracerProvider(trace.WithBatcher(exporter))
 
 ```bash
 # List recent logs
-rotel logs list --severity ERROR --since 1h
+rotel-cli logs list --severity ERROR --since 1h
 
 # Search logs
-rotel logs search "database timeout"
+rotel-cli logs search "database timeout"
+
+# Show a specific log
+rotel-cli logs show <timestamp>
 
 # List traces with duration filter
-rotel traces list --min-duration 1s
+rotel-cli traces list --min-duration 1s
 
 # Show trace details
-rotel traces show trace-abc123
+rotel-cli traces show <trace-id>
 
 # List metrics
-rotel metrics list --name "http_*"
+rotel-cli metrics list --name "http_*"
+
+# Show specific metric
+rotel-cli metrics show http_requests_total
 
 # JSON output for scripting
-rotel --format json logs list | jq '.[] | select(.severity == "ERROR")'
+rotel-cli --format json logs list | jq '.[] | select(.severity == "ERROR")'
 ```
 
 ## Terminal UI
 
 ```bash
 # Start TUI
-rotel tui
+rotel-cli tui
 
 # Connect to custom API
-rotel tui --api-url http://localhost:3000
+rotel-cli tui --api-url http://localhost:3000
 ```
 
 **Keyboard shortcuts:**
@@ -148,22 +165,23 @@ See [TUI documentation](docs/tui-quickstart.md) for details.
 
 ```bash
 # List logs
-curl "http://localhost:3000/api/v1/logs?severity=ERROR&limit=50"
+curl "http://localhost:3000/api/logs?severity=ERROR&limit=50"
 
 # Get specific log
-curl "http://localhost:3000/api/v1/logs/log-123"
+curl "http://localhost:3000/api/logs/<timestamp>"
 
 # List traces
-curl "http://localhost:3000/api/v1/traces?min_duration_ns=1000000"
+curl "http://localhost:3000/api/traces?min_duration_ns=1000000"
 
 # Get trace with spans
-curl "http://localhost:3000/api/v1/traces/trace-456"
+curl "http://localhost:3000/api/traces/<trace-id>"
+
+# List metrics
+curl "http://localhost:3000/api/metrics?name=http_requests_total"
 
 # Health check
-curl "http://localhost:3000/health"
+curl "http://localhost:3000/api/health"
 ```
-
-Interactive API docs: `http://localhost:3000/docs`
 
 ## Development
 
@@ -187,11 +205,7 @@ cargo llvm-cov --all-features --workspace --html
 ./scripts/check-coverage.sh --threshold 80
 ```
 
-Coverage reports are generated for every pull request in GitHub Actions. The CI workflow uploads
-LCOV results to Codecov for badge/trend reporting, publishes HTML/JSON coverage artifacts for
-inspection, comments the workspace percentage on pull requests, and enforces per-crate minimums:
-`rotel-cli` 75%, `rotel-core` 85%, `rotel-dashboard` 70%, `rotel-receiver` 80%, `rotel-storage`
-85%, and `rotel-tui` 70%.
+Coverage reports are generated for every pull request in GitHub Actions. The CI workflow uploads LCOV results to Codecov for badge/trend reporting, publishes HTML/JSON coverage artifacts for inspection, comments the workspace percentage on pull requests, and enforces per-crate minimums: `rotel-cli` 75%, `rotel-core` 85%, `rotel-receiver` 80%, `rotel-storage` 85%, `rotel-server` 70%, and `rotel-tui` 70%.
 
 See [CONTRIBUTING.md](CONTRIBUTING.md) for development workflow.
 
@@ -200,23 +214,29 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for development workflow.
 ```
 ┌─────────────────────────────────────────────┐
 │         Web Dashboard (port 3000)           │
+│         + REST API (rotel-server)           │
 └─────────────────┬───────────────────────────┘
                   │
 ┌─────────────────▼───────────────────────────┐
-│            REST API (port 3000)             │
-└─────────────────┬───────────────────────────┘
-                  │
-┌─────────────────▼───────────────────────────┐
-│       SQLite Storage (rotel.db)             │
+│       SQLite Storage (rotel-storage)        │
+│            with FTS5 search                 │
 └─────────────────▲───────────────────────────┘
                   │
 ┌─────────────────┴───────────────────────────┐
-│          OTLP Receiver                       │
+│       OTLP Receivers (rotel-receiver)       │
 │    gRPC (4317) + HTTP (4318)                │
 └─────────────────────────────────────────────┘
 ```
 
-See [ARCHITECTURE.md](ARCHITECTURE.md) for details.
+**Crate structure:**
+- `rotel-core` - Domain types (LogRecord, Span, Metric)
+- `rotel-storage` - SQLite backend with async trait
+- `rotel-receiver` - OTLP gRPC and HTTP ingest
+- `rotel-server` - REST API and web UI
+- `rotel-cli` - Command-line interface (integrates all components)
+- `rotel-tui` - Terminal user interface
+
+See [ARCHITECTURE.md](ARCHITECTURE.md) for detailed design.
 
 ## Performance
 
