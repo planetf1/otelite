@@ -2171,6 +2171,7 @@ dependencies = [
  "rotel-receiver",
  "rotel-server",
  "rotel-storage",
+ "rotel-tui",
  "serde",
  "serde_json",
  "tokio",

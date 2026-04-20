@@ -125,6 +125,27 @@ enum Commands {
         #[command(subcommand)]
         command: MetricsCommands,
     },
+    /// Launch the Terminal User Interface
+    #[command(
+        after_help = "Examples:\n  rotel tui\n  rotel tui --api-url http://localhost:3000\n  rotel tui --view traces --refresh-interval 5"
+    )]
+    Tui {
+        /// Rotel API base URL
+        #[arg(long, default_value = "http://localhost:3000")]
+        api_url: String,
+
+        /// Refresh interval in seconds
+        #[arg(long, default_value = "2")]
+        refresh_interval: u64,
+
+        /// Initial view (logs, traces, metrics)
+        #[arg(long, default_value = "logs")]
+        view: String,
+
+        /// Enable debug logging
+        #[arg(long)]
+        debug: bool,
+    },
 }
 
 #[derive(Subcommand, Debug)]
@@ -422,6 +443,12 @@ async fn run_cli() -> Result<()> {
         Some(Commands::Logs { command }) => handle_logs_command(command, &config).await,
         Some(Commands::Traces { command }) => handle_traces_command(command, &config).await,
         Some(Commands::Metrics { command }) => handle_metrics_command(command, &config).await,
+        Some(Commands::Tui {
+            api_url,
+            refresh_interval,
+            view,
+            debug,
+        }) => handle_tui_command(api_url, refresh_interval, view, debug).await,
         None => {
             // Default: run dashboard
             run_dashboard("127.0.0.1:3000".parse().unwrap(), "rotel.db".to_string()).await
@@ -664,4 +691,26 @@ async fn handle_service_command(command: ServiceCommands) -> Result<()> {
     match command {
         ServiceCommands::Install => commands::service::handle_service_install().await,
     }
+}
+
+async fn handle_tui_command(
+    api_url: String,
+    refresh_interval: u64,
+    view: String,
+    debug: bool,
+) -> Result<()> {
+    // Create TUI configuration
+    let config = rotel_tui::Config {
+        api_url,
+        refresh_interval: std::time::Duration::from_secs(refresh_interval),
+        initial_view: view,
+        debug,
+    };
+
+    // Run the TUI application
+    rotel_tui::app::run(config)
+        .await
+        .map_err(|e| Error::ApiError(format!("TUI error: {}", e)))?;
+
+    Ok(())
 }

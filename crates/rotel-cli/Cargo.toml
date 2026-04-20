@@ -39,6 +39,7 @@ rotel-core = { path = "../rotel-core" }
 rotel-server = { path = "../rotel-server" }
 rotel-receiver = { path = "../rotel-receiver" }
 rotel-storage = { path = "../rotel-storage" }
+rotel-tui = { path = "../rotel-tui" }
 
 [dev-dependencies]
 mockito = "1.2"
