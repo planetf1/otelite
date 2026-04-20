@@ -558,7 +558,10 @@ mod tests {
                 duration: 1500000000,
                 attributes: HashMap::new(),
                 resource: None,
-                status: None,
+                status: SpanStatus {
+                    code: "Ok".to_string(),
+                    message: None,
+                },
                 events: vec![],
             }],
             start_time: 1000000000000000000,
@@ -589,7 +592,10 @@ mod tests {
                     duration: 1500000000,
                     attributes: HashMap::new(),
                     resource: None,
-                    status: None,
+                    status: SpanStatus {
+                        code: "Ok".to_string(),
+                        message: None,
+                    },
                     events: vec![],
                 },
                 SpanEntry {
@@ -603,7 +609,10 @@ mod tests {
                     duration: 250000000,
                     attributes: HashMap::new(),
                     resource: None,
-                    status: None,
+                    status: SpanStatus {
+                        code: "Ok".to_string(),
+                        message: None,
+                    },
                     events: vec![],
                 },
                 SpanEntry {
@@ -617,7 +626,10 @@ mod tests {
                     duration: 50000000,
                     attributes: HashMap::new(),
                     resource: None,
-                    status: None,
+                    status: SpanStatus {
+                        code: "Ok".to_string(),
+                        message: None,
+                    },
                     events: vec![],
                 },
             ],
@@ -649,7 +661,10 @@ mod tests {
                     duration: 1500000000,
                     attributes: HashMap::new(),
                     resource: None,
-                    status: None,
+                    status: SpanStatus {
+                        code: "Ok".to_string(),
+                        message: None,
+                    },
                     events: vec![],
                 },
                 SpanEntry {
@@ -663,7 +678,10 @@ mod tests {
                     duration: 1000000000,
                     attributes: HashMap::new(),
                     resource: None,
-                    status: None,
+                    status: SpanStatus {
+                        code: "Ok".to_string(),
+                        message: None,
+                    },
                     events: vec![],
                 },
                 SpanEntry {
@@ -677,7 +695,10 @@ mod tests {
                     duration: 800000000,
                     attributes: HashMap::new(),
                     resource: None,
-                    status: None,
+                    status: SpanStatus {
+                        code: "Ok".to_string(),
+                        message: None,
+                    },
                     events: vec![],
                 },
                 SpanEntry {
@@ -691,7 +712,10 @@ mod tests {
                     duration: 250000000,
                     attributes: HashMap::new(),
                     resource: None,
-                    status: None,
+                    status: SpanStatus {
+                        code: "Ok".to_string(),
+                        message: None,
+                    },
                     events: vec![],
                 },
             ],
@@ -714,7 +738,7 @@ mod tests {
                 description: None,
                 unit: None,
                 metric_type: "counter".to_string(),
-                value: MetricValue::Counter(1234.0 as u64),
+                value: MetricValue::Counter(1234),
                 timestamp: 1000000000000000000,
                 attributes: HashMap::from([
                     ("method".to_string(), "GET".to_string()),
@@ -727,7 +751,7 @@ mod tests {
                 description: None,
                 unit: None,
                 metric_type: "histogram".to_string(),
-                value: MetricValue::Counter(150.5 as u64),
+                value: MetricValue::Gauge(150.5),
                 timestamp: 1000000000000000000,
                 attributes: HashMap::new(),
                 resource: None,
@@ -737,7 +761,7 @@ mod tests {
                 description: None,
                 unit: None,
                 metric_type: "gauge".to_string(),
-                value: MetricValue::Counter(1048576.0 as u64),
+                value: MetricValue::Gauge(1048576.0),
                 timestamp: 1000000000000000000,
                 attributes: HashMap::from([("host".to_string(), "server1".to_string())]),
                 resource: None,

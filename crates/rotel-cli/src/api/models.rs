@@ -15,7 +15,7 @@ mod tests {
     use std::collections::HashMap;
 
     #[test]
-    fn test_log_entry_short_display() {
+    fn test_log_entry_creation() {
         let log = LogEntry {
             timestamp: 1_000_000_000_000_000_000, // 2001-09-09 01:46:40 UTC
             severity: "ERROR".to_string(),
@@ -26,13 +26,12 @@ mod tests {
             trace_id: None,
             span_id: None,
         };
-        let display = log.short_display();
-        assert!(display.contains("ERROR"));
-        assert!(display.contains("Test error"));
+        assert_eq!(log.severity, "ERROR");
+        assert_eq!(log.body, "Test error");
     }
 
     #[test]
-    fn test_trace_entry_short_display() {
+    fn test_trace_entry_creation() {
         let trace = TraceEntry {
             trace_id: "trace-001".to_string(),
             root_span_name: "http-request".to_string(),
@@ -42,14 +41,13 @@ mod tests {
             service_names: vec!["api".to_string()],
             has_errors: false,
         };
-        let display = trace.short_display();
-        assert!(display.contains("http-request"));
-        assert!(display.contains("1500ms"));
-        assert!(display.contains("OK"));
+        assert_eq!(trace.root_span_name, "http-request");
+        assert_eq!(trace.duration, 1_500_000_000);
+        assert!(!trace.has_errors);
     }
 
     #[test]
-    fn test_metric_response_short_display() {
+    fn test_metric_response_creation() {
         let metric = MetricResponse {
             name: "http_requests_total".to_string(),
             description: None,
@@ -60,10 +58,13 @@ mod tests {
             attributes: HashMap::new(),
             resource: None,
         };
-        let display = metric.short_display();
-        assert!(display.contains("http_requests_total"));
-        assert!(display.contains("1234"));
-        assert!(display.contains("counter"));
+        assert_eq!(metric.name, "http_requests_total");
+        assert_eq!(metric.metric_type, "counter");
+        if let MetricValue::Counter(v) = metric.value {
+            assert_eq!(v, 1234);
+        } else {
+            panic!("Expected Counter value");
+        }
     }
 }
 

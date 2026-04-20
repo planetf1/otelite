@@ -396,11 +396,11 @@ mod tests {
                 description: None,
                 unit: None,
                 metric_type: "histogram".to_string(),
-                value: MetricValue::Histogram {
+                value: MetricValue::Histogram(HistogramValue {
                     count: 10,
                     sum: 1500.0,
                     buckets: vec![],
-                },
+                }),
                 timestamp: 1234567890000000000,
                 attributes: HashMap::new(),
                 resource: None,
@@ -459,11 +459,11 @@ mod tests {
                 description: None,
                 unit: None,
                 metric_type: "histogram".to_string(),
-                value: MetricValue::Histogram {
+                value: MetricValue::Histogram(HistogramValue {
                     count: 10,
                     sum: 1500.0,
                     buckets: vec![],
-                },
+                }),
                 timestamp: 1234567890000000000,
                 attributes: HashMap::new(),
                 resource: None,

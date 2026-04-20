@@ -320,7 +320,10 @@ mod tests {
                 duration: 1500000000,
                 attributes: HashMap::new(),
                 resource: None,
-                status: None,
+                status: SpanStatus {
+                    code: "Ok".to_string(),
+                    message: None,
+                },
                 events: vec![],
             }],
             start_time: 1000000000000000000,
@@ -349,7 +352,10 @@ mod tests {
                     duration: 1500000000,
                     attributes: HashMap::new(),
                     resource: None,
-                    status: None,
+                    status: SpanStatus {
+                        code: "Ok".to_string(),
+                        message: None,
+                    },
                     events: vec![],
                 },
                 SpanEntry {
@@ -363,7 +369,10 @@ mod tests {
                     duration: 250000000,
                     attributes: HashMap::new(),
                     resource: None,
-                    status: None,
+                    status: SpanStatus {
+                        code: "Ok".to_string(),
+                        message: None,
+                    },
                     events: vec![],
                 },
             ],
@@ -409,7 +418,10 @@ mod tests {
                 duration: 1500000000,
                 attributes,
                 resource: None,
-                status: None,
+                status: SpanStatus {
+                    code: "Ok".to_string(),
+                    message: None,
+                },
                 events: vec![],
             }],
             start_time: 1000000000000000000,
@@ -477,7 +489,7 @@ mod tests {
             description: None,
             unit: None,
             metric_type: "histogram".to_string(),
-            value: MetricValue::Histogram {
+            value: MetricValue::Histogram(HistogramValue {
                 count: 150,
                 sum: 15000.0,
                 buckets: vec![
@@ -498,7 +510,7 @@ mod tests {
                         count: 5,
                     },
                 ],
-            },
+            }),
             timestamp: 1000000000000000000,
             attributes: HashMap::from([("endpoint".to_string(), "/api/users".to_string())]),
             resource: None,
@@ -509,8 +521,8 @@ mod tests {
         // Verify histogram structure is preserved in JSON
         let json_str = serde_json::to_string(&metric).unwrap();
         let parsed: MetricResponse = serde_json::from_str(&json_str).unwrap();
-        if let MetricValue::Histogram { buckets, .. } = &parsed.value {
-            assert_eq!(buckets.len(), 4);
+        if let MetricValue::Histogram(h) = &parsed.value {
+            assert_eq!(h.buckets.len(), 4);
         }
     }
 
