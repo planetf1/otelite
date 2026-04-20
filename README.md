@@ -182,7 +182,16 @@ cargo fmt --check
 
 # Run with coverage
 cargo llvm-cov --all-features --workspace --html
+
+# Enforce the workspace coverage threshold locally
+./scripts/check-coverage.sh --threshold 80
 ```
+
+Coverage reports are generated for every pull request in GitHub Actions. The CI workflow uploads
+LCOV results to Codecov for badge/trend reporting, publishes HTML/JSON coverage artifacts for
+inspection, comments the workspace percentage on pull requests, and enforces per-crate minimums:
+`rotel-cli` 75%, `rotel-core` 85%, `rotel-dashboard` 70%, `rotel-receiver` 80%, `rotel-storage`
+85%, and `rotel-tui` 70%.
 
 See [CONTRIBUTING.md](CONTRIBUTING.md) for development workflow.
 

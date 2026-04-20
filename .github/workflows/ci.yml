@@ -10,9 +10,15 @@ on:
 env:
   CARGO_TERM_COLOR: always
   RUST_BACKTRACE: 1
+  COVERAGE_THRESHOLD_WORKSPACE: "80"
+  COVERAGE_THRESHOLD_ROTEL_CLI: "75"
+  COVERAGE_THRESHOLD_ROTEL_CORE: "85"
+  COVERAGE_THRESHOLD_ROTEL_DASHBOARD: "70"
+  COVERAGE_THRESHOLD_ROTEL_RECEIVER: "80"
+  COVERAGE_THRESHOLD_ROTEL_STORAGE: "85"
+  COVERAGE_THRESHOLD_ROTEL_TUI: "70"
 
 jobs:
-  # Check code formatting
   format:
     name: Format Check
     runs-on: ubuntu-latest
@@ -28,7 +34,6 @@ jobs:
       - name: Check formatting
         run: cargo fmt --all -- --check
 
-  # Run linting
   lint:
     name: Lint (Clippy)
     runs-on: ubuntu-latest
@@ -42,9 +47,8 @@ jobs:
           components: clippy
 
       - name: Run Clippy
-        run: cargo clippy --all-targets --all-features -- -D warnings
+        run: cargo clippy --workspace --all-targets --all-features -- -D warnings
 
-  # Run tests on multiple platforms
   test:
     name: Test (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
@@ -68,21 +72,25 @@ jobs:
           tool: cargo-nextest
 
       - name: Build
-        run: cargo build --all-features --verbose
+        run: cargo build --workspace --all-features --verbose
 
       - name: Run unit tests
-        run: cargo nextest run --lib --all-features
+        run: cargo nextest run --workspace --lib --all-features
 
       - name: Run integration tests
-        run: cargo nextest run --test '*' --all-features
+        run: cargo nextest run --workspace --test '*' --all-features
 
       - name: Run doc tests
-        run: cargo test --doc --all-features
+        run: cargo test --workspace --doc --all-features
 
-  # Code coverage
   coverage:
-    name: Code Coverage
+    name: Coverage
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write
+    outputs:
+      workspace_coverage: ${{ steps.coverage.outputs.workspace }}
     steps:
       - uses: actions/checkout@v4
 
@@ -92,13 +100,43 @@ jobs:
           toolchain: stable
           components: llvm-tools-preview
 
-      - name: Install cargo-llvm-cov
+      - name: Install coverage tooling
         uses: taiki-e/install-action@v2
         with:
           tool: cargo-llvm-cov
 
-      - name: Generate coverage
-        run: cargo llvm-cov --all-features --workspace --lcov --output-path lcov.info
+      - name: Generate workspace LCOV report
+        run: cargo llvm-cov --workspace --all-features --lcov --output-path lcov.info
+
+      - name: Generate coverage JSON summary
+        run: cargo llvm-cov --workspace --all-features --json --output-path coverage.json --summary-only
+
+      - name: Enforce workspace and crate thresholds
+        id: coverage
+        run: python3 .github/scripts/check_coverage.py coverage.json
+        env:
+          COVERAGE_THRESHOLD_WORKSPACE: ${{ env.COVERAGE_THRESHOLD_WORKSPACE }}
+          COVERAGE_THRESHOLD_ROTEL_CLI: ${{ env.COVERAGE_THRESHOLD_ROTEL_CLI }}
+          COVERAGE_THRESHOLD_ROTEL_CORE: ${{ env.COVERAGE_THRESHOLD_ROTEL_CORE }}
+          COVERAGE_THRESHOLD_ROTEL_DASHBOARD: ${{ env.COVERAGE_THRESHOLD_ROTEL_DASHBOARD }}
+          COVERAGE_THRESHOLD_ROTEL_RECEIVER: ${{ env.COVERAGE_THRESHOLD_ROTEL_RECEIVER }}
+          COVERAGE_THRESHOLD_ROTEL_STORAGE: ${{ env.COVERAGE_THRESHOLD_ROTEL_STORAGE }}
+          COVERAGE_THRESHOLD_ROTEL_TUI: ${{ env.COVERAGE_THRESHOLD_ROTEL_TUI }}
+
+      - name: Upload coverage JSON artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-summary
+          path: coverage.json
+
+      - name: Upload coverage HTML artifact
+        run: cargo llvm-cov --workspace --all-features --html
+
+      - name: Store coverage trend artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-html-report
+          path: target/llvm-cov/html
 
       - name: Upload coverage to Codecov
         uses: codecov/codecov-action@v4
@@ -106,18 +144,27 @@ jobs:
           files: lcov.info
           fail_ci_if_error: false
           token: ${{ secrets.CODECOV_TOKEN }}
+          flags: unittests
+          verbose: true
 
-      - name: Check coverage threshold
-        run: |
-          COVERAGE=$(cargo llvm-cov --all-features --workspace --summary-only 2>&1 | grep "^TOTAL" | awk '{print $NF}' | tr -d '%')
-          echo "Coverage: ${COVERAGE}%"
-          if (( $(echo "$COVERAGE < 80.0" | bc -l) )); then
-            echo "❌ Coverage ${COVERAGE}% is below 80% threshold"
-            exit 1
-          fi
-          echo "✅ Coverage ${COVERAGE}% meets 80% threshold"
+      - name: Comment coverage summary on PR
+        if: github.event_name == 'pull_request'
+        uses: marocchino/sticky-pull-request-comment@v2
+        with:
+          header: coverage-report
+          message: |
+            ## Coverage report
+            - Workspace line coverage: **${{ steps.coverage.outputs.workspace }}%**
+            - Minimum workspace threshold: **${{ env.COVERAGE_THRESHOLD_WORKSPACE }}%**
+            - Per-crate thresholds enforced in CI:
+              - `rotel-cli`: `${{ env.COVERAGE_THRESHOLD_ROTEL_CLI }}%`
+              - `rotel-core`: `${{ env.COVERAGE_THRESHOLD_ROTEL_CORE }}%`
+              - `rotel-dashboard`: `${{ env.COVERAGE_THRESHOLD_ROTEL_DASHBOARD }}%`
+              - `rotel-receiver`: `${{ env.COVERAGE_THRESHOLD_ROTEL_RECEIVER }}%`
+              - `rotel-storage`: `${{ env.COVERAGE_THRESHOLD_ROTEL_STORAGE }}%`
+              - `rotel-tui`: `${{ env.COVERAGE_THRESHOLD_ROTEL_TUI }}%`
+            - Detailed HTML and JSON reports are available in the workflow artifacts and in Codecov trends.
 
-  # Check for security vulnerabilities
   security:
     name: Security Audit
     runs-on: ubuntu-latest
@@ -137,7 +184,6 @@ jobs:
       - name: Run security audit
         run: cargo audit
 
-  # Check for outdated dependencies
   dependencies:
     name: Dependency Check
     runs-on: ubuntu-latest
@@ -157,7 +203,6 @@ jobs:
       - name: Check for outdated dependencies
         run: cargo outdated --exit-code 1 || true
 
-  # Build documentation
   docs:
     name: Documentation
     runs-on: ubuntu-latest
@@ -170,14 +215,13 @@ jobs:
           toolchain: stable
 
       - name: Build documentation
-        run: cargo doc --all-features --no-deps --document-private-items
+        run: cargo doc --workspace --all-features --no-deps --document-private-items
 
       - name: Check for broken links
         run: |
           cargo install cargo-deadlinks || true
           cargo deadlinks --check-http || true
 
-  # Final status check
   ci-success:
     name: CI Success
     needs: [format, lint, test, coverage, security]
@@ -195,5 +239,3 @@ jobs:
             exit 1
           fi
           echo "✅ All CI jobs passed"
-
-# Made with Bob

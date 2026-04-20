@@ -448,18 +448,36 @@ cargo flamegraph --test integration_tests
 ### GitHub Actions Workflow
 
 Tests run automatically on:
-- Push to any branch
-- Pull requests
-- Daily schedule (2 AM UTC)
+- Push to `main` and `develop`
+- Pull requests targeting `main` and `develop`
+- Manual workflow dispatch
 
 ### CI Test Jobs
 
-1. **Unit Tests**: Fast feedback on code changes
-2. **Integration Tests**: Verify component interactions
-3. **E2E Tests**: Validate complete workflows
-4. **Coverage**: Ensure coverage threshold met
-5. **Linting**: Check code quality
-6. **Security**: Scan for vulnerabilities
+1. **Format**: Enforce `cargo fmt --check`
+2. **Lint**: Enforce `cargo clippy --workspace --all-targets --all-features -- -D warnings`
+3. **Test**: Run workspace builds, unit tests, integration tests, and doc tests on Ubuntu and macOS
+4. **Coverage**: Generate LCOV, JSON, and HTML reports, upload LCOV to Codecov, publish HTML/JSON artifacts, and enforce thresholds
+5. **Security**: Scan for vulnerabilities with `cargo audit`
+
+### Coverage Reporting in CI
+
+The coverage job now provides continuous monitoring on every pull request:
+
+- **PR visibility**: A sticky pull request comment reports the current workspace line coverage
+- **Trend tracking**: Codecov ingests the LCOV upload for repository badges and historical trend views
+- **Artifacts**: GitHub Actions uploads JSON summaries and HTML reports for workflow-by-workflow inspection
+- **Threshold enforcement**: CI fails when the workspace or any crate drops below its minimum line coverage threshold
+
+Current enforced minimums:
+
+- **Workspace**: 80%
+- **rotel-cli**: 75%
+- **rotel-core**: 85%
+- **rotel-dashboard**: 70%
+- **rotel-receiver**: 80%
+- **rotel-storage**: 85%
+- **rotel-tui**: 70%
 
 ### Local CI Simulation
 
