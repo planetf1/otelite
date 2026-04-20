@@ -430,6 +430,41 @@ async fn run_cli() -> Result<()> {
 }
 
 async fn run_dashboard(addr: SocketAddr, storage_path: String) -> Result<()> {
+    // Check for first run and show welcome message
+    let is_first_run = Config::is_first_run();
+    if is_first_run {
+        println!("\nWelcome to Rotel! Starting OpenTelemetry collector...\n");
+        println!("  Dashboard:  http://{}", addr);
+        println!("  OTLP gRPC:  localhost:4317");
+        println!("  OTLP HTTP:  localhost:4318");
+
+        // Determine storage path display
+        let storage_display = if storage_path == "rotel.db" {
+            format!("~/.local/share/rotel/{}", storage_path)
+        } else {
+            storage_path.clone()
+        };
+        println!("  Storage:    {}\n", storage_display);
+
+        println!("To send test data:");
+        println!("  otel-cli exec --endpoint http://localhost:4318 -- echo \"hello\"\n");
+
+        println!("To view data:");
+        println!("  rotel logs list");
+        println!("  rotel traces list");
+        println!("  rotel tui\n");
+
+        // Create config file
+        if let Err(e) = Config::create_default_config() {
+            eprintln!("Warning: Failed to create config file: {}", e);
+        } else {
+            println!(
+                "Config file created at: {}\n",
+                Config::config_file().display()
+            );
+        }
+    }
+
     info!("Starting Rotel Dashboard with OTLP Receiver...");
 
     // Initialize storage backend

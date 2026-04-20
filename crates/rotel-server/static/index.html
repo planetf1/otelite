@@ -44,9 +44,177 @@
                     </div>
                 </div>
                 <div id="logs-container" class="logs-container">
-                    <div class="empty-state">
-                        <p>No logs available</p>
-                        <p class="empty-state-hint">Logs will appear here as they are received</p>
+                    <div class="empty-state" id="logs-empty-state">
+                        <h3>Welcome to Rotel!</h3>
+                        <p>Get started by configuring your application to send OpenTelemetry data.</p>
+
+                        <div class="onboarding-section">
+                            <h4>Quick Start</h4>
+                            <p>Rotel is listening on:</p>
+                            <ul class="endpoint-list">
+                                <li><strong>OTLP gRPC:</strong> <code>localhost:4317</code></li>
+                                <li><strong>OTLP HTTP:</strong> <code>http://localhost:4318</code></li>
+                            </ul>
+                        </div>
+
+                        <div class="onboarding-section">
+                            <h4>Configuration Examples</h4>
+
+                            <details class="config-example">
+                                <summary><strong>Python (OpenTelemetry SDK)</strong></summary>
+                                <pre><code>from opentelemetry import trace
+from opentelemetry.exporter.otlp.proto.http.trace_exporter import OTLPSpanExporter
+from opentelemetry.sdk.trace import TracerProvider
+from opentelemetry.sdk.trace.export import BatchSpanProcessor
+
+# Configure OTLP exporter
+exporter = OTLPSpanExporter(endpoint="http://localhost:4318/v1/traces")
+provider = TracerProvider()
+provider.add_span_processor(BatchSpanProcessor(exporter))
+trace.set_tracer_provider(provider)
+
+# Use tracer
+tracer = trace.get_tracer(__name__)
+with tracer.start_as_current_span("my-operation"):
+    print("Hello from Python!")</code></pre>
+                            </details>
+
+                            <details class="config-example">
+                                <summary><strong>Python (OpenAI SDK with instrumentation)</strong></summary>
+                                <pre><code>from opentelemetry import trace
+from opentelemetry.exporter.otlp.proto.http.trace_exporter import OTLPSpanExporter
+from opentelemetry.sdk.trace import TracerProvider
+from opentelemetry.sdk.trace.export import BatchSpanProcessor
+from opentelemetry.instrumentation.openai import OpenAIInstrumentor
+import openai
+
+# Configure OTLP exporter
+exporter = OTLPSpanExporter(endpoint="http://localhost:4318/v1/traces")
+provider = TracerProvider()
+provider.add_span_processor(BatchSpanProcessor(exporter))
+trace.set_tracer_provider(provider)
+
+# Auto-instrument OpenAI SDK
+OpenAIInstrumentor().instrument()
+
+# Use OpenAI as normal - traces sent automatically
+client = openai.OpenAI()
+response = client.chat.completions.create(
+    model="gpt-4",
+    messages=[{"role": "user", "content": "Hello!"}]
+)</code></pre>
+                            </details>
+
+                            <details class="config-example">
+                                <summary><strong>Node.js (OpenTelemetry SDK)</strong></summary>
+                                <pre><code>const { NodeTracerProvider } = require('@opentelemetry/sdk-trace-node');
+const { OTLPTraceExporter } = require('@opentelemetry/exporter-trace-otlp-http');
+const { BatchSpanProcessor } = require('@opentelemetry/sdk-trace-base');
+
+// Configure OTLP exporter
+const exporter = new OTLPTraceExporter({
+  url: 'http://localhost:4318/v1/traces'
+});
+
+const provider = new NodeTracerProvider();
+provider.addSpanProcessor(new BatchSpanProcessor(exporter));
+provider.register();
+
+// Use tracer
+const tracer = provider.getTracer('my-app');
+const span = tracer.startSpan('my-operation');
+console.log('Hello from Node.js!');
+span.end();</code></pre>
+                            </details>
+
+                            <details class="config-example">
+                                <summary><strong>Go (OpenTelemetry SDK)</strong></summary>
+                                <pre><code>package main
+
+import (
+    "context"
+    "go.opentelemetry.io/otel"
+    "go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracehttp"
+    "go.opentelemetry.io/otel/sdk/trace"
+)
+
+func main() {
+    // Configure OTLP exporter
+    exporter, _ := otlptracehttp.New(context.Background(),
+        otlptracehttp.WithEndpoint("localhost:4318"),
+        otlptracehttp.WithInsecure(),
+    )
+
+    provider := trace.NewTracerProvider(
+        trace.WithBatcher(exporter),
+    )
+    otel.SetTracerProvider(provider)
+
+    // Use tracer
+    tracer := otel.Tracer("my-app")
+    ctx, span := tracer.Start(context.Background(), "my-operation")
+    defer span.End()
+    println("Hello from Go!")
+}</code></pre>
+                            </details>
+
+                            <details class="config-example">
+                                <summary><strong>Rust (OpenTelemetry SDK)</strong></summary>
+                                <pre><code>use opentelemetry::{global, trace::Tracer};
+use opentelemetry_otlp::WithExportConfig;
+use opentelemetry_sdk::trace::TracerProvider;
+
+fn main() {
+    // Configure OTLP exporter
+    let exporter = opentelemetry_otlp::new_exporter()
+        .http()
+        .with_endpoint("http://localhost:4318");
+
+    let provider = TracerProvider::builder()
+        .with_batch_exporter(exporter.build_span_exporter().unwrap())
+        .build();
+
+    global::set_tracer_provider(provider);
+
+    // Use tracer
+    let tracer = global::tracer("my-app");
+    tracer.in_span("my-operation", |_cx| {
+        println!("Hello from Rust!");
+    });
+}</code></pre>
+                            </details>
+
+                            <details class="config-example">
+                                <summary><strong>Claude Code (Environment Variables)</strong></summary>
+                                <pre><code># Set these environment variables before running Claude Code:
+export OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4318
+export OTEL_SERVICE_NAME=claude-code
+export OTEL_TRACES_EXPORTER=otlp
+export OTEL_LOGS_EXPORTER=otlp
+
+# Claude Code will automatically send telemetry to Rotel</code></pre>
+                            </details>
+
+                            <details class="config-example">
+                                <summary><strong>Test with otel-cli</strong></summary>
+                                <pre><code># Install otel-cli: https://github.com/equinix-labs/otel-cli
+# Send a test trace:
+otel-cli exec --endpoint http://localhost:4318 --service my-test -- echo "Hello Rotel!"
+
+# Send a test log:
+otel-cli span --endpoint http://localhost:4318 --service my-test --name "test-span"</code></pre>
+                            </details>
+                        </div>
+
+                        <div class="onboarding-section">
+                            <h4>Next Steps</h4>
+                            <p>Once configured, your telemetry data will appear here automatically. You can also use the CLI:</p>
+                            <ul>
+                                <li><code>rotel logs list</code> - View recent logs</li>
+                                <li><code>rotel traces list</code> - View recent traces</li>
+                                <li><code>rotel tui</code> - Launch terminal UI</li>
+                            </ul>
+                        </div>
                     </div>
                 </div>
             </div>

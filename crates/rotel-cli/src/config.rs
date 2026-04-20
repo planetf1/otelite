@@ -1,5 +1,6 @@
 //! Configuration for the Rotel CLI
 
+use std::path::PathBuf;
 use std::time::Duration;
 
 /// Output format for CLI commands
@@ -75,6 +76,57 @@ impl Config {
     /// Get endpoint from environment variable or use default
     pub fn endpoint_from_env() -> String {
         std::env::var("ROTEL_ENDPOINT").unwrap_or_else(|_| "http://localhost:3000".to_string())
+    }
+
+    /// Get the config directory path (~/.config/rotel)
+    pub fn config_dir() -> PathBuf {
+        let home = std::env::var("HOME").unwrap_or_else(|_| ".".to_string());
+        PathBuf::from(home).join(".config").join("rotel")
+    }
+
+    /// Get the config file path (~/.config/rotel/config.toml)
+    pub fn config_file() -> PathBuf {
+        Self::config_dir().join("config.toml")
+    }
+
+    /// Check if this is the first run (config file doesn't exist)
+    pub fn is_first_run() -> bool {
+        !Self::config_file().exists()
+    }
+
+    /// Create the config directory and file with default settings
+    pub fn create_default_config() -> std::io::Result<()> {
+        let config_dir = Self::config_dir();
+        std::fs::create_dir_all(&config_dir)?;
+
+        let config_file = Self::config_file();
+        let default_config = r#"# Rotel Configuration
+# This file was automatically generated on first run
+
+[server]
+# Dashboard bind address
+addr = "127.0.0.1:3000"
+
+# Storage database path
+storage_path = "rotel.db"
+
+[otlp]
+# OTLP gRPC receiver address
+grpc_addr = "0.0.0.0:4317"
+
+# OTLP HTTP receiver address
+http_addr = "0.0.0.0:4318"
+
+[cli]
+# Default output format (pretty or json)
+format = "pretty"
+
+# Request timeout in seconds
+timeout = 30
+"#;
+
+        std::fs::write(config_file, default_config)?;
+        Ok(())
     }
 }
 

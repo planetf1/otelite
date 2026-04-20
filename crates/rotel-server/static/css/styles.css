@@ -1281,3 +1281,106 @@ body {
     color: var(--warning-color);
     font-weight: 500;
 }
+
+/* Onboarding styles */
+.onboarding-section {
+    margin: 1.5rem 0;
+    padding: 1rem;
+    background-color: var(--bg-primary);
+    border: 1px solid var(--border-color);
+    border-radius: 4px;
+}
+
+.onboarding-section h4 {
+    font-size: 1.1rem;
+    font-weight: 600;
+    margin-bottom: 0.75rem;
+    color: var(--text-primary);
+}
+
+.onboarding-section p {
+    margin-bottom: 0.75rem;
+    color: var(--text-primary);
+}
+
+.onboarding-section ul {
+    margin: 0.75rem 0;
+    padding-left: 1.5rem;
+}
+
+.onboarding-section li {
+    margin-bottom: 0.5rem;
+    color: var(--text-primary);
+}
+
+.endpoint-list {
+    list-style: none;
+    padding-left: 0;
+}
+
+.endpoint-list li {
+    padding: 0.5rem;
+    background-color: var(--bg-secondary);
+    border-radius: 4px;
+    margin-bottom: 0.5rem;
+}
+
+.endpoint-list code {
+    font-family: 'Courier New', monospace;
+    font-size: 0.875rem;
+    color: var(--accent-color);
+    background-color: var(--bg-tertiary);
+    padding: 0.125rem 0.375rem;
+    border-radius: 3px;
+}
+
+.config-example {
+    margin-bottom: 0.75rem;
+    border: 1px solid var(--border-color);
+    border-radius: 4px;
+    overflow: hidden;
+}
+
+.config-example summary {
+    padding: 0.75rem;
+    background-color: var(--bg-secondary);
+    cursor: pointer;
+    font-size: 0.875rem;
+    user-select: none;
+    transition: background-color 0.2s;
+}
+
+.config-example summary:hover {
+    background-color: var(--bg-tertiary);
+}
+
+.config-example[open] summary {
+    border-bottom: 1px solid var(--border-color);
+}
+
+.config-example pre {
+    margin: 0;
+    padding: 1rem;
+    background-color: var(--bg-primary);
+    overflow-x: auto;
+}
+
+.config-example code {
+    font-family: 'Courier New', monospace;
+    font-size: 0.8rem;
+    line-height: 1.5;
+    color: var(--text-primary);
+}
+
+#logs-empty-state h3 {
+    font-size: 1.5rem;
+    font-weight: 600;
+    margin-bottom: 1rem;
+    color: var(--accent-color);
+}
+
+#logs-empty-state > p {
+    font-size: 1rem;
+    margin-bottom: 1.5rem;
+    color: var(--text-primary);
+}
