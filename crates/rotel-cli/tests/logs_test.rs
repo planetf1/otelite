@@ -1,7 +1,8 @@
 //! Integration tests for logs commands
 
-use mockito::Server;
+use mockito::{Matcher, Server};
 use std::time::Duration;
+use tempfile::NamedTempFile;
 
 // Helper to create a mock API client
 async fn create_test_client(server_url: String) -> rotel_cli::api::client::ApiClient {
@@ -17,7 +18,7 @@ fn create_test_config(
         endpoint,
         timeout: Duration::from_secs(30),
         format,
-        no_color: true, // Disable colors for testing
+        no_color: true, // Disable colours for testing
         no_header: false,
         no_pager: true,
     }
@@ -29,7 +30,7 @@ async fn test_logs_list_command() {
     let mut server = Server::new_async().await;
     let mock = server
         .mock("GET", "/api/logs")
-        .match_query(mockito::Matcher::UrlEncoded("limit".into(), "10".into()))
+        .match_query(Matcher::UrlEncoded("limit".into(), "10".into()))
         .with_status(200)
         .with_header("content-type", "application/json")
         .with_body(
@@ -75,10 +76,7 @@ async fn test_logs_list_with_severity_filter() {
     let mut server = Server::new_async().await;
     let mock = server
         .mock("GET", "/api/logs")
-        .match_query(mockito::Matcher::UrlEncoded(
-            "severity".into(),
-            "ERROR".into(),
-        ))
+        .match_query(Matcher::UrlEncoded("severity".into(), "ERROR".into()))
         .with_status(200)
         .with_header("content-type", "application/json")
         .with_body(
@@ -147,10 +145,7 @@ async fn test_logs_search_command() {
     let mut server = Server::new_async().await;
     let mock = server
         .mock("GET", "/api/logs")
-        .match_query(mockito::Matcher::UrlEncoded(
-            "search".into(),
-            "error".into(),
-        ))
+        .match_query(Matcher::UrlEncoded("search".into(), "error".into()))
         .with_status(200)
         .with_header("content-type", "application/json")
         .with_body(
@@ -205,9 +200,9 @@ async fn test_logs_search_with_limit() {
     let mut server = Server::new_async().await;
     let mock = server
         .mock("GET", "/api/logs")
-        .match_query(mockito::Matcher::AllOf(vec![
-            mockito::Matcher::UrlEncoded("search".into(), "test".into()),
-            mockito::Matcher::UrlEncoded("limit".into(), "5".into()),
+        .match_query(Matcher::AllOf(vec![
+            Matcher::UrlEncoded("search".into(), "test".into()),
+            Matcher::UrlEncoded("limit".into(), "5".into()),
         ]))
         .with_status(200)
         .with_header("content-type", "application/json")
@@ -328,7 +323,6 @@ async fn test_json_output_format() {
     mock.assert_async().await;
     assert!(result.is_ok());
 
-    // Verify JSON serialization works
     let logs = result.unwrap();
     let json_str = serde_json::to_string(&logs).unwrap();
     let parsed: Vec<rotel_cli::api::models::LogEntry> = serde_json::from_str(&json_str).unwrap();
@@ -374,7 +368,6 @@ async fn test_pretty_output_format() {
 
     mock.assert_async().await;
     assert!(result.is_ok());
-    // Pretty format should not panic
 }
 
 // T024: Integration test for severity filtering
@@ -383,10 +376,7 @@ async fn test_severity_filtering_integration() {
     let mut server = Server::new_async().await;
     let mock = server
         .mock("GET", "/api/logs")
-        .match_query(mockito::Matcher::UrlEncoded(
-            "severity".into(),
-            "WARN".into(),
-        ))
+        .match_query(Matcher::UrlEncoded("severity".into(), "WARN".into()))
         .with_status(200)
         .with_header("content-type", "application/json")
         .with_body(
@@ -448,7 +438,6 @@ async fn test_severity_filtering_integration() {
     let client = create_test_client(server.url()).await;
     let config = create_test_config(server.url(), rotel_cli::config::OutputFormat::Json);
 
-    // Test filtering at WARN level (should include ERROR and WARN)
     let result = rotel_cli::commands::logs::handle_list(
         &client,
         &config,
@@ -463,10 +452,242 @@ async fn test_severity_filtering_integration() {
     assert!(result.is_ok());
     let logs = result.unwrap();
 
-    // Client-side filtering should keep ERROR and WARN, filter out INFO and DEBUG
     assert_eq!(logs.len(), 2);
     assert!(logs.iter().any(|l| l.severity == "ERROR"));
     assert!(logs.iter().any(|l| l.severity == "WARN"));
     assert!(!logs.iter().any(|l| l.severity == "INFO"));
     assert!(!logs.iter().any(|l| l.severity == "DEBUG"));
+}
+
+// T025: Integration tests for logs export command
+#[tokio::test]
+async fn test_logs_export_json_stdout_is_valid_json_array() {
+    let mut server = Server::new_async().await;
+    let body = r#"[
+        {
+            "timestamp": 1705315800000000000,
+            "severity": "INFO",
+            "severity_text": "INFO",
+            "body": "Exported log",
+            "attributes": {},
+            "resource": null,
+            "trace_id": null,
+            "span_id": null
+        }
+    ]"#;
+    let mock = server
+        .mock("GET", "/api/logs/export")
+        .match_query(Matcher::UrlEncoded("format".into(), "json".into()))
+        .with_status(200)
+        .with_header("content-type", "application/json")
+        .with_body(body)
+        .create_async()
+        .await;
+
+    let client = create_test_client(server.url()).await;
+    let config = create_test_config(server.url(), rotel_cli::config::OutputFormat::Json);
+
+    let result =
+        rotel_cli::commands::logs::handle_export(&client, &config, "json", None, None, None).await;
+
+    mock.assert_async().await;
+    assert!(result.is_ok());
+
+    let parsed: Vec<serde_json::Value> = serde_json::from_str(body).unwrap();
+    assert_eq!(parsed.len(), 1);
+    assert_eq!(parsed[0]["body"], "Exported log");
+}
+
+#[tokio::test]
+async fn test_logs_export_csv_contains_header_and_data_row() {
+    let mut server = Server::new_async().await;
+    let csv = "timestamp,severity,body\n1705315800000000000,INFO,Exported log\n";
+    let mock = server
+        .mock("GET", "/api/logs/export")
+        .match_query(Matcher::UrlEncoded("format".into(), "csv".into()))
+        .with_status(200)
+        .with_header("content-type", "text/csv")
+        .with_body(csv)
+        .create_async()
+        .await;
+
+    let client = create_test_client(server.url()).await;
+    let config = create_test_config(server.url(), rotel_cli::config::OutputFormat::Json);
+
+    let result =
+        rotel_cli::commands::logs::handle_export(&client, &config, "csv", None, None, None).await;
+
+    mock.assert_async().await;
+    assert!(result.is_ok());
+
+    let mut reader = csv::Reader::from_reader(csv.as_bytes());
+    let headers = reader.headers().unwrap().clone();
+    assert_eq!(
+        headers,
+        csv::StringRecord::from(vec!["timestamp", "severity", "body"])
+    );
+
+    let rows = reader
+        .records()
+        .collect::<Result<Vec<_>, csv::Error>>()
+        .unwrap();
+    assert_eq!(rows.len(), 1);
+    assert_eq!(rows[0].get(1), Some("INFO"));
+}
+
+#[tokio::test]
+async fn test_logs_export_json_file_output_writes_valid_json() {
+    let mut server = Server::new_async().await;
+    let body = r#"[
+        {
+            "timestamp": 1705315800000000000,
+            "severity": "INFO",
+            "severity_text": "INFO",
+            "body": "Written to file",
+            "attributes": {},
+            "resource": null,
+            "trace_id": null,
+            "span_id": null
+        }
+    ]"#;
+    let mock = server
+        .mock("GET", "/api/logs/export")
+        .match_query(Matcher::UrlEncoded("format".into(), "json".into()))
+        .with_status(200)
+        .with_header("content-type", "application/json")
+        .with_body(body)
+        .create_async()
+        .await;
+
+    let client = create_test_client(server.url()).await;
+    let config = create_test_config(server.url(), rotel_cli::config::OutputFormat::Json);
+    let file = NamedTempFile::new().unwrap();
+    let path = file.path().to_string_lossy().to_string();
+
+    let result = rotel_cli::commands::logs::handle_export(
+        &client,
+        &config,
+        "json",
+        None,
+        None,
+        Some(path.clone()),
+    )
+    .await;
+
+    mock.assert_async().await;
+    assert!(result.is_ok());
+
+    let written = std::fs::read_to_string(&path).unwrap();
+    let parsed: Vec<serde_json::Value> = serde_json::from_str(&written).unwrap();
+    assert_eq!(parsed.len(), 1);
+    assert_eq!(parsed[0]["body"], "Written to file");
+}
+
+#[tokio::test]
+async fn test_logs_export_with_query_filter_only_requests_matching_logs() {
+    let mut server = Server::new_async().await;
+    let body = r#"[
+        {
+            "timestamp": 1705315800000000000,
+            "severity": "ERROR",
+            "severity_text": "ERROR",
+            "body": "Matching exported log",
+            "attributes": {},
+            "resource": null,
+            "trace_id": null,
+            "span_id": null
+        }
+    ]"#;
+    let mock = server
+        .mock("GET", "/api/logs/export")
+        .match_query(Matcher::AllOf(vec![
+            Matcher::UrlEncoded("format".into(), "json".into()),
+            Matcher::UrlEncoded("severity".into(), "ERROR".into()),
+        ]))
+        .with_status(200)
+        .with_header("content-type", "application/json")
+        .with_body(body)
+        .create_async()
+        .await;
+
+    let client = create_test_client(server.url()).await;
+    let config = create_test_config(server.url(), rotel_cli::config::OutputFormat::Json);
+
+    let result = rotel_cli::commands::logs::handle_export(
+        &client,
+        &config,
+        "json",
+        Some("ERROR".to_string()),
+        None,
+        None,
+    )
+    .await;
+
+    mock.assert_async().await;
+    assert!(result.is_ok());
+
+    let parsed: Vec<serde_json::Value> = serde_json::from_str(body).unwrap();
+    assert_eq!(parsed.len(), 1);
+    assert_eq!(parsed[0]["severity"], "ERROR");
+}
+
+#[tokio::test]
+async fn test_logs_export_empty_result_json_is_empty_array() {
+    let mut server = Server::new_async().await;
+    let body = "[]";
+    let mock = server
+        .mock("GET", "/api/logs/export")
+        .match_query(Matcher::UrlEncoded("format".into(), "json".into()))
+        .with_status(200)
+        .with_header("content-type", "application/json")
+        .with_body(body)
+        .create_async()
+        .await;
+
+    let client = create_test_client(server.url()).await;
+    let config = create_test_config(server.url(), rotel_cli::config::OutputFormat::Json);
+
+    let result =
+        rotel_cli::commands::logs::handle_export(&client, &config, "json", None, None, None).await;
+
+    mock.assert_async().await;
+    assert!(result.is_ok());
+
+    let parsed: Vec<serde_json::Value> = serde_json::from_str(body).unwrap();
+    assert!(parsed.is_empty());
+}
+
+#[tokio::test]
+async fn test_logs_export_empty_result_csv_has_header_only() {
+    let mut server = Server::new_async().await;
+    let csv = "timestamp,severity,body\n";
+    let mock = server
+        .mock("GET", "/api/logs/export")
+        .match_query(Matcher::UrlEncoded("format".into(), "csv".into()))
+        .with_status(200)
+        .with_header("content-type", "text/csv")
+        .with_body(csv)
+        .create_async()
+        .await;
+
+    let client = create_test_client(server.url()).await;
+    let config = create_test_config(server.url(), rotel_cli::config::OutputFormat::Json);
+
+    let result =
+        rotel_cli::commands::logs::handle_export(&client, &config, "csv", None, None, None).await;
+
+    mock.assert_async().await;
+    assert!(result.is_ok());
+
+    let mut reader = csv::Reader::from_reader(csv.as_bytes());
+    let headers = reader.headers().unwrap().clone();
+    assert_eq!(
+        headers,
+        csv::StringRecord::from(vec!["timestamp", "severity", "body"])
+    );
+    let rows = reader
+        .records()
+        .collect::<Result<Vec<_>, csv::Error>>()
+        .unwrap();
+    assert!(rows.is_empty());
 }

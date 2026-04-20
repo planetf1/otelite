@@ -1,7 +1,8 @@
 //! Integration tests for traces commands
 
-use mockito::Server;
+use mockito::{Matcher, Server};
 use std::time::Duration;
+use tempfile::NamedTempFile;
 
 // Helper to create a mock API client
 async fn create_test_client(server_url: String) -> rotel_cli::api::client::ApiClient {
@@ -17,7 +18,7 @@ fn create_test_config(
         endpoint,
         timeout: Duration::from_secs(30),
         format,
-        no_color: true, // Disable colors for testing
+        no_color: true, // Disable colours for testing
         no_header: false,
         no_pager: true,
     }
@@ -29,7 +30,7 @@ async fn test_traces_list_command() {
     let mut server = Server::new_async().await;
     let mock = server
         .mock("GET", "/api/traces")
-        .match_query(mockito::Matcher::UrlEncoded("limit".into(), "10".into()))
+        .match_query(Matcher::UrlEncoded("limit".into(), "10".into()))
         .with_status(200)
         .with_header("content-type", "application/json")
         .with_body(
@@ -173,10 +174,7 @@ async fn test_traces_list_with_duration_filter() {
     let mut server = Server::new_async().await;
     let mock = server
         .mock("GET", "/api/traces")
-        .match_query(mockito::Matcher::UrlEncoded(
-            "min_duration".into(),
-            "1000".into(),
-        ))
+        .match_query(Matcher::UrlEncoded("min_duration".into(), "1000".into()))
         .with_status(200)
         .with_header("content-type", "application/json")
         .with_body(
@@ -211,10 +209,7 @@ async fn test_traces_list_with_status_filter() {
     let mut server = Server::new_async().await;
     let mock = server
         .mock("GET", "/api/traces")
-        .match_query(mockito::Matcher::UrlEncoded(
-            "status".into(),
-            "ERROR".into(),
-        ))
+        .match_query(Matcher::UrlEncoded("status".into(), "ERROR".into()))
         .with_status(200)
         .with_header("content-type", "application/json")
         .with_body(
@@ -351,4 +346,203 @@ async fn test_traces_list_pretty_output() {
 
     mock.assert_async().await;
     assert!(result.is_ok());
+}
+
+// T049: Integration tests for traces export command
+#[tokio::test]
+async fn test_traces_export_json_stdout_is_valid_json_array() {
+    let mut server = Server::new_async().await;
+    let body = r#"[
+        {
+            "trace_id": "trace-123",
+            "spans": [
+                {
+                    "span_id": "span-1",
+                    "trace_id": "trace-123",
+                    "parent_span_id": null,
+                    "name": "root-span",
+                    "kind": "Internal",
+                    "start_time": 1705315800000000000,
+                    "end_time": 1705315801500000000,
+                    "duration": 1500000000,
+                    "attributes": {},
+                    "resource": null,
+                    "status": {"code": "OK", "message": null},
+                    "events": []
+                }
+            ],
+            "start_time": 1705315800000000000,
+            "end_time": 1705315801500000000,
+            "duration": 1500000000,
+            "span_count": 1,
+            "service_names": ["api"]
+        }
+    ]"#;
+    let mock = server
+        .mock("GET", "/api/traces/export")
+        .match_query(Matcher::UrlEncoded("format".into(), "json".into()))
+        .with_status(200)
+        .with_header("content-type", "application/json")
+        .with_body(body)
+        .create_async()
+        .await;
+
+    let client = create_test_client(server.url()).await;
+    let config = create_test_config(server.url(), rotel_cli::config::OutputFormat::Json);
+
+    let result = rotel_cli::commands::traces::handle_export(
+        &client, &config, "json", None, None, None, None,
+    )
+    .await;
+
+    mock.assert_async().await;
+    assert!(result.is_ok());
+
+    let parsed: Vec<serde_json::Value> = serde_json::from_str(body).unwrap();
+    assert_eq!(parsed.len(), 1);
+    assert_eq!(parsed[0]["trace_id"], "trace-123");
+    assert_eq!(parsed[0]["spans"].as_array().unwrap().len(), 1);
+}
+
+#[tokio::test]
+async fn test_traces_export_json_file_output_writes_valid_json() {
+    let mut server = Server::new_async().await;
+    let body = r#"[
+        {
+            "trace_id": "trace-file",
+            "spans": [],
+            "start_time": 1705315800000000000,
+            "end_time": 1705315801500000000,
+            "duration": 1500000000,
+            "span_count": 0,
+            "service_names": []
+        }
+    ]"#;
+    let mock = server
+        .mock("GET", "/api/traces/export")
+        .match_query(Matcher::UrlEncoded("format".into(), "json".into()))
+        .with_status(200)
+        .with_header("content-type", "application/json")
+        .with_body(body)
+        .create_async()
+        .await;
+
+    let client = create_test_client(server.url()).await;
+    let config = create_test_config(server.url(), rotel_cli::config::OutputFormat::Json);
+    let file = NamedTempFile::new().unwrap();
+    let path = file.path().to_string_lossy().to_string();
+
+    let result = rotel_cli::commands::traces::handle_export(
+        &client,
+        &config,
+        "json",
+        None,
+        None,
+        None,
+        Some(path.clone()),
+    )
+    .await;
+
+    mock.assert_async().await;
+    assert!(result.is_ok());
+
+    let written = std::fs::read_to_string(&path).unwrap();
+    let parsed: Vec<serde_json::Value> = serde_json::from_str(&written).unwrap();
+    assert_eq!(parsed.len(), 1);
+    assert_eq!(parsed[0]["trace_id"], "trace-file");
+}
+
+#[tokio::test]
+async fn test_traces_export_with_data_includes_trace_id_and_spans() {
+    let mut server = Server::new_async().await;
+    let body = r#"[
+        {
+            "trace_id": "trace-data",
+            "spans": [
+                {
+                    "span_id": "span-a",
+                    "trace_id": "trace-data",
+                    "parent_span_id": null,
+                    "name": "span-a",
+                    "kind": "Internal",
+                    "start_time": 1705315800000000000,
+                    "end_time": 1705315800100000000,
+                    "duration": 100000000,
+                    "attributes": {},
+                    "resource": null,
+                    "status": {"code": "OK", "message": null},
+                    "events": []
+                }
+            ],
+            "start_time": 1705315800000000000,
+            "end_time": 1705315800100000000,
+            "duration": 100000000,
+            "span_count": 1,
+            "service_names": []
+        }
+    ]"#;
+    let mock = server
+        .mock("GET", "/api/traces/export")
+        .match_query(Matcher::AllOf(vec![
+            Matcher::UrlEncoded("format".into(), "json".into()),
+            Matcher::UrlEncoded("status".into(), "ERROR".into()),
+            Matcher::UrlEncoded("min_duration".into(), "250".into()),
+        ]))
+        .with_status(200)
+        .with_header("content-type", "application/json")
+        .with_body(body)
+        .create_async()
+        .await;
+
+    let client = create_test_client(server.url()).await;
+    let config = create_test_config(server.url(), rotel_cli::config::OutputFormat::Json);
+
+    let result = rotel_cli::commands::traces::handle_export(
+        &client,
+        &config,
+        "json",
+        Some("ERROR".to_string()),
+        Some(250),
+        None,
+        None,
+    )
+    .await;
+
+    mock.assert_async().await;
+    assert!(result.is_ok());
+
+    let parsed: Vec<serde_json::Value> = serde_json::from_str(body).unwrap();
+    assert_eq!(parsed[0]["trace_id"], "trace-data");
+    assert_eq!(
+        parsed[0]["spans"].as_array().unwrap()[0]["span_id"],
+        "span-a"
+    );
+}
+
+#[tokio::test]
+async fn test_traces_export_empty_result_is_empty_array() {
+    let mut server = Server::new_async().await;
+    let body = "[]";
+    let mock = server
+        .mock("GET", "/api/traces/export")
+        .match_query(Matcher::UrlEncoded("format".into(), "json".into()))
+        .with_status(200)
+        .with_header("content-type", "application/json")
+        .with_body(body)
+        .create_async()
+        .await;
+
+    let client = create_test_client(server.url()).await;
+    let config = create_test_config(server.url(), rotel_cli::config::OutputFormat::Json);
+
+    let result = rotel_cli::commands::traces::handle_export(
+        &client, &config, "json", None, None, None, None,
+    )
+    .await;
+
+    mock.assert_async().await;
+    assert!(result.is_ok());
+
+    let parsed: Vec<serde_json::Value> = serde_json::from_str(body).unwrap();
+    assert!(parsed.is_empty());
 }

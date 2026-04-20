@@ -33,22 +33,34 @@ impl SqliteBackend {
         }
     }
 
-    /// Get the database file path
+    /// Get the database path or URI to open
     fn db_path(&self) -> PathBuf {
-        self.config.data_dir.join("rotel.db")
+        if self
+            .config
+            .data_dir
+            .to_string_lossy()
+            .starts_with(":memory:")
+        {
+            self.config.data_dir.clone()
+        } else {
+            self.config.data_dir.join("rotel.db")
+        }
     }
 }
 
 #[async_trait]
 impl StorageBackend for SqliteBackend {
     async fn initialize(&mut self) -> Result<()> {
-        // Create data directory if it doesn't exist
-        std::fs::create_dir_all(&self.config.data_dir).map_err(|e| {
-            StorageError::InitializationError(format!("Failed to create data directory: {}", e))
-        })?;
+        let db_path = self.db_path();
+
+        if !db_path.to_string_lossy().starts_with(":memory:") {
+            // Create data directory if it doesn't exist
+            std::fs::create_dir_all(&self.config.data_dir).map_err(|e| {
+                StorageError::InitializationError(format!("Failed to create data directory: {}", e))
+            })?;
+        }
 
         // Open database connection
-        let db_path = self.db_path();
         let conn = Connection::open(&db_path).map_err(|e| {
             StorageError::InitializationError(format!("Failed to open database: {}", e))
         })?;
