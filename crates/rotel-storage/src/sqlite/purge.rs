@@ -73,6 +73,8 @@ pub fn purge_old_data(
     conn: &mut Connection,
     cutoff_timestamp: i64,
     batch_size: usize,
+    signal_types: &[crate::SignalType],
+    dry_run: bool,
 ) -> Result<PurgeRecord, StorageError> {
     let start_time = chrono::Utc::now().timestamp_nanos_opt().unwrap_or(0);
 
@@ -80,36 +82,54 @@ pub fn purge_old_data(
     let mut spans_deleted = 0i64;
     let mut metrics_deleted = 0i64;
 
-    // Purge logs in batches
-    loop {
-        let deleted = delete_batch(conn, "logs", cutoff_timestamp, batch_size)?;
-        logs_deleted += deleted;
-        if deleted < batch_size as i64 {
-            break;
+    // Purge logs in batches if requested
+    if signal_types.contains(&crate::SignalType::Logs) {
+        loop {
+            let deleted = if dry_run {
+                count_batch(conn, "logs", cutoff_timestamp, batch_size)?
+            } else {
+                delete_batch(conn, "logs", cutoff_timestamp, batch_size)?
+            };
+            logs_deleted += deleted;
+            if deleted < batch_size as i64 {
+                break;
+            }
         }
     }
 
-    // Purge spans in batches
-    loop {
-        let deleted = delete_batch(conn, "spans", cutoff_timestamp, batch_size)?;
-        spans_deleted += deleted;
-        if deleted < batch_size as i64 {
-            break;
+    // Purge spans in batches if requested
+    if signal_types.contains(&crate::SignalType::Traces) {
+        loop {
+            let deleted = if dry_run {
+                count_batch(conn, "spans", cutoff_timestamp, batch_size)?
+            } else {
+                delete_batch(conn, "spans", cutoff_timestamp, batch_size)?
+            };
+            spans_deleted += deleted;
+            if deleted < batch_size as i64 {
+                break;
+            }
         }
     }
 
-    // Purge metrics in batches
-    loop {
-        let deleted = delete_batch(conn, "metrics", cutoff_timestamp, batch_size)?;
-        metrics_deleted += deleted;
-        if deleted < batch_size as i64 {
-            break;
+    // Purge metrics in batches if requested
+    if signal_types.contains(&crate::SignalType::Metrics) {
+        loop {
+            let deleted = if dry_run {
+                count_batch(conn, "metrics", cutoff_timestamp, batch_size)?
+            } else {
+                delete_batch(conn, "metrics", cutoff_timestamp, batch_size)?
+            };
+            metrics_deleted += deleted;
+            if deleted < batch_size as i64 {
+                break;
+            }
         }
     }
 
     let end_time = chrono::Utc::now().timestamp_nanos_opt().unwrap_or(0);
 
-    // Record purge history
+    // Record purge history (only if not dry run)
     let record = PurgeRecord {
         start_time,
         end_time,
@@ -118,9 +138,39 @@ pub fn purge_old_data(
         metrics_deleted,
     };
 
-    record_purge_history(conn, &record)?;
+    if !dry_run {
+        record_purge_history(conn, &record)?;
+    }
 
     Ok(record)
+}
+
+/// Count records that would be deleted (for dry-run mode)
+fn count_batch(
+    conn: &Connection,
+    table: &str,
+    cutoff_timestamp: i64,
+    batch_size: usize,
+) -> Result<i64, StorageError> {
+    // Use correct timestamp column for each table
+    let timestamp_col = match table {
+        "spans" => "start_time",
+        _ => "timestamp", // logs and metrics use 'timestamp'
+    };
+
+    let sql = format!(
+        "SELECT COUNT(*) FROM (
+            SELECT id FROM {} WHERE {} < ? LIMIT ?
+        )",
+        table, timestamp_col
+    );
+
+    conn.query_row(
+        &sql,
+        rusqlite::params![cutoff_timestamp, batch_size],
+        |row| row.get::<_, i64>(0),
+    )
+    .map_err(|e| StorageError::QueryError(format!("Failed to count batch: {}", e)))
 }
 
 /// Delete a batch of records from a table
@@ -149,11 +199,17 @@ fn delete_batch_in_transaction(
     cutoff_timestamp: i64,
     batch_size: usize,
 ) -> Result<i64, StorageError> {
+    // Use correct timestamp column for each table
+    let timestamp_col = match table {
+        "spans" => "start_time",
+        _ => "timestamp", // logs and metrics use 'timestamp'
+    };
+
     let sql = format!(
         "DELETE FROM {} WHERE id IN (
-            SELECT id FROM {} WHERE timestamp < ? LIMIT ?
+            SELECT id FROM {} WHERE {} < ? LIMIT ?
         )",
-        table, table
+        table, table, timestamp_col
     );
 
     tx.execute(&sql, rusqlite::params![cutoff_timestamp, batch_size])

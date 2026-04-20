@@ -87,6 +87,28 @@ rustup run stable cargo llvm-cov --workspace --all-features --summary-only
 - Tests must assert specific values, not just "doesn't panic"
 - No `#[allow(dead_code)]` without a comment explaining why the code is needed
 
+### Testing Requirements
+
+**New code requires new tests. No exceptions.**
+
+| What you added | Minimum test required |
+|---|---|
+| New HTTP endpoint | Integration test in `tests/` covering at least: empty state + data present |
+| New function or method | Unit test in the same file's `#[cfg(test)]` module |
+| Bug fix | Regression test that would have failed before the fix |
+| New CLI command | Integration test using mockito or equivalent |
+| Refactor | No net reduction in test count; all existing tests still pass |
+
+**Verify new tests were actually written.** Before closing a bead, confirm the test count increased:
+
+```bash
+cargo test --workspace 2>&1 | grep "test result: ok" | awk '{sum += $4} END {print sum " total tests"}'
+```
+
+If the count is the same as before you started and the bead adds production code, you missed tests. Go back and add them.
+
+**Tests must be run after writing them.** Don't just add test functions — run `cargo test -p <crate>` and confirm they appear in the output and pass.
+
 ## Working with Beads
 
 Each bead has a detailed description with step-by-step instructions, exact file paths, verification commands, and acceptance criteria.
@@ -157,10 +179,11 @@ A bead is complete when ALL of these are true:
 
 1. Acceptance criteria in `bd show <id>` are met
 2. All quality gates pass (build, test, clippy, fmt)
-3. Changes are committed with a clear message
-4. `git push` succeeded
-5. `bd close <id> --reason "..."` called with a specific reason
-6. `bd dolt push` to sync bead state to remote (so the next agent sees it)
+3. **New production code has new tests** — if you added a function, endpoint, command, or data path, at least one test exercises it in the same commit (see Testing Requirements below)
+4. Changes are committed with a clear message
+5. `git push` succeeded
+6. `bd close <id> --reason "..."` called with a specific reason
+7. `bd dolt push` to sync bead state to remote (so the next agent sees it)
 
 ## Before Context Compaction
 

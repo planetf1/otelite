@@ -45,9 +45,6 @@ Rotel is an OpenTelemetry receiver and local observability server for LLM develo
 **Known gotchas for agents:**
 - `Span` has no `links` field
 - `LogRecord` has `observed_timestamp: Option<i64>`
-- CLI default endpoint is `localhost:8080` but server binds `:3000` (bug: rotel-2h2)
-- API response types (`LogEntry`, `TraceEntry`, etc.) are duplicated in dashboard/CLI/TUI (debt: rotel-d9q)
-- `rotel-core/src/lib.rs` contains scaffolding `add()`/`divide()`/`Config` to be removed (rotel-y90)
 - No MockStorage exists — tests use real `SqliteBackend` with `tempfile::TempDir`
 
 ## Conventions & Patterns

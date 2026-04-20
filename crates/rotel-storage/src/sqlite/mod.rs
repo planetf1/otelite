@@ -156,10 +156,18 @@ impl StorageBackend for SqliteBackend {
         };
 
         // Perform purge
-        let record = purge::purge_old_data(conn, cutoff_timestamp, 10000)?;
+        let record = purge::purge_old_data(
+            conn,
+            cutoff_timestamp,
+            10000,
+            &options.signal_types,
+            options.dry_run,
+        )?;
 
-        // Run VACUUM to reclaim space
-        purge::vacuum(conn)?;
+        // Run VACUUM to reclaim space (only if not dry run)
+        if !options.dry_run {
+            purge::vacuum(conn)?;
+        }
 
         let total_deleted = record.logs_deleted + record.spans_deleted + record.metrics_deleted;
         Ok(total_deleted as u64)
@@ -216,8 +224,17 @@ impl SqliteBackend {
                             - chrono::Duration::days(config.retention_days as i64);
                         let cutoff_timestamp = cutoff.timestamp_nanos_opt().unwrap_or(0);
 
-                        if let Ok(record) = purge::purge_old_data(conn_ref, cutoff_timestamp, 10000)
-                        {
+                        if let Ok(record) = purge::purge_old_data(
+                            conn_ref,
+                            cutoff_timestamp,
+                            10000,
+                            &[
+                                crate::SignalType::Logs,
+                                crate::SignalType::Traces,
+                                crate::SignalType::Metrics,
+                            ],
+                            false,
+                        ) {
                             tracing::info!(
                                 "Automatic purge completed: {} logs, {} spans, {} metrics deleted",
                                 record.logs_deleted,
