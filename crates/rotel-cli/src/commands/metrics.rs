@@ -15,6 +15,7 @@ pub async fn handle_list(
     name: Option<String>,
     labels: Vec<String>,
     since: Option<String>,
+    query: Option<String>,
 ) -> Result<()> {
     let mut params = Vec::new();
 
@@ -33,6 +34,21 @@ pub async fn handle_list(
     // Add label filters as query parameters
     for label in labels {
         params.push(("label", label));
+    }
+
+    // Parse and add query predicates if provided
+    if let Some(query_str) = query {
+        let predicates = rotel_core::query::parse_query(&query_str)
+            .map_err(|e| crate::error::Error::InvalidArgument(format!("Invalid query: {}", e)))?;
+
+        // Convert predicates to query parameters
+        for predicate in predicates {
+            let param_value = format!(
+                "{} {} {}",
+                predicate.field, predicate.operator, predicate.value
+            );
+            params.push(("query", param_value));
+        }
     }
 
     let metrics = client.fetch_metrics(params).await?;

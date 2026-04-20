@@ -59,7 +59,7 @@ async fn test_logs_list_command() {
     let config = create_test_config(server.url(), rotel_cli::config::OutputFormat::Json);
 
     let result =
-        rotel_cli::commands::logs::handle_list(&client, &config, Some(10), None, None).await;
+        rotel_cli::commands::logs::handle_list(&client, &config, Some(10), None, None, None).await;
 
     mock.assert_async().await;
     assert!(result.is_ok());
@@ -107,6 +107,7 @@ async fn test_logs_list_with_severity_filter() {
         None,
         Some("ERROR".to_string()),
         None,
+        None,
     )
     .await;
 
@@ -131,7 +132,8 @@ async fn test_logs_list_empty_response() {
     let client = create_test_client(server.url()).await;
     let config = create_test_config(server.url(), rotel_cli::config::OutputFormat::Json);
 
-    let result = rotel_cli::commands::logs::handle_list(&client, &config, None, None, None).await;
+    let result =
+        rotel_cli::commands::logs::handle_list(&client, &config, None, None, None, None).await;
 
     mock.assert_async().await;
     assert!(result.is_ok());
@@ -319,7 +321,8 @@ async fn test_json_output_format() {
     let client = create_test_client(server.url()).await;
     let config = create_test_config(server.url(), rotel_cli::config::OutputFormat::Json);
 
-    let result = rotel_cli::commands::logs::handle_list(&client, &config, None, None, None).await;
+    let result =
+        rotel_cli::commands::logs::handle_list(&client, &config, None, None, None, None).await;
 
     mock.assert_async().await;
     assert!(result.is_ok());
@@ -365,7 +368,8 @@ async fn test_pretty_output_format() {
     let client = create_test_client(server.url()).await;
     let config = create_test_config(server.url(), rotel_cli::config::OutputFormat::Pretty);
 
-    let result = rotel_cli::commands::logs::handle_list(&client, &config, None, None, None).await;
+    let result =
+        rotel_cli::commands::logs::handle_list(&client, &config, None, None, None, None).await;
 
     mock.assert_async().await;
     assert!(result.is_ok());
@@ -449,6 +453,7 @@ async fn test_severity_filtering_integration() {
         &config,
         None,
         Some("WARN".to_string()),
+        None,
         None,
     )
     .await;

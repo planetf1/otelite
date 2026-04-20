@@ -66,9 +66,16 @@ async fn test_metrics_list_command() {
     let client = create_test_client(server.url()).await;
     let config = create_test_config(server.url(), rotel_cli::config::OutputFormat::Json);
 
-    let result =
-        rotel_cli::commands::metrics::handle_list(&client, &config, Some(10), None, vec![], None)
-            .await;
+    let result = rotel_cli::commands::metrics::handle_list(
+        &client,
+        &config,
+        Some(10),
+        None,
+        vec![],
+        None,
+        None,
+    )
+    .await;
 
     mock.assert_async().await;
     assert!(result.is_ok());
@@ -89,7 +96,8 @@ async fn test_metrics_list_empty() {
     let config = create_test_config(server.url(), rotel_cli::config::OutputFormat::Json);
 
     let result =
-        rotel_cli::commands::metrics::handle_list(&client, &config, None, None, vec![], None).await;
+        rotel_cli::commands::metrics::handle_list(&client, &config, None, None, vec![], None, None)
+            .await;
 
     mock.assert_async().await;
     assert!(result.is_ok());
@@ -131,6 +139,7 @@ async fn test_metrics_list_with_name_filter() {
         None,
         Some("http_requests_total".to_string()),
         vec![],
+        None,
         None,
     )
     .await;
@@ -257,6 +266,7 @@ async fn test_metrics_list_with_label_filter() {
         None,
         vec!["method=GET".to_string()],
         None,
+        None,
     )
     .await;
 
@@ -298,6 +308,7 @@ async fn test_metrics_list_with_multiple_label_filters() {
         None,
         None,
         vec!["method=GET".to_string(), "status=200".to_string()],
+        None,
         None,
     )
     .await;
@@ -497,7 +508,8 @@ async fn test_metrics_json_output_format() {
     let config = create_test_config(server.url(), rotel_cli::config::OutputFormat::Json);
 
     let result =
-        rotel_cli::commands::metrics::handle_list(&client, &config, None, None, vec![], None).await;
+        rotel_cli::commands::metrics::handle_list(&client, &config, None, None, vec![], None, None)
+            .await;
 
     mock.assert_async().await;
     assert!(result.is_ok());

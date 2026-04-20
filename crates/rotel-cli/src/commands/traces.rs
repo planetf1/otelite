@@ -7,12 +7,14 @@ use crate::error::Result;
 use crate::output::{json, pretty};
 
 /// Handle traces list command
+#[allow(clippy::too_many_arguments)]
 pub async fn handle_list(
     client: &ApiClient,
     config: &Config,
     limit: Option<u32>,
     min_duration: Option<u64>,
     status: Option<String>,
+    query: Option<String>,
 ) -> Result<()> {
     let mut params = Vec::new();
 
@@ -26,6 +28,21 @@ pub async fn handle_list(
 
     if let Some(status) = status {
         params.push(("status", status));
+    }
+
+    // Parse and add query predicates if provided
+    if let Some(query_str) = query {
+        let predicates = rotel_core::query::parse_query(&query_str)
+            .map_err(|e| crate::error::Error::InvalidArgument(format!("Invalid query: {}", e)))?;
+
+        // Convert predicates to query parameters
+        for predicate in predicates {
+            let param_value = format!(
+                "{} {} {}",
+                predicate.field, predicate.operator, predicate.value
+            );
+            params.push(("query", param_value));
+        }
     }
 
     let traces_response = client.fetch_traces(params).await?;

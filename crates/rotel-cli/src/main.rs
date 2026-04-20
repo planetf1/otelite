@@ -104,7 +104,7 @@ enum Commands {
 enum LogsCommands {
     /// List recent log entries
     #[command(
-        after_help = "Examples:\n  rotel logs list --severity ERROR --since 24h\n  rotel logs list --format json | jq '.[] | .body'"
+        after_help = "Examples:\n  rotel logs list --severity ERROR --since 24h\n  rotel logs list --query 'severity = \"ERROR\" AND body contains \"timeout\"'\n  rotel logs list --format json | jq '.[] | .body'"
     )]
     List {
         /// Filter by time range (e.g., 1h, 24h, 7d)
@@ -118,6 +118,10 @@ enum LogsCommands {
         /// Maximum number of results
         #[arg(long, short = 'n', default_value = "50")]
         limit: Option<usize>,
+
+        /// Structured query filter (e.g., 'severity = "ERROR" AND body contains "timeout"')
+        #[arg(long)]
+        query: Option<String>,
     },
     /// Full-text search in log bodies
     #[command(
@@ -166,7 +170,7 @@ enum LogsCommands {
 enum TracesCommands {
     /// List recent distributed traces
     #[command(
-        after_help = "Examples:\n  rotel traces list --status ERROR --min-duration 1s\n  rotel traces list --since 24h --limit 20"
+        after_help = "Examples:\n  rotel traces list --status ERROR --min-duration 1s\n  rotel traces list --query 'duration > 500ms AND status = \"ERROR\"'\n  rotel traces list --since 24h --limit 20"
     )]
     List {
         /// Filter by time range (e.g., 1h, 24h, 7d)
@@ -184,6 +188,10 @@ enum TracesCommands {
         /// Maximum number of results
         #[arg(long, short = 'n', default_value = "50")]
         limit: Option<usize>,
+
+        /// Structured query filter (e.g., 'duration > 500ms AND status = "ERROR"')
+        #[arg(long)]
+        query: Option<String>,
     },
     /// Show a single trace with all spans
     #[command(
@@ -224,7 +232,7 @@ enum TracesCommands {
 enum MetricsCommands {
     /// List available metrics
     #[command(
-        after_help = "Examples:\n  rotel metrics list --name http --since 24h\n  rotel metrics list --label method=GET --limit 20"
+        after_help = "Examples:\n  rotel metrics list --name http --since 24h\n  rotel metrics list --query 'name contains \"http\" AND value > 100'\n  rotel metrics list --label method=GET --limit 20"
     )]
     List {
         /// Filter by time range (e.g., 1h, 24h, 7d)
@@ -242,6 +250,10 @@ enum MetricsCommands {
         /// Maximum number of results
         #[arg(long, short = 'n', default_value = "50")]
         limit: Option<u32>,
+
+        /// Structured query filter (e.g., 'name contains "http" AND value > 100')
+        #[arg(long)]
+        query: Option<String>,
     },
     /// Show metric values by name
     #[command(
@@ -445,8 +457,9 @@ async fn handle_logs_command(command: LogsCommands, config: &Config) -> Result<(
             limit,
             severity,
             since,
+            query,
         } => {
-            logs::handle_list(&client, config, limit, severity, since).await?;
+            logs::handle_list(&client, config, limit, severity, since, query).await?;
         },
         LogsCommands::Search { query, limit } => {
             logs::handle_search(&client, config, &query, limit, None).await?;
@@ -480,6 +493,7 @@ async fn handle_traces_command(command: TracesCommands, config: &Config) -> Resu
             min_duration,
             status,
             since: _,
+            query,
         } => {
             // Parse min_duration string to milliseconds if provided
             let min_duration_ms = if let Some(duration_str) = min_duration {
@@ -497,6 +511,7 @@ async fn handle_traces_command(command: TracesCommands, config: &Config) -> Resu
                 limit.map(|l| l as u32),
                 min_duration_ms,
                 status,
+                query,
             )
             .await?;
         },
@@ -548,8 +563,9 @@ async fn handle_metrics_command(command: MetricsCommands, config: &Config) -> Re
             name,
             label,
             since,
+            query,
         } => {
-            metrics::handle_list(&client, config, limit, name, label, since).await?;
+            metrics::handle_list(&client, config, limit, name, label, since, query).await?;
         },
         MetricsCommands::Show { name, label, since } => {
             metrics::handle_show(&client, config, &name, label, since).await?;

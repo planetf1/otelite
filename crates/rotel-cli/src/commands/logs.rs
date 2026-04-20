@@ -7,12 +7,14 @@ use crate::error::Result;
 use crate::output::{json, pretty};
 
 /// Handle the `logs list` command
+#[allow(clippy::too_many_arguments)]
 pub async fn handle_list(
     client: &ApiClient,
     config: &Config,
     limit: Option<usize>,
     severity: Option<String>,
     since: Option<String>,
+    query: Option<String>,
 ) -> Result<Vec<LogEntry>> {
     let mut params = vec![];
 
@@ -28,6 +30,21 @@ pub async fn handle_list(
 
     if let Some(since) = since {
         params.push(("since", since));
+    }
+
+    // Parse and add query predicates if provided
+    if let Some(query_str) = query {
+        let predicates = rotel_core::query::parse_query(&query_str)
+            .map_err(|e| crate::error::Error::InvalidArgument(format!("Invalid query: {}", e)))?;
+
+        // Convert predicates to query parameters
+        for predicate in predicates {
+            let param_value = format!(
+                "{} {} {}",
+                predicate.field, predicate.operator, predicate.value
+            );
+            params.push(("query", param_value));
+        }
     }
 
     let logs_response = client.fetch_logs(params).await?;

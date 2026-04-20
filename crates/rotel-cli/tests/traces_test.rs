@@ -60,7 +60,8 @@ async fn test_traces_list_command() {
     let config = create_test_config(server.url(), rotel_cli::config::OutputFormat::Json);
 
     let result =
-        rotel_cli::commands::traces::handle_list(&client, &config, Some(10), None, None).await;
+        rotel_cli::commands::traces::handle_list(&client, &config, Some(10), None, None, None)
+            .await;
 
     mock.assert_async().await;
     assert!(result.is_ok());
@@ -80,7 +81,8 @@ async fn test_traces_list_empty() {
     let client = create_test_client(server.url()).await;
     let config = create_test_config(server.url(), rotel_cli::config::OutputFormat::Json);
 
-    let result = rotel_cli::commands::traces::handle_list(&client, &config, None, None, None).await;
+    let result =
+        rotel_cli::commands::traces::handle_list(&client, &config, None, None, None, None).await;
 
     mock.assert_async().await;
     assert!(result.is_ok());
@@ -196,7 +198,8 @@ async fn test_traces_list_with_duration_filter() {
     let config = create_test_config(server.url(), rotel_cli::config::OutputFormat::Json);
 
     let result =
-        rotel_cli::commands::traces::handle_list(&client, &config, None, Some(1000), None).await;
+        rotel_cli::commands::traces::handle_list(&client, &config, None, Some(1000), None, None)
+            .await;
 
     mock.assert_async().await;
     assert!(result.is_ok());
@@ -238,6 +241,7 @@ async fn test_traces_list_with_status_filter() {
         None,
         None,
         Some("ERROR".to_string()),
+        None,
     )
     .await;
 
@@ -341,7 +345,8 @@ async fn test_traces_list_pretty_output() {
     let client = create_test_client(server.url()).await;
     let config = create_test_config(server.url(), rotel_cli::config::OutputFormat::Pretty);
 
-    let result = rotel_cli::commands::traces::handle_list(&client, &config, None, None, None).await;
+    let result =
+        rotel_cli::commands::traces::handle_list(&client, &config, None, None, None, None).await;
 
     mock.assert_async().await;
     assert!(result.is_ok());
