@@ -11,7 +11,7 @@ use rotel_storage::QueryParams;
 use serde::{Deserialize, Serialize};
 
 /// Query parameters for trace listing
-#[derive(Debug, Deserialize, Serialize)]
+#[derive(Debug, Deserialize, Serialize, utoipa::IntoParams)]
 pub struct TracesQuery {
     /// Filter by trace ID
     #[serde(default)]
@@ -47,6 +47,16 @@ fn default_limit() -> usize {
 }
 
 /// Handler for GET /api/traces
+#[utoipa::path(
+    get,
+    path = "/api/traces",
+    params(TracesQuery),
+    responses(
+        (status = 200, description = "List of traces matching query", body = TracesResponse),
+        (status = 500, description = "Internal server error", body = ErrorResponse)
+    ),
+    tag = "traces"
+)]
 pub async fn list_traces(
     State(state): State<AppState>,
     Query(params): Query<TracesQuery>,
@@ -160,6 +170,19 @@ pub async fn list_traces(
 }
 
 /// Handler for GET /api/traces/:trace_id
+#[utoipa::path(
+    get,
+    path = "/api/traces/{trace_id}",
+    params(
+        ("trace_id" = String, Path, description = "Trace ID")
+    ),
+    responses(
+        (status = 200, description = "Trace details with all spans", body = TraceDetail),
+        (status = 404, description = "Trace not found", body = ErrorResponse),
+        (status = 500, description = "Internal server error", body = ErrorResponse)
+    ),
+    tag = "traces"
+)]
 pub async fn get_trace(
     State(state): State<AppState>,
     Path(trace_id): Path<String>,
@@ -214,7 +237,7 @@ pub async fn get_trace(
 }
 
 /// Export format for traces
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, utoipa::IntoParams)]
 pub struct ExportQuery {
     /// Export format: "json"
     #[serde(default = "default_format")]
@@ -230,6 +253,17 @@ fn default_format() -> String {
 }
 
 /// Handler for GET /api/traces/export
+#[utoipa::path(
+    get,
+    path = "/api/traces/export",
+    params(ExportQuery),
+    responses(
+        (status = 200, description = "Exported traces in JSON format"),
+        (status = 400, description = "Invalid format parameter", body = ErrorResponse),
+        (status = 500, description = "Internal server error", body = ErrorResponse)
+    ),
+    tag = "traces"
+)]
 pub async fn export_traces(
     State(state): State<AppState>,
     Query(params): Query<ExportQuery>,

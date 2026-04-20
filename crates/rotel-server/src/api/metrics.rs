@@ -15,7 +15,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
 /// Query parameters for listing metrics
-#[derive(Debug, Deserialize, Serialize)]
+#[derive(Debug, Deserialize, Serialize, utoipa::IntoParams)]
 pub struct MetricsQuery {
     /// Filter by metric name
     pub name: Option<String>,
@@ -32,7 +32,7 @@ pub struct MetricsQuery {
 }
 
 /// Query parameters for aggregating metrics
-#[derive(Debug, Deserialize, Serialize)]
+#[derive(Debug, Deserialize, Serialize, utoipa::IntoParams)]
 pub struct AggregateQuery {
     /// Metric name to aggregate
     pub name: String,
@@ -47,7 +47,7 @@ pub struct AggregateQuery {
 }
 
 /// Response structure for aggregated metrics
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, utoipa::ToSchema)]
 pub struct AggregateResponse {
     pub name: String,
     pub function: String,
@@ -57,7 +57,7 @@ pub struct AggregateResponse {
 }
 
 /// Time bucket for time-series aggregation
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, utoipa::ToSchema)]
 pub struct TimeBucket {
     pub timestamp: i64,
     pub value: f64,
@@ -65,6 +65,16 @@ pub struct TimeBucket {
 }
 
 /// List metrics with optional filtering
+#[utoipa::path(
+    get,
+    path = "/api/metrics",
+    params(MetricsQuery),
+    responses(
+        (status = 200, description = "List of metrics", body = Vec<MetricResponse>),
+        (status = 500, description = "Internal server error", body = ErrorResponse)
+    ),
+    tag = "metrics"
+)]
 pub async fn list_metrics(
     State(state): State<AppState>,
     Query(query): Query<MetricsQuery>,
@@ -189,6 +199,15 @@ pub async fn list_metrics(
 }
 
 /// Get list of unique metric names
+#[utoipa::path(
+    get,
+    path = "/api/metrics/names",
+    responses(
+        (status = 200, description = "List of unique metric names", body = Vec<String>),
+        (status = 500, description = "Internal server error", body = ErrorResponse)
+    ),
+    tag = "metrics"
+)]
 pub async fn list_metric_names(
     State(state): State<AppState>,
 ) -> Result<Json<Vec<String>>, (StatusCode, Json<ErrorResponse>)> {
@@ -217,6 +236,18 @@ pub async fn list_metric_names(
 }
 
 /// Aggregate metrics by function
+#[utoipa::path(
+    get,
+    path = "/api/metrics/aggregate",
+    params(AggregateQuery),
+    responses(
+        (status = 200, description = "Aggregated metric result", body = AggregateResponse),
+        (status = 400, description = "Invalid aggregation function", body = ErrorResponse),
+        (status = 404, description = "Metric not found", body = ErrorResponse),
+        (status = 500, description = "Internal server error", body = ErrorResponse)
+    ),
+    tag = "metrics"
+)]
 pub async fn aggregate_metrics(
     State(state): State<AppState>,
     Query(query): Query<AggregateQuery>,
@@ -487,6 +518,16 @@ pub async fn aggregate_metrics(
 }
 
 /// Export metrics as JSON
+#[utoipa::path(
+    get,
+    path = "/api/metrics/export",
+    params(MetricsQuery),
+    responses(
+        (status = 200, description = "Exported metrics in JSON format"),
+        (status = 500, description = "Internal server error", body = ErrorResponse)
+    ),
+    tag = "metrics"
+)]
 pub async fn export_metrics(
     State(state): State<AppState>,
     Query(query): Query<MetricsQuery>,

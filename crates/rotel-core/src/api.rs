@@ -10,6 +10,7 @@ use std::collections::HashMap;
 
 /// Standard error response for all API endpoints
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct ErrorResponse {
     /// Human-readable error message
     pub error: String,
@@ -70,6 +71,7 @@ impl ErrorResponse {
 
 /// Response for log listing
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct LogsResponse {
     pub logs: Vec<LogEntry>,
     pub total: usize,
@@ -79,6 +81,7 @@ pub struct LogsResponse {
 
 /// Individual log entry for API response
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct LogEntry {
     pub timestamp: i64,
     pub severity: String,
@@ -93,12 +96,14 @@ pub struct LogEntry {
 
 /// Resource information
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct Resource {
     pub attributes: HashMap<String, String>,
 }
 
 /// Response for trace listing
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct TracesResponse {
     pub traces: Vec<TraceEntry>,
     pub total: usize,
@@ -108,6 +113,7 @@ pub struct TracesResponse {
 
 /// Individual trace entry (aggregated from spans)
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct TraceEntry {
     pub trace_id: String,
     pub root_span_name: String,
@@ -120,6 +126,7 @@ pub struct TraceEntry {
 
 /// Detailed trace with all spans
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct TraceDetail {
     pub trace_id: String,
     pub spans: Vec<SpanEntry>,
@@ -132,6 +139,7 @@ pub struct TraceDetail {
 
 /// Individual span entry
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct SpanEntry {
     pub span_id: String,
     pub trace_id: String,
@@ -150,6 +158,7 @@ pub struct SpanEntry {
 
 /// Span status
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct SpanStatus {
     pub code: String,
     pub message: Option<String>,
@@ -157,6 +166,7 @@ pub struct SpanStatus {
 
 /// Span event
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct SpanEvent {
     pub name: String,
     pub timestamp: i64,
@@ -166,6 +176,7 @@ pub struct SpanEvent {
 
 /// Metric response
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct MetricResponse {
     pub name: String,
     pub description: Option<String>,

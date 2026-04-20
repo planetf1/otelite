@@ -21,12 +21,16 @@ tokio = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 
+# OpenAPI documentation
+utoipa = { version = "4", features = ["axum_extras"] }
+utoipa-swagger-ui = { version = "7", features = ["axum"] }
+
 # MIME type detection for static files
 mime_guess = "2.0"
 
 # Internal dependencies
 rotel-storage = { path = "../rotel-storage" }
-rotel-core = { path = "../rotel-core" }
+rotel-core = { path = "../rotel-core", features = ["openapi"] }
 
 # Logging
 tracing = { workspace = true }

@@ -11,7 +11,7 @@ use rotel_storage::QueryParams;
 use serde::{Deserialize, Serialize};
 
 /// Query parameters for log listing
-#[derive(Debug, Deserialize, Serialize)]
+#[derive(Debug, Deserialize, Serialize, utoipa::IntoParams)]
 pub struct LogsQuery {
     /// Filter by severity level (e.g., "ERROR", "WARN", "INFO")
     #[serde(default)]
@@ -47,6 +47,16 @@ fn default_limit() -> usize {
 }
 
 /// Handler for GET /api/logs
+#[utoipa::path(
+    get,
+    path = "/api/logs",
+    params(LogsQuery),
+    responses(
+        (status = 200, description = "List of logs matching query", body = LogsResponse),
+        (status = 500, description = "Internal server error", body = ErrorResponse)
+    ),
+    tag = "logs"
+)]
 pub async fn list_logs(
     State(state): State<AppState>,
     Query(params): Query<LogsQuery>,
@@ -125,6 +135,19 @@ pub async fn list_logs(
 
 /// Handler for GET /api/logs/:timestamp
 /// Note: Using timestamp as ID since LogRecord doesn't have a separate ID field
+#[utoipa::path(
+    get,
+    path = "/api/logs/{timestamp}",
+    params(
+        ("timestamp" = i64, Path, description = "Log timestamp in nanoseconds")
+    ),
+    responses(
+        (status = 200, description = "Log entry", body = LogEntry),
+        (status = 404, description = "Log not found", body = ErrorResponse),
+        (status = 500, description = "Internal server error", body = ErrorResponse)
+    ),
+    tag = "logs"
+)]
 pub async fn get_log(
     State(state): State<AppState>,
     Path(timestamp): Path<i64>,
@@ -161,7 +184,7 @@ pub async fn get_log(
 }
 
 /// Export format for logs
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, utoipa::IntoParams)]
 pub struct ExportQuery {
     /// Export format: "json" or "csv"
     #[serde(default = "default_format")]
@@ -177,6 +200,17 @@ fn default_format() -> String {
 }
 
 /// Handler for GET /api/logs/export
+#[utoipa::path(
+    get,
+    path = "/api/logs/export",
+    params(ExportQuery),
+    responses(
+        (status = 200, description = "Exported logs in requested format"),
+        (status = 400, description = "Invalid format parameter", body = ErrorResponse),
+        (status = 500, description = "Internal server error", body = ErrorResponse)
+    ),
+    tag = "logs"
+)]
 pub async fn export_logs(
     State(state): State<AppState>,
     Query(params): Query<ExportQuery>,

@@ -10,6 +10,61 @@ use std::sync::Arc;
 use std::time::Duration;
 use tower_http::trace::TraceLayer;
 use tracing::info;
+use utoipa::OpenApi;
+
+/// OpenAPI documentation
+#[derive(OpenApi)]
+#[openapi(
+    paths(
+        crate::api::health::health_check,
+        crate::api::help::api_help,
+        crate::api::logs::list_logs,
+        crate::api::logs::get_log,
+        crate::api::logs::export_logs,
+        crate::api::traces::list_traces,
+        crate::api::traces::get_trace,
+        crate::api::traces::export_traces,
+        crate::api::metrics::list_metrics,
+        crate::api::metrics::list_metric_names,
+        crate::api::metrics::aggregate_metrics,
+        crate::api::metrics::export_metrics,
+    ),
+    components(
+        schemas(
+            rotel_core::api::ErrorResponse,
+            rotel_core::api::LogsResponse,
+            rotel_core::api::LogEntry,
+            rotel_core::api::Resource,
+            rotel_core::api::TracesResponse,
+            rotel_core::api::TraceEntry,
+            rotel_core::api::TraceDetail,
+            rotel_core::api::SpanEntry,
+            rotel_core::api::SpanStatus,
+            rotel_core::api::SpanEvent,
+            rotel_core::api::MetricResponse,
+            crate::api::health::HealthResponse,
+            crate::api::metrics::AggregateResponse,
+            crate::api::metrics::TimeBucket,
+        )
+    ),
+    tags(
+        (name = "health", description = "Health check endpoints"),
+        (name = "help", description = "API documentation and help"),
+        (name = "logs", description = "Log query and export endpoints"),
+        (name = "traces", description = "Trace query and export endpoints"),
+        (name = "metrics", description = "Metric query and aggregation endpoints")
+    ),
+    info(
+        title = "Rotel API",
+        version = "1.0.0",
+        description = "OpenTelemetry data query and visualization API",
+        contact(
+            name = "Rotel",
+            url = "https://github.com/yourusername/rotel"
+        )
+    )
+)]
+struct ApiDoc;
 
 /// Shared application state
 #[derive(Clone)]
@@ -81,6 +136,8 @@ impl DashboardServer {
         Router::new()
             // API routes - Health
             .route("/api/health", get(crate::api::health_check))
+            // API routes - Help
+            .route("/api/help", get(crate::api::api_help))
             // API routes - Logs
             .route("/api/logs", get(crate::api::logs::list_logs))
             .route("/api/logs/export", get(crate::api::logs::export_logs))
@@ -94,6 +151,10 @@ impl DashboardServer {
             .route("/api/metrics/names", get(crate::api::metrics::list_metric_names))
             .route("/api/metrics/aggregate", get(crate::api::metrics::aggregate_metrics))
             .route("/api/metrics/export", get(crate::api::metrics::export_metrics))
+            // OpenAPI spec endpoint
+            .route("/api/openapi.json", get(|| async {
+                axum::Json(ApiDoc::openapi())
+            }))
             // Static file serving (index.html, CSS, JS)
             .fallback(static_files::serve_static_file)
             // Add shared state
