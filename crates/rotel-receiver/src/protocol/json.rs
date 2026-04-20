@@ -4,21 +4,8 @@ use crate::error::ReceiverError;
 use opentelemetry_proto::tonic::collector::logs::v1::ExportLogsServiceRequest;
 use opentelemetry_proto::tonic::collector::metrics::v1::ExportMetricsServiceRequest;
 use opentelemetry_proto::tonic::collector::trace::v1::ExportTraceServiceRequest;
-use serde_json::Value;
 
 /// Parse OTLP metrics request from JSON
-///
-/// **Current Implementation**: Validates JSON structure and returns empty request.
-///
-/// **Limitation**: The opentelemetry-proto crate uses prost-generated types that don't
-/// implement serde::Deserialize. Full JSON-to-Protobuf conversion would require:
-/// 1. Manual mapping from JSON Value to protobuf types, OR
-/// 2. Using prost-reflect for dynamic protobuf construction, OR
-/// 3. Using a different OTLP library with serde support
-///
-/// For now, this validates that clients can send JSON (content-type accepted),
-/// but the data is not actually processed. This is acceptable for initial MVP
-/// as most production OTLP clients use Protobuf encoding for efficiency.
 pub fn parse_metrics_json(data: &[u8]) -> Result<ExportMetricsServiceRequest, ReceiverError> {
     if data.is_empty() {
         return Ok(ExportMetricsServiceRequest {
@@ -26,19 +13,11 @@ pub fn parse_metrics_json(data: &[u8]) -> Result<ExportMetricsServiceRequest, Re
         });
     }
 
-    // Validate JSON structure
-    let _json: Value = serde_json::from_slice(data)?;
-
-    // Return empty request - JSON validation passed but conversion not implemented
-    // This allows JSON content-type to be accepted without full processing
-    Ok(ExportMetricsServiceRequest {
-        resource_metrics: vec![],
-    })
+    let request: ExportMetricsServiceRequest = serde_json::from_slice(data)?;
+    Ok(request)
 }
 
 /// Parse OTLP logs request from JSON
-///
-/// See [`parse_metrics_json`] for implementation details and limitations.
 pub fn parse_logs_json(data: &[u8]) -> Result<ExportLogsServiceRequest, ReceiverError> {
     if data.is_empty() {
         return Ok(ExportLogsServiceRequest {
@@ -46,18 +25,11 @@ pub fn parse_logs_json(data: &[u8]) -> Result<ExportLogsServiceRequest, Receiver
         });
     }
 
-    // Validate JSON structure
-    let _json: Value = serde_json::from_slice(data)?;
-
-    // Return empty request - JSON validation passed but conversion not implemented
-    Ok(ExportLogsServiceRequest {
-        resource_logs: vec![],
-    })
+    let request: ExportLogsServiceRequest = serde_json::from_slice(data)?;
+    Ok(request)
 }
 
 /// Parse OTLP traces request from JSON
-///
-/// See [`parse_metrics_json`] for implementation details and limitations.
 pub fn parse_traces_json(data: &[u8]) -> Result<ExportTraceServiceRequest, ReceiverError> {
     if data.is_empty() {
         return Ok(ExportTraceServiceRequest {
@@ -65,13 +37,8 @@ pub fn parse_traces_json(data: &[u8]) -> Result<ExportTraceServiceRequest, Recei
         });
     }
 
-    // Validate JSON structure
-    let _json: Value = serde_json::from_slice(data)?;
-
-    // Return empty request - JSON validation passed but conversion not implemented
-    Ok(ExportTraceServiceRequest {
-        resource_spans: vec![],
-    })
+    let request: ExportTraceServiceRequest = serde_json::from_slice(data)?;
+    Ok(request)
 }
 
 /// Validate JSON message structure
@@ -81,7 +48,7 @@ pub fn validate_json_message(data: &[u8]) -> Result<(), ReceiverError> {
     }
 
     // Basic JSON validation - check if it's valid JSON
-    serde_json::from_slice::<Value>(data)?;
+    serde_json::from_slice::<serde_json::Value>(data)?;
 
     Ok(())
 }
@@ -113,6 +80,8 @@ mod tests {
         let valid_json = b"{\"resourceMetrics\":[]}";
         let result = parse_metrics_json(valid_json);
         assert!(result.is_ok());
+        let request = result.unwrap();
+        assert_eq!(request.resource_metrics.len(), 0);
     }
 
     #[test]
@@ -120,6 +89,8 @@ mod tests {
         let valid_json = b"{\"resourceLogs\":[]}";
         let result = parse_logs_json(valid_json);
         assert!(result.is_ok());
+        let request = result.unwrap();
+        assert_eq!(request.resource_logs.len(), 0);
     }
 
     #[test]
@@ -127,6 +98,8 @@ mod tests {
         let valid_json = b"{\"resourceSpans\":[]}";
         let result = parse_traces_json(valid_json);
         assert!(result.is_ok());
+        let request = result.unwrap();
+        assert_eq!(request.resource_spans.len(), 0);
     }
 
     #[test]
@@ -149,5 +122,3 @@ mod tests {
         assert!(result.is_ok());
     }
 }
-
-// Made with Bob

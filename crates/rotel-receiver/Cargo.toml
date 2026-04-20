@@ -22,7 +22,7 @@ hyper = "1.0"
 tower = { version = "0.4", features = ["limit", "timeout"] }
 
 # OTLP protocol definitions
-opentelemetry-proto = { version = "0.31", features = ["gen-tonic", "metrics", "logs", "trace"] }
+opentelemetry-proto = { version = "0.31", features = ["gen-tonic", "metrics", "logs", "trace", "with-serde"] }
 
 # Internal crates
 rotel-core = { path = "../rotel-core" }
