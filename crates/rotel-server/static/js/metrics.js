@@ -172,8 +172,34 @@ class MetricsView {
             this.loadTimeseries(metricName);
         });
 
+        this.renderCurrentValue(metricName);
         this.renderDataTable(metricName);
         await this.loadTimeseries(metricName);
+    }
+
+    renderCurrentValue(metricName) {
+        const points = this.metrics.filter(m => m.name === metricName);
+        if (points.length === 0) return;
+        const latest = points.reduce((a, b) => a.timestamp > b.timestamp ? a : b, points[0]);
+        const type = latest.metric_type;
+        const v = latest.value;
+
+        // Only show hero value for counter/gauge (not histogram - avg is less meaningful as a hero)
+        if (type !== 'counter' && type !== 'gauge') return;
+
+        const formatted = this.formatValue(latest);
+        const unit = latest.unit ? ` ${latest.unit}` : '';
+        const heroEl = document.createElement('div');
+        heroEl.style.cssText = 'display:flex;align-items:baseline;gap:0.5rem;padding:0.5rem 0 0.75rem;border-bottom:1px solid var(--border-color);margin-bottom:0.5rem;';
+        heroEl.innerHTML = `
+            <span style="font-size:2.5rem;font-weight:700;font-family:monospace;color:#818cf8;line-height:1;">${formatted}</span>
+            ${unit ? `<span style="font-size:1rem;color:var(--text-secondary);">${unit}</span>` : ''}
+            <span style="font-size:0.75rem;color:var(--text-secondary);margin-left:auto;">${new Date(latest.timestamp / 1_000_000).toLocaleString()}</span>
+        `;
+        const detail = document.getElementById('metrics-detail');
+        // Insert after the header
+        const header = detail.querySelector('.metric-detail-header');
+        if (header) header.after(heroEl);
     }
 
     timeWindow() {
@@ -245,7 +271,9 @@ class MetricsView {
                 start_time,
                 end_time,
             });
+            this._lastBuckets = buckets;
             this.renderChart(metricName, buckets);
+            this.attachResizeObserver();
             // Update time range label
             const label = document.getElementById('chart-time-range');
             if (label) {
@@ -265,34 +293,45 @@ class MetricsView {
         if (!canvas) return;
         const ctx = canvas.getContext('2d');
 
-        canvas.width = canvas.offsetWidth || 700;
-        canvas.height = 280;
-        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        // Size canvas to its container, accounting for device pixel ratio
+        const dpr = window.devicePixelRatio || 1;
+        const rect = canvas.parentElement.getBoundingClientRect();
+        const cssW = (rect.width || 700) - 16; // subtract padding
+        const cssH = 260;
+        canvas.style.width = cssW + 'px';
+        canvas.style.height = cssH + 'px';
+        canvas.width = cssW * dpr;
+        canvas.height = cssH * dpr;
+        ctx.scale(dpr, dpr);
+        // store css dims for drawing
+        const drawW = cssW;
+        const drawH = cssH;
+        ctx.clearRect(0, 0, drawW, drawH);
 
         if (!buckets || buckets.length === 0) {
             ctx.font = '14px sans-serif';
-            ctx.fillStyle = '#888';
+            ctx.fillStyle = '#64748b';
             ctx.textAlign = 'center';
-            ctx.fillText('No timeseries data', canvas.width / 2, canvas.height / 2);
+            ctx.fillText('No timeseries data', drawW / 2, drawH / 2);
             return;
         }
 
-        // With a single point, just show the value
+        // With a single point, show value prominently
         if (buckets.length === 1) {
-            ctx.font = 'bold 32px sans-serif';
-            ctx.fillStyle = 'var(--text-primary, #333)';
+            ctx.font = 'bold 36px sans-serif';
+            ctx.fillStyle = '#818cf8';
             ctx.textAlign = 'center';
-            ctx.fillText(buckets[0].value.toFixed(2), canvas.width / 2, canvas.height / 2);
-            const t = new Date(buckets[0].timestamp / 1000000).toLocaleTimeString();
+            ctx.fillText(this.formatChartValue(buckets[0].value), drawW / 2, drawH / 2);
+            const t = new Date(buckets[0].timestamp / 1000000).toLocaleString();
             ctx.font = '12px sans-serif';
-            ctx.fillStyle = '#888';
-            ctx.fillText(t, canvas.width / 2, canvas.height / 2 + 24);
+            ctx.fillStyle = '#64748b';
+            ctx.fillText(t, drawW / 2, drawH / 2 + 28);
             return;
         }
 
-        const padL = 52, padR = 16, padT = 16, padB = 32;
-        const w = canvas.width - padL - padR;
-        const h = canvas.height - padT - padB;
+        const padL = 60, padR = 16, padT = 16, padB = 32;
+        const w = drawW - padL - padR;
+        const h = drawH - padT - padB;
 
         const values = buckets.map(b => b.value);
         const minV = Math.min(...values);
@@ -300,7 +339,7 @@ class MetricsView {
         const rangeV = maxV - minV || 1;
 
         // Grid lines
-        ctx.strokeStyle = '#333';
+        ctx.strokeStyle = '#1e1e1e';
         ctx.lineWidth = 1;
         for (let i = 0; i <= 4; i++) {
             const y = padT + (i / 4) * h;
@@ -311,14 +350,30 @@ class MetricsView {
         }
 
         // Y-axis labels
-        ctx.fillStyle = '#888';
-        ctx.font = '11px sans-serif';
+        ctx.fillStyle = '#64748b';
+        ctx.font = '11px monospace';
         ctx.textAlign = 'right';
         for (let i = 0; i <= 4; i++) {
             const v = maxV - (rangeV * i / 4);
             const y = padT + (i / 4) * h;
-            ctx.fillText(v.toFixed(1), padL - 4, y + 4);
+            ctx.fillText(this.formatChartValue(v), padL - 4, y + 4);
         }
+
+        // Area fill under line
+        ctx.beginPath();
+        buckets.forEach((b, i) => {
+            const x = padL + (i / (buckets.length - 1)) * w;
+            const y = padT + ((maxV - b.value) / rangeV) * h;
+            i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
+        });
+        ctx.lineTo(padL + w, padT + h);
+        ctx.lineTo(padL, padT + h);
+        ctx.closePath();
+        const grad = ctx.createLinearGradient(0, padT, 0, padT + h);
+        grad.addColorStop(0, 'rgba(74, 222, 128, 0.25)');
+        grad.addColorStop(1, 'rgba(74, 222, 128, 0.02)');
+        ctx.fillStyle = grad;
+        ctx.fill();
 
         // Line
         ctx.strokeStyle = '#4ade80';
@@ -342,26 +397,41 @@ class MetricsView {
         });
 
         // X-axis labels
-        ctx.fillStyle = '#888';
-        ctx.font = '10px sans-serif';
+        ctx.fillStyle = '#64748b';
+        ctx.font = '10px monospace';
         ctx.textAlign = 'center';
         const labelCount = Math.min(6, buckets.length);
         for (let i = 0; i < labelCount; i++) {
             const idx = Math.round(i * (buckets.length - 1) / (labelCount - 1));
             const x = padL + (idx / (buckets.length - 1)) * w;
             const t = new Date(buckets[idx].timestamp / 1000000).toLocaleTimeString();
-            ctx.fillText(t, x, canvas.height - 4);
+            ctx.fillText(t, x, drawH - 4);
         }
     }
 
+    // MetricValue is untagged: Gauge/Counter → plain number, Histogram/Summary → {sum, count, buckets/quantiles}
     formatValue(metric) {
         const v = metric.value;
-        if (typeof v === 'number') return v.toLocaleString(undefined, { maximumFractionDigits: 2 });
-        if (v.Gauge !== undefined) return v.Gauge.toLocaleString(undefined, { maximumFractionDigits: 2 });
-        if (v.Counter !== undefined) return v.Counter.toLocaleString();
-        if (v.Histogram) return `${v.Histogram.count} obs`;
-        if (v.Summary) return `${v.Summary.count} obs`;
+        if (typeof v === 'number') {
+            return v.toLocaleString(undefined, { maximumFractionDigits: 2 });
+        }
+        // Histogram or Summary: {sum, count, ...}
+        if (v !== null && typeof v === 'object') {
+            if (v.count > 0 && v.sum !== undefined) {
+                const avg = v.sum / v.count;
+                return `avg ${avg.toLocaleString(undefined, { maximumFractionDigits: 2 })}`;
+            }
+            if (v.count !== undefined) return `${v.count} obs`;
+        }
         return '?';
+    }
+
+    formatChartValue(v) {
+        if (v >= 1_000_000_000) return (v / 1_000_000_000).toFixed(2) + 'B';
+        if (v >= 1_000_000) return (v / 1_000_000).toFixed(2) + 'M';
+        if (v >= 1_000) return (v / 1_000).toFixed(1) + 'K';
+        if (v >= 10) return v.toFixed(1);
+        return v.toFixed(3);
     }
 
     formatTimestamp(nanos) {
@@ -390,6 +460,18 @@ class MetricsView {
         }
     }
 
+    attachResizeObserver() {
+        if (this._resizeObserver) this._resizeObserver.disconnect();
+        const chartArea = document.querySelector('.metric-chart-area');
+        if (!chartArea) return;
+        this._resizeObserver = new ResizeObserver(() => {
+            if (this.selectedMetric && this._lastBuckets) {
+                this.renderChart(this.selectedMetric, this._lastBuckets);
+            }
+        });
+        this._resizeObserver.observe(chartArea);
+    }
+
     escapeHtml(text) {
         const div = document.createElement('div');
         div.textContent = String(text);
@@ -398,6 +480,10 @@ class MetricsView {
 
     destroy() {
         this.stopAutoRefresh();
+        if (this._resizeObserver) {
+            this._resizeObserver.disconnect();
+            this._resizeObserver = null;
+        }
     }
 }
 

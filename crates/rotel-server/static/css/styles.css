@@ -138,20 +138,22 @@ body {
 .main-content {
     flex: 1;
     overflow: hidden;
-    padding: 2rem;
-    max-width: 1400px;
+    padding: 0.75rem 1.25rem;
     width: 100%;
-    margin: 0 auto;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
 }
 
 .view {
     display: none;
-    height: 100%;
     flex-direction: column;
 }
 
 .view.active {
     display: flex;
+    flex: 1;
+    min-height: 0;
 }
 
 .view-header {
@@ -1133,10 +1135,18 @@ body {
 }
 
 .trace-detail {
-    overflow-y: auto;
+    display: flex;
+    flex-direction: column;
     background-color: var(--bg-secondary);
     border: 1px solid var(--border-color);
     border-radius: 4px;
+    min-height: 0;
+    overflow: hidden;
+}
+
+.trace-detail-body {
+    flex: 1;
+    overflow-y: auto;
     padding: 1rem;
     min-height: 0;
 }
@@ -1295,26 +1305,31 @@ body {
     border-radius: 4px;
 }
 
-/* Waterfall container with detail panel */
-.waterfall-container {
-    display: flex;
-    gap: 1rem;
-}
-
 .waterfall-spans {
-    flex: 1;
-    min-width: 0;
+    width: 100%;
 }
 
 .span-detail-panel {
-    width: 440px;
     flex-shrink: 0;
-    background-color: var(--bg-secondary);
-    border: 1px solid var(--border-color);
-    border-left: 2px solid var(--accent-color);
-    border-radius: 4px;
+    height: 300px;
+    background-color: var(--bg-primary);
+    border-top: 2px solid var(--accent-color);
     padding: 1rem;
     overflow-y: auto;
+    display: grid;
+    grid-template-columns: 1fr 1fr 1fr;
+    gap: 1rem;
+    align-content: start;
+}
+
+.span-detail-header-row {
+    grid-column: 1 / -1;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding-bottom: 0.5rem;
+    border-bottom: 1px solid var(--border-color);
+    margin-bottom: 0.25rem;
 }
 
 .span-detail-header {
@@ -1460,22 +1475,19 @@ body {
 }
 
 /* Responsive design for traces */
-@media (max-width: 1024px) {
+@media (max-width: 900px) {
     .traces-container {
         grid-template-columns: 1fr;
-        grid-template-rows: 1fr 1fr;
+        grid-template-rows: 280px 1fr;
     }
 
     .span-info {
-        min-width: 200px;
-    }
-
-    .waterfall-container {
-        flex-direction: column;
+        min-width: 160px;
     }
 
     .span-detail-panel {
-        width: 100%;
+        grid-template-columns: 1fr 1fr;
+        height: 240px;
     }
 }
 

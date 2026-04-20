@@ -175,33 +175,32 @@ class TracesView {
         const spanTree = this.buildSpanTree(trace.spans);
 
         container.innerHTML = `
-            <div class="trace-detail-header">
-                <h3>Trace Details</h3>
-            </div>
-            <div class="trace-info">
-                <div class="trace-info-item"><strong>Trace ID:</strong> ${trace.trace_id}</div>
-                <div class="trace-info-item"><strong>Start Time:</strong> ${startTime.toISOString()}</div>
-                <div class="trace-info-item"><strong>Duration:</strong> ${duration}ms</div>
-                <div class="trace-info-item"><strong>Spans:</strong> ${trace.span_count}</div>
-                ${trace.service_names.length > 0 ? `<div class="trace-info-item"><strong>Services:</strong> ${trace.service_names.join(', ')}</div>` : ''}
-            </div>
-            <div class="trace-waterfall">
-                <h4>Span Waterfall</h4>
-                <div class="span-kind-legend">
-                    <span class="span-kind-legend-item"><span class="span-kind-dot" style="background:#3b82f6"></span>server</span>
-                    <span class="span-kind-legend-item"><span class="span-kind-dot" style="background:#a855f7"></span>client</span>
-                    <span class="span-kind-legend-item"><span class="span-kind-dot" style="background:#6366f1"></span>internal</span>
-                    <span class="span-kind-legend-item"><span class="span-kind-dot" style="background:#f59e0b"></span>producer</span>
-                    <span class="span-kind-legend-item"><span class="span-kind-dot" style="background:#22c55e"></span>consumer</span>
-                    <span class="span-kind-legend-item"><span class="span-kind-dot" style="background:#ef4444"></span>error</span>
+            <div class="trace-detail-body">
+                <div class="trace-detail-header">
+                    <h3>${this.escapeHtml(trace.root_span_name ?? 'Trace Details')}</h3>
+                    <span class="trace-duration">${duration}ms · ${trace.span_count} spans</span>
                 </div>
-                <div class="waterfall-container">
+                <div class="trace-info">
+                    <div class="trace-info-item"><strong>Trace ID:</strong> <code>${trace.trace_id}</code></div>
+                    <div class="trace-info-item"><strong>Start:</strong> ${startTime.toISOString()}</div>
+                    ${trace.service_names.length > 0 ? `<div class="trace-info-item"><strong>Services:</strong> ${this.escapeHtml(trace.service_names.join(', '))}</div>` : ''}
+                </div>
+                <div class="trace-waterfall">
+                    <div class="span-kind-legend">
+                        <span class="span-kind-legend-item"><span class="span-kind-dot" style="background:#3b82f6"></span>server</span>
+                        <span class="span-kind-legend-item"><span class="span-kind-dot" style="background:#a855f7"></span>client</span>
+                        <span class="span-kind-legend-item"><span class="span-kind-dot" style="background:#6366f1"></span>internal</span>
+                        <span class="span-kind-legend-item"><span class="span-kind-dot" style="background:#f59e0b"></span>producer</span>
+                        <span class="span-kind-legend-item"><span class="span-kind-dot" style="background:#22c55e"></span>consumer</span>
+                        <span class="span-kind-legend-item"><span class="span-kind-dot" style="background:#ef4444"></span>error</span>
+                        <span style="margin-left:auto;font-size:0.72rem;color:var(--text-secondary)">Click a span bar for details</span>
+                    </div>
                     <div class="waterfall-spans">
                         ${this.renderSpanTree(spanTree, trace.start_time, trace.duration)}
                     </div>
-                    <div id="span-detail-panel" class="span-detail-panel" style="display: none;"></div>
                 </div>
             </div>
+            <div id="span-detail-panel" class="span-detail-panel" style="display: none;"></div>
         `;
 
         // Attach click handlers to span bars
@@ -612,54 +611,49 @@ class TracesView {
             : null;
         const children = trace.spans.filter(s => s.parent_span_id === span.span_id);
 
+        const kindLabel = typeof span.kind === 'number'
+            ? ['?', 'internal', 'server', 'client', 'producer', 'consumer'][span.kind] ?? '?'
+            : String(span.kind ?? '?');
+
+        const attrEntries = Object.entries(span.attributes || {});
+        const genaiInfo = this.extractGenAiInfo(span.attributes || {});
+
         panel.innerHTML = `
-            <div class="span-detail-header">
-                <h4>Span Details</h4>
-                <button id="close-span-detail" class="btn btn-secondary btn-sm">×</button>
-            </div>
-            <div class="span-detail-content">
-                <div class="span-detail-section">
-                    <h5>Basic Information</h5>
-                    <div class="span-detail-item"><strong>Name:</strong> ${this.escapeHtml(span.name)}</div>
-                    <div class="span-detail-item"><strong>Span ID:</strong> <code>${span.span_id}</code></div>
-                    <div class="span-detail-item"><strong>Trace ID:</strong> <code>${span.trace_id}</code></div>
-                    <div class="span-detail-item"><strong>Kind:</strong> ${this.escapeHtml(String(span.kind ?? 'unknown'))}</div>
-                    <div class="span-detail-item"><strong>Status:</strong> <span class="${hasError ? 'status-error' : 'status-ok'}">${hasError ? 'ERROR' : 'OK'}</span></div>
-                    <div class="span-detail-item"><strong>Start Time:</strong> ${startTime.toISOString()}</div>
-                    <div class="span-detail-item"><strong>Duration:</strong> ${duration}ms</div>
+            <div class="span-detail-header-row">
+                <div style="display:flex;align-items:center;gap:0.75rem;min-width:0;">
+                    <span class="span-kind span-kind-${this.spanKindClass(span.kind).replace('span-kind-','')}">${kindLabel}</span>
+                    <strong style="font-size:0.9rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${this.escapeHtml(span.name)}">${this.escapeHtml(span.name)}</strong>
+                    <span class="${hasError ? 'status-error' : 'status-ok'}" style="font-size:0.8rem;">${hasError ? '⚠ ERROR' : '✓ OK'}</span>
                 </div>
-
-                ${parent || children.length > 0 ? `
-                    <div class="span-detail-section">
-                        <h5>Relationships</h5>
-                        ${parent ? `<div class="span-detail-item"><strong>Parent:</strong> ${this.escapeHtml(parent.name)}</div>` : ''}
-                        ${children.length > 0 ? `
-                            <div class="span-detail-item">
-                                <strong>Children (${children.length}):</strong>
-                                <ul class="span-children-list">
-                                    ${children.map(child => `<li>${this.escapeHtml(child.name)}</li>`).join('')}
-                                </ul>
-                            </div>
-                        ` : ''}
-                    </div>
-                ` : ''}
-
-                ${span.events && span.events.length > 0 ? `
-                    <div class="span-detail-section">
-                        <h5>Events (${span.events.length})</h5>
-                        <div class="span-events-timeline">
-                            ${this.renderSpanEvents(span.events, span.start_time)}
-                        </div>
-                    </div>
-                ` : ''}
-
-                ${Object.keys(span.attributes || {}).length > 0 ? `
-                    <div class="span-detail-section">
-                        <h5>Attributes</h5>
-                        ${this.renderSpanAttributes(span.attributes)}
-                    </div>
-                ` : ''}
+                <button id="close-span-detail" class="btn btn-secondary btn-sm" style="flex-shrink:0;">×</button>
             </div>
+
+            <div class="span-detail-section">
+                <h5>Timing</h5>
+                <div class="span-detail-item"><strong>Duration:</strong> ${duration}ms</div>
+                <div class="span-detail-item"><strong>Start:</strong> ${startTime.toISOString()}</div>
+                <div class="span-detail-item"><strong>Span ID:</strong> <code>${span.span_id.substring(0,16)}</code></div>
+                ${parent ? `<div class="span-detail-item"><strong>Parent:</strong> ${this.escapeHtml(parent.name)}</div>` : ''}
+                ${children.length > 0 ? `<div class="span-detail-item"><strong>Children:</strong> ${children.map(c => this.escapeHtml(c.name)).join(', ')}</div>` : ''}
+            </div>
+
+            ${genaiInfo ? `<div class="span-detail-section">${this.renderGenAiInfo(genaiInfo)}</div>` : ''}
+
+            ${attrEntries.length > 0 ? `
+                <div class="span-detail-section" style="grid-column: ${genaiInfo ? '1 / -1' : 'auto'};">
+                    <h5>Attributes (${attrEntries.length})</h5>
+                    <div style="display:flex;flex-wrap:wrap;gap:4px;">
+                        ${attrEntries.map(([k, v]) => `<span class="label-tag">${this.escapeHtml(k)}: <strong>${this.escapeHtml(String(v))}</strong></span>`).join('')}
+                    </div>
+                </div>
+            ` : ''}
+
+            ${span.events && span.events.length > 0 ? `
+                <div class="span-detail-section">
+                    <h5>Events (${span.events.length})</h5>
+                    <div class="span-events-timeline">${this.renderSpanEvents(span.events, span.start_time)}</div>
+                </div>
+            ` : ''}
         `;
 
         document.getElementById('close-span-detail').addEventListener('click', () => {
