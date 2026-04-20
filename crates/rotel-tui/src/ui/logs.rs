@@ -1,5 +1,6 @@
 use crate::api::models::LogEntry;
 use crate::state::LogsState;
+use crate::ui::render_tab_bar;
 use ratatui::{
     layout::{Constraint, Direction, Layout, Rect},
     style::{Color, Modifier, Style},
@@ -10,24 +11,27 @@ use ratatui::{
 
 /// Render the logs view
 pub fn render_logs_view(frame: &mut Frame, area: Rect, state: &LogsState) {
-    // Split the area into main content and status bar
+    // Split the area into tab bar, main content and status bar
     let chunks = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
+            Constraint::Length(1), // Tab bar
             Constraint::Min(3),    // Main content
             Constraint::Length(1), // Status bar
         ])
         .split(area);
 
+    render_tab_bar(frame, chunks[0], "Logs");
+
     // Render main content (table or table + detail)
     if state.show_detail {
-        render_logs_with_detail(frame, chunks[0], state);
+        render_logs_with_detail(frame, chunks[1], state);
     } else {
-        render_logs_table(frame, chunks[0], state);
+        render_logs_table(frame, chunks[1], state);
     }
 
     // Render status bar
-    render_status_bar(frame, chunks[1], state);
+    render_status_bar(frame, chunks[2], state);
 }
 
 /// Render logs table only
@@ -41,7 +45,8 @@ fn render_logs_table(frame: &mut Frame, area: Rect, state: &LogsState) {
         .map(|(idx, log)| {
             let style = if idx == state.selected_index {
                 Style::default()
-                    .bg(Color::DarkGray)
+                    .fg(Color::Black)
+                    .bg(Color::Cyan)
                     .add_modifier(Modifier::BOLD)
             } else {
                 Style::default()
@@ -81,7 +86,8 @@ fn render_logs_table(frame: &mut Frame, area: Rect, state: &LogsState) {
     )
     .row_highlight_style(
         Style::default()
-            .bg(Color::DarkGray)
+            .fg(Color::Black)
+            .bg(Color::Cyan)
             .add_modifier(Modifier::BOLD),
     );
 
@@ -242,7 +248,7 @@ fn render_status_bar(frame: &mut Frame, area: Rect, state: &LogsState) {
     // Help text
     status_parts.push(Span::raw(" | "));
     status_parts.push(Span::styled(
-        "↑↓: Navigate | Enter: Detail | /: Search | f: Filter | a: Auto-scroll | q: Quit",
+        "↑↓:Navigate  Enter:Detail  /:Search  f:Filter  a:AutoScroll  r:Refresh",
         Style::default().fg(Color::DarkGray),
     ));
 

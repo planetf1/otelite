@@ -1,5 +1,6 @@
 use crate::api::models::{Span, Trace, TraceSummary};
 use crate::state::TracesState;
+use crate::ui::render_tab_bar;
 use ratatui::{
     layout::{Constraint, Direction, Layout, Rect},
     style::{Color, Modifier, Style},
@@ -146,24 +147,27 @@ fn get_timing_bar_color(status: &str, duration_percent: f64) -> Color {
 
 /// Render the traces view
 pub fn render_traces_view(frame: &mut Frame, area: Rect, state: &TracesState) {
-    // Split the area into main content and status bar
+    // Split the area into tab bar, main content and status bar
     let chunks = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
+            Constraint::Length(1), // Tab bar
             Constraint::Min(3),    // Main content
             Constraint::Length(1), // Status bar
         ])
         .split(area);
 
+    render_tab_bar(frame, chunks[0], "Traces");
+
     // Render main content (table or table + detail)
     if state.show_detail {
-        render_traces_with_detail(frame, chunks[0], state);
+        render_traces_with_detail(frame, chunks[1], state);
     } else {
-        render_traces_table(frame, chunks[0], state);
+        render_traces_table(frame, chunks[1], state);
     }
 
     // Render status bar
-    render_status_bar(frame, chunks[1], state);
+    render_status_bar(frame, chunks[2], state);
 }
 
 /// Render traces table only
@@ -177,7 +181,8 @@ fn render_traces_table(frame: &mut Frame, area: Rect, state: &TracesState) {
         .map(|(idx, trace)| {
             let style = if idx == state.selected_index {
                 Style::default()
-                    .bg(Color::DarkGray)
+                    .fg(Color::Black)
+                    .bg(Color::Cyan)
                     .add_modifier(Modifier::BOLD)
             } else {
                 Style::default()
@@ -231,7 +236,8 @@ fn render_traces_table(frame: &mut Frame, area: Rect, state: &TracesState) {
     )
     .row_highlight_style(
         Style::default()
-            .bg(Color::DarkGray)
+            .fg(Color::Black)
+            .bg(Color::Cyan)
             .add_modifier(Modifier::BOLD),
     );
 

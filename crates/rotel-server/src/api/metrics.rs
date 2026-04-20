@@ -570,11 +570,9 @@ pub async fn get_metric_timeseries(
     // Filter by name
     let metrics: Vec<_> = metrics.into_iter().filter(|m| m.name == name).collect();
 
+    // Return empty array if no data in the requested time window (not 404 — metric exists)
     if metrics.is_empty() {
-        return Err((
-            StatusCode::NOT_FOUND,
-            Json(ErrorResponse::not_found(format!("Metric '{}'", name))),
-        ));
+        return Ok(Json(vec![]));
     }
 
     // Group by time buckets

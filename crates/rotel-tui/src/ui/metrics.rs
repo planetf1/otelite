@@ -1,5 +1,6 @@
 use crate::api::models::Metric;
 use crate::state::MetricsState;
+use crate::ui::render_tab_bar;
 use ratatui::{
     layout::{Constraint, Direction, Layout, Rect},
     style::{Color, Modifier, Style},
@@ -10,24 +11,27 @@ use ratatui::{
 
 /// Render the metrics view
 pub fn render_metrics_view(frame: &mut Frame, area: Rect, state: &MetricsState) {
-    // Split the area into main content and status bar
+    // Split the area into tab bar, main content and status bar
     let chunks = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
+            Constraint::Length(1), // Tab bar
             Constraint::Min(3),    // Main content
             Constraint::Length(1), // Status bar
         ])
         .split(area);
 
+    render_tab_bar(frame, chunks[0], "Metrics");
+
     // Render main content (table or table + detail)
     if state.show_detail {
-        render_metrics_with_detail(frame, chunks[0], state);
+        render_metrics_with_detail(frame, chunks[1], state);
     } else {
-        render_metrics_table(frame, chunks[0], state);
+        render_metrics_table(frame, chunks[1], state);
     }
 
     // Render status bar
-    render_status_bar(frame, chunks[1], state);
+    render_status_bar(frame, chunks[2], state);
 }
 
 /// Render metrics table only
@@ -41,7 +45,8 @@ fn render_metrics_table(frame: &mut Frame, area: Rect, state: &MetricsState) {
         .map(|(idx, metric)| {
             let style = if idx == state.selected_index {
                 Style::default()
-                    .bg(Color::DarkGray)
+                    .fg(Color::Black)
+                    .bg(Color::Cyan)
                     .add_modifier(Modifier::BOLD)
             } else {
                 Style::default()
@@ -105,7 +110,8 @@ fn render_metrics_table(frame: &mut Frame, area: Rect, state: &MetricsState) {
     )
     .row_highlight_style(
         Style::default()
-            .bg(Color::DarkGray)
+            .fg(Color::Black)
+            .bg(Color::Cyan)
             .add_modifier(Modifier::BOLD),
     );
 
