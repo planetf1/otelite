@@ -70,6 +70,14 @@ cargo clippy --workspace --all-targets -- -D warnings      # zero warnings
 cargo fmt --check                                          # formatting ok
 ```
 
+### Local coverage (optional)
+
+```bash
+rustup run stable cargo llvm-cov --workspace --all-features --summary-only
+```
+
+**Why `rustup run stable`?** The repo has a `rust-toolchain.toml` pinning `channel = "stable"`, but on macOS with Homebrew Rust the system `cargo` may resolve to Homebrew's binary, which lacks `llvm-tools`. Using `rustup run stable` explicitly uses the rustup-managed toolchain that has `llvm-tools` installed.
+
 ### Code Standards
 
 - No `unwrap()` or `expect()` on user-facing code paths (tests are fine)
