@@ -54,6 +54,9 @@ pub async fn handle_list(
         crate::config::OutputFormat::Json => {
             json::print_traces_json(&traces_response.traces)?;
         },
+        crate::config::OutputFormat::JsonCompact => {
+            json::print_traces_json_compact(&traces_response.traces)?;
+        },
     }
 
     Ok(())
@@ -69,6 +72,9 @@ pub async fn handle_show(client: &ApiClient, config: &Config, id: &str) -> Resul
         },
         crate::config::OutputFormat::Json => {
             json::print_trace_json(&trace)?;
+        },
+        crate::config::OutputFormat::JsonCompact => {
+            json::print_trace_json_compact(&trace)?;
         },
     }
 

@@ -11,6 +11,8 @@ pub enum OutputFormat {
     Pretty,
     /// JSON format for machine parsing
     Json,
+    /// Compact JSON format (single-line, for piping to jq)
+    JsonCompact,
 }
 
 impl std::str::FromStr for OutputFormat {
@@ -20,8 +22,9 @@ impl std::str::FromStr for OutputFormat {
         match s.to_lowercase().as_str() {
             "pretty" => Ok(Self::Pretty),
             "json" => Ok(Self::Json),
+            "json-compact" => Ok(Self::JsonCompact),
             _ => Err(format!(
-                "Invalid output format: '{}'. Use 'pretty' or 'json'",
+                "Invalid output format: '{}'. Use 'pretty', 'json', or 'json-compact'",
                 s
             )),
         }
@@ -142,10 +145,18 @@ mod tests {
         );
         assert_eq!("json".parse::<OutputFormat>().unwrap(), OutputFormat::Json);
         assert_eq!(
+            "json-compact".parse::<OutputFormat>().unwrap(),
+            OutputFormat::JsonCompact
+        );
+        assert_eq!(
             "PRETTY".parse::<OutputFormat>().unwrap(),
             OutputFormat::Pretty
         );
         assert_eq!("JSON".parse::<OutputFormat>().unwrap(), OutputFormat::Json);
+        assert_eq!(
+            "JSON-COMPACT".parse::<OutputFormat>().unwrap(),
+            OutputFormat::JsonCompact
+        );
         assert!("invalid".parse::<OutputFormat>().is_err());
     }
 

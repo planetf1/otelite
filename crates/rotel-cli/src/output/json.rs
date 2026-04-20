@@ -7,27 +7,75 @@ use serde_json::{self, json};
 
 /// Print logs as JSON array
 pub fn print_logs_json(logs: &[LogEntry]) -> Result<()> {
-    let json = serde_json::to_string_pretty(logs)?;
+    print_logs_json_impl(logs, false)
+}
+
+/// Print logs as compact JSON array
+pub fn print_logs_json_compact(logs: &[LogEntry]) -> Result<()> {
+    print_logs_json_impl(logs, true)
+}
+
+fn print_logs_json_impl(logs: &[LogEntry], compact: bool) -> Result<()> {
+    let json = if compact {
+        serde_json::to_string(logs)?
+    } else {
+        serde_json::to_string_pretty(logs)?
+    };
     println!("{}", json);
     Ok(())
 }
 
 /// Print a single log as JSON object
 pub fn print_log_json(log: &LogEntry) -> Result<()> {
-    let json = serde_json::to_string_pretty(log)?;
+    print_log_json_impl(log, false)
+}
+
+/// Print a single log as compact JSON object
+pub fn print_log_json_compact(log: &LogEntry) -> Result<()> {
+    print_log_json_impl(log, true)
+}
+
+fn print_log_json_impl(log: &LogEntry, compact: bool) -> Result<()> {
+    let json = if compact {
+        serde_json::to_string(log)?
+    } else {
+        serde_json::to_string_pretty(log)?
+    };
     println!("{}", json);
     Ok(())
 }
 
 /// Print traces as JSON array
 pub fn print_traces_json(traces: &[TraceEntry]) -> Result<()> {
-    let json = serde_json::to_string_pretty(traces)?;
+    print_traces_json_impl(traces, false)
+}
+
+/// Print traces as compact JSON array
+pub fn print_traces_json_compact(traces: &[TraceEntry]) -> Result<()> {
+    print_traces_json_impl(traces, true)
+}
+
+fn print_traces_json_impl(traces: &[TraceEntry], compact: bool) -> Result<()> {
+    let json = if compact {
+        serde_json::to_string(traces)?
+    } else {
+        serde_json::to_string_pretty(traces)?
+    };
     println!("{}", json);
     Ok(())
 }
 
 /// Print a single trace as JSON object
 pub fn print_trace_json(trace: &TraceDetail) -> Result<()> {
+    print_trace_json_impl(trace, false)
+}
+
+/// Print a single trace as compact JSON object
+pub fn print_trace_json_compact(trace: &TraceDetail) -> Result<()> {
+    print_trace_json_impl(trace, true)
+}
+
+fn print_trace_json_impl(trace: &TraceDetail, compact: bool) -> Result<()> {
     // Enrich trace with GenAI information
     let mut trace_json = serde_json::to_value(trace)?;
 
@@ -81,21 +129,51 @@ pub fn print_trace_json(trace: &TraceDetail) -> Result<()> {
         }
     }
 
-    let json = serde_json::to_string_pretty(&trace_json)?;
+    let json = if compact {
+        serde_json::to_string(&trace_json)?
+    } else {
+        serde_json::to_string_pretty(&trace_json)?
+    };
     println!("{}", json);
     Ok(())
 }
 
 /// Print metrics as JSON array
 pub fn print_metrics_json(metrics: &[MetricResponse]) -> Result<()> {
-    let json = serde_json::to_string_pretty(metrics)?;
+    print_metrics_json_impl(metrics, false)
+}
+
+/// Print metrics as compact JSON array
+pub fn print_metrics_json_compact(metrics: &[MetricResponse]) -> Result<()> {
+    print_metrics_json_impl(metrics, true)
+}
+
+fn print_metrics_json_impl(metrics: &[MetricResponse], compact: bool) -> Result<()> {
+    let json = if compact {
+        serde_json::to_string(metrics)?
+    } else {
+        serde_json::to_string_pretty(metrics)?
+    };
     println!("{}", json);
     Ok(())
 }
 
 /// Print a single metric as JSON object
 pub fn print_metric_json(metric: &MetricResponse) -> Result<()> {
-    let json = serde_json::to_string_pretty(metric)?;
+    print_metric_json_impl(metric, false)
+}
+
+/// Print a single metric as compact JSON object
+pub fn print_metric_json_compact(metric: &MetricResponse) -> Result<()> {
+    print_metric_json_impl(metric, true)
+}
+
+fn print_metric_json_impl(metric: &MetricResponse, compact: bool) -> Result<()> {
+    let json = if compact {
+        serde_json::to_string(metric)?
+    } else {
+        serde_json::to_string_pretty(metric)?
+    };
     println!("{}", json);
     Ok(())
 }

@@ -60,6 +60,9 @@ pub async fn handle_list(
         OutputFormat::Json => {
             json::print_logs_json(&filtered_logs)?;
         },
+        OutputFormat::JsonCompact => {
+            json::print_logs_json_compact(&filtered_logs)?;
+        },
     }
 
     Ok(filtered_logs)
@@ -96,6 +99,9 @@ pub async fn handle_search(
         OutputFormat::Json => {
             json::print_logs_json(&filtered_logs)?;
         },
+        OutputFormat::JsonCompact => {
+            json::print_logs_json_compact(&filtered_logs)?;
+        },
     }
 
     Ok(filtered_logs)
@@ -115,6 +121,9 @@ pub async fn handle_show(client: &ApiClient, config: &Config, id: &str) -> Resul
         },
         OutputFormat::Json => {
             json::print_log_json(&log)?;
+        },
+        OutputFormat::JsonCompact => {
+            json::print_log_json_compact(&log)?;
         },
     }
 

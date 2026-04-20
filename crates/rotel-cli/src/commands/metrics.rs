@@ -60,6 +60,9 @@ pub async fn handle_list(
         crate::config::OutputFormat::Json => {
             json::print_metrics_json(&metrics)?;
         },
+        crate::config::OutputFormat::JsonCompact => {
+            json::print_metrics_json_compact(&metrics)?;
+        },
     }
 
     Ok(())
@@ -103,6 +106,13 @@ pub async fn handle_show(
                 json::print_metric_json(&metrics[0])?;
             } else {
                 json::print_metrics_json(&metrics)?;
+            }
+        },
+        crate::config::OutputFormat::JsonCompact => {
+            if metrics.len() == 1 {
+                json::print_metric_json_compact(&metrics[0])?;
+            } else {
+                json::print_metrics_json_compact(&metrics)?;
             }
         },
     }

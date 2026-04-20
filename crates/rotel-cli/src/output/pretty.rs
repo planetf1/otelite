@@ -1,7 +1,8 @@
 //! Pretty-print table formatting for CLI output
 
 use crate::api::models::{LogEntry, MetricResponse, SpanEntry, TraceDetail, TraceEntry};
-use comfy_table::{presets::UTF8_FULL, Cell, Color, ContentArrangement, Table};
+use crate::output::colors;
+use comfy_table::{presets::UTF8_FULL, Cell, ContentArrangement, Table};
 use rotel_core::telemetry::{format_attribute_value, GenAiSpanInfo};
 use std::collections::HashMap;
 
@@ -73,13 +74,7 @@ pub fn print_logs_table(logs: &[LogEntry], no_color: bool, no_header: bool) {
         let severity_cell = if no_color {
             Cell::new(&log.severity)
         } else {
-            let color = match log.severity.as_str() {
-                "ERROR" => Color::Red,
-                "WARN" => Color::Yellow,
-                "INFO" => Color::Blue,
-                "DEBUG" => Color::DarkGrey,
-                _ => Color::Reset,
-            };
+            let color = colors::severity_color(&log.severity);
             Cell::new(&log.severity).fg(color)
         };
 
@@ -103,15 +98,9 @@ pub fn print_log_details(log: &LogEntry, no_color: bool) {
     let severity_color = if no_color {
         ""
     } else {
-        match log.severity.as_str() {
-            "ERROR" => "\x1b[31m",
-            "WARN" => "\x1b[33m",
-            "INFO" => "\x1b[34m",
-            "DEBUG" => "\x1b[90m",
-            _ => "",
-        }
+        colors::ansi::severity_color(&log.severity)
     };
-    let reset = if no_color { "" } else { "\x1b[0m" };
+    let reset = if no_color { "" } else { colors::ansi::RESET };
 
     use chrono::{DateTime, Utc};
     let dt = DateTime::<Utc>::from_timestamp_nanos(log.timestamp);
@@ -160,11 +149,7 @@ pub fn print_traces_table(traces: &[TraceEntry], no_color: bool, no_header: bool
         let status_cell = if no_color {
             Cell::new(status)
         } else {
-            let color = if trace.has_errors {
-                Color::Red
-            } else {
-                Color::Green
-            };
+            let color = colors::trace_status_color(trace.has_errors);
             Cell::new(status).fg(color)
         };
 
@@ -284,13 +269,7 @@ pub fn print_metrics_table(metrics: &[MetricResponse], no_color: bool, no_header
         let type_cell = if no_color {
             Cell::new(&metric.metric_type)
         } else {
-            let color = match metric.metric_type.as_str() {
-                "counter" => Color::Green,
-                "gauge" => Color::Blue,
-                "histogram" => Color::Yellow,
-                "summary" => Color::Cyan,
-                _ => Color::Reset,
-            };
+            let color = colors::metric_type_color(&metric.metric_type);
             Cell::new(&metric.metric_type).fg(color)
         };
 
