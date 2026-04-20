@@ -128,15 +128,12 @@ impl StorageBackend for SqliteBackend {
     }
 
     async fn stats(&self) -> Result<StorageStats> {
-        // TODO: Implement in Phase 6
-        Ok(StorageStats {
-            log_count: 0,
-            span_count: 0,
-            metric_count: 0,
-            oldest_timestamp: None,
-            newest_timestamp: None,
-            storage_size_bytes: 0,
-        })
+        let conn_guard = self.conn.lock().unwrap();
+        let conn = conn_guard
+            .as_ref()
+            .ok_or_else(|| StorageError::QueryError("Database not initialized".to_string()))?;
+
+        reader::get_stats(conn)
     }
 
     async fn purge(&self, options: &PurgeOptions) -> Result<u64> {
@@ -263,6 +260,41 @@ mod tests {
         let result = backend.initialize().await;
         assert!(result.is_ok());
         assert!(backend.conn.lock().unwrap().is_some());
+    }
+
+    #[tokio::test]
+    async fn test_stats_returns_counts() {
+        use rotel_core::telemetry::log::SeverityLevel;
+        use std::collections::HashMap;
+
+        let temp_dir = TempDir::new().unwrap();
+        let config = StorageConfig::default().with_data_dir(temp_dir.path().to_path_buf());
+
+        let mut backend = SqliteBackend::new(config);
+        backend.initialize().await.unwrap();
+
+        // Insert a log record
+        let log = LogRecord {
+            timestamp: 1000,
+            observed_timestamp: Some(1000),
+            severity: SeverityLevel::Info,
+            severity_text: Some("INFO".to_string()),
+            body: "test log".to_string(),
+            trace_id: None,
+            span_id: None,
+            attributes: HashMap::new(),
+            resource: None,
+        };
+        backend.write_log(&log).await.unwrap();
+
+        // Get stats
+        let stats = backend.stats().await.unwrap();
+
+        // Verify non-zero counts
+        assert_eq!(stats.log_count, 1);
+        assert_eq!(stats.span_count, 0);
+        assert_eq!(stats.metric_count, 0);
+        assert!(stats.storage_size_bytes > 0);
     }
 }
 
