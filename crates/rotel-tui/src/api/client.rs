@@ -1,3 +1,4 @@
+// API client implementation - waiting for UI integration
 #![allow(dead_code)]
 
 use anyhow::{Context, Result};

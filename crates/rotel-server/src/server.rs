@@ -84,11 +84,11 @@ impl DashboardServer {
             // API routes - Logs
             .route("/api/logs", get(crate::api::logs::list_logs))
             .route("/api/logs/export", get(crate::api::logs::export_logs))
-            .route("/api/logs/:timestamp", get(crate::api::logs::get_log))
+            .route("/api/logs/{timestamp}", get(crate::api::logs::get_log))
             // API routes - Traces
             .route("/api/traces", get(crate::api::traces::list_traces))
             .route("/api/traces/export", get(crate::api::traces::export_traces))
-            .route("/api/traces/:trace_id", get(crate::api::traces::get_trace))
+            .route("/api/traces/{trace_id}", get(crate::api::traces::get_trace))
             // API routes - Metrics
             .route("/api/metrics", get(crate::api::metrics::list_metrics))
             .route("/api/metrics/names", get(crate::api::metrics::list_metric_names))

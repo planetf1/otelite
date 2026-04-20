@@ -263,7 +263,7 @@ pub fn decode_traces_protobuf(
     ExportTraceServiceRequest::decode(data)
 }
 
-/// Create sample metrics JSON
+/// Create sample metrics JSON (used by http_json_test)
 #[allow(dead_code)]
 pub fn create_metrics_json() -> String {
     serde_json::json!({
@@ -300,7 +300,7 @@ pub fn create_metrics_json() -> String {
     .to_string()
 }
 
-/// Create sample logs JSON
+/// Create sample logs JSON (used by http_json_test)
 #[allow(dead_code)]
 pub fn create_logs_json() -> String {
     serde_json::json!({
@@ -329,7 +329,7 @@ pub fn create_logs_json() -> String {
     .to_string()
 }
 
-/// Create sample traces JSON
+/// Create sample traces JSON (used by http_json_test)
 #[allow(dead_code)]
 pub fn create_traces_json() -> String {
     serde_json::json!({
@@ -359,13 +359,13 @@ pub fn create_traces_json() -> String {
     .to_string()
 }
 
-/// Create invalid JSON
+/// Create invalid JSON (used by http_json_test)
 #[allow(dead_code)]
 pub fn create_invalid_json() -> String {
     "{invalid json".to_string()
 }
 
-/// Create malformed JSON (valid JSON but wrong structure)
+/// Create malformed JSON (valid JSON but wrong structure, used by http_json_test)
 #[allow(dead_code)]
 pub fn create_malformed_json() -> String {
     serde_json::json!({

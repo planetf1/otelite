@@ -1,3 +1,4 @@
+// Metrics state implementation - waiting for UI integration
 #![allow(dead_code)]
 
 use crate::api::models::Metric;
@@ -20,8 +21,7 @@ pub struct MetricsState {
     pub search_query: String,
     /// Active filters (field -> value)
     pub filters: HashMap<String, String>,
-    /// Scroll offset for the metrics table
-    #[allow(dead_code)]
+    /// Scroll offset for the metrics table (will be used when UI implements scrolling)
     pub scroll_offset: usize,
     /// Last error message
     pub error: Option<String>,
@@ -66,8 +66,7 @@ impl MetricsState {
         }
     }
 
-    #[allow(dead_code)]
-    /// Get all metrics
+    /// Get all metrics (will be used by UI components)
     pub fn metrics(&self) -> &[Metric] {
         self.metrics.items()
     }

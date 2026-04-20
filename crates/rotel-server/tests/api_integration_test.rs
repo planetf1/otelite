@@ -46,7 +46,7 @@ fn build_test_router(storage: Arc<dyn StorageBackend>) -> Router {
             axum::routing::get(rotel_server::api::logs::export_logs),
         )
         .route(
-            "/api/logs/:timestamp",
+            "/api/logs/{timestamp}",
             axum::routing::get(rotel_server::api::logs::get_log),
         )
         .route(
@@ -58,7 +58,7 @@ fn build_test_router(storage: Arc<dyn StorageBackend>) -> Router {
             axum::routing::get(rotel_server::api::traces::export_traces),
         )
         .route(
-            "/api/traces/:trace_id",
+            "/api/traces/{trace_id}",
             axum::routing::get(rotel_server::api::traces::get_trace),
         )
         .route(

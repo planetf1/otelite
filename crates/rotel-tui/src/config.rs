@@ -12,7 +12,7 @@ pub struct Config {
     /// Initial view to display
     pub initial_view: String,
 
-    /// Enable debug logging
+    /// Enable debug logging (will be used when debug mode is implemented)
     #[allow(dead_code)]
     pub debug: bool,
 }

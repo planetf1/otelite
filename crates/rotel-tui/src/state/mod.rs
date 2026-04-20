@@ -14,10 +14,11 @@ pub const MAX_ITEMS_IN_MEMORY: usize = 1000;
 /// Minimum time between data refreshes to avoid excessive API calls
 pub const MIN_REFRESH_INTERVAL: Duration = Duration::from_millis(100);
 
+/// Data retention duration for cleanup - will be used when UI implements time-based filtering
 #[allow(dead_code)]
 pub const DATA_RETENTION_DURATION: Duration = Duration::from_secs(3600); // 1 hour
 
-/// Trait for state management with performance optimizations
+/// Trait for state management with performance optimizations - will be used for memory management
 #[allow(dead_code)]
 pub trait StateManager {
     /// Apply pagination to limit items in memory

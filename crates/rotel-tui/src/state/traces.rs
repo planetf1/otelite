@@ -1,3 +1,4 @@
+// Traces state implementation - waiting for UI integration
 #![allow(dead_code)]
 
 use crate::api::models::{Trace, TraceSummary};
@@ -30,8 +31,7 @@ pub struct TracesState {
     pub search_query: String,
     /// Active filters (field -> value)
     pub filters: HashMap<String, String>,
-    /// Scroll offset for the traces table
-    #[allow(dead_code)]
+    /// Scroll offset for the traces table (will be used when UI implements scrolling)
     pub scroll_offset: usize,
     /// Last error message
     pub error: Option<String>,
@@ -80,8 +80,7 @@ impl TracesState {
         }
     }
 
-    #[allow(dead_code)]
-    /// Get all traces
+    /// Get all traces (will be used by UI components)
     pub fn traces(&self) -> &[TraceSummary] {
         self.traces.items()
     }

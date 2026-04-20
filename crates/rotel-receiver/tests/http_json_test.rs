@@ -139,9 +139,8 @@ async fn test_http_json_malformed_structure() {
         .await
         .expect("Failed to send request");
 
-    // Should accept valid JSON even if structure is wrong (validation happens at parse level)
-    // Current implementation returns OK with empty protobuf structures
-    assert_eq!(response.status(), StatusCode::OK);
+    // Should reject malformed JSON structure with 400 Bad Request
+    assert_eq!(response.status(), StatusCode::BAD_REQUEST);
 }
 
 #[tokio::test]

@@ -1,3 +1,4 @@
+// Logs state implementation - waiting for UI integration
 #![allow(dead_code)]
 
 use crate::api::models::LogEntry;
@@ -20,8 +21,7 @@ pub struct LogsState {
     pub filters: HashMap<String, String>,
     /// Whether auto-scroll is enabled
     pub auto_scroll: bool,
-    /// Scroll offset for the logs table
-    #[allow(dead_code)]
+    /// Scroll offset for the logs table (will be used when UI implements scrolling)
     pub scroll_offset: usize,
     /// Last error message
     pub error: Option<String>,
@@ -140,8 +140,7 @@ impl LogsState {
         }
     }
 
-    #[allow(dead_code)]
-    /// Toggle detail panel
+    /// Toggle detail panel (will be used by UI keyboard shortcuts)
     pub fn toggle_detail(&mut self) {
         self.show_detail = !self.show_detail;
     }
