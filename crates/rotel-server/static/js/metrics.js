@@ -183,8 +183,40 @@ class MetricsView {
         const latest = points.reduce((a, b) => a.timestamp > b.timestamp ? a : b, points[0]);
         const type = latest.metric_type;
         const v = latest.value;
+        const detail = document.getElementById('metrics-detail');
+        const header = detail.querySelector('.metric-detail-header');
 
-        // Only show hero value for counter/gauge (not histogram - avg is less meaningful as a hero)
+        if (type === 'histogram' || type === 'summary') {
+            if (v !== null && typeof v === 'object') {
+                const avg = (v.count > 0 && v.sum !== undefined) ? v.sum / v.count : 0;
+                const unit = latest.unit || '';
+                const heroEl = document.createElement('div');
+                heroEl.style.cssText = 'display:flex;align-items:baseline;gap:0.5rem;padding:0.5rem 0 0.75rem;border-bottom:1px solid var(--border-color);margin-bottom:0.5rem;flex-wrap:wrap;';
+                heroEl.innerHTML = `
+                    <span style="font-size:2.5rem;font-weight:700;font-family:monospace;color:#818cf8;line-height:1;">${this.formatChartValue(avg)}</span>
+                    <span style="font-size:1rem;color:var(--text-secondary);">avg${unit ? ' ' + unit : ''}</span>
+                    <span style="font-size:0.85rem;color:var(--text-secondary);padding-left:0.5rem;">${v.count !== undefined ? v.count.toLocaleString() + ' obs' : ''}</span>
+                    <span style="font-size:0.75rem;color:var(--text-secondary);margin-left:auto;">${new Date(latest.timestamp / 1_000_000).toLocaleString()}</span>
+                `;
+                if (header) header.after(heroEl);
+
+                // Bucket distribution chart for histograms
+                if (type === 'histogram' && v.buckets && v.buckets.length > 0) {
+                    const bucketContainer = document.createElement('div');
+                    bucketContainer.id = 'histogram-bucket-container';
+                    bucketContainer.style.cssText = 'padding:0.5rem 0 0.75rem;border-bottom:1px solid var(--border-color);margin-bottom:0.5rem;';
+                    bucketContainer.innerHTML = `
+                        <div style="font-size:0.7rem;color:var(--text-secondary);text-transform:uppercase;letter-spacing:0.05em;margin-bottom:0.4rem;">Bucket Distribution</div>
+                        <canvas id="histogram-bucket-chart"></canvas>
+                    `;
+                    heroEl.after(bucketContainer);
+                    requestAnimationFrame(() => this.renderHistogramBucketChart(v.buckets, v.count, unit));
+                }
+            }
+            return;
+        }
+
+        // Counter / gauge: show current value as hero
         if (type !== 'counter' && type !== 'gauge') return;
 
         const formatted = this.formatValue(latest);
@@ -196,10 +228,98 @@ class MetricsView {
             ${unit ? `<span style="font-size:1rem;color:var(--text-secondary);">${unit}</span>` : ''}
             <span style="font-size:0.75rem;color:var(--text-secondary);margin-left:auto;">${new Date(latest.timestamp / 1_000_000).toLocaleString()}</span>
         `;
-        const detail = document.getElementById('metrics-detail');
-        // Insert after the header
-        const header = detail.querySelector('.metric-detail-header');
         if (header) header.after(heroEl);
+    }
+
+    renderHistogramBucketChart(buckets, totalCount, unit) {
+        const canvas = document.getElementById('histogram-bucket-chart');
+        if (!canvas) return;
+
+        // Sort by upper_bound
+        const sorted = [...buckets].sort((a, b) => a.upper_bound - b.upper_bound);
+
+        // Determine if cumulative: if last finite bucket count ≈ totalCount, it's cumulative
+        const finiteBuckets = sorted.filter(b => b.upper_bound !== null && Number.isFinite(b.upper_bound));
+        const lastFiniteCount = finiteBuckets.length > 0 ? finiteBuckets[finiteBuckets.length - 1].count : 0;
+        let perBucket;
+        if (totalCount > 0 && Math.abs(lastFiniteCount - totalCount) < 2) {
+            // Cumulative → convert to per-bucket deltas
+            perBucket = sorted.map((b, i) => ({
+                upper_bound: b.upper_bound,
+                count: i === 0 ? b.count : Math.max(0, b.count - sorted[i - 1].count),
+            }));
+        } else {
+            perBucket = sorted;
+        }
+
+        // Build display bars (include +Inf as ">max" label, skip zero-count)
+        const bars = perBucket
+            .filter(b => b.count > 0)
+            .map(b => {
+                const ub = b.upper_bound;
+                const label = (ub === null || ub === undefined || !Number.isFinite(ub))
+                    ? '+Inf'
+                    : (ub >= 1000 ? (ub / 1000).toFixed(1) + 'K' : String(ub));
+                return { label, count: b.count };
+            });
+
+        if (bars.length === 0) return;
+
+        const dpr = window.devicePixelRatio || 1;
+        const rect = canvas.parentElement.getBoundingClientRect();
+        const cssW = Math.max((rect.width || 500) - 16, 200);
+        const cssH = 140;
+        canvas.style.width = cssW + 'px';
+        canvas.style.height = cssH + 'px';
+        canvas.width = cssW * dpr;
+        canvas.height = cssH * dpr;
+        const ctx = canvas.getContext('2d');
+        ctx.scale(dpr, dpr);
+        ctx.clearRect(0, 0, cssW, cssH);
+
+        const maxCount = Math.max(...bars.map(b => b.count));
+        const padL = 44, padR = 8, padT = 8, padB = 28;
+        const w = cssW - padL - padR;
+        const h = cssH - padT - padB;
+        const barW = Math.max(4, (w / bars.length) - 2);
+
+        // Grid lines
+        ctx.strokeStyle = '#1e1e1e';
+        ctx.lineWidth = 1;
+        for (let i = 0; i <= 4; i++) {
+            const y = padT + (i / 4) * h;
+            ctx.beginPath();
+            ctx.moveTo(padL, y);
+            ctx.lineTo(padL + w, y);
+            ctx.stroke();
+        }
+
+        // Y-axis labels
+        ctx.fillStyle = '#64748b';
+        ctx.font = '10px monospace';
+        ctx.textAlign = 'right';
+        for (let i = 0; i <= 4; i++) {
+            const v = Math.round(maxCount * (1 - i / 4));
+            ctx.fillText(v, padL - 4, padT + (i / 4) * h + 4);
+        }
+
+        // Bars
+        bars.forEach((b, i) => {
+            const barH = (b.count / maxCount) * h;
+            const x = padL + i * (w / bars.length);
+            const y = padT + h - barH;
+            const grad = ctx.createLinearGradient(0, y, 0, y + barH);
+            grad.addColorStop(0, '#818cf8');
+            grad.addColorStop(1, 'rgba(129,140,248,0.25)');
+            ctx.fillStyle = grad;
+            ctx.fillRect(x + 1, y, barW, barH);
+
+            // X label (upper_bound)
+            ctx.fillStyle = '#64748b';
+            ctx.font = '9px monospace';
+            ctx.textAlign = 'center';
+            ctx.fillText(b.label, x + barW / 2 + 1, cssH - 6);
+        });
     }
 
     timeWindow() {
