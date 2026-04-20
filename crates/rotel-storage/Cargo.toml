@@ -50,3 +50,7 @@ path = "tests/integration/zero_config_test.rs"
 [[test]]
 name = "persistence_test"
 path = "tests/integration/persistence_test.rs"
+
+[[test]]
+name = "fts5_search_test"
+path = "tests/integration/fts5_search_test.rs"
