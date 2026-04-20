@@ -1,7 +1,6 @@
 //! Tests for token usage query functionality
 
-use rotel_storage::sqlite::{reader, schema, SqliteBackend};
-use rotel_storage::StorageBackend;
+use rotel_storage::sqlite::{reader, schema};
 use rusqlite::Connection;
 
 fn setup_test_db() -> Connection {
@@ -167,7 +166,7 @@ fn test_query_token_usage_handles_missing_token_fields() {
     )
     .unwrap();
 
-    let (summary, by_model, by_system) = reader::query_token_usage(&conn, None, None).unwrap();
+    let (summary, by_model, _by_system) = reader::query_token_usage(&conn, None, None).unwrap();
 
     // Should handle missing fields gracefully (COALESCE to 0)
     assert_eq!(summary.total_input_tokens, 0);

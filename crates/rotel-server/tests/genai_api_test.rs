@@ -100,10 +100,7 @@ async fn test_get_token_usage_response_structure() {
         .unwrap();
     let usage: TokenUsageResponse = serde_json::from_slice(&body).unwrap();
 
-    // Verify response structure
-    assert!(usage.summary.total_input_tokens >= 0);
-    assert!(usage.summary.total_output_tokens >= 0);
-    assert!(usage.summary.total_requests >= 0);
+    // Verify response structure (values are u64, so always >= 0)
     assert!(usage.by_model.is_empty() || !usage.by_model.is_empty());
     assert!(usage.by_system.is_empty() || !usage.by_system.is_empty());
 }

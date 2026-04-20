@@ -77,6 +77,10 @@ fn build_test_router(storage: Arc<dyn StorageBackend>) -> Router {
             "/api/metrics/export",
             axum::routing::get(rotel_server::api::metrics::export_metrics),
         )
+        .route(
+            "/api/metrics/{name}/timeseries",
+            axum::routing::get(rotel_server::api::metrics::get_metric_timeseries),
+        )
         .with_state(state)
 }
 
@@ -592,4 +596,110 @@ async fn test_aggregate_metrics_sum() {
     assert_eq!(agg.function, "sum");
     assert_eq!(agg.result, 60.0);
     assert_eq!(agg.count, 3);
+}
+
+#[tokio::test]
+async fn test_get_metric_timeseries() {
+    let (storage, _tmp) = setup_test_storage().await;
+
+    // Write metrics at different timestamps
+    storage
+        .write_metric(&create_test_metric("cpu.usage", 1_000_000_000, 45.5))
+        .await
+        .unwrap();
+    storage
+        .write_metric(&create_test_metric("cpu.usage", 61_000_000_000, 50.2))
+        .await
+        .unwrap();
+    storage
+        .write_metric(&create_test_metric("cpu.usage", 121_000_000_000, 55.8))
+        .await
+        .unwrap();
+
+    let app = build_test_router(storage);
+
+    let response = app
+        .oneshot(
+            Request::builder()
+                .uri("/api/metrics/cpu.usage/timeseries?step=60")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), StatusCode::OK);
+
+    let body = response.into_body().collect().await.unwrap().to_bytes();
+    let timeseries: Vec<rotel_server::api::metrics::TimeBucket> =
+        serde_json::from_slice(&body).unwrap();
+
+    assert!(!timeseries.is_empty());
+    assert!(timeseries.iter().all(|b| b.count > 0));
+}
+
+#[tokio::test]
+async fn test_get_metric_timeseries_not_found() {
+    let (storage, _tmp) = setup_test_storage().await;
+    let app = build_test_router(storage);
+
+    let response = app
+        .oneshot(
+            Request::builder()
+                .uri("/api/metrics/nonexistent/timeseries")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), StatusCode::NOT_FOUND);
+}
+
+#[tokio::test]
+async fn test_get_metric_timeseries_with_time_range() {
+    let (storage, _tmp) = setup_test_storage().await;
+
+    // Write metrics spanning a time range
+    storage
+        .write_metric(&create_test_metric("requests", 1_000_000_000, 10.0))
+        .await
+        .unwrap();
+    storage
+        .write_metric(&create_test_metric("requests", 2_000_000_000, 20.0))
+        .await
+        .unwrap();
+    storage
+        .write_metric(&create_test_metric("requests", 3_000_000_000, 30.0))
+        .await
+        .unwrap();
+    storage
+        .write_metric(&create_test_metric("requests", 4_000_000_000, 40.0))
+        .await
+        .unwrap();
+
+    let app = build_test_router(storage);
+
+    // Query with time range
+    let response = app
+        .oneshot(
+            Request::builder()
+                .uri("/api/metrics/requests/timeseries?start_time=1000000000&end_time=3000000000&step=1")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), StatusCode::OK);
+
+    let body = response.into_body().collect().await.unwrap().to_bytes();
+    let timeseries: Vec<rotel_server::api::metrics::TimeBucket> =
+        serde_json::from_slice(&body).unwrap();
+
+    // Should only include metrics within the time range
+    assert!(!timeseries.is_empty());
+    assert!(timeseries
+        .iter()
+        .all(|b| b.timestamp >= 1_000_000_000 && b.timestamp <= 3_000_000_000));
 }

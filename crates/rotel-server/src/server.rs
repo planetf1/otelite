@@ -159,7 +159,7 @@ impl DashboardServer {
             .route("/api/metrics", get(crate::api::metrics::list_metrics))
             .route("/api/metrics/names", get(crate::api::metrics::list_metric_names))
             .route("/api/metrics/aggregate", get(crate::api::metrics::aggregate_metrics))
-            .route("/api/metrics/:name/timeseries", get(crate::api::metrics::get_metric_timeseries))
+            .route("/api/metrics/{name}/timeseries", get(crate::api::metrics::get_metric_timeseries))
             .route("/api/metrics/export", get(crate::api::metrics::export_metrics))
             // API routes - GenAI
             .route("/api/genai/usage", get(crate::api::get_token_usage))
