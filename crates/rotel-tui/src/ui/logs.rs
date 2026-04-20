@@ -5,7 +5,7 @@ use ratatui::{
     layout::{Constraint, Direction, Layout, Rect},
     style::{Color, Modifier, Style},
     text::{Line, Span, Text},
-    widgets::{Block, Borders, Cell, Paragraph, Row, Table, Wrap},
+    widgets::{Block, Borders, Cell, Paragraph, Row, Table, TableState, Wrap},
     Frame,
 };
 
@@ -38,34 +38,15 @@ pub fn render_logs_view(frame: &mut Frame, area: Rect, state: &LogsState) {
 fn render_logs_table(frame: &mut Frame, area: Rect, state: &LogsState) {
     let filtered_logs = state.filtered_logs();
 
-    // Create table rows
+    // Create table rows — no manual selection; row_highlight_style handles it
     let rows: Vec<Row> = filtered_logs
         .iter()
-        .enumerate()
-        .map(|(idx, log)| {
-            let is_selected = idx == state.selected_index;
-            let row_style = if is_selected {
-                Style::default()
-                    .fg(Color::Black)
-                    .bg(Color::Cyan)
-                    .add_modifier(Modifier::BOLD)
-            } else {
-                Style::default()
-            };
-
-            // Apply severity color only when not selected (selected row uses Cyan bg)
-            let severity_style = if is_selected {
-                Style::default().fg(Color::Black)
-            } else {
-                get_severity_style(&log.severity)
-            };
-
+        .map(|log| {
             Row::new(vec![
                 Cell::from(format_timestamp(log.timestamp)),
-                Cell::from(log.severity.clone()).style(severity_style),
+                Cell::from(log.severity.clone()).style(get_severity_style(&log.severity)),
                 Cell::from(truncate_string(&log.body, 80)),
             ])
-            .style(row_style)
             .height(1)
         })
         .collect();
@@ -79,7 +60,7 @@ fn render_logs_table(frame: &mut Frame, area: Rect, state: &LogsState) {
     let table = Table::new(
         rows,
         [
-            Constraint::Length(20), // Timestamp
+            Constraint::Length(16), // Timestamp (MM-DD HH:MM:SS)
             Constraint::Length(10), // Severity
             Constraint::Min(50),    // Message
         ],
@@ -97,7 +78,10 @@ fn render_logs_table(frame: &mut Frame, area: Rect, state: &LogsState) {
             .add_modifier(Modifier::BOLD),
     );
 
-    frame.render_widget(table, area);
+    // Use stateful render so the table scrolls to keep the selected row visible
+    let mut table_state = TableState::default();
+    table_state.select(Some(state.selected_index));
+    frame.render_stateful_widget(table, area, &mut table_state);
 }
 
 /// Render logs table with detail panel
@@ -276,16 +260,14 @@ fn get_severity_style(severity: &str) -> Style {
     }
 }
 
-/// Format timestamp for display (converts milliseconds to HH:MM:SS)
-fn format_timestamp(timestamp_ms: i64) -> String {
+/// Format timestamp for display (timestamps stored as nanoseconds)
+fn format_timestamp(timestamp_ns: i64) -> String {
     use chrono::DateTime;
 
-    // Convert milliseconds to DateTime
-    if let Some(dt) = DateTime::from_timestamp_millis(timestamp_ms) {
-        dt.format("%H:%M:%S").to_string()
-    } else {
-        format!("{}", timestamp_ms)
-    }
+    // Timestamps are stored in nanoseconds; convert to milliseconds for chrono
+    DateTime::from_timestamp_millis(timestamp_ns / 1_000_000)
+        .map(|dt| dt.format("%m-%d %H:%M:%S").to_string())
+        .unwrap_or_else(|| "?".to_string())
 }
 
 /// Truncate string to max length with ellipsis
@@ -312,12 +294,12 @@ mod tests {
 
     #[test]
     fn test_format_timestamp() {
-        // 2026-04-17T12:34:56.789Z in milliseconds
-        let timestamp_ms = 1713360896789;
-        let formatted = format_timestamp(timestamp_ms);
-        // Just check it's in HH:MM:SS format
+        // April 17, 2024 in nanoseconds (1713360896789 ms * 1_000_000)
+        let timestamp_ns: i64 = 1713360896789 * 1_000_000;
+        let formatted = format_timestamp(timestamp_ns);
+        // Check it's in MM-DD HH:MM:SS format
         assert!(formatted.contains(':'));
-        assert_eq!(formatted.len(), 8); // HH:MM:SS
+        assert_eq!(formatted.len(), 14); // MM-DD HH:MM:SS
     }
 
     #[test]

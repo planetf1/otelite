@@ -5,7 +5,7 @@ use ratatui::{
     layout::{Constraint, Direction, Layout, Rect},
     style::{Color, Modifier, Style},
     text::{Line, Span as TextSpan, Text},
-    widgets::{Block, Borders, Paragraph, Row, Table, Wrap},
+    widgets::{Block, Borders, Paragraph, Row, Table, TableState, Wrap},
     Frame,
 };
 use rotel_core::telemetry::GenAiSpanInfo;
@@ -174,20 +174,10 @@ pub fn render_traces_view(frame: &mut Frame, area: Rect, state: &TracesState) {
 fn render_traces_table(frame: &mut Frame, area: Rect, state: &TracesState) {
     let filtered_traces = state.filtered_traces();
 
-    // Create table rows
+    // Create table rows — no manual selection; row_highlight_style handles it
     let rows: Vec<Row> = filtered_traces
         .iter()
-        .enumerate()
-        .map(|(idx, trace)| {
-            let style = if idx == state.selected_index {
-                Style::default()
-                    .fg(Color::Black)
-                    .bg(Color::Cyan)
-                    .add_modifier(Modifier::BOLD)
-            } else {
-                Style::default()
-            };
-
+        .map(|trace| {
             let error_indicator = if trace.has_errors { "⚠" } else { " " };
             let duration_ms = trace.duration / 1_000_000; // Convert nanoseconds to milliseconds
 
@@ -199,7 +189,6 @@ fn render_traces_table(frame: &mut Frame, area: Rect, state: &TracesState) {
                 trace.span_count.to_string(),
                 trace.service_names.join(", "),
             ])
-            .style(style)
             .height(1)
         })
         .collect();
@@ -241,7 +230,10 @@ fn render_traces_table(frame: &mut Frame, area: Rect, state: &TracesState) {
             .add_modifier(Modifier::BOLD),
     );
 
-    frame.render_widget(table, area);
+    // Use stateful render so the table scrolls to keep the selected row visible
+    let mut table_state = TableState::default();
+    table_state.select(Some(state.selected_index));
+    frame.render_stateful_widget(table, area, &mut table_state);
 }
 
 /// Render traces table with detail panel
@@ -763,16 +755,14 @@ fn render_status_bar(frame: &mut Frame, area: Rect, state: &TracesState) {
     frame.render_widget(paragraph, area);
 }
 
-/// Format timestamp for display (converts milliseconds to HH:MM:SS)
-fn format_timestamp(timestamp_ms: i64) -> String {
+/// Format timestamp for display (timestamps stored as nanoseconds)
+fn format_timestamp(timestamp_ns: i64) -> String {
     use chrono::DateTime;
 
-    // Convert milliseconds to DateTime
-    if let Some(dt) = DateTime::from_timestamp_millis(timestamp_ms) {
-        dt.format("%H:%M:%S").to_string()
-    } else {
-        format!("{}", timestamp_ms)
-    }
+    // Timestamps are stored in nanoseconds; convert to milliseconds for chrono
+    DateTime::from_timestamp_millis(timestamp_ns / 1_000_000)
+        .map(|dt| dt.format("%H:%M:%S").to_string())
+        .unwrap_or_else(|| "?".to_string())
 }
 
 /// Truncate string to max length with ellipsis
@@ -837,10 +827,11 @@ mod tests {
 
     #[test]
     fn test_format_timestamp() {
-        let timestamp_ms = 1713360896789;
-        let formatted = format_timestamp(timestamp_ms);
+        // April 17, 2024 in nanoseconds
+        let timestamp_ns: i64 = 1713360896789 * 1_000_000;
+        let formatted = format_timestamp(timestamp_ns);
         assert!(formatted.contains(':'));
-        assert_eq!(formatted.len(), 8);
+        assert_eq!(formatted.len(), 8); // HH:MM:SS
     }
 
     #[test]

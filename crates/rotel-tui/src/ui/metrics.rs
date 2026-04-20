@@ -5,7 +5,7 @@ use ratatui::{
     layout::{Constraint, Direction, Layout, Rect},
     style::{Color, Modifier, Style},
     text::{Line, Span},
-    widgets::{Block, Borders, Cell, Paragraph, Row, Sparkline, Table, Wrap},
+    widgets::{Block, Borders, Cell, Paragraph, Row, Sparkline, Table, TableState, Wrap},
     Frame,
 };
 
@@ -41,20 +41,10 @@ fn render_metrics_table(frame: &mut Frame, area: Rect, state: &MetricsState) {
     // Deduplicated list: one row per unique metric name
     let unique_metrics = state.unique_filtered_metrics();
 
+    // Create rows — no manual selection; row_highlight_style handles it
     let rows: Vec<Row> = unique_metrics
         .iter()
-        .enumerate()
-        .map(|(idx, (metric, count))| {
-            let is_selected = idx == state.selected_index;
-            let style = if is_selected {
-                Style::default()
-                    .fg(Color::Black)
-                    .bg(Color::Cyan)
-                    .add_modifier(Modifier::BOLD)
-            } else {
-                Style::default()
-            };
-
+        .map(|(metric, count)| {
             let latest_value = match &metric.value {
                 MetricValue::Gauge(v) => format!("{:.2}", v),
                 MetricValue::Counter(v) => format!("{}", v),
@@ -75,13 +65,11 @@ fn render_metrics_table(frame: &mut Frame, area: Rect, state: &MetricsState) {
                 format!("{} {}", latest_value, unit)
             };
 
-            let type_color = if is_selected {
-                Color::Black
-            } else {
-                get_metric_type_color(&metric.metric_type)
-            };
-            let type_cell = Cell::from(metric.metric_type.clone())
-                .style(Style::default().fg(type_color).add_modifier(Modifier::BOLD));
+            let type_cell = Cell::from(metric.metric_type.clone()).style(
+                Style::default()
+                    .fg(get_metric_type_color(&metric.metric_type))
+                    .add_modifier(Modifier::BOLD),
+            );
 
             Row::new(vec![
                 Cell::from(truncate_string(&metric.name, 38)),
@@ -93,7 +81,6 @@ fn render_metrics_table(frame: &mut Frame, area: Rect, state: &MetricsState) {
                     40,
                 )),
             ])
-            .style(style)
             .height(1)
         })
         .collect();
@@ -125,7 +112,10 @@ fn render_metrics_table(frame: &mut Frame, area: Rect, state: &MetricsState) {
             .add_modifier(Modifier::BOLD),
     );
 
-    frame.render_widget(table, area);
+    // Use stateful render so the table scrolls to keep the selected row visible
+    let mut table_state = TableState::default();
+    table_state.select(Some(state.selected_index));
+    frame.render_stateful_widget(table, area, &mut table_state);
 }
 
 /// Render metrics table with detail panel
