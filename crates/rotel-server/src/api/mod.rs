@@ -5,6 +5,7 @@ pub mod health;
 pub mod help;
 pub mod logs;
 pub mod metrics;
+pub mod resource_keys;
 pub mod stats;
 pub mod traces;
 

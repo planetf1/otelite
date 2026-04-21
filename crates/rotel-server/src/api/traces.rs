@@ -21,6 +21,10 @@ pub struct TracesQuery {
     #[serde(default)]
     pub service: Option<String>,
 
+    /// Filter by resource attribute (format: key=value)
+    #[serde(default)]
+    pub resource: Option<String>,
+
     /// Full-text search in span names
     #[serde(default)]
     pub search: Option<String>,
@@ -91,6 +95,10 @@ pub async fn list_traces(
             Json(ErrorResponse::storage_error(format!("query spans: {}", e))),
         )
     })?;
+
+    // Note: spans do not carry resource attributes in the current data model
+    // (resource is on Trace, not Span). The resource query param is accepted
+    // for forward compatibility but no filtering is applied here.
 
     // Group spans by trace_id
     let mut traces_map: std::collections::HashMap<String, Vec<Span>> =

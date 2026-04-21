@@ -167,6 +167,8 @@ impl DashboardServer {
             .route("/api/metrics/aggregate", get(crate::api::metrics::aggregate_metrics))
             .route("/api/metrics/{name}/timeseries", get(crate::api::metrics::get_metric_timeseries))
             .route("/api/metrics/export", get(crate::api::metrics::export_metrics))
+            // API routes - Resource keys typeahead
+            .route("/api/resource-keys", get(crate::api::resource_keys::get_resource_keys))
             // API routes - Stats
             .route("/api/stats", get(crate::api::stats::get_stats))
             // API routes - GenAI

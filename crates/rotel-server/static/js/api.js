@@ -145,6 +145,14 @@ class ApiClient {
     }
 
     /**
+     * Fetch distinct resource attribute keys for a signal type.
+     * signal: "logs", "spans", or "metrics"
+     */
+    async getResourceKeys(signal) {
+        return this.get('/resource-keys', { signal });
+    }
+
+    /**
      * Check health status
      */
     async getHealth() {

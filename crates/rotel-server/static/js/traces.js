@@ -10,6 +10,7 @@ class TracesView {
         this.filters = {
             traceId: '',
             service: '',
+            resource: '',
             search: '',
             startTime: null,
             endTime: null
@@ -43,6 +44,8 @@ class TracesView {
                 <input type="text" id="trace-id-filter" placeholder="Trace ID" class="filter-input">
                 <input type="text" id="service-filter" placeholder="Service name" class="filter-input">
                 <input type="text" id="search-traces" placeholder="Search span names..." class="filter-input">
+                <datalist id="traces-resource-keys-list"></datalist>
+                <input type="text" id="traces-resource-filter" placeholder="Resource filter (e.g., service.name=my-service)" class="filter-input" list="traces-resource-keys-list">
                 <select id="time-range-traces" class="filter-select">
                     <option value="">All time</option>
                     <option value="0.25">Last 15m</option>
@@ -74,6 +77,7 @@ class TracesView {
 
         this.attachEventListeners();
         this.loadTraces();
+        this.loadResourceKeys();
     }
 
     /**
@@ -113,6 +117,22 @@ class TracesView {
             document.addEventListener('mouseup', onUp);
             e.preventDefault();
         });
+    }
+
+    /**
+     * Populate the resource-keys datalist for typeahead
+     */
+    async loadResourceKeys() {
+        try {
+            const response = await this.apiClient.getResourceKeys('spans');
+            const datalist = document.getElementById('traces-resource-keys-list');
+            if (!datalist) return;
+            datalist.innerHTML = response.keys
+                .map(k => `<option value="${k}=">`)
+                .join('');
+        } catch (_error) {
+            // Non-critical; silently ignore
+        }
     }
 
     /**
@@ -505,6 +525,7 @@ class TracesView {
     applyFilters() {
         this.filters.traceId = document.getElementById('trace-id-filter').value;
         this.filters.service = document.getElementById('service-filter').value;
+        this.filters.resource = document.getElementById('traces-resource-filter').value;
         this.filters.search = document.getElementById('search-traces').value;
         const rangeVal = document.getElementById('time-range-traces').value;
         this.timeRangeHours = rangeVal ? parseFloat(rangeVal) : null;
@@ -519,6 +540,7 @@ class TracesView {
         this.filters = {
             traceId: '',
             service: '',
+            resource: '',
             search: '',
             startTime: null,
             endTime: null
@@ -526,6 +548,7 @@ class TracesView {
         this.timeRangeHours = null;
         document.getElementById('trace-id-filter').value = '';
         document.getElementById('service-filter').value = '';
+        document.getElementById('traces-resource-filter').value = '';
         document.getElementById('search-traces').value = '';
         document.getElementById('time-range-traces').value = '';
         this.currentPage = 0;

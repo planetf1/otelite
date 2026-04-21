@@ -194,6 +194,15 @@ impl StorageBackend for SqliteBackend {
         Ok(total_deleted as u64)
     }
 
+    async fn distinct_resource_keys(&self, signal: &str) -> Result<Vec<String>> {
+        let conn_guard = self.conn.lock().unwrap();
+        let conn = conn_guard
+            .as_ref()
+            .ok_or_else(|| StorageError::QueryError("Database not initialized".to_string()))?;
+
+        reader::distinct_resource_keys(conn, signal)
+    }
+
     async fn close(&mut self) -> Result<()> {
         // Stop purge scheduler
         if let Some(handle) = self.purge_handle.lock().unwrap().take() {

@@ -9,6 +9,7 @@ class MetricsView {
         this.autoRefreshInterval = null;
         this.timeWindowHours = 1;  // how many hours to show
         this.timeOffsetWindows = 0; // how many windows back in time (0 = now)
+        this.resourceFilter = '';
     }
 
     async render() {
@@ -24,6 +25,12 @@ class MetricsView {
                         Auto-refresh (30s)
                     </label>
                 </div>
+            </div>
+            <div class="filters">
+                <datalist id="metrics-resource-keys-list"></datalist>
+                <input type="text" id="metrics-resource-filter" placeholder="Resource filter (e.g., service.name=my-service)" class="filter-input" list="metrics-resource-keys-list">
+                <button id="apply-metrics-resource-filter" class="btn btn-primary">Apply</button>
+                <button id="clear-metrics-resource-filter" class="btn btn-secondary">Clear</button>
             </div>
             <div class="metrics-layout">
                 <div class="metrics-sidebar" id="metrics-sidebar">
@@ -43,7 +50,9 @@ class MetricsView {
 
     async loadMetrics() {
         try {
-            this.metrics = await this.apiClient.getMetrics({ limit: 500 });
+            const params = { limit: 500 };
+            if (this.resourceFilter) params.resource = this.resourceFilter;
+            this.metrics = await this.apiClient.getMetrics(params);
             this.metricNames = [...new Set(this.metrics.map(m => m.name))].sort();
 
             this.renderSidebar();
@@ -592,10 +601,33 @@ class MetricsView {
         document.getElementById('auto-refresh-metrics').addEventListener('change', (e) => {
             e.target.checked ? this.startAutoRefresh() : this.stopAutoRefresh();
         });
+        document.getElementById('apply-metrics-resource-filter').addEventListener('click', () => {
+            this.resourceFilter = document.getElementById('metrics-resource-filter').value;
+            this.loadMetrics();
+        });
+        document.getElementById('clear-metrics-resource-filter').addEventListener('click', () => {
+            this.resourceFilter = '';
+            document.getElementById('metrics-resource-filter').value = '';
+            this.loadMetrics();
+        });
         this.attachHorizontalDragResize(
             document.getElementById('metrics-sidebar'),
             document.getElementById('metrics-h-handle')
         );
+        this.loadResourceKeys();
+    }
+
+    async loadResourceKeys() {
+        try {
+            const response = await this.apiClient.getResourceKeys('metrics');
+            const datalist = document.getElementById('metrics-resource-keys-list');
+            if (!datalist) return;
+            datalist.innerHTML = response.keys
+                .map(k => `<option value="${k}=">`)
+                .join('');
+        } catch (_error) {
+            // Non-critical; silently ignore
+        }
     }
 
     attachHorizontalDragResize(leftPanel, handle) {

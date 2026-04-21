@@ -610,6 +610,42 @@ pub fn query_token_usage(
     Ok((summary, by_model, by_system))
 }
 
+/// Return up to 50 distinct resource attribute keys for the given signal table.
+/// `signal` must be one of "logs", "spans", or "metrics".
+pub fn distinct_resource_keys(conn: &Connection, signal: &str) -> Result<Vec<String>> {
+    let table = match signal {
+        "logs" => "logs",
+        "spans" => "spans",
+        "metrics" => "metrics",
+        other => {
+            return Err(StorageError::QueryError(format!(
+                "Unknown signal type: {}",
+                other
+            )));
+        },
+    };
+
+    let sql = format!(
+        "SELECT DISTINCT je.key \
+         FROM {table}, json_each(json_extract({table}.resource, '$.attributes')) je \
+         WHERE {table}.resource IS NOT NULL \
+         AND json_extract({table}.resource, '$.attributes') IS NOT NULL \
+         LIMIT 50"
+    );
+
+    let mut stmt = conn
+        .prepare(&sql)
+        .map_err(|e| StorageError::QueryError(format!("Failed to prepare query: {}", e)))?;
+
+    let keys = stmt
+        .query_map([], |row| row.get::<_, String>(0))
+        .map_err(|e| StorageError::QueryError(format!("Failed to execute query: {}", e)))?
+        .filter_map(|r| r.ok())
+        .collect();
+
+    Ok(keys)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

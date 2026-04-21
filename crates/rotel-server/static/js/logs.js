@@ -58,7 +58,8 @@ class LogsView {
                     <option value="24">Last 24h</option>
                     <option value="168">Last 7d</option>
                 </select>
-                <input type="text" id="resource-filter" placeholder="Resource filter (e.g., service.name=my-service)" class="filter-input">
+                <datalist id="logs-resource-keys-list"></datalist>
+                <input type="text" id="resource-filter" placeholder="Resource filter (e.g., service.name=my-service)" class="filter-input" list="logs-resource-keys-list">
                 <button id="apply-filters" class="btn btn-primary">Apply Filters</button>
                 <button id="clear-filters" class="btn btn-secondary">Clear</button>
             </div>
@@ -74,6 +75,7 @@ class LogsView {
 
         this.attachEventListeners();
         this.loadLogs();
+        this.loadResourceKeys();
     }
 
     /**
@@ -94,6 +96,22 @@ class LogsView {
             this.filters.search = e.target.value;
             this.debounceLoadLogs();
         });
+    }
+
+    /**
+     * Populate the resource-keys datalist for typeahead
+     */
+    async loadResourceKeys() {
+        try {
+            const response = await this.apiClient.getResourceKeys('logs');
+            const datalist = document.getElementById('logs-resource-keys-list');
+            if (!datalist) return;
+            datalist.innerHTML = response.keys
+                .map(k => `<option value="${k}=">`)
+                .join('');
+        } catch (_error) {
+            // Non-critical; silently ignore
+        }
     }
 
     /**

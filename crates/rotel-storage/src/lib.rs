@@ -109,6 +109,10 @@ pub trait StorageBackend: Send + Sync {
 
     /// Close the storage backend
     async fn close(&mut self) -> Result<()>;
+
+    /// Return distinct resource attribute keys for the given signal type.
+    /// `signal` must be one of "logs", "spans", or "metrics".
+    async fn distinct_resource_keys(&self, signal: &str) -> Result<Vec<String>>;
 }
 
 #[cfg(test)]
