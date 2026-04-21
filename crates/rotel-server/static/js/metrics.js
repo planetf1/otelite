@@ -243,7 +243,7 @@ class MetricsView {
         if (header) header.after(heroEl);
     }
 
-    renderHistogramBucketChart(buckets, totalCount, unit) {
+    renderHistogramBucketChart(buckets, totalCount, _unit) {
         const canvas = document.getElementById('histogram-bucket-chart');
         if (!canvas) return;
 
@@ -420,7 +420,7 @@ class MetricsView {
         }
     }
 
-    renderChart(metricName, buckets) {
+    renderChart(_metricName, buckets) {
         const canvas = document.getElementById('metrics-chart');
         if (!canvas) return;
         const ctx = canvas.getContext('2d');
