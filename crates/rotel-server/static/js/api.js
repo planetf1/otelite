@@ -52,20 +52,20 @@ class ApiClient {
     }
 
     /**
-     * Export logs
+     * Export logs — returns a Blob for the caller to download
      */
-    async exportLogs(format = 'json', filters = {}) {
-        const params = { ...filters, format };
+    async exportLogs(params = {}) {
         const url = new URL(`${this.baseUrl}/logs/export`, window.location.origin);
-
         Object.keys(params).forEach(key => {
             if (params[key] !== null && params[key] !== undefined) {
                 url.searchParams.append(key, params[key]);
             }
         });
-
-        // Trigger download
-        window.location.href = url.toString();
+        const response = await fetch(url);
+        if (!response.ok) {
+            throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+        }
+        return response.blob();
     }
 
     /**
@@ -80,6 +80,23 @@ class ApiClient {
      */
     async getTrace(traceId) {
         return this.get(`/traces/${traceId}`);
+    }
+
+    /**
+     * Export traces — returns a Blob for the caller to download
+     */
+    async exportTraces(params = {}) {
+        const url = new URL(`${this.baseUrl}/traces/export`, window.location.origin);
+        Object.keys(params).forEach(key => {
+            if (params[key] !== null && params[key] !== undefined) {
+                url.searchParams.append(key, params[key]);
+            }
+        });
+        const response = await fetch(url);
+        if (!response.ok) {
+            throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+        }
+        return response.blob();
     }
 
     /**
@@ -111,20 +128,20 @@ class ApiClient {
     }
 
     /**
-     * Export metrics
+     * Export metrics — returns a Blob for the caller to download
      */
-    async exportMetrics(format = 'json', filters = {}) {
-        const params = { ...filters, format };
+    async exportMetrics(params = {}) {
         const url = new URL(`${this.baseUrl}/metrics/export`, window.location.origin);
-
         Object.keys(params).forEach(key => {
             if (params[key] !== null && params[key] !== undefined) {
                 url.searchParams.append(key, params[key]);
             }
         });
-
-        // Trigger download
-        window.location.href = url.toString();
+        const response = await fetch(url);
+        if (!response.ok) {
+            throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+        }
+        return response.blob();
     }
 
     /**

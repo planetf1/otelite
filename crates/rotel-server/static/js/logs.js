@@ -29,7 +29,8 @@ class LogsView {
                 <h2>Logs</h2>
                 <div class="view-actions">
                     <button id="refresh-logs" class="btn btn-primary">Refresh</button>
-                    <button id="export-logs" class="btn btn-secondary">Export</button>
+                    <button id="export-logs-json" class="btn btn-secondary">Export JSON</button>
+                    <button id="export-logs-csv" class="btn btn-secondary">Export CSV</button>
                     <label class="auto-refresh-toggle">
                         <input type="checkbox" id="auto-refresh-logs">
                         Auto-refresh (5s)
@@ -71,7 +72,8 @@ class LogsView {
      */
     attachEventListeners() {
         document.getElementById('refresh-logs').addEventListener('click', () => this.loadLogs());
-        document.getElementById('export-logs').addEventListener('click', () => this.exportLogs());
+        document.getElementById('export-logs-json').addEventListener('click', () => this.exportLogs('json'));
+        document.getElementById('export-logs-csv').addEventListener('click', () => this.exportLogs('csv'));
         document.getElementById('auto-refresh-logs').addEventListener('change', (e) => this.toggleAutoRefresh(e.target.checked));
         document.getElementById('apply-filters').addEventListener('click', () => this.applyFilters());
         document.getElementById('clear-filters').addEventListener('click', () => this.clearFilters());
@@ -303,16 +305,11 @@ class LogsView {
     }
 
     /**
-     * Export logs
+     * Export logs in the given format ('json' or 'csv')
      */
-    async exportLogs() {
+    async exportLogs(format) {
         try {
-            const format = confirm('Export as JSON? (Cancel for CSV)') ? 'json' : 'csv';
-            const params = {
-                format,
-                ...this.filters
-            };
-
+            const params = { format, ...this.filters };
             const blob = await this.apiClient.exportLogs(params);
             const url = window.URL.createObjectURL(blob);
             const a = document.createElement('a');

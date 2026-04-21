@@ -559,11 +559,25 @@ class MetricsView {
         return new Date(nanos / 1000000).toLocaleString();
     }
 
+    async exportMetrics() {
+        try {
+            const blob = await this.apiClient.exportMetrics({ format: 'json' });
+            const url = window.URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = 'metrics.json';
+            document.body.appendChild(a);
+            a.click();
+            window.URL.revokeObjectURL(url);
+            document.body.removeChild(a);
+        } catch (error) {
+            console.error('Failed to export metrics:', error);
+        }
+    }
+
     attachEventListeners() {
         document.getElementById('refresh-metrics').addEventListener('click', () => this.loadMetrics());
-        document.getElementById('export-metrics').addEventListener('click', () => {
-            window.open('/api/metrics/export', '_blank');
-        });
+        document.getElementById('export-metrics').addEventListener('click', () => this.exportMetrics());
         document.getElementById('auto-refresh-metrics').addEventListener('change', (e) => {
             e.target.checked ? this.startAutoRefresh() : this.stopAutoRefresh();
         });
