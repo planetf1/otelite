@@ -14,6 +14,7 @@ use rotel_storage::sqlite::SqliteBackend;
 use rotel_storage::{StorageBackend, StorageConfig};
 use std::collections::HashMap;
 use std::sync::Arc;
+use std::time::Instant;
 use tempfile::TempDir;
 use tower::ServiceExt;
 
@@ -30,6 +31,7 @@ fn build_test_router(storage: Arc<dyn StorageBackend>) -> Router {
     let state = AppState {
         storage,
         cache: QueryCache::default(),
+        start_time: Arc::new(Instant::now()),
     };
 
     Router::new()

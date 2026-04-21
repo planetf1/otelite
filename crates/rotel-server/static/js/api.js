@@ -150,6 +150,13 @@ class ApiClient {
     async getHealth() {
         return this.get('/health');
     }
+
+    /**
+     * Fetch storage statistics
+     */
+    async getStats() {
+        return this.get('/stats');
+    }
 }
 
 // Export singleton instance

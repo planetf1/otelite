@@ -7,7 +7,7 @@ use axum::{routing::get, Router};
 use rotel_storage::StorageBackend;
 use serde::Serialize;
 use std::sync::Arc;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 use tower_http::trace::TraceLayer;
 use tracing::info;
 use utoipa::OpenApi;
@@ -17,6 +17,7 @@ use utoipa::OpenApi;
 #[openapi(
     paths(
         crate::api::health::health_check,
+        crate::api::stats::get_stats,
         crate::api::help::api_help,
         crate::api::logs::list_logs,
         crate::api::logs::get_log,
@@ -49,6 +50,7 @@ use utoipa::OpenApi;
             rotel_core::api::ModelUsage,
             rotel_core::api::SystemUsage,
             crate::api::health::HealthResponse,
+            crate::api::stats::StatsResponse,
             crate::api::metrics::AggregateResponse,
             crate::api::metrics::TimeBucket,
             crate::api::metrics::TimeseriesQuery,
@@ -57,6 +59,7 @@ use utoipa::OpenApi;
     ),
     tags(
         (name = "health", description = "Health check endpoints"),
+        (name = "stats", description = "Storage statistics endpoints"),
         (name = "help", description = "API documentation and help"),
         (name = "logs", description = "Log query and export endpoints"),
         (name = "traces", description = "Trace query and export endpoints"),
@@ -80,6 +83,8 @@ struct ApiDoc;
 pub struct AppState {
     pub storage: Arc<dyn StorageBackend>,
     pub cache: QueryCache,
+    /// Time at which the server started (for uptime calculation)
+    pub start_time: Arc<Instant>,
 }
 
 /// Cache for query results
@@ -132,6 +137,7 @@ impl DashboardServer {
         let state = AppState {
             storage,
             cache: QueryCache::new(),
+            start_time: Arc::new(Instant::now()),
         };
 
         Self {
@@ -161,6 +167,8 @@ impl DashboardServer {
             .route("/api/metrics/aggregate", get(crate::api::metrics::aggregate_metrics))
             .route("/api/metrics/{name}/timeseries", get(crate::api::metrics::get_metric_timeseries))
             .route("/api/metrics/export", get(crate::api::metrics::export_metrics))
+            // API routes - Stats
+            .route("/api/stats", get(crate::api::stats::get_stats))
             // API routes - GenAI
             .route("/api/genai/usage", get(crate::api::get_token_usage))
             // OpenAPI spec endpoint

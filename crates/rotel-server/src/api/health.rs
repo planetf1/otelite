@@ -1,8 +1,8 @@
 // Health check endpoint
 
-use axum::{http::StatusCode, Json};
+use crate::server::AppState;
+use axum::{extract::State, http::StatusCode, Json};
 use serde::{Deserialize, Serialize};
-use std::time::{SystemTime, UNIX_EPOCH};
 
 /// Health check response
 #[derive(Debug, Serialize, Deserialize, utoipa::ToSchema)]
@@ -22,12 +22,10 @@ pub struct HealthResponse {
     ),
     tag = "health"
 )]
-pub async fn health_check() -> Result<Json<HealthResponse>, StatusCode> {
-    // Calculate uptime (simplified - would need actual start time tracking)
-    let uptime = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .unwrap()
-        .as_secs();
+pub async fn health_check(
+    State(state): State<AppState>,
+) -> Result<Json<HealthResponse>, StatusCode> {
+    let uptime = state.start_time.elapsed().as_secs();
 
     let response = HealthResponse {
         status: "healthy".to_string(),

@@ -5,6 +5,7 @@ pub mod health;
 pub mod help;
 pub mod logs;
 pub mod metrics;
+pub mod stats;
 pub mod traces;
 
 pub use genai::get_token_usage;

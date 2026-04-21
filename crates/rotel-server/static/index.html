@@ -19,8 +19,11 @@
                     <button class="nav-btn" data-view="setup">Setup</button>
                 </nav>
                 <div class="connection-status">
-                    <span class="status-indicator" id="status-indicator"></span>
-                    <span class="status-text" id="status-text">Connected</span>
+                    <div class="status-wrapper" id="status-wrapper" role="button" tabindex="0" aria-label="Server status">
+                        <span class="status-indicator" id="status-indicator"></span>
+                        <span class="status-text" id="status-text">Connected</span>
+                    </div>
+                    <div class="status-popover" id="status-popover"></div>
                 </div>
             </div>
         </header>
