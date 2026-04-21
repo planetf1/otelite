@@ -9,6 +9,7 @@ pub mod error;
 pub mod sqlite;
 
 use async_trait::async_trait;
+use rotel_core::api::{ModelUsage, SystemUsage, TokenUsageSummary};
 use rotel_core::query::QueryPredicate;
 use rotel_core::telemetry::log::SeverityLevel;
 use rotel_core::telemetry::{LogRecord, Metric, Span};
@@ -127,6 +128,14 @@ pub trait StorageBackend: Send + Sync {
     /// Return distinct resource attribute keys for the given signal type.
     /// `signal` must be one of "logs", "spans", or "metrics".
     async fn distinct_resource_keys(&self, signal: &str) -> Result<Vec<String>>;
+
+    /// Query token usage statistics for GenAI/LLM spans.
+    /// Returns aggregated totals plus per-model and per-system breakdowns.
+    async fn query_token_usage(
+        &self,
+        start_time: Option<i64>,
+        end_time: Option<i64>,
+    ) -> Result<(TokenUsageSummary, Vec<ModelUsage>, Vec<SystemUsage>)>;
 }
 
 #[cfg(test)]

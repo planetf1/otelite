@@ -244,6 +244,23 @@ impl StorageBackend for SqliteBackend {
         reader::distinct_resource_keys(conn, signal)
     }
 
+    async fn query_token_usage(
+        &self,
+        start_time: Option<i64>,
+        end_time: Option<i64>,
+    ) -> Result<(
+        rotel_core::api::TokenUsageSummary,
+        Vec<rotel_core::api::ModelUsage>,
+        Vec<rotel_core::api::SystemUsage>,
+    )> {
+        let conn_guard = self.conn.lock().unwrap();
+        let conn = conn_guard
+            .as_ref()
+            .ok_or_else(|| StorageError::QueryError("Database not initialized".to_string()))?;
+
+        reader::query_token_usage(conn, start_time, end_time)
+    }
+
     async fn close(&mut self) -> Result<()> {
         // Stop purge scheduler
         if let Some(handle) = self.purge_handle.lock().unwrap().take() {

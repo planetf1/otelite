@@ -24,6 +24,7 @@ class App {
             logs: new window.LogsView(api),
             traces: new window.TracesView(api),
             metrics: new window.MetricsView(api),
+            usage: new window.UsageView(api),
             // setup is static HTML — no view class needed
         };
         this.setupNavigation();

@@ -153,6 +153,13 @@ class ApiClient {
     }
 
     /**
+     * Fetch GenAI token usage statistics
+     */
+    async getTokenUsage(params = {}) {
+        return this.get('/genai/usage', params);
+    }
+
+    /**
      * Check health status
      */
     async getHealth() {

@@ -33,19 +33,22 @@ pub struct TokenUsageQuery {
     tag = "genai"
 )]
 pub async fn get_token_usage(
-    State(_state): State<AppState>,
-    Query(_query): Query<TokenUsageQuery>,
+    State(state): State<AppState>,
+    Query(query): Query<TokenUsageQuery>,
 ) -> Result<Json<TokenUsageResponse>, (StatusCode, Json<ErrorResponse>)> {
-    // Query storage for token usage
-    // Note: This requires adding query_token_usage to StorageBackend trait
-    // For now, return empty results as placeholder
-    let summary = rotel_core::api::TokenUsageSummary {
-        total_input_tokens: 0,
-        total_output_tokens: 0,
-        total_requests: 0,
-    };
-    let by_model = Vec::new();
-    let by_system = Vec::new();
+    let (summary, by_model, by_system) = state
+        .storage
+        .query_token_usage(query.start_time, query.end_time)
+        .await
+        .map_err(|e| {
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(ErrorResponse::storage_error(format!(
+                    "query token usage: {}",
+                    e
+                ))),
+            )
+        })?;
 
     Ok(Json(TokenUsageResponse {
         summary,
