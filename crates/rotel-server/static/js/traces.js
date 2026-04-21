@@ -614,7 +614,8 @@ class TracesView {
             toolCallId: attributes['gen_ai.tool.call.id'] || null,
             toolType: attributes['gen_ai.tool.type'] || null,
             topP: attributes['gen_ai.request.top_p'] ? parseFloat(attributes['gen_ai.request.top_p']) : null,
-            seed: attributes['gen_ai.request.seed'] ? parseInt(attributes['gen_ai.request.seed']) : null
+            seed: attributes['gen_ai.request.seed'] ? parseInt(attributes['gen_ai.request.seed']) : null,
+            isToolCall: false
         };
 
         // Calculate total tokens if not provided
@@ -622,7 +623,6 @@ class TracesView {
             info.totalTokens = info.inputTokens + info.outputTokens;
         }
 
-        // Compute isToolCall after extraction
         info.isToolCall = !!(info.operation === 'execute_tool' || info.toolName);
 
         return info;
