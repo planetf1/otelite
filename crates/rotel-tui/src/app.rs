@@ -159,6 +159,29 @@ impl App {
             AppEvent::Select if self.current_view == View::Metrics => {
                 self.metrics_state.show_detail_panel();
             },
+            // Page navigation
+            AppEvent::PageDown if self.current_view == View::Logs => {
+                self.logs_state.select_page_down(10);
+            },
+            AppEvent::PageUp if self.current_view == View::Logs => {
+                self.logs_state.select_page_up(10);
+            },
+            AppEvent::PageDown
+                if self.current_view == View::Traces && !self.traces_state.show_detail =>
+            {
+                self.traces_state.select_page_down(10);
+            },
+            AppEvent::PageUp
+                if self.current_view == View::Traces && !self.traces_state.show_detail =>
+            {
+                self.traces_state.select_page_up(10);
+            },
+            AppEvent::PageDown if self.current_view == View::Metrics => {
+                self.metrics_state.select_page_down(10);
+            },
+            AppEvent::PageUp if self.current_view == View::Metrics => {
+                self.metrics_state.select_page_up(10);
+            },
             _ => {},
         }
     }

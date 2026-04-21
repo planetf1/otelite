@@ -173,6 +173,27 @@ impl LogsState {
         }
     }
 
+    /// Move selection up by `n` items (page up)
+    pub fn select_page_up(&mut self, n: usize) {
+        self.selected_index = self.selected_index.saturating_sub(n);
+        self.auto_scroll = false;
+        if self.show_detail {
+            self.refresh_detail_cache();
+        }
+    }
+
+    /// Move selection down by `n` items (page down)
+    pub fn select_page_down(&mut self, n: usize) {
+        let filtered_count = self.filtered_logs().len();
+        if filtered_count > 0 {
+            self.selected_index = (self.selected_index + n).min(filtered_count - 1);
+            self.auto_scroll = false;
+            if self.show_detail {
+                self.refresh_detail_cache();
+            }
+        }
+    }
+
     /// Toggle detail panel (will be used by UI keyboard shortcuts)
     pub fn toggle_detail(&mut self) {
         self.show_detail = !self.show_detail;

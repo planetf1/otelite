@@ -41,6 +41,10 @@ pub enum AppEvent {
     ZoomOut,
     /// Refresh data
     Refresh,
+    /// Page down (move selection by page)
+    PageDown,
+    /// Page up (move selection by page)
+    PageUp,
     /// No event
     None,
 }
@@ -86,6 +90,8 @@ fn handle_key_event(key: KeyEvent) -> AppEvent {
         KeyCode::Char('+') | KeyCode::Char('=') => AppEvent::ZoomIn,
         KeyCode::Char('-') => AppEvent::ZoomOut,
         KeyCode::Char('r') => AppEvent::Refresh,
+        KeyCode::PageDown => AppEvent::PageDown,
+        KeyCode::PageUp => AppEvent::PageUp,
 
         _ => AppEvent::None,
     }
@@ -174,6 +180,15 @@ mod tests {
 
         let key = KeyEvent::new(KeyCode::Char('-'), KeyModifiers::NONE);
         assert_eq!(handle_key_event(key), AppEvent::ZoomOut);
+    }
+
+    #[test]
+    fn test_page_navigation_events() {
+        let key = KeyEvent::new(KeyCode::PageDown, KeyModifiers::NONE);
+        assert_eq!(handle_key_event(key), AppEvent::PageDown);
+
+        let key = KeyEvent::new(KeyCode::PageUp, KeyModifiers::NONE);
+        assert_eq!(handle_key_event(key), AppEvent::PageUp);
     }
 
     #[test]

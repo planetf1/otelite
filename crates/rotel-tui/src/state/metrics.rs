@@ -198,6 +198,19 @@ impl MetricsState {
         }
     }
 
+    /// Move selection up by `n` items (page up)
+    pub fn select_page_up(&mut self, n: usize) {
+        self.selected_index = self.selected_index.saturating_sub(n);
+    }
+
+    /// Move selection down by `n` items (page down)
+    pub fn select_page_down(&mut self, n: usize) {
+        let count = self.unique_filtered_metrics().len();
+        if count > 0 {
+            self.selected_index = (self.selected_index + n).min(count - 1);
+        }
+    }
+
     /// Toggle detail panel
     pub fn toggle_detail(&mut self) {
         self.show_detail = !self.show_detail;
