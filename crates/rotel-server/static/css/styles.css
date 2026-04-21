@@ -1883,3 +1883,52 @@ body {
     margin-bottom: 1.5rem;
     color: var(--text-primary);
 }
+
+/* Attribute filter bar */
+.attr-filter-bar {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.4rem;
+    align-items: center;
+    padding: 0.4rem 0;
+}
+
+.attr-filter-key {
+    width: 160px;
+}
+
+.attr-filter-op {
+    width: 90px;
+}
+
+.attr-filter-val {
+    width: 140px;
+}
+
+.attr-chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.3rem;
+    align-items: center;
+}
+
+.attr-chip {
+    background: var(--bg-secondary);
+    border: 1px solid var(--border-color);
+    border-radius: 1rem;
+    padding: 0.1rem 0.5rem;
+    font-size: 0.8rem;
+    display: flex;
+    align-items: center;
+    gap: 0.25rem;
+}
+
+.chip-remove {
+    background: none;
+    border: none;
+    cursor: pointer;
+    color: var(--text-secondary);
+    padding: 0;
+    line-height: 1;
+    font-size: 1rem;
+}

@@ -15,6 +15,7 @@ class TracesView {
             startTime: null,
             endTime: null
         };
+        this.attrFilters = [];
         this.trStart = null;
         this.trEnd = null;
         this.trWindowHours = null;
@@ -68,6 +69,21 @@ class TracesView {
                 </div>
                 <button id="apply-trace-filters" class="btn btn-primary">Apply Filters</button>
                 <button id="clear-trace-filters" class="btn btn-secondary">Clear</button>
+            </div>
+
+            <div class="attr-filter-bar" id="attr-filter-bar-traces">
+                <button id="quick-filter-errors-traces" class="btn btn-secondary btn-sm">Errors only</button>
+                <input type="text" id="attr-key-traces" placeholder="attribute key" class="filter-input attr-filter-key" list="attr-keys-traces-list">
+                <datalist id="attr-keys-traces-list"></datalist>
+                <select id="attr-op-traces" class="filter-select attr-filter-op">
+                    <option value="=">=</option>
+                    <option value="!=">&#8800;</option>
+                    <option value="exists">exists</option>
+                    <option value="!exists">!exists</option>
+                </select>
+                <input type="text" id="attr-val-traces" placeholder="value" class="filter-input attr-filter-val">
+                <button id="add-attr-filter-traces" class="btn btn-primary btn-sm">+ Add</button>
+                <div id="attr-chips-traces" class="attr-chips"></div>
             </div>
 
             <div class="traces-container">
@@ -164,6 +180,17 @@ class TracesView {
             document.getElementById('tr-preset-traces').value = '';
             this.currentPage = 0;
             this.loadTraces();
+        });
+
+        // Attribute filter bar
+        document.getElementById('add-attr-filter-traces').addEventListener('click', () => this._addAttrFilter());
+        document.getElementById('attr-val-traces').addEventListener('keydown', (e) => {
+            if (e.key === 'Enter') this._addAttrFilter();
+        });
+        document.getElementById('quick-filter-errors-traces').addEventListener('click', () => {
+            this.attrFilters.push({ key: 'error', op: '=', value: 'true' });
+            this._renderAttrChips();
+            this.renderTraces();
         });
     }
 
@@ -265,16 +292,24 @@ class TracesView {
     renderTraces() {
         const container = document.getElementById('traces-list');
 
-        if (this.traces.length === 0) {
+        // Populate attr key autocomplete from loaded data
+        this._updateAttrKeyDatalist();
+
+        // Apply client-side attribute filters
+        const displayTraces = this.attrFilters.length > 0
+            ? this.traces.filter(trace => this._matchesAttrFilters(trace))
+            : this.traces;
+
+        if (displayTraces.length === 0) {
             container.innerHTML = '<div class="empty-state">No traces found</div>';
             return;
         }
 
-        container.innerHTML = this.traces.map(trace => this.renderTraceEntry(trace)).join('');
+        container.innerHTML = displayTraces.map(trace => this.renderTraceEntry(trace)).join('');
 
         // Attach click handlers
         container.querySelectorAll('.trace-entry').forEach((entry, index) => {
-            entry.addEventListener('click', () => this.selectTrace(this.traces[index].trace_id));
+            entry.addEventListener('click', () => this.selectTrace(displayTraces[index].trace_id));
         });
     }
 
@@ -695,6 +730,8 @@ class TracesView {
             startTime: null,
             endTime: null
         };
+        this.attrFilters = [];
+        this._renderAttrChips();
         this.trStart = null;
         this.trEnd = null;
         this.trWindowHours = null;
@@ -1111,6 +1148,109 @@ class TracesView {
                 </div>
             `;
         }).join('');
+    }
+
+    /**
+     * Add an attribute filter from the input row
+     */
+    _addAttrFilter() {
+        const key = document.getElementById('attr-key-traces').value.trim();
+        const op = document.getElementById('attr-op-traces').value;
+        const value = document.getElementById('attr-val-traces').value.trim();
+        if (!key) return;
+        if ((op === '=' || op === '!=') && value === '') return;
+        this.attrFilters.push({ key, op, value });
+        document.getElementById('attr-key-traces').value = '';
+        document.getElementById('attr-val-traces').value = '';
+        document.getElementById('attr-op-traces').value = '=';
+        this._renderAttrChips();
+        this.renderTraces();
+    }
+
+    /**
+     * Render the attribute filter chips
+     */
+    _renderAttrChips() {
+        const container = document.getElementById('attr-chips-traces');
+        if (!container) return;
+        container.innerHTML = this.attrFilters.map((f, i) => {
+            const label = (f.op === 'exists' || f.op === '!exists')
+                ? `${f.key} ${f.op}`
+                : `${f.key}${f.op}${f.value}`;
+            return `<span class="attr-chip">${this.escapeHtml(label)}<button class="chip-remove" data-index="${i}" title="Remove">&#215;</button></span>`;
+        }).join('');
+        container.querySelectorAll('.chip-remove').forEach(btn => {
+            btn.addEventListener('click', () => {
+                const idx = parseInt(btn.getAttribute('data-index'), 10);
+                this.attrFilters.splice(idx, 1);
+                this._renderAttrChips();
+                this.renderTraces();
+            });
+        });
+    }
+
+    /**
+     * Populate the attr key datalist from currently loaded traces.
+     * Traces in list view may not carry attributes, but we still populate
+     * from any available data.
+     */
+    _updateAttrKeyDatalist() {
+        const datalist = document.getElementById('attr-keys-traces-list');
+        if (!datalist) return;
+        const keys = new Set();
+        // 'error' is always a useful synthetic key for has_errors
+        keys.add('error');
+        for (const trace of this.traces) {
+            if (trace.attributes) {
+                for (const k of Object.keys(trace.attributes)) keys.add(k);
+            }
+        }
+        datalist.innerHTML = Array.from(keys).map(k => `<option value="${this.escapeHtml(k)}">`).join('');
+    }
+
+    /**
+     * Test a single trace entry against all active attrFilters.
+     * Handles the synthetic 'error' key via has_errors, and falls back to
+     * trace.attributes for other keys.
+     */
+    _matchesAttrFilters(trace) {
+        const attrs = trace.attributes || {};
+        for (const f of this.attrFilters) {
+            // Synthetic 'error' key maps to has_errors boolean
+            if (f.key === 'error') {
+                const traceErrStr = String(trace.has_errors);
+                switch (f.op) {
+                    case '=':
+                        if (traceErrStr !== f.value) return false;
+                        break;
+                    case '!=':
+                        if (traceErrStr === f.value) return false;
+                        break;
+                    case 'exists':
+                        // has_errors always exists
+                        break;
+                    case '!exists':
+                        return false;
+                }
+                continue;
+            }
+            const val = f.key in attrs ? attrs[f.key] : undefined;
+            switch (f.op) {
+                case '=':
+                    if (String(val) !== f.value) return false;
+                    break;
+                case '!=':
+                    if (String(val) === f.value) return false;
+                    break;
+                case 'exists':
+                    if (!(f.key in attrs)) return false;
+                    break;
+                case '!exists':
+                    if (f.key in attrs) return false;
+                    break;
+            }
+        }
+        return true;
     }
 
     /**

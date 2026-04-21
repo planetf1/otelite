@@ -13,6 +13,7 @@ class LogsView {
             startTime: null,
             endTime: null
         };
+        this.attrFilters = [];
         this.trStart = null;
         this.trEnd = null;
         this.trWindowHours = null;
@@ -73,6 +74,21 @@ class LogsView {
                 <input type="text" id="resource-filter" placeholder="Resource filter (e.g., service.name=my-service)" class="filter-input" list="logs-resource-keys-list">
                 <button id="apply-filters" class="btn btn-primary">Apply Filters</button>
                 <button id="clear-filters" class="btn btn-secondary">Clear</button>
+            </div>
+
+            <div class="attr-filter-bar" id="attr-filter-bar-logs">
+                <button id="quick-filter-error-logs" class="btn btn-secondary btn-sm">ERROR</button>
+                <input type="text" id="attr-key-logs" placeholder="attribute key" class="filter-input attr-filter-key" list="attr-keys-logs-list">
+                <datalist id="attr-keys-logs-list"></datalist>
+                <select id="attr-op-logs" class="filter-select attr-filter-op">
+                    <option value="=">=</option>
+                    <option value="!=">&#8800;</option>
+                    <option value="exists">exists</option>
+                    <option value="!exists">!exists</option>
+                </select>
+                <input type="text" id="attr-val-logs" placeholder="value" class="filter-input attr-filter-val">
+                <button id="add-attr-filter-logs" class="btn btn-primary btn-sm">+ Add</button>
+                <div id="attr-chips-logs" class="attr-chips"></div>
             </div>
 
             <div id="logs-list" class="logs-list"></div>
@@ -165,6 +181,17 @@ class LogsView {
             this.currentPage = 0;
             this.loadLogs();
         });
+
+        // Attribute filter bar
+        document.getElementById('add-attr-filter-logs').addEventListener('click', () => this._addAttrFilter());
+        document.getElementById('attr-val-logs').addEventListener('keydown', (e) => {
+            if (e.key === 'Enter') this._addAttrFilter();
+        });
+        document.getElementById('quick-filter-error-logs').addEventListener('click', () => {
+            this.attrFilters.push({ key: 'severity', op: '=', value: 'ERROR' });
+            this._renderAttrChips();
+            this.renderLogs();
+        });
     }
 
     _syncDateInputs(suffix) {
@@ -244,12 +271,20 @@ class LogsView {
     renderLogs() {
         const container = document.getElementById('logs-list');
 
-        if (this.logs.length === 0) {
+        // Populate attr key autocomplete from loaded data
+        this._updateAttrKeyDatalist();
+
+        // Apply client-side attribute filters
+        const displayLogs = this.attrFilters.length > 0
+            ? this.logs.filter(log => this._matchesAttrFilters(log))
+            : this.logs;
+
+        if (displayLogs.length === 0) {
             container.innerHTML = '<div class="empty-state">No logs found</div>';
             return;
         }
 
-        container.innerHTML = this.logs.map(log => this.renderLogEntry(log)).join('');
+        container.innerHTML = displayLogs.map(log => this.renderLogEntry(log)).join('');
 
         // Attach click handlers for expansion
         container.querySelectorAll('.log-entry').forEach((entry, index) => {
@@ -412,6 +447,8 @@ class LogsView {
             startTime: null,
             endTime: null
         };
+        this.attrFilters = [];
+        this._renderAttrChips();
         this.trStart = null;
         this.trEnd = null;
         this.trWindowHours = null;
@@ -517,6 +554,89 @@ class LogsView {
         const div = document.createElement('div');
         div.textContent = text;
         return div.innerHTML;
+    }
+
+    /**
+     * Add an attribute filter from the input row
+     */
+    _addAttrFilter() {
+        const key = document.getElementById('attr-key-logs').value.trim();
+        const op = document.getElementById('attr-op-logs').value;
+        const value = document.getElementById('attr-val-logs').value.trim();
+        if (!key) return;
+        if ((op === '=' || op === '!=') && value === '') return;
+        this.attrFilters.push({ key, op, value });
+        document.getElementById('attr-key-logs').value = '';
+        document.getElementById('attr-val-logs').value = '';
+        document.getElementById('attr-op-logs').value = '=';
+        this._renderAttrChips();
+        this.renderLogs();
+    }
+
+    /**
+     * Render the attribute filter chips
+     */
+    _renderAttrChips() {
+        const container = document.getElementById('attr-chips-logs');
+        if (!container) return;
+        container.innerHTML = this.attrFilters.map((f, i) => {
+            const label = (f.op === 'exists' || f.op === '!exists')
+                ? `${f.key} ${f.op}`
+                : `${f.key}${f.op}${f.value}`;
+            return `<span class="attr-chip">${this.escapeHtml(label)}<button class="chip-remove" data-index="${i}" title="Remove">&#215;</button></span>`;
+        }).join('');
+        container.querySelectorAll('.chip-remove').forEach(btn => {
+            btn.addEventListener('click', () => {
+                const idx = parseInt(btn.getAttribute('data-index'), 10);
+                this.attrFilters.splice(idx, 1);
+                this._renderAttrChips();
+                this.renderLogs();
+            });
+        });
+    }
+
+    /**
+     * Populate the attr key datalist from currently loaded logs
+     */
+    _updateAttrKeyDatalist() {
+        const datalist = document.getElementById('attr-keys-logs-list');
+        if (!datalist) return;
+        const keys = new Set();
+        for (const log of this.logs) {
+            if (log.attributes) {
+                for (const k of Object.keys(log.attributes)) keys.add(k);
+            }
+            if (log.resource && log.resource.attributes) {
+                for (const k of Object.keys(log.resource.attributes)) keys.add(k);
+            }
+        }
+        datalist.innerHTML = Array.from(keys).map(k => `<option value="${this.escapeHtml(k)}">`).join('');
+    }
+
+    /**
+     * Test a single log entry against all active attrFilters
+     */
+    _matchesAttrFilters(log) {
+        const attrs = log.attributes || {};
+        const resAttrs = (log.resource && log.resource.attributes) ? log.resource.attributes : {};
+        for (const f of this.attrFilters) {
+            const val = f.key in attrs ? attrs[f.key] : (f.key in resAttrs ? resAttrs[f.key] : undefined);
+            switch (f.op) {
+                case '=':
+                    if (String(val) !== f.value) return false;
+                    break;
+                case '!=':
+                    if (String(val) === f.value) return false;
+                    break;
+                case 'exists':
+                    if (!(f.key in attrs) && !(f.key in resAttrs)) return false;
+                    break;
+                case '!exists':
+                    if ((f.key in attrs) || (f.key in resAttrs)) return false;
+                    break;
+            }
+        }
+        return true;
     }
 
     /**
