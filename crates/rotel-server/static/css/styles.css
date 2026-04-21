@@ -1954,6 +1954,25 @@ body {
     font-size: 1rem;
 }
 
+.log-col-tokens {
+    width: 5rem;
+    text-align: right;
+    font-variant-numeric: tabular-nums;
+    font-family: 'Courier New', monospace;
+    font-size: 0.8rem;
+    color: var(--text-secondary);
+    flex-shrink: 0;
+}
+
+.log-col-model {
+    width: 10rem;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: 0.8rem;
+    flex-shrink: 0;
+}
+
 /* Usage view */
 .usage-summary-cards {
     display: flex;

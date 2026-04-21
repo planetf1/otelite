@@ -21,6 +21,8 @@ class LogsView {
         this.pageSize = 100;
         this.autoRefresh = false;
         this.refreshInterval = null;
+        this.hasGenAiData = false;
+        this.llmView = localStorage.getItem('rotel_llm_view') === 'true';
     }
 
     /**
@@ -78,6 +80,7 @@ class LogsView {
 
             <div class="attr-filter-bar" id="attr-filter-bar-logs">
                 <button id="quick-filter-error-logs" class="btn btn-secondary btn-sm">ERROR</button>
+                <button id="llm-view-toggle" class="btn btn-secondary btn-sm hidden">LLM View</button>
                 <input type="text" id="attr-key-logs" placeholder="attribute key" class="filter-input attr-filter-key" list="attr-keys-logs-list">
                 <datalist id="attr-keys-logs-list"></datalist>
                 <select id="attr-op-logs" class="filter-select attr-filter-op">
@@ -192,6 +195,13 @@ class LogsView {
             this._renderAttrChips();
             this.renderLogs();
         });
+
+        document.getElementById('llm-view-toggle').addEventListener('click', () => {
+            this.llmView = !this.llmView;
+            localStorage.setItem('rotel_llm_view', this.llmView ? 'true' : 'false');
+            this._updateLlmToggleButton();
+            this.renderLogs();
+        });
     }
 
     _syncDateInputs(suffix) {
@@ -257,6 +267,10 @@ class LogsView {
 
             const response = await this.apiClient.getLogs(params);
             this.logs = response.logs;
+            this.hasGenAiData = this.logs.some(log =>
+                log.attributes && Object.keys(log.attributes).some(k => k.startsWith('gen_ai.'))
+            );
+            this._updateLlmToggleButton();
             this.renderLogs();
             this.updatePagination(response.total);
         } catch (error) {
@@ -284,7 +298,8 @@ class LogsView {
             return;
         }
 
-        container.innerHTML = displayLogs.map(log => this.renderLogEntry(log)).join('');
+        const useLlm = this.llmView && this.hasGenAiData;
+        container.innerHTML = displayLogs.map(log => this.renderLogEntry(log, useLlm)).join('');
 
         // Attach click handlers for expansion
         container.querySelectorAll('.log-entry').forEach((entry, index) => {
@@ -295,26 +310,47 @@ class LogsView {
     /**
      * Render a single log entry
      */
-    renderLogEntry(log) {
+    renderLogEntry(log, useLlm) {
         const timestamp = new Date(log.timestamp / 1000000); // Convert nanoseconds to milliseconds
         const severityClass = `severity-${log.severity.toLowerCase()}`;
+        const attrs = log.attributes || {};
+        const bodyPreview = this.escapeHtml(log.body.substring(0, 100)) + (log.body.length > 100 ? '...' : '');
+
+        let headerCols;
+        if (useLlm) {
+            const model = attrs['gen_ai.request.model'] || attrs['gen_ai.response.model'] || '—';
+            const inputTokens = attrs['gen_ai.usage.input_tokens'] != null ? attrs['gen_ai.usage.input_tokens'] : '—';
+            const outputTokens = attrs['gen_ai.usage.output_tokens'] != null ? attrs['gen_ai.usage.output_tokens'] : '—';
+            const finishReason = attrs['gen_ai.response.finish_reason'] || '—';
+            headerCols = `
+                    <span class="log-timestamp">${timestamp.toISOString()}</span>
+                    <span class="log-severity ${severityClass}">${log.severity}</span>
+                    <span class="log-col-model" title="${this.escapeHtml(model)}">${this.escapeHtml(String(model))}</span>
+                    <span class="log-col-tokens">${this.escapeHtml(String(inputTokens))}</span>
+                    <span class="log-col-tokens">${this.escapeHtml(String(outputTokens))}</span>
+                    <span class="log-col-tokens">${this.escapeHtml(String(finishReason))}</span>
+                    <span class="log-body-preview">${bodyPreview}</span>`;
+        } else {
+            headerCols = `
+                    <span class="log-timestamp">${timestamp.toISOString()}</span>
+                    <span class="log-severity ${severityClass}">${log.severity}</span>
+                    <span class="log-body-preview">${bodyPreview}</span>
+                    ${log.trace_id ? `<span class="log-trace-id" title="Trace ID">${log.trace_id.substring(0, 8)}...</span>` : ''}`;
+        }
 
         return `
             <div class="log-entry ${severityClass}" data-timestamp="${log.timestamp}">
                 <div class="log-header">
-                    <span class="log-timestamp">${timestamp.toISOString()}</span>
-                    <span class="log-severity ${severityClass}">${log.severity}</span>
-                    <span class="log-body-preview">${this.escapeHtml(log.body.substring(0, 100))}${log.body.length > 100 ? '...' : ''}</span>
-                    ${log.trace_id ? `<span class="log-trace-id" title="Trace ID">${log.trace_id.substring(0, 8)}...</span>` : ''}
+                    ${headerCols}
                 </div>
                 <div class="log-details" style="display: none;">
                     <div class="log-body">${this.escapeHtml(log.body)}</div>
                     ${log.trace_id ? `<div class="log-field"><strong>Trace ID:</strong> ${log.trace_id}</div>` : ''}
                     ${log.span_id ? `<div class="log-field"><strong>Span ID:</strong> ${log.span_id}</div>` : ''}
-                    ${Object.keys(log.attributes).length > 0 ? `
+                    ${Object.keys(attrs).length > 0 ? `
                         <div class="log-field">
                             <strong>Attributes:</strong>
-                            ${this.renderAttributeMap(log.attributes)}
+                            ${this.renderAttributeMap(attrs)}
                         </div>
                     ` : ''}
                     ${log.resource ? `
@@ -637,6 +673,20 @@ class LogsView {
             }
         }
         return true;
+    }
+
+    /**
+     * Update LLM View toggle button visibility and active state
+     */
+    _updateLlmToggleButton() {
+        const btn = document.getElementById('llm-view-toggle');
+        if (!btn) return;
+        if (this.hasGenAiData) {
+            btn.classList.remove('hidden');
+        } else {
+            btn.classList.add('hidden');
+        }
+        btn.textContent = this.llmView ? 'LLM View ✓' : 'LLM View';
     }
 
     /**
