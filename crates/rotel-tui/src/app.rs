@@ -43,6 +43,8 @@ pub struct App {
     pub filter_input_active: bool,
     /// The string being typed in filter input mode
     pub filter_input_buffer: String,
+    /// Last API error, cleared on success
+    pub api_error: Option<String>,
 }
 
 impl App {
@@ -67,6 +69,7 @@ impl App {
             last_refresh: Instant::now(),
             filter_input_active: false,
             filter_input_buffer: String::new(),
+            api_error: None,
         }
     }
 
@@ -306,6 +309,7 @@ impl App {
                         &self.logs_state,
                         self.filter_input_active,
                         &self.filter_input_buffer,
+                        self.api_error.as_deref(),
                     );
                 },
                 View::Traces => {
@@ -315,10 +319,16 @@ impl App {
                         &self.traces_state,
                         self.filter_input_active,
                         &self.filter_input_buffer,
+                        self.api_error.as_deref(),
                     );
                 },
                 View::Metrics => {
-                    ui::render_metrics_view(f, area, &self.metrics_state);
+                    ui::render_metrics_view(
+                        f,
+                        area,
+                        &self.metrics_state,
+                        self.api_error.as_deref(),
+                    );
                 },
                 View::Help => {
                     ui::render_help_view(f, area, &self.config.version);
@@ -337,10 +347,13 @@ impl App {
                 Ok(trace) => {
                     self.traces_state.set_trace_details(trace);
                     self.traces_state.clear_error();
+                    self.api_error = None;
                 },
                 Err(e) => {
+                    let msg = e.to_string();
                     self.traces_state
-                        .set_error(format!("Failed to load trace: {}", e));
+                        .set_error(format!("Failed to load trace: {}", msg));
+                    self.api_error = Some(msg);
                 },
             }
         }
@@ -363,10 +376,13 @@ impl App {
                     Ok(response) => {
                         self.logs_state.update_logs(response.logs);
                         self.logs_state.clear_error();
+                        self.api_error = None;
                     },
                     Err(e) => {
+                        let msg = e.to_string();
                         self.logs_state
-                            .set_error(format!("Failed to fetch logs: {}", e));
+                            .set_error(format!("Failed to fetch logs: {}", msg));
+                        self.api_error = Some(msg);
                     },
                 }
             },
@@ -377,10 +393,13 @@ impl App {
                     Ok(response) => {
                         self.traces_state.update_traces(response.traces);
                         self.traces_state.clear_error();
+                        self.api_error = None;
                     },
                     Err(e) => {
+                        let msg = e.to_string();
                         self.traces_state
-                            .set_error(format!("Failed to fetch traces: {}", e));
+                            .set_error(format!("Failed to fetch traces: {}", msg));
+                        self.api_error = Some(msg);
                     },
                 }
             },
@@ -390,10 +409,13 @@ impl App {
                     Ok(response) => {
                         self.metrics_state.update_metrics(response);
                         self.metrics_state.clear_error();
+                        self.api_error = None;
                     },
                     Err(e) => {
+                        let msg = e.to_string();
                         self.metrics_state
-                            .set_error(format!("Failed to fetch metrics: {}", e));
+                            .set_error(format!("Failed to fetch metrics: {}", msg));
+                        self.api_error = Some(msg);
                     },
                 }
             },

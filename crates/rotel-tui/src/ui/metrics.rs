@@ -1,8 +1,8 @@
 use crate::api::models::Metric;
 use crate::state::MetricsState;
-use crate::ui::render_tab_bar;
+use crate::ui::{logs::render_api_error_banner, render_tab_bar};
 use ratatui::{
-    layout::{Constraint, Direction, Layout, Rect},
+    layout::{Alignment, Constraint, Direction, Layout, Rect},
     style::{Color, Modifier, Style},
     text::{Line, Span},
     widgets::{Block, Borders, Cell, Paragraph, Row, Sparkline, Table, TableState, Wrap},
@@ -10,7 +10,24 @@ use ratatui::{
 };
 
 /// Render the metrics view
-pub fn render_metrics_view(frame: &mut Frame, area: Rect, state: &MetricsState) {
+pub fn render_metrics_view(
+    frame: &mut Frame,
+    area: Rect,
+    state: &MetricsState,
+    api_error: Option<&str>,
+) {
+    // Optionally prepend a 1-line error banner
+    let content_area = if let Some(err) = api_error {
+        let splits = Layout::default()
+            .direction(Direction::Vertical)
+            .constraints([Constraint::Length(1), Constraint::Min(0)])
+            .split(area);
+        render_api_error_banner(frame, splits[0], err);
+        splits[1]
+    } else {
+        area
+    };
+
     // Split the area into tab bar, main content and status bar
     let chunks = Layout::default()
         .direction(Direction::Vertical)
@@ -19,7 +36,7 @@ pub fn render_metrics_view(frame: &mut Frame, area: Rect, state: &MetricsState) 
             Constraint::Min(3),    // Main content
             Constraint::Length(1), // Status bar
         ])
-        .split(area);
+        .split(content_area);
 
     render_tab_bar(frame, chunks[0], "Metrics");
 
@@ -31,7 +48,7 @@ pub fn render_metrics_view(frame: &mut Frame, area: Rect, state: &MetricsState) 
     }
 
     // Render status bar
-    render_status_bar(frame, chunks[2], state);
+    render_status_bar(frame, chunks[2], state, api_error);
 }
 
 /// Render metrics table only
@@ -40,6 +57,33 @@ fn render_metrics_table(frame: &mut Frame, area: Rect, state: &MetricsState) {
 
     // Deduplicated list: one row per unique metric name
     let unique_metrics = state.unique_filtered_metrics();
+
+    // Empty state: no data and no error
+    if unique_metrics.is_empty() && state.error.is_none() {
+        let block = Block::default()
+            .borders(Borders::ALL)
+            .title(" Metrics (0) ");
+        let inner = block.inner(area);
+        frame.render_widget(block, area);
+        let paragraph =
+            Paragraph::new("No metrics yet — send OTLP data to :4317 (gRPC) or :4318 (HTTP)")
+                .alignment(Alignment::Center)
+                .style(Style::default().fg(Color::DarkGray));
+        if inner.height > 2 {
+            let v_splits = Layout::default()
+                .direction(Direction::Vertical)
+                .constraints([
+                    Constraint::Length(inner.height / 2),
+                    Constraint::Length(1),
+                    Constraint::Min(0),
+                ])
+                .split(inner);
+            frame.render_widget(paragraph, v_splits[1]);
+        } else {
+            frame.render_widget(paragraph, inner);
+        }
+        return;
+    }
 
     // Create rows — no manual selection; row_highlight_style handles it
     let rows: Vec<Row> = unique_metrics
@@ -347,7 +391,7 @@ fn render_metric_chart(frame: &mut Frame, area: Rect, metric: &Metric, state: &M
 }
 
 /// Render status bar
-fn render_status_bar(frame: &mut Frame, area: Rect, state: &MetricsState) {
+fn render_status_bar(frame: &mut Frame, area: Rect, state: &MetricsState, api_error: Option<&str>) {
     let mut status_parts = vec![];
 
     // View indicator
@@ -357,6 +401,23 @@ fn render_status_bar(frame: &mut Frame, area: Rect, state: &MetricsState) {
             .fg(Color::Black)
             .bg(Color::Magenta)
             .add_modifier(Modifier::BOLD),
+    ));
+
+    // Connection status
+    status_parts.push(Span::raw(" "));
+    if api_error.is_some() {
+        status_parts.push(Span::styled(
+            "Disconnected",
+            Style::default().fg(Color::Red),
+        ));
+    } else {
+        status_parts.push(Span::styled("Connected", Style::default().fg(Color::Green)));
+    }
+
+    // Item count
+    status_parts.push(Span::styled(
+        format!(" | Metrics: {} ", state.unique_filtered_metrics().len()),
+        Style::default().fg(Color::DarkGray),
     ));
 
     // Search indicator

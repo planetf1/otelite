@@ -2,7 +2,7 @@ use crate::api::models::LogEntry;
 use crate::state::LogsState;
 use crate::ui::render_tab_bar;
 use ratatui::{
-    layout::{Constraint, Direction, Layout, Rect},
+    layout::{Alignment, Constraint, Direction, Layout, Rect},
     style::{Color, Modifier, Style},
     text::{Line, Span, Text},
     widgets::{Block, Borders, Cell, Paragraph, Row, Table, TableState, Wrap},
@@ -10,13 +10,27 @@ use ratatui::{
 };
 
 /// Render the logs view
+#[allow(clippy::too_many_arguments)]
 pub fn render_logs_view(
     frame: &mut Frame,
     area: Rect,
     state: &LogsState,
     filter_input_active: bool,
     filter_input_buffer: &str,
+    api_error: Option<&str>,
 ) {
+    // Optionally prepend a 1-line error banner
+    let content_area = if let Some(err) = api_error {
+        let splits = Layout::default()
+            .direction(Direction::Vertical)
+            .constraints([Constraint::Length(1), Constraint::Min(0)])
+            .split(area);
+        render_api_error_banner(frame, splits[0], err);
+        splits[1]
+    } else {
+        area
+    };
+
     // Split the area: tab bar | main content | [filter bar] | status bar
     let constraints = if filter_input_active {
         vec![
@@ -36,7 +50,7 @@ pub fn render_logs_view(
     let chunks = Layout::default()
         .direction(Direction::Vertical)
         .constraints(constraints)
-        .split(area);
+        .split(content_area);
 
     render_tab_bar(frame, chunks[0], "Logs");
 
@@ -49,15 +63,41 @@ pub fn render_logs_view(
 
     if filter_input_active {
         render_filter_input_bar(frame, chunks[2], filter_input_buffer);
-        render_status_bar(frame, chunks[3], state);
+        render_status_bar(frame, chunks[3], state, api_error);
     } else {
-        render_status_bar(frame, chunks[2], state);
+        render_status_bar(frame, chunks[2], state, api_error);
     }
 }
 
 /// Render logs table only
 fn render_logs_table(frame: &mut Frame, area: Rect, state: &LogsState) {
     let filtered_logs = state.filtered_logs();
+
+    // Empty state: no data and no error
+    if filtered_logs.is_empty() && state.error.is_none() {
+        let block = Block::default().borders(Borders::ALL).title(" Logs (0) ");
+        let inner = block.inner(area);
+        frame.render_widget(block, area);
+        let paragraph =
+            Paragraph::new("No logs yet — send OTLP data to :4317 (gRPC) or :4318 (HTTP)")
+                .alignment(Alignment::Center)
+                .style(Style::default().fg(Color::DarkGray));
+        // Vertically centre in the inner area
+        if inner.height > 2 {
+            let v_splits = Layout::default()
+                .direction(Direction::Vertical)
+                .constraints([
+                    Constraint::Length(inner.height / 2),
+                    Constraint::Length(1),
+                    Constraint::Min(0),
+                ])
+                .split(inner);
+            frame.render_widget(paragraph, v_splits[1]);
+        } else {
+            frame.render_widget(paragraph, inner);
+        }
+        return;
+    }
 
     // Create table rows — no manual selection; row_highlight_style handles it
     let rows: Vec<Row> = filtered_logs
@@ -205,7 +245,7 @@ fn append_formatted_key_value_lines(
 }
 
 /// Render status bar
-fn render_status_bar(frame: &mut Frame, area: Rect, state: &LogsState) {
+fn render_status_bar(frame: &mut Frame, area: Rect, state: &LogsState, api_error: Option<&str>) {
     let mut status_parts = vec![];
 
     // View indicator
@@ -215,6 +255,23 @@ fn render_status_bar(frame: &mut Frame, area: Rect, state: &LogsState) {
             .fg(Color::Black)
             .bg(Color::Blue)
             .add_modifier(Modifier::BOLD),
+    ));
+
+    // Connection status
+    status_parts.push(Span::raw(" "));
+    if api_error.is_some() {
+        status_parts.push(Span::styled(
+            "Disconnected",
+            Style::default().fg(Color::Red),
+        ));
+    } else {
+        status_parts.push(Span::styled("Connected", Style::default().fg(Color::Green)));
+    }
+
+    // Item count
+    status_parts.push(Span::styled(
+        format!(" | Logs: {} ", state.filtered_logs().len()),
+        Style::default().fg(Color::DarkGray),
     ));
 
     // Search indicator
@@ -265,6 +322,13 @@ fn render_status_bar(frame: &mut Frame, area: Rect, state: &LogsState) {
 
     let status_line = Line::from(status_parts);
     let paragraph = Paragraph::new(status_line);
+    frame.render_widget(paragraph, area);
+}
+
+/// Render a full-width red error banner (1 line)
+pub(crate) fn render_api_error_banner(frame: &mut Frame, area: Rect, err: &str) {
+    let paragraph = Paragraph::new(format!("⚠ Cannot connect to API: {}", err))
+        .style(Style::default().fg(Color::Red).bg(Color::Black));
     frame.render_widget(paragraph, area);
 }
 
