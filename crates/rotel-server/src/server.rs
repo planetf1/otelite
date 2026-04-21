@@ -3,7 +3,10 @@
 use crate::cache::LruCache;
 use crate::config::DashboardConfig;
 use crate::static_files;
-use axum::{routing::get, Router};
+use axum::{
+    routing::{get, post},
+    Router,
+};
 use rotel_storage::StorageBackend;
 use serde::Serialize;
 use std::sync::Arc;
@@ -18,6 +21,7 @@ use utoipa::OpenApi;
     paths(
         crate::api::health::health_check,
         crate::api::stats::get_stats,
+        crate::api::admin::purge_all,
         crate::api::help::api_help,
         crate::api::logs::list_logs,
         crate::api::logs::get_log,
@@ -51,6 +55,7 @@ use utoipa::OpenApi;
             rotel_core::api::SystemUsage,
             crate::api::health::HealthResponse,
             crate::api::stats::StatsResponse,
+            crate::api::admin::PurgeAllResponse,
             crate::api::metrics::AggregateResponse,
             crate::api::metrics::TimeBucket,
             crate::api::metrics::TimeseriesQuery,
@@ -64,7 +69,8 @@ use utoipa::OpenApi;
         (name = "logs", description = "Log query and export endpoints"),
         (name = "traces", description = "Trace query and export endpoints"),
         (name = "metrics", description = "Metric query and aggregation endpoints"),
-        (name = "genai", description = "GenAI/LLM token usage and analytics endpoints")
+        (name = "genai", description = "GenAI/LLM token usage and analytics endpoints"),
+        (name = "admin", description = "Administrative endpoints for data management")
     ),
     info(
         title = "Rotel API",
@@ -171,6 +177,8 @@ impl DashboardServer {
             .route("/api/resource-keys", get(crate::api::resource_keys::get_resource_keys))
             // API routes - Stats
             .route("/api/stats", get(crate::api::stats::get_stats))
+            // API routes - Admin
+            .route("/api/admin/purge", post(crate::api::admin::purge_all))
             // API routes - GenAI
             .route("/api/genai/usage", get(crate::api::get_token_usage))
             // OpenAPI spec endpoint

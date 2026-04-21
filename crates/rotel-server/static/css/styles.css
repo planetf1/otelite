@@ -200,6 +200,27 @@ body {
     justify-content: center;
 }
 
+.popover-action-row {
+    justify-content: center;
+    padding: 6px 14px;
+}
+
+.popover-danger-btn {
+    background: transparent;
+    border: 1px solid var(--error-color, #f38ba8);
+    color: var(--error-color, #f38ba8);
+    border-radius: 4px;
+    padding: 4px 12px;
+    font-size: 0.8rem;
+    cursor: pointer;
+    width: 100%;
+}
+
+.popover-danger-btn:hover {
+    background: var(--error-color, #f38ba8);
+    color: var(--bg-primary, #1e1e2e);
+}
+
 /* Main Content */
 .main-content {
     flex: 1;

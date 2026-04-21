@@ -119,6 +119,8 @@ Only implementation: `SqliteBackend` (`src/sqlite/mod.rs`). Uses WAL mode, FTS5 
 
 **There is no mock implementation.** Tests use `SqliteBackend` with an in-memory or temp-dir database.
 
+**Data Retention:** By default, rotel retains 90 days of telemetry data. The retention window is configurable via the `ROTEL_RETENTION_DAYS` environment variable (set to `0` to disable automatic purging). A background task runs daily at 02:00 local time and deletes records older than the retention threshold in batches of 10,000 rows to avoid locking the database. Users can also trigger an immediate full purge via `POST /api/admin/purge` or the "Clear all data" button in the web UI status popover.
+
 ---
 
 ### rotel-receiver

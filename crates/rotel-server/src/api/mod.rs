@@ -1,5 +1,6 @@
 // API module
 
+pub mod admin;
 pub mod genai;
 pub mod health;
 pub mod help;

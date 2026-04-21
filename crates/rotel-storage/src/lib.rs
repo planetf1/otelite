@@ -16,6 +16,17 @@ use rotel_core::telemetry::{LogRecord, Metric, Span};
 pub use config::StorageConfig;
 pub use error::{Result, StorageError};
 
+/// Statistics returned after a purge_all operation
+#[derive(Debug, Clone)]
+pub struct PurgeAllStats {
+    /// Number of log records deleted
+    pub logs_deleted: u64,
+    /// Number of spans deleted
+    pub spans_deleted: u64,
+    /// Number of metric data points deleted
+    pub metrics_deleted: u64,
+}
+
 /// Statistics about stored telemetry data
 #[derive(Debug, Clone)]
 pub struct StorageStats {
@@ -106,6 +117,9 @@ pub trait StorageBackend: Send + Sync {
 
     /// Purge old data based on retention policy
     async fn purge(&self, options: &PurgeOptions) -> Result<u64>;
+
+    /// Delete all telemetry data immediately
+    async fn purge_all(&self) -> Result<PurgeAllStats>;
 
     /// Close the storage backend
     async fn close(&mut self) -> Result<()>;

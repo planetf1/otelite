@@ -1,7 +1,9 @@
 //! SQLite backend implementation
 
 use crate::error::{Result, StorageError};
-use crate::{PurgeOptions, QueryParams, StorageBackend, StorageConfig, StorageStats};
+use crate::{
+    PurgeAllStats, PurgeOptions, QueryParams, StorageBackend, StorageConfig, StorageStats,
+};
 use async_trait::async_trait;
 use chrono::Timelike;
 use rotel_core::telemetry::{LogRecord, Metric, Span};
@@ -192,6 +194,45 @@ impl StorageBackend for SqliteBackend {
 
         let total_deleted = record.logs_deleted + record.spans_deleted + record.metrics_deleted;
         Ok(total_deleted as u64)
+    }
+
+    async fn purge_all(&self) -> Result<PurgeAllStats> {
+        // Acquire purge lock
+        let _guard = self.purge_lock.try_lock().await?;
+
+        let mut conn_guard = self.conn.lock().unwrap();
+        let conn = conn_guard
+            .as_mut()
+            .ok_or_else(|| StorageError::WriteError("Database not initialized".to_string()))?;
+
+        let tx = conn
+            .transaction()
+            .map_err(|e| StorageError::WriteError(format!("Failed to start transaction: {}", e)))?;
+
+        let logs_deleted = tx
+            .execute("DELETE FROM logs", [])
+            .map_err(|e| StorageError::WriteError(format!("Failed to delete logs: {}", e)))?
+            as u64;
+        let spans_deleted = tx
+            .execute("DELETE FROM spans", [])
+            .map_err(|e| StorageError::WriteError(format!("Failed to delete spans: {}", e)))?
+            as u64;
+        let metrics_deleted = tx
+            .execute("DELETE FROM metrics", [])
+            .map_err(|e| StorageError::WriteError(format!("Failed to delete metrics: {}", e)))?
+            as u64;
+
+        tx.commit().map_err(|e| {
+            StorageError::WriteError(format!("Failed to commit transaction: {}", e))
+        })?;
+
+        purge::vacuum(conn)?;
+
+        Ok(PurgeAllStats {
+            logs_deleted,
+            spans_deleted,
+            metrics_deleted,
+        })
     }
 
     async fn distinct_resource_keys(&self, signal: &str) -> Result<Vec<String>> {

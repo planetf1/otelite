@@ -201,7 +201,9 @@ class App {
             ${statsHtml}
             <div class="popover-divider"></div>
             <div class="popover-row"><span class="popover-label">gRPC</span><span class="popover-value">:4317</span></div>
-            <div class="popover-row"><span class="popover-label">HTTP</span><span class="popover-value">:4318</span></div>`;
+            <div class="popover-row"><span class="popover-label">HTTP</span><span class="popover-value">:4318</span></div>
+            <div class="popover-divider"></div>
+            <div class="popover-row popover-action-row"><button class="popover-danger-btn" onclick="app.clearAllData()">Clear all data</button></div>`;
     }
 
     /**
@@ -212,6 +214,21 @@ class App {
         const popover = document.getElementById('status-popover');
         if (popover) {
             popover.classList.remove('visible');
+        }
+    }
+
+    /**
+     * Delete all telemetry data after user confirmation
+     */
+    async clearAllData() {
+        if (!confirm('Delete all telemetry data? This cannot be undone.')) {
+            return;
+        }
+        try {
+            await fetch('/api/admin/purge', { method: 'POST' });
+            await this.refreshPopover();
+        } catch (_) {
+            // refreshPopover will show the error state if the server is unreachable
         }
     }
 
