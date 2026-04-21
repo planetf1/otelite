@@ -488,6 +488,19 @@ fn format_span_detail(span: &Span, trace: &Trace) -> Text<'static> {
             ]));
         }
 
+        if let Some(response_model) = &genai_info.response_model {
+            // Only show if it differs from the request model
+            if genai_info.model.as_deref() != Some(response_model.as_str()) {
+                lines.push(Line::from(vec![
+                    TextSpan::styled(
+                        "  Response model: ",
+                        Style::default().add_modifier(Modifier::BOLD),
+                    ),
+                    TextSpan::raw(response_model.clone()),
+                ]));
+            }
+        }
+
         if let Some(operation) = &genai_info.operation {
             lines.push(Line::from(vec![
                 TextSpan::styled(
@@ -503,6 +516,30 @@ fn format_span_detail(span: &Span, trace: &Trace) -> Text<'static> {
                 TextSpan::styled("  Tokens: ", Style::default().add_modifier(Modifier::BOLD)),
                 TextSpan::styled(token_usage, Style::default().fg(Color::Yellow)),
             ]));
+        }
+
+        if let Some(n) = genai_info.cache_creation_tokens {
+            if n > 0 {
+                lines.push(Line::from(vec![
+                    TextSpan::styled(
+                        "  Cache creation: ",
+                        Style::default().add_modifier(Modifier::BOLD),
+                    ),
+                    TextSpan::styled(n.to_string(), Style::default().fg(Color::Yellow)),
+                ]));
+            }
+        }
+
+        if let Some(n) = genai_info.cache_read_tokens {
+            if n > 0 {
+                lines.push(Line::from(vec![
+                    TextSpan::styled(
+                        "  Cache read: ",
+                        Style::default().add_modifier(Modifier::BOLD),
+                    ),
+                    TextSpan::styled(n.to_string(), Style::default().fg(Color::Yellow)),
+                ]));
+            }
         }
 
         if let Some(temp) = genai_info.temperature {

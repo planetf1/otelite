@@ -17,6 +17,8 @@ fn test_query_token_usage_empty() {
     assert_eq!(summary.total_input_tokens, 0);
     assert_eq!(summary.total_output_tokens, 0);
     assert_eq!(summary.total_requests, 0);
+    assert_eq!(summary.total_cache_creation_tokens, 0);
+    assert_eq!(summary.total_cache_read_tokens, 0);
     assert_eq!(by_model.len(), 0);
     assert_eq!(by_system.len(), 0);
 }

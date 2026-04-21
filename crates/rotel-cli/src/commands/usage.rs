@@ -32,20 +32,15 @@ pub struct UsageCommand {
 
 impl UsageCommand {
     /// Execute the usage command
-    pub fn execute(&self, _storage: Arc<dyn StorageBackend>) -> Result<()> {
+    pub async fn execute(&self, storage: Arc<dyn StorageBackend>) -> Result<()> {
         // Parse time range
-        let (_start_time, _end_time) = parse_time_range(&self.since)?;
+        let (start_time, _end_time) = parse_time_range(&self.since)?;
 
         // Query token usage from storage
-        // TODO: Add query_token_usage method to StorageBackend trait
-        // For now, return placeholder data
-        let summary = rotel_core::api::TokenUsageSummary {
-            total_input_tokens: 0,
-            total_output_tokens: 0,
-            total_requests: 0,
-        };
-        let by_model = Vec::new();
-        let by_system = Vec::new();
+        let (summary, by_model, by_system) = storage
+            .query_token_usage(Some(start_time), None)
+            .await
+            .map_err(|e| Error::ApiError(format!("Failed to query token usage: {}", e)))?;
 
         // Filter results if requested
         let by_model: Vec<rotel_core::api::ModelUsage> = if let Some(ref model_filter) = self.model
@@ -155,6 +150,19 @@ fn display_summary(summary: &rotel_core::api::TokenUsageSummary) {
     ]);
     table.add_row(vec!["Total Requests", &summary.total_requests.to_string()]);
 
+    if summary.total_cache_creation_tokens > 0 {
+        table.add_row(vec![
+            "Cache Creation Tokens",
+            &format_number(summary.total_cache_creation_tokens),
+        ]);
+    }
+    if summary.total_cache_read_tokens > 0 {
+        table.add_row(vec![
+            "Cache Read Tokens",
+            &format_number(summary.total_cache_read_tokens),
+        ]);
+    }
+
     println!("{}", table);
 }
 
@@ -215,8 +223,9 @@ fn display_by_system(systems: &[rotel_core::api::SystemUsage]) {
 
     for system in systems {
         let total = system.input_tokens + system.output_tokens;
+        let display_name = rotel_core::telemetry::GenAiSpanInfo::format_system_name(&system.system);
         table.add_row(vec![
-            &capitalize(&system.system),
+            &display_name,
             &format_number(system.input_tokens),
             &format_number(system.output_tokens),
             &format_number(total),
@@ -241,15 +250,6 @@ fn format_number(n: u64) -> String {
     }
 
     result.chars().rev().collect()
-}
-
-/// Capitalize first letter of string
-fn capitalize(s: &str) -> String {
-    let mut chars = s.chars();
-    match chars.next() {
-        None => String::new(),
-        Some(first) => first.to_uppercase().collect::<String>() + chars.as_str(),
-    }
 }
 
 #[cfg(test)]
@@ -285,12 +285,5 @@ mod tests {
         assert_eq!(format_number(1234), "1,234");
         assert_eq!(format_number(1234567), "1,234,567");
         assert_eq!(format_number(123), "123");
-    }
-
-    #[test]
-    fn test_capitalize() {
-        assert_eq!(capitalize("openai"), "Openai");
-        assert_eq!(capitalize("anthropic"), "Anthropic");
-        assert_eq!(capitalize(""), "");
     }
 }

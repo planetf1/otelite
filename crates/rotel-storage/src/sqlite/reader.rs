@@ -502,9 +502,12 @@ pub fn query_token_usage(
     Vec<rotel_core::api::ModelUsage>,
     Vec<rotel_core::api::SystemUsage>,
 )> {
-    // Build WHERE clause for time filtering
-    let mut where_clause =
-        String::from("WHERE json_extract(attributes, '$.\"gen_ai.system\"') IS NOT NULL");
+    // Build WHERE clause for time filtering.
+    // Accept spans that have either gen_ai.provider.name (new) or gen_ai.system (deprecated).
+    let mut where_clause = String::from(
+        "WHERE (json_extract(attributes, '$.\"gen_ai.system\"') IS NOT NULL \
+             OR json_extract(attributes, '$.\"gen_ai.provider.name\"') IS NOT NULL)",
+    );
     let mut params: Vec<Box<dyn rusqlite::ToSql>> = Vec::new();
 
     if let Some(start) = start_time {
@@ -521,7 +524,9 @@ pub fn query_token_usage(
         "SELECT
             COALESCE(SUM(CAST(json_extract(attributes, '$.\"gen_ai.usage.input_tokens\"') AS INTEGER)), 0) as total_input,
             COALESCE(SUM(CAST(json_extract(attributes, '$.\"gen_ai.usage.output_tokens\"') AS INTEGER)), 0) as total_output,
-            COUNT(*) as total_requests
+            COUNT(*) as total_requests,
+            COALESCE(SUM(CAST(json_extract(attributes, '$.\"gen_ai.usage.cache_creation.input_tokens\"') AS INTEGER)), 0) as cache_creation,
+            COALESCE(SUM(CAST(json_extract(attributes, '$.\"gen_ai.usage.cache_read.input_tokens\"') AS INTEGER)), 0) as cache_read
         FROM spans
         {}",
         where_clause
@@ -535,6 +540,8 @@ pub fn query_token_usage(
                 total_input_tokens: row.get::<_, i64>(0)? as u64,
                 total_output_tokens: row.get::<_, i64>(1)? as u64,
                 total_requests: row.get::<_, i64>(2)? as usize,
+                total_cache_creation_tokens: row.get::<_, i64>(3)? as u64,
+                total_cache_read_tokens: row.get::<_, i64>(4)? as u64,
             })
         })
         .map_err(|e| StorageError::QueryError(format!("Failed to query token summary: {}", e)))?;
@@ -573,10 +580,10 @@ pub fn query_token_usage(
         .collect::<std::result::Result<Vec<_>, _>>()
         .map_err(|e| StorageError::QueryError(format!("Failed to parse model results: {}", e)))?;
 
-    // Query by system
+    // Query by system — COALESCE prefers the new gen_ai.provider.name attribute
     let system_query = format!(
         "SELECT
-            json_extract(attributes, '$.\"gen_ai.system\"') as system,
+            COALESCE(json_extract(attributes, '$.\"gen_ai.provider.name\"'), json_extract(attributes, '$.\"gen_ai.system\"')) as system,
             COALESCE(SUM(CAST(json_extract(attributes, '$.\"gen_ai.usage.input_tokens\"') AS INTEGER)), 0) as input_tokens,
             COALESCE(SUM(CAST(json_extract(attributes, '$.\"gen_ai.usage.output_tokens\"') AS INTEGER)), 0) as output_tokens,
             COUNT(*) as requests

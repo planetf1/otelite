@@ -449,6 +449,12 @@ pub struct TokenUsageSummary {
     pub total_output_tokens: u64,
     /// Total number of GenAI requests
     pub total_requests: usize,
+    /// Total cache creation input tokens (Anthropic prompt caching)
+    #[serde(default)]
+    pub total_cache_creation_tokens: u64,
+    /// Total cache read input tokens (Anthropic prompt caching)
+    #[serde(default)]
+    pub total_cache_read_tokens: u64,
 }
 
 /// Token usage for a specific model

@@ -561,12 +561,15 @@ class TracesView {
         }
 
         const info = {
-            system: attributes['gen_ai.system'],
+            system: attributes['gen_ai.provider.name'] || attributes['gen_ai.system'],
             model: attributes['gen_ai.request.model'],
+            responseModel: attributes['gen_ai.response.model'] || null,
             operation: attributes['gen_ai.operation.name'],
             inputTokens: attributes['gen_ai.usage.input_tokens'] ? parseInt(attributes['gen_ai.usage.input_tokens']) : null,
             outputTokens: attributes['gen_ai.usage.output_tokens'] ? parseInt(attributes['gen_ai.usage.output_tokens']) : null,
             totalTokens: attributes['gen_ai.usage.total_tokens'] ? parseInt(attributes['gen_ai.usage.total_tokens']) : null,
+            cacheCreationTokens: attributes['gen_ai.usage.cache_creation.input_tokens'] ? parseInt(attributes['gen_ai.usage.cache_creation.input_tokens']) : null,
+            cacheReadTokens: attributes['gen_ai.usage.cache_read.input_tokens'] ? parseInt(attributes['gen_ai.usage.cache_read.input_tokens']) : null,
             temperature: attributes['gen_ai.request.temperature'] ? parseFloat(attributes['gen_ai.request.temperature']) : null,
             maxTokens: attributes['gen_ai.request.max_tokens'] ? parseInt(attributes['gen_ai.request.max_tokens']) : null,
             finishReasons: this.parseFinishReasons(attributes['gen_ai.response.finish_reasons'])
@@ -610,8 +613,11 @@ class TracesView {
                 </div>
                 <div class="genai-details">
                     ${info.model ? `<div class="genai-detail-item"><strong>Model:</strong> ${this.escapeHtml(info.model)}</div>` : ''}
+                    ${info.responseModel && info.responseModel !== info.model ? `<div class="genai-detail-item"><strong>Actual model:</strong> ${this.escapeHtml(info.responseModel)}</div>` : ''}
                     ${info.operation ? `<div class="genai-detail-item"><strong>Operation:</strong> ${this.escapeHtml(info.operation)}</div>` : ''}
                     ${tokenUsage ? `<div class="genai-detail-item"><strong>Tokens:</strong> <span class="genai-tokens">${tokenUsage}</span></div>` : ''}
+                    ${info.cacheCreationTokens ? `<div class="genai-detail-item"><strong>Cache creation:</strong> ${info.cacheCreationTokens.toLocaleString()}</div>` : ''}
+                    ${info.cacheReadTokens ? `<div class="genai-detail-item"><strong>Cache read:</strong> ${info.cacheReadTokens.toLocaleString()}</div>` : ''}
                     ${info.temperature !== null ? `<div class="genai-detail-item"><strong>Temperature:</strong> ${info.temperature.toFixed(2)}</div>` : ''}
                     ${info.maxTokens ? `<div class="genai-detail-item"><strong>Max Tokens:</strong> ${info.maxTokens.toLocaleString()}</div>` : ''}
                     ${info.finishReasons.length > 0 ? `<div class="genai-detail-item"><strong>Finish Reasons:</strong> ${info.finishReasons.join(', ')}</div>` : ''}

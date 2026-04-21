@@ -473,7 +473,7 @@ async fn run_cli() -> Result<()> {
         Some(Commands::Metrics { command }) => handle_metrics_command(command, &config).await,
         Some(Commands::Usage(cmd)) => {
             let storage = create_storage(&config)?;
-            cmd.execute(storage)?;
+            cmd.execute(storage).await?;
             Ok(())
         },
         Some(Commands::Tui {

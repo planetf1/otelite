@@ -14,6 +14,8 @@ pub struct GenAiSpanInfo {
     pub system: Option<String>,
     /// The model name (e.g., "gpt-4", "claude-sonnet-4-20250514")
     pub model: Option<String>,
+    /// The response model (may differ from request model due to routing)
+    pub response_model: Option<String>,
     /// The operation name (e.g., "chat", "text_completion", "embeddings")
     pub operation: Option<String>,
     /// Number of input tokens
@@ -22,6 +24,10 @@ pub struct GenAiSpanInfo {
     pub output_tokens: Option<u64>,
     /// Total tokens (may be computed or explicit)
     pub total_tokens: Option<u64>,
+    /// Cache creation input tokens (Anthropic prompt caching)
+    pub cache_creation_tokens: Option<u64>,
+    /// Cache read input tokens (Anthropic prompt caching)
+    pub cache_read_tokens: Option<u64>,
     /// Temperature parameter
     pub temperature: Option<f64>,
     /// Maximum tokens requested
@@ -48,11 +54,17 @@ impl GenAiSpanInfo {
 
         info.is_genai = true;
 
-        // Extract system
-        info.system = attrs.get("gen_ai.system").cloned();
+        // Extract system — prefer gen_ai.provider.name (new), fall back to gen_ai.system (deprecated)
+        info.system = attrs
+            .get("gen_ai.provider.name")
+            .or_else(|| attrs.get("gen_ai.system"))
+            .cloned();
 
-        // Extract model
+        // Extract request model
         info.model = attrs.get("gen_ai.request.model").cloned();
+
+        // Extract response model (may differ from request model due to routing)
+        info.response_model = attrs.get("gen_ai.response.model").cloned();
 
         // Extract operation
         info.operation = attrs.get("gen_ai.operation.name").cloned();
@@ -90,6 +102,14 @@ impl GenAiSpanInfo {
             info.finish_reasons = parse_finish_reasons(reasons_str);
         }
 
+        // Extract cache token counts
+        info.cache_creation_tokens = attrs
+            .get("gen_ai.usage.cache_creation.input_tokens")
+            .and_then(|v| v.parse().ok());
+        info.cache_read_tokens = attrs
+            .get("gen_ai.usage.cache_read.input_tokens")
+            .and_then(|v| v.parse().ok());
+
         info
     }
 
@@ -126,21 +146,27 @@ impl GenAiSpanInfo {
 
     /// Get a display name for the system (e.g., "OpenAI", "Anthropic").
     pub fn system_display_name(&self) -> Option<String> {
-        self.system.as_ref().map(|s| match s.as_str() {
+        self.system
+            .as_deref()
+            .map(GenAiSpanInfo::format_system_name)
+    }
+
+    /// Format a system/provider identifier as a human-readable display name.
+    pub fn format_system_name(s: &str) -> String {
+        match s {
             "openai" => "OpenAI".to_string(),
             "anthropic" => "Anthropic".to_string(),
             "azure_openai" => "Azure OpenAI".to_string(),
             "google" => "Google".to_string(),
             "cohere" => "Cohere".to_string(),
             other => {
-                // Capitalize first letter
                 let mut chars = other.chars();
                 match chars.next() {
                     None => String::new(),
                     Some(first) => first.to_uppercase().collect::<String>() + chars.as_str(),
                 }
             },
-        })
+        }
     }
 }
 
