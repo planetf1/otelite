@@ -103,6 +103,20 @@ impl App {
             AppEvent::SwitchToTraces => self.current_view = View::Traces,
             AppEvent::SwitchToMetrics => self.current_view = View::Metrics,
             AppEvent::ShowHelp => self.current_view = View::Help,
+            AppEvent::NextView => {
+                self.current_view = match self.current_view {
+                    View::Logs => View::Traces,
+                    View::Traces => View::Metrics,
+                    View::Metrics | View::Help => View::Logs,
+                };
+            },
+            AppEvent::PrevView => {
+                self.current_view = match self.current_view {
+                    View::Logs | View::Help => View::Metrics,
+                    View::Traces => View::Logs,
+                    View::Metrics => View::Traces,
+                };
+            },
             AppEvent::Filter if matches!(self.current_view, View::Logs | View::Traces) => {
                 self.filter_input_active = true;
                 self.filter_input_buffer.clear();
@@ -629,6 +643,46 @@ mod tests {
         let view = View::Logs;
         let debug_str = format!("{:?}", view);
         assert_eq!(debug_str, "Logs");
+    }
+
+    #[test]
+    fn test_next_view_cycles_forward() {
+        let config = create_test_config();
+        let mut app = App::new(config);
+
+        assert_eq!(app.current_view(), &View::Logs);
+        app.handle_event(AppEvent::NextView);
+        assert_eq!(app.current_view(), &View::Traces);
+        app.handle_event(AppEvent::NextView);
+        assert_eq!(app.current_view(), &View::Metrics);
+        app.handle_event(AppEvent::NextView);
+        assert_eq!(app.current_view(), &View::Logs);
+    }
+
+    #[test]
+    fn test_prev_view_cycles_backward() {
+        let config = create_test_config();
+        let mut app = App::new(config);
+
+        assert_eq!(app.current_view(), &View::Logs);
+        app.handle_event(AppEvent::PrevView);
+        assert_eq!(app.current_view(), &View::Metrics);
+        app.handle_event(AppEvent::PrevView);
+        assert_eq!(app.current_view(), &View::Traces);
+        app.handle_event(AppEvent::PrevView);
+        assert_eq!(app.current_view(), &View::Logs);
+    }
+
+    #[test]
+    fn test_next_prev_view_ignored_when_filter_active() {
+        let config = create_test_config();
+        let mut app = App::new(config);
+
+        app.filter_input_active = true;
+        app.handle_event(AppEvent::NextView);
+        assert_eq!(app.current_view(), &View::Logs);
+        app.handle_event(AppEvent::PrevView);
+        assert_eq!(app.current_view(), &View::Logs);
     }
 
     #[test]

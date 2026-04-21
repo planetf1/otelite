@@ -55,6 +55,10 @@ fn create_help_text(version: &str) -> Text<'static> {
             Span::raw("  Switch to Metrics view"),
         ]),
         Line::from(vec![
+            Span::styled("  Tab / Shift+Tab", Style::default().fg(Color::Yellow)),
+            Span::raw("  Next / previous view"),
+        ]),
+        Line::from(vec![
             Span::styled("  ?", Style::default().fg(Color::Yellow)),
             Span::raw("  Show this help screen"),
         ]),

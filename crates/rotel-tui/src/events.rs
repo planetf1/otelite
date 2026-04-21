@@ -49,6 +49,10 @@ pub enum AppEvent {
     Char(char),
     /// Backspace (used for text input modes)
     Backspace,
+    /// Cycle to the next view (Logs → Traces → Metrics → Logs)
+    NextView,
+    /// Cycle to the previous view (Logs → Metrics → Traces → Logs)
+    PrevView,
     /// No event
     None,
 }
@@ -74,6 +78,8 @@ fn handle_key_event(key: KeyEvent) -> AppEvent {
         KeyCode::Char('l') => AppEvent::SwitchToLogs,
         KeyCode::Char('t') => AppEvent::SwitchToTraces,
         KeyCode::Char('m') => AppEvent::SwitchToMetrics,
+        KeyCode::Tab => AppEvent::NextView,
+        KeyCode::BackTab => AppEvent::PrevView,
 
         // Help
         KeyCode::Char('?') | KeyCode::Char('h') => AppEvent::ShowHelp,
@@ -126,6 +132,12 @@ mod tests {
 
         let key = KeyEvent::new(KeyCode::Char('m'), KeyModifiers::NONE);
         assert_eq!(handle_key_event(key), AppEvent::SwitchToMetrics);
+
+        let key = KeyEvent::new(KeyCode::Tab, KeyModifiers::NONE);
+        assert_eq!(handle_key_event(key), AppEvent::NextView);
+
+        let key = KeyEvent::new(KeyCode::BackTab, KeyModifiers::SHIFT);
+        assert_eq!(handle_key_event(key), AppEvent::PrevView);
     }
 
     #[test]
