@@ -936,7 +936,7 @@ body {
 .attribute-key {
     font-family: 'Courier New', monospace;
     font-size: 0.75rem;
-    color: var(--text-secondary);
+    color: #94a3b8;
 }
 
 .attribute-value {
@@ -1408,7 +1408,7 @@ body {
 .span-attr-key {
     font-family: 'Courier New', monospace;
     font-size: 0.75rem;
-    color: var(--text-secondary);
+    color: #94a3b8;
     flex-shrink: 0;
     white-space: nowrap;
 }
