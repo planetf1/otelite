@@ -1794,6 +1794,17 @@ body {
     flex-shrink: 0;
 }
 
+.genai-tool-name {
+    display: inline-block;
+    color: var(--accent-color);
+    font-weight: 500;
+}
+
+.genai-debug {
+    color: var(--text-secondary);
+    font-size: 0.85em;
+}
+
 /* Setup view */
 .setup-container {
     max-width: 860px;

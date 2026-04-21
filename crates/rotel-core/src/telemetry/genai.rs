@@ -36,6 +36,18 @@ pub struct GenAiSpanInfo {
     pub finish_reasons: Vec<String>,
     /// Whether this span has any GenAI attributes
     pub is_genai: bool,
+    /// Response ID from the model provider (gen_ai.response.id)
+    pub response_id: Option<String>,
+    /// Tool name for tool call spans (gen_ai.tool.name)
+    pub tool_name: Option<String>,
+    /// Tool call ID (gen_ai.tool.call.id)
+    pub tool_call_id: Option<String>,
+    /// Tool type, e.g. "function" (gen_ai.tool.type)
+    pub tool_type: Option<String>,
+    /// Top-p sampling parameter (gen_ai.request.top_p)
+    pub top_p: Option<f64>,
+    /// Random seed for reproducibility (gen_ai.request.seed)
+    pub seed: Option<u64>,
 }
 
 impl GenAiSpanInfo {
@@ -110,7 +122,28 @@ impl GenAiSpanInfo {
             .get("gen_ai.usage.cache_read.input_tokens")
             .and_then(|v| v.parse().ok());
 
+        // Extract response ID
+        info.response_id = attrs.get("gen_ai.response.id").cloned();
+
+        // Extract tool call fields
+        info.tool_name = attrs.get("gen_ai.tool.name").cloned();
+        info.tool_call_id = attrs.get("gen_ai.tool.call.id").cloned();
+        info.tool_type = attrs.get("gen_ai.tool.type").cloned();
+
+        // Extract sampling parameters
+        info.top_p = attrs
+            .get("gen_ai.request.top_p")
+            .and_then(|s| s.parse().ok());
+        info.seed = attrs
+            .get("gen_ai.request.seed")
+            .and_then(|s| s.parse().ok());
+
         info
+    }
+
+    /// Returns true if this span represents a tool call execution.
+    pub fn is_tool_call(&self) -> bool {
+        self.operation.as_deref() == Some("execute_tool") || self.tool_name.is_some()
     }
 
     /// Format token usage as a human-readable string.
@@ -373,5 +406,81 @@ mod tests {
         assert_eq!(format_number(1234), "1,234");
         assert_eq!(format_number(1234567), "1,234,567");
         assert_eq!(format_number(123), "123");
+    }
+
+    #[test]
+    fn test_response_id() {
+        let mut attrs = HashMap::new();
+        attrs.insert("gen_ai.system".to_string(), "openai".to_string());
+        attrs.insert(
+            "gen_ai.response.id".to_string(),
+            "chatcmpl-abc123".to_string(),
+        );
+
+        let info = GenAiSpanInfo::from_attributes(&attrs);
+        assert_eq!(info.response_id, Some("chatcmpl-abc123".to_string()));
+    }
+
+    #[test]
+    fn test_tool_call_fields() {
+        let mut attrs = HashMap::new();
+        attrs.insert("gen_ai.system".to_string(), "openai".to_string());
+        attrs.insert(
+            "gen_ai.operation.name".to_string(),
+            "execute_tool".to_string(),
+        );
+        attrs.insert("gen_ai.tool.name".to_string(), "get_weather".to_string());
+        attrs.insert("gen_ai.tool.call.id".to_string(), "call_xyz789".to_string());
+        attrs.insert("gen_ai.tool.type".to_string(), "function".to_string());
+
+        let info = GenAiSpanInfo::from_attributes(&attrs);
+        assert_eq!(info.tool_name, Some("get_weather".to_string()));
+        assert_eq!(info.tool_call_id, Some("call_xyz789".to_string()));
+        assert_eq!(info.tool_type, Some("function".to_string()));
+    }
+
+    #[test]
+    fn test_is_tool_call_via_operation() {
+        let mut attrs = HashMap::new();
+        attrs.insert("gen_ai.system".to_string(), "openai".to_string());
+        attrs.insert(
+            "gen_ai.operation.name".to_string(),
+            "execute_tool".to_string(),
+        );
+
+        let info = GenAiSpanInfo::from_attributes(&attrs);
+        assert!(info.is_tool_call());
+    }
+
+    #[test]
+    fn test_is_tool_call_via_tool_name() {
+        let mut attrs = HashMap::new();
+        attrs.insert("gen_ai.system".to_string(), "openai".to_string());
+        attrs.insert("gen_ai.tool.name".to_string(), "search_docs".to_string());
+
+        let info = GenAiSpanInfo::from_attributes(&attrs);
+        assert!(info.is_tool_call());
+    }
+
+    #[test]
+    fn test_is_not_tool_call() {
+        let mut attrs = HashMap::new();
+        attrs.insert("gen_ai.system".to_string(), "openai".to_string());
+        attrs.insert("gen_ai.operation.name".to_string(), "chat".to_string());
+
+        let info = GenAiSpanInfo::from_attributes(&attrs);
+        assert!(!info.is_tool_call());
+    }
+
+    #[test]
+    fn test_top_p_and_seed() {
+        let mut attrs = HashMap::new();
+        attrs.insert("gen_ai.system".to_string(), "openai".to_string());
+        attrs.insert("gen_ai.request.top_p".to_string(), "0.9".to_string());
+        attrs.insert("gen_ai.request.seed".to_string(), "42".to_string());
+
+        let info = GenAiSpanInfo::from_attributes(&attrs);
+        assert_eq!(info.top_p, Some(0.9));
+        assert_eq!(info.seed, Some(42));
     }
 }

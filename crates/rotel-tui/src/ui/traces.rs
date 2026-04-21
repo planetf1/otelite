@@ -572,6 +572,52 @@ fn format_span_detail(span: &Span, trace: &Trace) -> Text<'static> {
             ]));
         }
 
+        if let Some(response_id) = &genai_info.response_id {
+            lines.push(Line::from(vec![
+                TextSpan::styled(
+                    "  Response ID: ",
+                    Style::default().add_modifier(Modifier::BOLD),
+                ),
+                TextSpan::styled(response_id.clone(), Style::default().fg(Color::DarkGray)),
+            ]));
+        }
+
+        if let Some(tool_name) = &genai_info.tool_name {
+            lines.push(Line::from(vec![
+                TextSpan::styled("  Tool: ", Style::default().add_modifier(Modifier::BOLD)),
+                TextSpan::styled(
+                    tool_name.clone(),
+                    Style::default()
+                        .fg(Color::Yellow)
+                        .add_modifier(Modifier::BOLD),
+                ),
+            ]));
+        }
+
+        if let Some(tool_call_id) = &genai_info.tool_call_id {
+            lines.push(Line::from(vec![
+                TextSpan::styled(
+                    "  Tool call ID: ",
+                    Style::default().add_modifier(Modifier::BOLD),
+                ),
+                TextSpan::styled(tool_call_id.clone(), Style::default().fg(Color::DarkGray)),
+            ]));
+        }
+
+        if let Some(top_p) = genai_info.top_p {
+            lines.push(Line::from(vec![
+                TextSpan::styled("  Top-p: ", Style::default().add_modifier(Modifier::BOLD)),
+                TextSpan::raw(format!("{:.2}", top_p)),
+            ]));
+        }
+
+        if let Some(seed) = genai_info.seed {
+            lines.push(Line::from(vec![
+                TextSpan::styled("  Seed: ", Style::default().add_modifier(Modifier::BOLD)),
+                TextSpan::raw(seed.to_string()),
+            ]));
+        }
+
         lines.push(Line::from(""));
     }
 
@@ -707,19 +753,24 @@ fn format_trace_detail(trace: &Trace, state: &TracesState) -> Text<'static> {
         // Build optional GenAI inline badge
         let genai_info = GenAiSpanInfo::from_attributes(&node.span.attributes);
         let genai_badge: Option<String> = if genai_info.is_genai {
-            let model = genai_info
-                .response_model
-                .as_deref()
-                .or(genai_info.model.as_deref());
-            match (model, genai_info.input_tokens, genai_info.output_tokens) {
-                (Some(m), Some(input), Some(output)) => {
-                    Some(format!(" [{} \u{00b7} {}\u{2192}{}]", m, input, output))
-                },
-                (Some(m), _, _) => Some(format!(" [{}]", m)),
-                (None, Some(input), Some(output)) => {
-                    Some(format!(" [{}\u{2192}{}]", input, output))
-                },
-                _ => None,
+            if genai_info.is_tool_call() {
+                let tool = genai_info.tool_name.as_deref().unwrap_or("tool");
+                Some(format!(" [\u{1f527} {}]", tool))
+            } else {
+                let model = genai_info
+                    .response_model
+                    .as_deref()
+                    .or(genai_info.model.as_deref());
+                match (model, genai_info.input_tokens, genai_info.output_tokens) {
+                    (Some(m), Some(input), Some(output)) => {
+                        Some(format!(" [{} \u{00b7} {}\u{2192}{}]", m, input, output))
+                    },
+                    (Some(m), _, _) => Some(format!(" [{}]", m)),
+                    (None, Some(input), Some(output)) => {
+                        Some(format!(" [{}\u{2192}{}]", input, output))
+                    },
+                    _ => None,
+                }
             }
         } else {
             None

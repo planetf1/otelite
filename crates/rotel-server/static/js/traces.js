@@ -488,6 +488,11 @@ class TracesView {
         const info = this.extractGenAiInfo(attrs);
         if (!info) return '';
 
+        if (info.isToolCall) {
+            const toolLabel = info.toolName ? this.escapeHtml(info.toolName) : 'tool';
+            return `<span class="genai-waterfall-badge">\uD83D\uDD27 ${toolLabel}</span>`;
+        }
+
         const model = info.responseModel || info.model;
         const hasTokens = info.inputTokens !== null || info.outputTokens !== null;
 
@@ -603,13 +608,22 @@ class TracesView {
             cacheReadTokens: attributes['gen_ai.usage.cache_read.input_tokens'] ? parseInt(attributes['gen_ai.usage.cache_read.input_tokens']) : null,
             temperature: attributes['gen_ai.request.temperature'] ? parseFloat(attributes['gen_ai.request.temperature']) : null,
             maxTokens: attributes['gen_ai.request.max_tokens'] ? parseInt(attributes['gen_ai.request.max_tokens']) : null,
-            finishReasons: this.parseFinishReasons(attributes['gen_ai.response.finish_reasons'])
+            finishReasons: this.parseFinishReasons(attributes['gen_ai.response.finish_reasons']),
+            responseId: attributes['gen_ai.response.id'] || null,
+            toolName: attributes['gen_ai.tool.name'] || null,
+            toolCallId: attributes['gen_ai.tool.call.id'] || null,
+            toolType: attributes['gen_ai.tool.type'] || null,
+            topP: attributes['gen_ai.request.top_p'] ? parseFloat(attributes['gen_ai.request.top_p']) : null,
+            seed: attributes['gen_ai.request.seed'] ? parseInt(attributes['gen_ai.request.seed']) : null
         };
 
         // Calculate total tokens if not provided
         if (!info.totalTokens && info.inputTokens && info.outputTokens) {
             info.totalTokens = info.inputTokens + info.outputTokens;
         }
+
+        // Compute isToolCall after extraction
+        info.isToolCall = !!(info.operation === 'execute_tool' || info.toolName);
 
         return info;
     }
@@ -652,6 +666,11 @@ class TracesView {
                     ${info.temperature !== null ? `<div class="genai-detail-item"><strong>Temperature:</strong> ${info.temperature.toFixed(2)}</div>` : ''}
                     ${info.maxTokens ? `<div class="genai-detail-item"><strong>Max Tokens:</strong> ${info.maxTokens.toLocaleString()}</div>` : ''}
                     ${info.finishReasons.length > 0 ? `<div class="genai-detail-item"><strong>Finish Reasons:</strong> ${info.finishReasons.join(', ')}</div>` : ''}
+                    ${info.responseId ? `<div class="genai-detail-item genai-debug"><strong>Response ID:</strong> <code>${this.escapeHtml(info.responseId)}</code></div>` : ''}
+                    ${info.toolName ? `<div class="genai-detail-item"><strong>🔧 Tool:</strong> <span class="genai-tool-name">${this.escapeHtml(info.toolName)}</span></div>` : ''}
+                    ${info.toolCallId ? `<div class="genai-detail-item genai-debug"><strong>Tool call ID:</strong> <code>${this.escapeHtml(info.toolCallId)}</code></div>` : ''}
+                    ${info.topP !== null ? `<div class="genai-detail-item"><strong>Top-p:</strong> ${info.topP}</div>` : ''}
+                    ${info.seed !== null ? `<div class="genai-detail-item"><strong>Seed:</strong> ${info.seed}</div>` : ''}
                 </div>
             </div>
         `;
