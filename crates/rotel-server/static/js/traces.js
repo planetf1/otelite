@@ -22,6 +22,7 @@ class TracesView {
         this.pageSize = 50;
         this.autoRefresh = false;
         this.refreshInterval = null;
+        this.collapsedSpans = new Set();
     }
 
     /**
@@ -313,6 +314,7 @@ class TracesView {
             });
             const trace = await this.apiClient.getTrace(traceId);
             this.selectedTrace = trace;
+            this.collapsedSpans = new Set();
             this.renderTraceDetail(trace);
         } catch (error) {
             console.error('Failed to load trace details:', error);
@@ -336,7 +338,11 @@ class TracesView {
             <div class="trace-detail-body">
                 <div class="trace-detail-header">
                     <h3>${this.escapeHtml(trace.root_span_name ?? 'Trace Details')}</h3>
-                    <span class="trace-duration">${duration}ms · ${trace.span_count} spans</span>
+                    <div style="display:flex;align-items:center;gap:0.5rem;">
+                        <span class="trace-duration">${duration}ms · ${trace.span_count} spans</span>
+                        <button id="expand-all-spans" class="btn btn-secondary btn-sm">Expand all</button>
+                        <button id="collapse-all-spans" class="btn btn-secondary btn-sm">Collapse all</button>
+                    </div>
                 </div>
                 <div class="trace-info">
                     <div class="trace-info-item"><strong>Trace ID:</strong> <code>${trace.trace_id}</code></div>
@@ -402,9 +408,49 @@ class TracesView {
     }
 
     /**
+     * Collect the set of span IDs that have at least one child.
+     */
+    collectParentIds(spans, result = new Set()) {
+        for (const span of spans) {
+            if (span.children.length > 0) {
+                result.add(span.span_id);
+                this.collectParentIds(span.children, result);
+            }
+        }
+        return result;
+    }
+
+    /**
+     * Collect all non-leaf span IDs (spans with children) in the tree.
+     */
+    collectAllNonLeafIds(spans, result = new Set()) {
+        for (const span of spans) {
+            if (span.children.length > 0) {
+                result.add(span.span_id);
+                this.collectAllNonLeafIds(span.children, result);
+            }
+        }
+        return result;
+    }
+
+    /**
+     * Count total descendants of a span node.
+     */
+    countDescendants(span) {
+        let count = 0;
+        for (const child of span.children) {
+            count += 1 + this.countDescendants(child);
+        }
+        return count;
+    }
+
+    /**
      * Render span tree as waterfall
      */
-    renderSpanTree(spans, traceStart, traceDuration, depth = 0) {
+    renderSpanTree(spans, traceStart, traceDuration, depth = 0, parentIds = null) {
+        if (parentIds === null) {
+            parentIds = this.collectParentIds(spans);
+        }
         return spans.map(span => {
             const startOffset = ((span.start_time - traceStart) / traceDuration) * 100;
             const width = Math.max((span.duration / traceDuration) * 100, 0.5);
@@ -416,11 +462,20 @@ class TracesView {
             const kindLabel = typeof span.kind === 'number'
                 ? ['?', 'internal', 'server', 'client', 'producer', 'consumer'][span.kind] ?? '?'
                 : String(span.kind ?? '?');
+            const hasChildren = span.children.length > 0;
+            const descCount = hasChildren ? this.countDescendants(span) : 0;
+            const toggleBtn = hasChildren
+                ? `<span class="span-toggle" data-toggle-id="${span.span_id}" title="Collapse/expand">&#9660;</span>`
+                : `<span class="span-toggle-spacer"></span>`;
+            const collapsedCountEl = hasChildren
+                ? `<span class="collapsed-count" data-count-id="${span.span_id}" style="display:none">(+${descCount})</span>`
+                : '';
 
             return `
-                <div class="span-row" style="padding-left: ${depth * 16 + 4}px;">
+                <div class="span-row" data-row-span-id="${span.span_id}" style="padding-left: ${depth * 16 + 4}px;">
                     <div class="span-info">
-                        <span class="span-name ${hasError ? 'span-error' : ''}" title="${this.escapeHtml(span.name)}">${this.escapeHtml(span.name)}</span>
+                        ${toggleBtn}
+                        <span class="span-name ${hasError ? 'span-error' : ''}" title="${this.escapeHtml(span.name)}">${this.escapeHtml(span.name)}${collapsedCountEl}</span>
                         <span class="span-kind">${this.escapeHtml(kindLabel)}</span>
                         <span class="span-duration">${duration}ms</span>
                     </div>
@@ -432,7 +487,7 @@ class TracesView {
                         </div>
                     </div>
                 </div>
-                ${span.children.length > 0 ? this.renderSpanTree(span.children, traceStart, traceDuration, depth + 1) : ''}
+                ${hasChildren ? this.renderSpanTree(span.children, traceStart, traceDuration, depth + 1, parentIds) : ''}
             `;
         }).join('');
     }
@@ -742,11 +797,77 @@ class TracesView {
     }
 
     /**
-     * Attach click handlers to span bars
+     * Collect all descendant span IDs of the given span_id using the tree structure.
+     * Walks the rendered tree via data-row-span-id and the original span children map.
+     */
+    _gatherDescendantIds(spanId, spanNodeMap, result = new Set()) {
+        const node = spanNodeMap.get(spanId);
+        if (!node) return result;
+        for (const child of node.children) {
+            result.add(child.span_id);
+            this._gatherDescendantIds(child.span_id, spanNodeMap, result);
+        }
+        return result;
+    }
+
+    /**
+     * Build a map from span_id -> span node (with children) from the trace tree.
+     */
+    _buildSpanNodeMap(spanTree, map = new Map()) {
+        for (const node of spanTree) {
+            map.set(node.span_id, node);
+            if (node.children.length > 0) {
+                this._buildSpanNodeMap(node.children, map);
+            }
+        }
+        return map;
+    }
+
+    /**
+     * Update DOM visibility for all rows that are descendants of collapsed spans.
+     * Also updates toggle arrows and collapsed-count badges.
+     */
+    _applyCollapseState(spanNodeMap) {
+        // For each non-leaf span, decide visibility of its subtree
+        // First, show all rows
+        document.querySelectorAll('.span-row').forEach(row => {
+            row.style.display = '';
+        });
+        // For each collapsed span, hide all descendants
+        for (const collapsedId of this.collapsedSpans) {
+            const descendants = this._gatherDescendantIds(collapsedId, spanNodeMap);
+            for (const descId of descendants) {
+                const row = document.querySelector(`.span-row[data-row-span-id="${descId}"]`);
+                if (row) row.style.display = 'none';
+            }
+            // Update toggle arrow
+            const toggle = document.querySelector(`.span-toggle[data-toggle-id="${collapsedId}"]`);
+            if (toggle) toggle.innerHTML = '&#9654;';
+            // Show collapsed count badge
+            const badge = document.querySelector(`.collapsed-count[data-count-id="${collapsedId}"]`);
+            if (badge) badge.style.display = '';
+        }
+        // For expanded spans, make sure arrows point down and badge is hidden
+        document.querySelectorAll('.span-toggle[data-toggle-id]').forEach(toggle => {
+            const id = toggle.getAttribute('data-toggle-id');
+            if (!this.collapsedSpans.has(id)) {
+                toggle.innerHTML = '&#9660;';
+                const badge = document.querySelector(`.collapsed-count[data-count-id="${id}"]`);
+                if (badge) badge.style.display = 'none';
+            }
+        });
+    }
+
+    /**
+     * Attach click handlers to span bars and span toggle buttons
      */
     attachSpanClickHandlers(trace) {
+        const spanTree = this.buildSpanTree(trace.spans);
+        const spanNodeMap = this._buildSpanNodeMap(spanTree);
+
+        // Span bar click → show detail
         const spanBars = document.querySelectorAll('.span-bar');
-        spanBars.forEach((bar, index) => {
+        spanBars.forEach(bar => {
             bar.style.cursor = 'pointer';
             bar.addEventListener('click', (e) => {
                 e.stopPropagation();
@@ -757,6 +878,39 @@ class TracesView {
                 }
             });
         });
+
+        // Toggle button click → collapse/expand subtree
+        document.querySelectorAll('.span-toggle[data-toggle-id]').forEach(toggle => {
+            toggle.addEventListener('click', (e) => {
+                e.stopPropagation();
+                const spanId = toggle.getAttribute('data-toggle-id');
+                if (this.collapsedSpans.has(spanId)) {
+                    this.collapsedSpans.delete(spanId);
+                } else {
+                    this.collapsedSpans.add(spanId);
+                }
+                this._applyCollapseState(spanNodeMap);
+            });
+        });
+
+        // Expand all
+        const expandBtn = document.getElementById('expand-all-spans');
+        if (expandBtn) {
+            expandBtn.addEventListener('click', () => {
+                this.collapsedSpans.clear();
+                this._applyCollapseState(spanNodeMap);
+            });
+        }
+
+        // Collapse all
+        const collapseBtn = document.getElementById('collapse-all-spans');
+        if (collapseBtn) {
+            collapseBtn.addEventListener('click', () => {
+                const allNonLeaf = this.collectAllNonLeafIds(spanTree);
+                this.collapsedSpans = allNonLeaf;
+                this._applyCollapseState(spanNodeMap);
+            });
+        }
     }
 
     /**

@@ -1377,6 +1377,34 @@ body {
     background-color: var(--error-color) !important;
 }
 
+.span-toggle {
+    cursor: pointer;
+    user-select: none;
+    width: 1rem;
+    display: inline-block;
+    flex-shrink: 0;
+    font-size: 0.65rem;
+    color: var(--text-secondary);
+    text-align: center;
+    line-height: 1;
+}
+
+.span-toggle:hover {
+    color: var(--accent-color);
+}
+
+.span-toggle-spacer {
+    width: 1rem;
+    display: inline-block;
+    flex-shrink: 0;
+}
+
+.collapsed-count {
+    color: var(--text-secondary);
+    font-size: 0.8em;
+    margin-left: 0.25rem;
+}
+
 /* Span kind legend */
 .span-kind-legend {
     display: flex;
