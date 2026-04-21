@@ -1155,6 +1155,7 @@ class TracesView {
             overflow: hidden;
         `;
 
+        const { kindLabel, hasError } = context;
         box.innerHTML = `
             <div style="display:flex;align-items:center;justify-content:space-between;padding:1rem 1.25rem;border-bottom:1px solid var(--border-color);flex-shrink:0;">
                 <h3 style="font-size:1rem;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${this.escapeHtml(span.name)}">
