@@ -493,6 +493,7 @@ class MetricsView {
             }
         } catch (error) {
             console.error('Failed to load timeseries:', error);
+            this.showError('Failed to load timeseries data');
         }
     }
 
@@ -659,6 +660,18 @@ class MetricsView {
             document.body.removeChild(a);
         } catch (error) {
             console.error('Failed to export metrics:', error);
+            this.showError('Failed to export metrics');
+        }
+    }
+
+    showError(message) {
+        const detail = document.getElementById('metrics-detail');
+        if (detail) {
+            const errEl = document.createElement('div');
+            errEl.className = 'error-message';
+            errEl.textContent = message;
+            detail.prepend(errEl);
+            setTimeout(() => errEl.remove(), 5000);
         }
     }
 

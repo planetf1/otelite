@@ -319,15 +319,20 @@ class LogsView {
         let headerCols;
         if (useLlm) {
             const model = attrs['gen_ai.request.model'] || attrs['gen_ai.response.model'] || '—';
-            const inputTokens = attrs['gen_ai.usage.input_tokens'] != null ? attrs['gen_ai.usage.input_tokens'] : '—';
-            const outputTokens = attrs['gen_ai.usage.output_tokens'] != null ? attrs['gen_ai.usage.output_tokens'] : '—';
-            const finishReason = attrs['gen_ai.response.finish_reason'] || '—';
+            const rawInput = attrs['gen_ai.usage.input_tokens'];
+            const rawOutput = attrs['gen_ai.usage.output_tokens'];
+            const inputTokens = rawInput != null ? Number(rawInput).toLocaleString() : '—';
+            const outputTokens = rawOutput != null ? Number(rawOutput).toLocaleString() : '—';
+            const finishReasonsRaw = attrs['gen_ai.response.finish_reasons'];
+            const finishReason = finishReasonsRaw != null
+                ? (Array.isArray(finishReasonsRaw) ? finishReasonsRaw.join(', ') : String(finishReasonsRaw))
+                : (attrs['gen_ai.response.finish_reason'] || '—');
             headerCols = `
                     <span class="log-timestamp">${timestamp.toISOString()}</span>
                     <span class="log-severity ${severityClass}">${log.severity}</span>
                     <span class="log-col-model" title="${this.escapeHtml(model)}">${this.escapeHtml(String(model))}</span>
-                    <span class="log-col-tokens">${this.escapeHtml(String(inputTokens))}</span>
-                    <span class="log-col-tokens">${this.escapeHtml(String(outputTokens))}</span>
+                    <span class="log-col-tokens">${this.escapeHtml(inputTokens)}</span>
+                    <span class="log-col-tokens">${this.escapeHtml(outputTokens)}</span>
                     <span class="log-col-tokens">${this.escapeHtml(String(finishReason))}</span>
                     <span class="log-body-preview">${bodyPreview}</span>`;
         } else {

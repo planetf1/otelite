@@ -226,10 +226,35 @@ class App {
             return;
         }
         try {
-            await fetch('/api/admin/purge', { method: 'POST' });
+            const response = await fetch('/api/admin/purge', { method: 'POST' });
+            if (!response.ok) {
+                const popover = document.getElementById('status-popover');
+                if (popover) {
+                    const errRow = document.createElement('div');
+                    errRow.className = 'popover-row popover-error';
+                    errRow.textContent = `Clear failed: HTTP ${response.status}`;
+                    popover.prepend(errRow);
+                }
+                return;
+            }
+            const popover = document.getElementById('status-popover');
+            if (popover) {
+                const okRow = document.createElement('div');
+                okRow.className = 'popover-row';
+                okRow.style.color = '#4ade80';
+                okRow.textContent = 'All data cleared.';
+                popover.prepend(okRow);
+                setTimeout(() => okRow.remove(), 3000);
+            }
             await this.refreshPopover();
-        } catch (_) {
-            // refreshPopover will show the error state if the server is unreachable
+        } catch (err) {
+            const popover = document.getElementById('status-popover');
+            if (popover) {
+                const errRow = document.createElement('div');
+                errRow.className = 'popover-row popover-error';
+                errRow.textContent = `Clear failed: ${err.message}`;
+                popover.prepend(errRow);
+            }
         }
     }
 
