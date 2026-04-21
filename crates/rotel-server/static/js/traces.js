@@ -24,6 +24,7 @@ class TracesView {
         this.autoRefresh = false;
         this.refreshInterval = null;
         this.collapsedSpans = new Set();
+        this.zoomLevel = 1.0;
     }
 
     /**
@@ -52,13 +53,13 @@ class TracesView {
                 <input type="text" id="traces-resource-filter" placeholder="Resource filter (e.g., service.name=my-service)" class="filter-input" list="traces-resource-keys-list">
                 <div class="time-range-bar">
                     <button class="btn-icon" id="tr-prev-traces" title="Previous window">&#8592;</button>
-                    <input type="datetime-local" id="tr-start-traces" class="filter-input tr-datetime">
+                    <input type="text" id="tr-start-traces" class="filter-input tr-datetime" placeholder="YYYY-MM-DD HH:MM" autocomplete="off">
                     <span class="tr-sep">–</span>
-                    <input type="datetime-local" id="tr-end-traces" class="filter-input tr-datetime">
+                    <input type="text" id="tr-end-traces" class="filter-input tr-datetime" placeholder="YYYY-MM-DD HH:MM" autocomplete="off">
                     <button class="btn-icon" id="tr-next-traces" title="Next window">&#8594;</button>
                     <button class="btn-icon" id="tr-now-traces" title="Jump to now">Now</button>
                     <select id="tr-preset-traces" class="filter-select tr-preset">
-                        <option value="">Custom</option>
+                        <option value="">All time</option>
                         <option value="0.25">15 min</option>
                         <option value="1">1 hr</option>
                         <option value="6">6 hr</option>
@@ -72,7 +73,9 @@ class TracesView {
             </div>
 
             <div class="attr-filter-bar" id="attr-filter-bar-traces">
+                <span class="quick-filter-label">Quick:</span>
                 <button id="quick-filter-errors-traces" class="btn btn-secondary btn-sm">Errors only</button>
+                <span style="width:1px;height:1.2em;background:var(--border-color);display:inline-block;margin:0 0.3rem;"></span>
                 <input type="text" id="attr-key-traces" placeholder="attribute key" class="filter-input attr-filter-key" list="attr-keys-traces-list">
                 <datalist id="attr-keys-traces-list"></datalist>
                 <select id="attr-op-traces" class="filter-select attr-filter-op">
@@ -203,7 +206,15 @@ class TracesView {
 
     _toDatetimeLocal(date) {
         const pad = n => String(n).padStart(2, '0');
-        return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`;
+        return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}`;
+    }
+
+    _parseDatetimeInput(str) {
+        if (!str) return null;
+        const normalized = str.trim().replace('T', ' ');
+        const m = normalized.match(/^(\d{4}-\d{2}-\d{2})(?:\s+(\d{2}:\d{2}))?$/);
+        if (!m) return null;
+        return new Date(`${m[1]}T${m[2] || '00:00'}`);
     }
 
     _onDateInputChange(suffix) {
@@ -211,8 +222,8 @@ class TracesView {
         const endEl = document.getElementById(`tr-end-${suffix}`);
         const startVal = startEl ? startEl.value : '';
         const endVal = endEl ? endEl.value : '';
-        this.trStart = startVal ? new Date(startVal) : null;
-        this.trEnd = endVal ? new Date(endVal) : null;
+        this.trStart = this._parseDatetimeInput(startVal);
+        this.trEnd = this._parseDatetimeInput(endVal);
         if (this.trStart && this.trEnd) {
             this.trWindowHours = (this.trEnd.getTime() - this.trStart.getTime()) / 3600000;
         }
@@ -369,14 +380,20 @@ class TracesView {
         // Build span tree
         const spanTree = this.buildSpanTree(trace.spans);
 
+        const zoomPct = Math.round(this.zoomLevel * 100);
         container.innerHTML = `
             <div class="trace-detail-body">
                 <div class="trace-detail-header">
                     <h3>${this.escapeHtml(trace.root_span_name ?? 'Trace Details')}</h3>
-                    <div style="display:flex;align-items:center;gap:0.5rem;">
+                    <div style="display:flex;align-items:center;gap:0.5rem;flex-wrap:wrap;">
                         <span class="trace-duration">${duration}ms · ${trace.span_count} spans</span>
                         <button id="expand-all-spans" class="btn btn-secondary btn-sm">Expand all</button>
                         <button id="collapse-all-spans" class="btn btn-secondary btn-sm">Collapse all</button>
+                        <span style="width:1px;height:1.2em;background:var(--border-color);display:inline-block;margin:0 0.2rem;"></span>
+                        <button id="zoom-out-spans" class="btn btn-secondary btn-sm" title="Zoom out">−</button>
+                        <span id="zoom-level-label" style="font-size:0.8rem;min-width:2.8rem;text-align:center;color:var(--text-secondary)">${zoomPct}%</span>
+                        <button id="zoom-in-spans" class="btn btn-secondary btn-sm" title="Zoom in">+</button>
+                        <button id="zoom-reset-spans" class="btn btn-secondary btn-sm" title="Reset zoom">1:1</button>
                     </div>
                 </div>
                 <div class="trace-info">
@@ -392,10 +409,12 @@ class TracesView {
                         <span class="span-kind-legend-item"><span class="span-kind-dot" style="background:#f59e0b"></span>producer</span>
                         <span class="span-kind-legend-item"><span class="span-kind-dot" style="background:#22c55e"></span>consumer</span>
                         <span class="span-kind-legend-item"><span class="span-kind-dot" style="background:#ef4444"></span>error</span>
-                        <span style="margin-left:auto;font-size:0.72rem;color:var(--text-secondary)">Click a span bar for details</span>
+                        <span style="margin-left:auto;font-size:0.72rem;color:var(--text-secondary)">Click any row for details</span>
                     </div>
-                    <div class="waterfall-spans">
-                        ${this.renderSpanTree(spanTree, trace.start_time, trace.duration)}
+                    <div class="waterfall-zoom-content" style="width:${zoomPct}%;min-width:100%;">
+                        <div class="waterfall-spans">
+                            ${this.renderSpanTree(spanTree, trace.start_time, trace.duration)}
+                        </div>
                     </div>
                 </div>
             </div>
@@ -958,17 +977,14 @@ class TracesView {
         const spanTree = this.buildSpanTree(trace.spans);
         const spanNodeMap = this._buildSpanNodeMap(spanTree);
 
-        // Span bar click → show detail
-        const spanBars = document.querySelectorAll('.span-bar');
-        spanBars.forEach(bar => {
-            bar.style.cursor = 'pointer';
-            bar.addEventListener('click', (e) => {
-                e.stopPropagation();
-                const spanId = bar.getAttribute('data-span-id');
+        // Entire span row is clickable (not just the bar)
+        document.querySelectorAll('.span-row').forEach(row => {
+            row.addEventListener('click', (e) => {
+                // Let toggle button handle its own click
+                if (e.target.closest('.span-toggle')) return;
+                const spanId = row.getAttribute('data-row-span-id');
                 const span = trace.spans.find(s => s.span_id === spanId);
-                if (span) {
-                    this.showSpanDetail(span, trace);
-                }
+                if (span) this.showSpanDetail(span, trace);
             });
         });
 
@@ -1002,6 +1018,29 @@ class TracesView {
                 const allNonLeaf = this.collectAllNonLeafIds(spanTree);
                 this.collapsedSpans = allNonLeaf;
                 this._applyCollapseState(spanNodeMap);
+            });
+        }
+
+        // Zoom controls
+        const zoomIn = document.getElementById('zoom-in-spans');
+        if (zoomIn) {
+            zoomIn.addEventListener('click', () => {
+                this.zoomLevel = Math.min(5, this.zoomLevel + 0.5);
+                this.renderTraceDetail(trace);
+            });
+        }
+        const zoomOut = document.getElementById('zoom-out-spans');
+        if (zoomOut) {
+            zoomOut.addEventListener('click', () => {
+                this.zoomLevel = Math.max(1, this.zoomLevel - 0.5);
+                this.renderTraceDetail(trace);
+            });
+        }
+        const zoomReset = document.getElementById('zoom-reset-spans');
+        if (zoomReset) {
+            zoomReset.addEventListener('click', () => {
+                this.zoomLevel = 1.0;
+                this.renderTraceDetail(trace);
             });
         }
     }

@@ -57,13 +57,13 @@ class LogsView {
                 </select>
                 <div class="time-range-bar">
                     <button class="btn-icon" id="tr-prev-logs" title="Previous window">&#8592;</button>
-                    <input type="datetime-local" id="tr-start-logs" class="filter-input tr-datetime">
+                    <input type="text" id="tr-start-logs" class="filter-input tr-datetime" placeholder="YYYY-MM-DD HH:MM" autocomplete="off">
                     <span class="tr-sep">–</span>
-                    <input type="datetime-local" id="tr-end-logs" class="filter-input tr-datetime">
+                    <input type="text" id="tr-end-logs" class="filter-input tr-datetime" placeholder="YYYY-MM-DD HH:MM" autocomplete="off">
                     <button class="btn-icon" id="tr-next-logs" title="Next window">&#8594;</button>
                     <button class="btn-icon" id="tr-now-logs" title="Jump to now">Now</button>
                     <select id="tr-preset-logs" class="filter-select tr-preset">
-                        <option value="">Custom</option>
+                        <option value="">All time</option>
                         <option value="0.25">15 min</option>
                         <option value="1">1 hr</option>
                         <option value="6">6 hr</option>
@@ -79,8 +79,10 @@ class LogsView {
             </div>
 
             <div class="attr-filter-bar" id="attr-filter-bar-logs">
-                <button id="quick-filter-error-logs" class="btn btn-secondary btn-sm">ERROR</button>
+                <span class="quick-filter-label">Quick:</span>
+                <button id="quick-filter-error-logs" class="btn btn-secondary btn-sm">Errors</button>
                 <button id="llm-view-toggle" class="btn btn-secondary btn-sm hidden">LLM View</button>
+                <span style="width:1px;height:1.2em;background:var(--border-color);display:inline-block;margin:0 0.3rem;"></span>
                 <input type="text" id="attr-key-logs" placeholder="attribute key" class="filter-input attr-filter-key" list="attr-keys-logs-list">
                 <datalist id="attr-keys-logs-list"></datalist>
                 <select id="attr-op-logs" class="filter-select attr-filter-op">
@@ -212,9 +214,18 @@ class LogsView {
     }
 
     _toDatetimeLocal(date) {
-        // Format as YYYY-MM-DDTHH:MM (datetime-local value format, local time)
+        // Format as YYYY-MM-DD HH:MM (ISO-style, locale-independent)
         const pad = n => String(n).padStart(2, '0');
-        return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`;
+        return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}`;
+    }
+
+    _parseDatetimeInput(str) {
+        if (!str) return null;
+        // Accept YYYY-MM-DD HH:MM, YYYY-MM-DDTHH:MM, or YYYY-MM-DD
+        const normalized = str.trim().replace('T', ' ');
+        const m = normalized.match(/^(\d{4}-\d{2}-\d{2})(?:\s+(\d{2}:\d{2}))?$/);
+        if (!m) return null;
+        return new Date(`${m[1]}T${m[2] || '00:00'}`);
     }
 
     _onDateInputChange(suffix) {
@@ -222,8 +233,8 @@ class LogsView {
         const endEl = document.getElementById(`tr-end-${suffix}`);
         const startVal = startEl ? startEl.value : '';
         const endVal = endEl ? endEl.value : '';
-        this.trStart = startVal ? new Date(startVal) : null;
-        this.trEnd = endVal ? new Date(endVal) : null;
+        this.trStart = this._parseDatetimeInput(startVal);
+        this.trEnd = this._parseDatetimeInput(endVal);
         if (this.trStart && this.trEnd) {
             this.trWindowHours = (this.trEnd.getTime() - this.trStart.getTime()) / 3600000;
         }

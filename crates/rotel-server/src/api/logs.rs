@@ -221,11 +221,11 @@ pub async fn export_logs(
         start_time: params.filters.start_time,
         end_time: params.filters.end_time,
         limit: Some(10000),
-        search_text: params.filters.search.clone(),
+        search_text: params.filters.search.clone().filter(|s| !s.is_empty()),
         ..Default::default()
     };
 
-    if let Some(severity_str) = &params.filters.severity {
+    if let Some(severity_str) = params.filters.severity.as_deref().filter(|s| !s.is_empty()) {
         query.min_severity = parse_severity(severity_str);
     }
 
@@ -236,8 +236,10 @@ pub async fn export_logs(
         )
     })?;
 
-    // Filter by resource if specified
-    let filtered_logs: Vec<LogRecord> = if let Some(resource_filter) = &params.filters.resource {
+    // Filter by resource if specified (skip empty string = no filter)
+    let filtered_logs: Vec<LogRecord> = if let Some(resource_filter) =
+        params.filters.resource.as_deref().filter(|s| !s.is_empty())
+    {
         logs.into_iter()
             .filter(|log| matches_resource_filter(log, resource_filter))
             .collect()

@@ -299,7 +299,7 @@ pub async fn export_traces(
         start_time: params.filters.start_time,
         end_time: params.filters.end_time,
         limit: Some(10000),
-        trace_id: params.filters.trace_id.clone(),
+        trace_id: params.filters.trace_id.clone().filter(|s| !s.is_empty()),
         ..Default::default()
     };
 

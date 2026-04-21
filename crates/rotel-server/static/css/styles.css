@@ -826,9 +826,11 @@ body {
 }
 
 .tr-datetime {
-    width: 12rem;
+    width: 14rem;
     flex: none;
     min-width: unset;
+    font-family: 'Courier New', monospace;
+    font-size: 0.85rem;
 }
 
 .tr-sep {
@@ -1314,6 +1316,11 @@ body {
 
 .trace-waterfall {
     margin-top: 1.5rem;
+    overflow-x: auto;
+}
+
+.waterfall-zoom-content {
+    min-width: 100%;
 }
 
 .trace-waterfall h4 {
@@ -1330,8 +1337,12 @@ body {
     border-bottom: 1px solid var(--border-color);
 }
 
+.span-row {
+    cursor: pointer;
+}
+
 .span-row:hover {
-    background-color: var(--bg-primary);
+    background-color: var(--bg-tertiary);
 }
 
 .span-info {
@@ -1580,9 +1591,9 @@ body {
 }
 
 .btn-sm {
-    padding: 0.25rem 0.5rem;
-    font-size: 1.25rem;
-    line-height: 1;
+    padding: 0.2rem 0.6rem;
+    font-size: 0.8rem;
+    line-height: 1.4;
 }
 
 .span-detail-content {
@@ -1924,6 +1935,14 @@ body {
     font-size: 1rem;
     margin-bottom: 1.5rem;
     color: var(--text-primary);
+}
+
+/* Quick filter label in attr-filter-bar */
+.quick-filter-label {
+    font-size: 0.75rem;
+    color: var(--text-secondary);
+    white-space: nowrap;
+    margin-right: 0.15rem;
 }
 
 /* Attribute filter bar */

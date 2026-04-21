@@ -22,9 +22,9 @@ class UsageView {
             <div class="filters">
                 <div class="time-range-bar">
                     <button class="btn-icon" id="tr-prev-usage" title="Previous window">&#8592;</button>
-                    <input type="datetime-local" id="tr-start-usage" class="filter-input tr-datetime">
+                    <input type="text" id="tr-start-usage" class="filter-input tr-datetime" placeholder="YYYY-MM-DD HH:MM" autocomplete="off">
                     <span class="tr-sep">–</span>
-                    <input type="datetime-local" id="tr-end-usage" class="filter-input tr-datetime">
+                    <input type="text" id="tr-end-usage" class="filter-input tr-datetime" placeholder="YYYY-MM-DD HH:MM" autocomplete="off">
                     <button class="btn-icon" id="tr-next-usage" title="Next window">&#8594;</button>
                     <button class="btn-icon" id="tr-now-usage" title="Jump to now">Now</button>
                     <select id="tr-preset-usage" class="filter-select tr-preset">
@@ -112,14 +112,22 @@ class UsageView {
 
     _toDatetimeLocal(date) {
         const pad = n => String(n).padStart(2, '0');
-        return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`;
+        return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}`;
+    }
+
+    _parseDatetimeInput(str) {
+        if (!str) return null;
+        const normalized = str.trim().replace('T', ' ');
+        const m = normalized.match(/^(\d{4}-\d{2}-\d{2})(?:\s+(\d{2}:\d{2}))?$/);
+        if (!m) return null;
+        return new Date(`${m[1]}T${m[2] || '00:00'}`);
     }
 
     _onDateInputChange() {
         const startEl = document.getElementById('tr-start-usage');
         const endEl = document.getElementById('tr-end-usage');
-        this.trStart = startEl && startEl.value ? new Date(startEl.value) : null;
-        this.trEnd = endEl && endEl.value ? new Date(endEl.value) : null;
+        this.trStart = this._parseDatetimeInput(startEl ? startEl.value : '');
+        this.trEnd = this._parseDatetimeInput(endEl ? endEl.value : '');
         if (this.trStart && this.trEnd) {
             this.trWindowHours = (this.trEnd.getTime() - this.trStart.getTime()) / 3600000;
         }
