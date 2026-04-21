@@ -128,11 +128,21 @@ fn test_cli_metrics_export_help() {
 }
 
 #[test]
-fn test_cli_dashboard_help() {
+fn test_cli_serve_help() {
+    let mut cmd = Command::cargo_bin("rotel").unwrap();
+    cmd.args(["serve", "--help"]);
+    cmd.assert().success().stdout(predicate::str::contains(
+        "Start the server with OTLP receivers in the foreground",
+    ));
+}
+
+#[test]
+fn test_cli_dashboard_alias_help() {
+    // `dashboard` is a hidden alias for `serve` — it must still work
     let mut cmd = Command::cargo_bin("rotel").unwrap();
     cmd.args(["dashboard", "--help"]);
     cmd.assert().success().stdout(predicate::str::contains(
-        "Start the dashboard server with OTLP receivers",
+        "Start the server with OTLP receivers in the foreground",
     ));
 }
 
@@ -339,18 +349,18 @@ fn test_cli_metrics_list_with_label() {
 }
 
 #[test]
-fn test_cli_dashboard_with_custom_addr() {
+fn test_cli_serve_with_custom_addr() {
     let mut cmd = Command::cargo_bin("rotel").unwrap();
-    cmd.args(["dashboard", "--addr", "0.0.0.0:8080"]);
+    cmd.args(["serve", "--addr", "0.0.0.0:8080"]);
     // Will fail due to port binding, but validates argument parsing
     cmd.timeout(std::time::Duration::from_secs(2));
     cmd.assert().failure();
 }
 
 #[test]
-fn test_cli_dashboard_with_storage_path() {
+fn test_cli_serve_with_storage_path() {
     let mut cmd = Command::cargo_bin("rotel").unwrap();
-    cmd.args(["dashboard", "--storage-path", "/tmp/test.db"]);
+    cmd.args(["serve", "--storage-path", "/tmp/test.db"]);
     // Will fail due to startup, but validates argument parsing
     cmd.timeout(std::time::Duration::from_secs(2));
     cmd.assert().failure();

@@ -134,7 +134,7 @@ pub async fn handle_start(storage_path: String, addr: String) -> Result<()> {
     // Spawn the daemon process
     let child =
         Command::new(&exe_path)
-            .arg("dashboard")
+            .arg("serve")
             .arg("--addr")
             .arg(&addr)
             .arg("--storage-path")
@@ -311,7 +311,7 @@ async fn install_launchd_service() -> Result<()> {
     <key>ProgramArguments</key>
     <array>
         <string>{}</string>
-        <string>dashboard</string>
+        <string>serve</string>
         <string>--storage-path</string>
         <string>{}</string>
     </array>
@@ -375,7 +375,7 @@ After=network.target
 
 [Service]
 Type=simple
-ExecStart={} dashboard --storage-path {}
+ExecStart={} serve --storage-path {}
 Restart=on-failure
 RestartSec=5
 

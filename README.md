@@ -8,17 +8,19 @@ Rotel is a single-binary observability tool that receives OpenTelemetry data (lo
 
 ```bash
 # Development build and run
-cargo run --bin rotel -- dashboard
+cargo run --bin rotel -- serve
 
 # Production build (optimised, single binary at target/release/rotel)
 cargo build --release --bin rotel
 
 # Install to PATH
 cargo install --path crates/rotel-cli
-rotel dashboard
+rotel serve
 ```
 
-The dashboard starts three services:
+> **Note:** `rotel dashboard` still works as a backwards-compatible alias for `rotel serve`.
+
+`rotel serve` starts three services:
 - **OTLP gRPC receiver** on `localhost:4317`
 - **OTLP HTTP receiver** on `localhost:4318`
 - **Web UI and REST API** on `http://localhost:3000`

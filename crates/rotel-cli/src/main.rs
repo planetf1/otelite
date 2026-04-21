@@ -65,12 +65,13 @@ struct Cli {
 
 #[derive(Subcommand, Debug)]
 enum Commands {
-    /// Start the dashboard server with OTLP receivers (default if no subcommand)
+    /// Start the server with OTLP receivers in the foreground (default if no subcommand)
     #[command(
-        after_help = "Examples:\n  rotel dashboard\n  rotel dashboard --addr 0.0.0.0:8080 --storage-path /data/rotel.db"
+        alias = "dashboard",
+        after_help = "Examples:\n  rotel serve\n  rotel serve --addr 0.0.0.0:8080 --storage-path /data/rotel.db"
     )]
-    Dashboard {
-        /// Dashboard bind address
+    Serve {
+        /// Server bind address
         #[arg(long, default_value = "127.0.0.1:3000")]
         addr: SocketAddr,
 
@@ -78,12 +79,12 @@ enum Commands {
         #[arg(long, default_value = "rotel.db")]
         storage_path: String,
     },
-    /// Start rotel as a background daemon
+    /// Run `serve` as a background daemon
     #[command(
         after_help = "Examples:\n  rotel start\n  rotel start --addr 0.0.0.0:3000 --storage-path /data/rotel.db"
     )]
     Start {
-        /// Dashboard bind address
+        /// Server bind address
         #[arg(long, default_value = "127.0.0.1:3000")]
         addr: String,
 
@@ -91,10 +92,10 @@ enum Commands {
         #[arg(long, default_value = "rotel.db")]
         storage_path: String,
     },
-    /// Stop the background daemon
+    /// Stop the `serve` background daemon
     #[command(after_help = "Examples:\n  rotel stop")]
     Stop,
-    /// Show daemon status
+    /// Show `serve` daemon status
     #[command(after_help = "Examples:\n  rotel status")]
     Status,
     /// Manage system service installation
@@ -443,7 +444,7 @@ async fn run_cli() -> Result<()> {
 
     // Handle commands
     match cli.command {
-        Some(Commands::Dashboard { addr, storage_path }) => run_dashboard(addr, storage_path).await,
+        Some(Commands::Serve { addr, storage_path }) => run_dashboard(addr, storage_path).await,
         Some(Commands::Start { addr, storage_path }) => {
             commands::service::handle_start(storage_path, addr).await
         },
