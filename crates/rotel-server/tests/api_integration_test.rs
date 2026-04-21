@@ -138,6 +138,7 @@ fn create_test_span(trace_id: &str, span_id: &str, name: &str, start: i64, end: 
             message: None,
         },
         events: Vec::new(),
+        resource: None,
     }
 }
 

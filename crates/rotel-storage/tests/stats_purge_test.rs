@@ -46,6 +46,7 @@ fn create_test_span(timestamp: i64) -> Span {
             message: None,
         },
         events: Vec::new(),
+        resource: None,
     }
 }
 

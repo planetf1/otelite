@@ -411,6 +411,9 @@ fn parse_span_row(row: &Row) -> rusqlite::Result<Span> {
     let events_json: String = row.get("events")?;
     let events = serde_json::from_str(&events_json).unwrap_or_default();
 
+    let resource_json: String = row.get("resource")?;
+    let resource = serde_json::from_str(&resource_json).ok();
+
     let kind_num: i32 = row.get("kind")?;
     let kind = SpanKind::from_i32(kind_num).unwrap_or(SpanKind::Internal);
 
@@ -433,6 +436,7 @@ fn parse_span_row(row: &Row) -> rusqlite::Result<Span> {
         attributes,
         events,
         status,
+        resource,
     })
 }
 

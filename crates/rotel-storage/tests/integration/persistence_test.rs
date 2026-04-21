@@ -312,6 +312,7 @@ fn create_test_span(name: &str) -> Span {
             code: StatusCode::Ok,
             message: None,
         },
+        resource: None,
     }
 }
 
@@ -330,6 +331,7 @@ fn create_test_span_with_status() -> Span {
             code: StatusCode::Ok,
             message: Some("All good".to_string()),
         },
+        resource: None,
     }
 }
 

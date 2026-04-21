@@ -282,7 +282,7 @@ impl From<crate::telemetry::Span> for SpanEntry {
             end_time: span.end_time,
             duration: span.end_time - span.start_time,
             attributes: span.attributes,
-            resource: None, // Span doesn't have resource, it's on Trace
+            resource: span.resource.map(Resource::from),
             status: SpanStatus {
                 code: status_code_str.to_string(),
                 message: span.status.message,

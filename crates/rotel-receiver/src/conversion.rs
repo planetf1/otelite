@@ -150,6 +150,7 @@ pub fn convert_traces(request: ExportTraceServiceRequest) -> Vec<Trace> {
                     attributes,
                     events,
                     status,
+                    resource: resource.clone(),
                 };
 
                 traces

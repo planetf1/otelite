@@ -185,6 +185,7 @@ fn create_test_span() -> Span {
             code: StatusCode::Ok,
             message: None,
         },
+        resource: None,
     }
 }
 

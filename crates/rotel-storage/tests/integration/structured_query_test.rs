@@ -110,6 +110,7 @@ async fn query_spans_filters_by_duration_and_attribute_predicates() {
                 code: StatusCode::Ok,
                 message: None,
             },
+            resource: None,
         })
         .await
         .expect("write matching span");
@@ -129,6 +130,7 @@ async fn query_spans_filters_by_duration_and_attribute_predicates() {
                 code: StatusCode::Ok,
                 message: None,
             },
+            resource: None,
         })
         .await
         .expect("write non-matching span");

@@ -41,6 +41,7 @@ pub fn write_span(conn: &Connection, span: &Span) -> Result<()> {
     // Serialize complex fields to JSON
     let attributes = serde_json::to_string(&span.attributes)?;
     let events = serde_json::to_string(&span.events)?;
+    let resource = serde_json::to_string(&span.resource)?;
 
     conn.execute(
         "INSERT INTO spans (
@@ -60,7 +61,7 @@ pub fn write_span(conn: &Connection, span: &Span) -> Result<()> {
             events,
             span.status.code as i32,
             span.status.message.as_deref(),
-            "{}", // resource placeholder
+            resource,
             "{}", // scope placeholder
         ],
     )
@@ -186,6 +187,7 @@ mod tests {
                 code: StatusCode::Ok,
                 message: None,
             },
+            resource: None,
         };
 
         let result = write_span(&conn, &span);

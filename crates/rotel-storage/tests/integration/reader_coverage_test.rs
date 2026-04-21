@@ -58,6 +58,7 @@ async fn setup_backend_with_data() -> (SqliteBackend, TempDir) {
                 code: StatusCode::Ok,
                 message: None,
             },
+            resource: None,
         };
         backend.write_span(&span).await.unwrap();
     }
@@ -450,6 +451,7 @@ async fn test_parse_span_with_all_fields() {
             code: StatusCode::Error,
             message: Some("Test error".to_string()),
         },
+        resource: None,
     };
 
     backend.write_span(&span).await.unwrap();

@@ -48,6 +48,9 @@ pub struct Span {
 
     /// Span status
     pub status: SpanStatus,
+
+    /// Associated resource
+    pub resource: Option<super::Resource>,
 }
 
 /// Span kind (type of operation)
@@ -164,6 +167,7 @@ impl Span {
                 code: StatusCode::Unset,
                 message: None,
             },
+            resource: None,
         }
     }
 

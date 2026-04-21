@@ -127,9 +127,18 @@ pub async fn list_traces(
                 .map(|s| s.name.clone())
                 .unwrap_or_else(|| "Unknown".to_string());
 
-            // Note: Resource is on Trace, not individual Spans in rotel-core
-            // For now, we'll use empty service names until we can access trace-level resource
-            let service_names: Vec<String> = Vec::new();
+            let service_names: Vec<String> = {
+                let mut names: Vec<String> = spans
+                    .iter()
+                    .filter_map(|s| s.resource.as_ref())
+                    .filter_map(|r| r.attributes.get("service.name"))
+                    .cloned()
+                    .collect::<std::collections::HashSet<_>>()
+                    .into_iter()
+                    .collect();
+                names.sort();
+                names
+            };
 
             let has_errors = spans.iter().any(|s| {
                 matches!(
@@ -223,9 +232,18 @@ pub async fn get_trace(
     let end_time = spans.iter().map(|s| s.end_time).max().unwrap_or(0);
     let duration = end_time - start_time;
 
-    // Note: Resource is on Trace, not individual Spans in rotel-core
-    // For now, we'll use empty service names until we can access trace-level resource
-    let service_names: Vec<String> = Vec::new();
+    let service_names: Vec<String> = {
+        let mut names: Vec<String> = spans
+            .iter()
+            .filter_map(|s| s.resource.as_ref())
+            .filter_map(|r| r.attributes.get("service.name"))
+            .cloned()
+            .collect::<std::collections::HashSet<_>>()
+            .into_iter()
+            .collect();
+        names.sort();
+        names
+    };
 
     let span_entries: Vec<SpanEntry> = spans.into_iter().map(SpanEntry::from).collect();
 
