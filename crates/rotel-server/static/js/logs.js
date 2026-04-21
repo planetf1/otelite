@@ -13,7 +13,9 @@ class LogsView {
             startTime: null,
             endTime: null
         };
-        this.timeRangeHours = null;
+        this.trStart = null;
+        this.trEnd = null;
+        this.trWindowHours = null;
         this.currentPage = 0;
         this.pageSize = 100;
         this.autoRefresh = false;
@@ -50,14 +52,23 @@ class LogsView {
                     <option value="ERROR">ERROR</option>
                     <option value="FATAL">FATAL</option>
                 </select>
-                <select id="time-range-logs" class="filter-select">
-                    <option value="">All time</option>
-                    <option value="0.25">Last 15m</option>
-                    <option value="1">Last 1h</option>
-                    <option value="6">Last 6h</option>
-                    <option value="24">Last 24h</option>
-                    <option value="168">Last 7d</option>
-                </select>
+                <div class="time-range-bar">
+                    <button class="btn-icon" id="tr-prev-logs" title="Previous window">&#8592;</button>
+                    <input type="datetime-local" id="tr-start-logs" class="filter-input tr-datetime">
+                    <span class="tr-sep">–</span>
+                    <input type="datetime-local" id="tr-end-logs" class="filter-input tr-datetime">
+                    <button class="btn-icon" id="tr-next-logs" title="Next window">&#8594;</button>
+                    <button class="btn-icon" id="tr-now-logs" title="Jump to now">Now</button>
+                    <select id="tr-preset-logs" class="filter-select tr-preset">
+                        <option value="">Custom</option>
+                        <option value="0.25">15 min</option>
+                        <option value="1">1 hr</option>
+                        <option value="6">6 hr</option>
+                        <option value="24">24 hr</option>
+                        <option value="168">7 days</option>
+                        <option value="720">30 days</option>
+                    </select>
+                </div>
                 <datalist id="logs-resource-keys-list"></datalist>
                 <input type="text" id="resource-filter" placeholder="Resource filter (e.g., service.name=my-service)" class="filter-input" list="logs-resource-keys-list">
                 <button id="apply-filters" class="btn btn-primary">Apply Filters</button>
@@ -96,6 +107,93 @@ class LogsView {
             this.filters.search = e.target.value;
             this.debounceLoadLogs();
         });
+
+        // Time-range bar
+        document.getElementById('tr-preset-logs').addEventListener('change', (e) => {
+            const hours = e.target.value ? parseFloat(e.target.value) : null;
+            if (hours !== null) {
+                const now = new Date();
+                this.trEnd = now;
+                this.trStart = new Date(now.getTime() - hours * 3600000);
+                this.trWindowHours = hours;
+                this._syncDateInputs('logs');
+            } else {
+                this.trStart = null;
+                this.trEnd = null;
+                this.trWindowHours = null;
+                this._syncDateInputs('logs');
+            }
+            this.currentPage = 0;
+            this.loadLogs();
+        });
+
+        document.getElementById('tr-start-logs').addEventListener('change', () => this._onDateInputChange('logs'));
+        document.getElementById('tr-end-logs').addEventListener('change', () => this._onDateInputChange('logs'));
+
+        document.getElementById('tr-prev-logs').addEventListener('click', () => {
+            const window = (this.trWindowHours || 1) * 3600000;
+            const end = (this.trEnd || new Date()).getTime() - window;
+            const start = (this.trStart ? this.trStart.getTime() : end - window) - window;
+            this.trEnd = new Date(end);
+            this.trStart = new Date(start);
+            this._syncDateInputs('logs');
+            document.getElementById('tr-preset-logs').value = '';
+            this.currentPage = 0;
+            this.loadLogs();
+        });
+
+        document.getElementById('tr-next-logs').addEventListener('click', () => {
+            const now = Date.now();
+            const window = (this.trWindowHours || 1) * 3600000;
+            let end = (this.trEnd || new Date()).getTime() + window;
+            if (end > now) end = now;
+            this.trEnd = new Date(end);
+            this.trStart = new Date(end - window);
+            this._syncDateInputs('logs');
+            document.getElementById('tr-preset-logs').value = '';
+            this.currentPage = 0;
+            this.loadLogs();
+        });
+
+        document.getElementById('tr-now-logs').addEventListener('click', () => {
+            const now = new Date();
+            const window = (this.trWindowHours || 1) * 3600000;
+            this.trEnd = now;
+            this.trStart = new Date(now.getTime() - window);
+            this._syncDateInputs('logs');
+            document.getElementById('tr-preset-logs').value = '';
+            this.currentPage = 0;
+            this.loadLogs();
+        });
+    }
+
+    _syncDateInputs(suffix) {
+        const startEl = document.getElementById(`tr-start-${suffix}`);
+        const endEl = document.getElementById(`tr-end-${suffix}`);
+        if (startEl) startEl.value = this.trStart ? this._toDatetimeLocal(this.trStart) : '';
+        if (endEl) endEl.value = this.trEnd ? this._toDatetimeLocal(this.trEnd) : '';
+    }
+
+    _toDatetimeLocal(date) {
+        // Format as YYYY-MM-DDTHH:MM (datetime-local value format, local time)
+        const pad = n => String(n).padStart(2, '0');
+        return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`;
+    }
+
+    _onDateInputChange(suffix) {
+        const startEl = document.getElementById(`tr-start-${suffix}`);
+        const endEl = document.getElementById(`tr-end-${suffix}`);
+        const startVal = startEl ? startEl.value : '';
+        const endVal = endEl ? endEl.value : '';
+        this.trStart = startVal ? new Date(startVal) : null;
+        this.trEnd = endVal ? new Date(endVal) : null;
+        if (this.trStart && this.trEnd) {
+            this.trWindowHours = (this.trEnd.getTime() - this.trStart.getTime()) / 3600000;
+        }
+        const presetEl = document.getElementById(`tr-preset-${suffix}`);
+        if (presetEl) presetEl.value = '';
+        this.currentPage = 0;
+        this.loadLogs();
     }
 
     /**
@@ -125,10 +223,9 @@ class LogsView {
                 ...this.filters
             };
 
-            if (this.timeRangeHours !== null) {
-                const nowMs = Date.now();
-                params.start_time = (nowMs - this.timeRangeHours * 3600 * 1000) * 1_000_000;
-                params.end_time = nowMs * 1_000_000;
+            if (this.trStart !== null) {
+                params.start_time = this.trStart.getTime() * 1_000_000;
+                params.end_time = (this.trEnd || new Date()).getTime() * 1_000_000;
             }
 
             const response = await this.apiClient.getLogs(params);
@@ -299,8 +396,7 @@ class LogsView {
         this.filters.severity = document.getElementById('severity-filter').value;
         this.filters.resource = document.getElementById('resource-filter').value;
         this.filters.search = document.getElementById('search-logs').value;
-        const rangeVal = document.getElementById('time-range-logs').value;
-        this.timeRangeHours = rangeVal ? parseFloat(rangeVal) : null;
+        // Time range state is managed live by the time-range-bar controls
         this.currentPage = 0;
         this.loadLogs();
     }
@@ -316,11 +412,14 @@ class LogsView {
             startTime: null,
             endTime: null
         };
-        this.timeRangeHours = null;
+        this.trStart = null;
+        this.trEnd = null;
+        this.trWindowHours = null;
         document.getElementById('severity-filter').value = '';
         document.getElementById('resource-filter').value = '';
         document.getElementById('search-logs').value = '';
-        document.getElementById('time-range-logs').value = '';
+        document.getElementById('tr-preset-logs').value = '';
+        this._syncDateInputs('logs');
         this.currentPage = 0;
         this.loadLogs();
     }

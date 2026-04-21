@@ -15,7 +15,9 @@ class TracesView {
             startTime: null,
             endTime: null
         };
-        this.timeRangeHours = null;
+        this.trStart = null;
+        this.trEnd = null;
+        this.trWindowHours = null;
         this.currentPage = 0;
         this.pageSize = 50;
         this.autoRefresh = false;
@@ -46,14 +48,23 @@ class TracesView {
                 <input type="text" id="search-traces" placeholder="Search span names..." class="filter-input">
                 <datalist id="traces-resource-keys-list"></datalist>
                 <input type="text" id="traces-resource-filter" placeholder="Resource filter (e.g., service.name=my-service)" class="filter-input" list="traces-resource-keys-list">
-                <select id="time-range-traces" class="filter-select">
-                    <option value="">All time</option>
-                    <option value="0.25">Last 15m</option>
-                    <option value="1">Last 1h</option>
-                    <option value="6">Last 6h</option>
-                    <option value="24">Last 24h</option>
-                    <option value="168">Last 7d</option>
-                </select>
+                <div class="time-range-bar">
+                    <button class="btn-icon" id="tr-prev-traces" title="Previous window">&#8592;</button>
+                    <input type="datetime-local" id="tr-start-traces" class="filter-input tr-datetime">
+                    <span class="tr-sep">–</span>
+                    <input type="datetime-local" id="tr-end-traces" class="filter-input tr-datetime">
+                    <button class="btn-icon" id="tr-next-traces" title="Next window">&#8594;</button>
+                    <button class="btn-icon" id="tr-now-traces" title="Jump to now">Now</button>
+                    <select id="tr-preset-traces" class="filter-select tr-preset">
+                        <option value="">Custom</option>
+                        <option value="0.25">15 min</option>
+                        <option value="1">1 hr</option>
+                        <option value="6">6 hr</option>
+                        <option value="24">24 hr</option>
+                        <option value="168">7 days</option>
+                        <option value="720">30 days</option>
+                    </select>
+                </div>
                 <button id="apply-trace-filters" class="btn btn-primary">Apply Filters</button>
                 <button id="clear-trace-filters" class="btn btn-secondary">Clear</button>
             </div>
@@ -95,6 +106,92 @@ class TracesView {
             document.getElementById('traces-list'),
             document.getElementById('traces-h-handle')
         );
+
+        // Time-range bar
+        document.getElementById('tr-preset-traces').addEventListener('change', (e) => {
+            const hours = e.target.value ? parseFloat(e.target.value) : null;
+            if (hours !== null) {
+                const now = new Date();
+                this.trEnd = now;
+                this.trStart = new Date(now.getTime() - hours * 3600000);
+                this.trWindowHours = hours;
+                this._syncDateInputs('traces');
+            } else {
+                this.trStart = null;
+                this.trEnd = null;
+                this.trWindowHours = null;
+                this._syncDateInputs('traces');
+            }
+            this.currentPage = 0;
+            this.loadTraces();
+        });
+
+        document.getElementById('tr-start-traces').addEventListener('change', () => this._onDateInputChange('traces'));
+        document.getElementById('tr-end-traces').addEventListener('change', () => this._onDateInputChange('traces'));
+
+        document.getElementById('tr-prev-traces').addEventListener('click', () => {
+            const window = (this.trWindowHours || 1) * 3600000;
+            const end = (this.trEnd || new Date()).getTime() - window;
+            const start = (this.trStart ? this.trStart.getTime() : end - window) - window;
+            this.trEnd = new Date(end);
+            this.trStart = new Date(start);
+            this._syncDateInputs('traces');
+            document.getElementById('tr-preset-traces').value = '';
+            this.currentPage = 0;
+            this.loadTraces();
+        });
+
+        document.getElementById('tr-next-traces').addEventListener('click', () => {
+            const now = Date.now();
+            const window = (this.trWindowHours || 1) * 3600000;
+            let end = (this.trEnd || new Date()).getTime() + window;
+            if (end > now) end = now;
+            this.trEnd = new Date(end);
+            this.trStart = new Date(end - window);
+            this._syncDateInputs('traces');
+            document.getElementById('tr-preset-traces').value = '';
+            this.currentPage = 0;
+            this.loadTraces();
+        });
+
+        document.getElementById('tr-now-traces').addEventListener('click', () => {
+            const now = new Date();
+            const window = (this.trWindowHours || 1) * 3600000;
+            this.trEnd = now;
+            this.trStart = new Date(now.getTime() - window);
+            this._syncDateInputs('traces');
+            document.getElementById('tr-preset-traces').value = '';
+            this.currentPage = 0;
+            this.loadTraces();
+        });
+    }
+
+    _syncDateInputs(suffix) {
+        const startEl = document.getElementById(`tr-start-${suffix}`);
+        const endEl = document.getElementById(`tr-end-${suffix}`);
+        if (startEl) startEl.value = this.trStart ? this._toDatetimeLocal(this.trStart) : '';
+        if (endEl) endEl.value = this.trEnd ? this._toDatetimeLocal(this.trEnd) : '';
+    }
+
+    _toDatetimeLocal(date) {
+        const pad = n => String(n).padStart(2, '0');
+        return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`;
+    }
+
+    _onDateInputChange(suffix) {
+        const startEl = document.getElementById(`tr-start-${suffix}`);
+        const endEl = document.getElementById(`tr-end-${suffix}`);
+        const startVal = startEl ? startEl.value : '';
+        const endVal = endEl ? endEl.value : '';
+        this.trStart = startVal ? new Date(startVal) : null;
+        this.trEnd = endVal ? new Date(endVal) : null;
+        if (this.trStart && this.trEnd) {
+            this.trWindowHours = (this.trEnd.getTime() - this.trStart.getTime()) / 3600000;
+        }
+        const presetEl = document.getElementById(`tr-preset-${suffix}`);
+        if (presetEl) presetEl.value = '';
+        this.currentPage = 0;
+        this.loadTraces();
     }
 
     attachHorizontalDragResize(leftPanel, handle) {
@@ -146,10 +243,9 @@ class TracesView {
                 ...this.filters
             };
 
-            if (this.timeRangeHours !== null) {
-                const nowMs = Date.now();
-                params.start_time = (nowMs - this.timeRangeHours * 3600 * 1000) * 1_000_000;
-                params.end_time = nowMs * 1_000_000;
+            if (this.trStart !== null) {
+                params.start_time = this.trStart.getTime() * 1_000_000;
+                params.end_time = (this.trEnd || new Date()).getTime() * 1_000_000;
             }
 
             const response = await this.apiClient.getTraces(params);
@@ -527,8 +623,7 @@ class TracesView {
         this.filters.service = document.getElementById('service-filter').value;
         this.filters.resource = document.getElementById('traces-resource-filter').value;
         this.filters.search = document.getElementById('search-traces').value;
-        const rangeVal = document.getElementById('time-range-traces').value;
-        this.timeRangeHours = rangeVal ? parseFloat(rangeVal) : null;
+        // Time range state is managed live by the time-range-bar controls
         this.currentPage = 0;
         this.loadTraces();
     }
@@ -545,12 +640,15 @@ class TracesView {
             startTime: null,
             endTime: null
         };
-        this.timeRangeHours = null;
+        this.trStart = null;
+        this.trEnd = null;
+        this.trWindowHours = null;
         document.getElementById('trace-id-filter').value = '';
         document.getElementById('service-filter').value = '';
         document.getElementById('traces-resource-filter').value = '';
         document.getElementById('search-traces').value = '';
-        document.getElementById('time-range-traces').value = '';
+        document.getElementById('tr-preset-traces').value = '';
+        this._syncDateInputs('traces');
         this.currentPage = 0;
         this.loadTraces();
     }

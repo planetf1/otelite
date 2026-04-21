@@ -797,6 +797,27 @@ body {
     min-width: 200px;
 }
 
+.time-range-bar {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    flex-wrap: wrap;
+}
+
+.tr-datetime {
+    width: 12rem;
+    flex: none;
+    min-width: unset;
+}
+
+.tr-sep {
+    color: var(--text-secondary);
+}
+
+.tr-preset {
+    flex: none;
+}
+
 .view-actions {
     display: flex;
     gap: 0.75rem;
