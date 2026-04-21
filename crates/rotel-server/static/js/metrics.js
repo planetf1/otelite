@@ -9,6 +9,8 @@ class MetricsView {
         this.autoRefreshInterval = null;
         this.timeWindowHours = 1;  // how many hours to show
         this.timeOffsetWindows = 0; // how many windows back in time (0 = now)
+        this.trStart = null;
+        this.trEnd = null;
         this.resourceFilter = '';
     }
 
@@ -146,10 +148,13 @@ class MetricsView {
             <div class="metric-chart-area">
                 <div class="chart-time-nav">
                     <span id="chart-time-range">—</span>
-                    <div class="chart-time-nav-controls">
+                    <div class="time-range-bar">
                         <button class="btn-icon" id="chart-prev" title="Earlier">&#8592;</button>
-                        <button class="btn-icon" id="chart-now" title="Jump to now">Now</button>
+                        <input type="datetime-local" id="tr-start-metrics" class="filter-input tr-datetime">
+                        <span class="tr-sep">–</span>
+                        <input type="datetime-local" id="tr-end-metrics" class="filter-input tr-datetime">
                         <button class="btn-icon" id="chart-next" title="Later">&#8594;</button>
+                        <button class="btn-icon" id="chart-now" title="Jump to now">Now</button>
                     </div>
                 </div>
                 <canvas id="metrics-chart"></canvas>
@@ -167,19 +172,69 @@ class MetricsView {
         document.getElementById('window-select').addEventListener('change', (e) => {
             this.timeWindowHours = parseFloat(e.target.value);
             this.timeOffsetWindows = 0;
+            this.trStart = null;
+            this.trEnd = null;
+            this._syncMetricDateInputs();
+            this.refreshCurrentValue(metricName);
+            this.loadTimeseries(metricName);
+        });
+        document.getElementById('tr-start-metrics').addEventListener('change', () => {
+            const startEl = document.getElementById('tr-start-metrics');
+            const endEl = document.getElementById('tr-end-metrics');
+            this.trStart = startEl.value ? new Date(startEl.value) : null;
+            this.trEnd = endEl.value ? new Date(endEl.value) : null;
+            if (this.trStart && this.trEnd) {
+                this.timeWindowHours = (this.trEnd.getTime() - this.trStart.getTime()) / 3600000;
+            }
+            this.timeOffsetWindows = 0;
+            this.refreshCurrentValue(metricName);
+            this.loadTimeseries(metricName);
+        });
+        document.getElementById('tr-end-metrics').addEventListener('change', () => {
+            const startEl = document.getElementById('tr-start-metrics');
+            const endEl = document.getElementById('tr-end-metrics');
+            this.trStart = startEl.value ? new Date(startEl.value) : null;
+            this.trEnd = endEl.value ? new Date(endEl.value) : null;
+            if (this.trStart && this.trEnd) {
+                this.timeWindowHours = (this.trEnd.getTime() - this.trStart.getTime()) / 3600000;
+            }
+            this.timeOffsetWindows = 0;
             this.refreshCurrentValue(metricName);
             this.loadTimeseries(metricName);
         });
         document.getElementById('chart-prev').addEventListener('click', () => {
-            this.timeOffsetWindows++;
+            if (this.trStart) {
+                const shiftMs = this.timeWindowHours * 3600000;
+                this.trStart = new Date(this.trStart.getTime() - shiftMs);
+                this.trEnd = new Date((this.trEnd || new Date()).getTime() - shiftMs);
+                this._syncMetricDateInputs();
+            } else {
+                this.timeOffsetWindows++;
+            }
             this.loadTimeseries(metricName);
         });
         document.getElementById('chart-next').addEventListener('click', () => {
-            if (this.timeOffsetWindows > 0) this.timeOffsetWindows--;
+            if (this.trStart) {
+                const shiftMs = this.timeWindowHours * 3600000;
+                const now = Date.now();
+                let newEnd = (this.trEnd || new Date()).getTime() + shiftMs;
+                if (newEnd > now) newEnd = now;
+                this.trEnd = new Date(newEnd);
+                this.trStart = new Date(newEnd - shiftMs);
+                this._syncMetricDateInputs();
+            } else {
+                if (this.timeOffsetWindows > 0) this.timeOffsetWindows--;
+            }
             this.loadTimeseries(metricName);
         });
         document.getElementById('chart-now').addEventListener('click', () => {
-            this.timeOffsetWindows = 0;
+            if (this.trStart) {
+                this.trEnd = new Date();
+                this.trStart = new Date(this.trEnd.getTime() - this.timeWindowHours * 3600000);
+                this._syncMetricDateInputs();
+            } else {
+                this.timeOffsetWindows = 0;
+            }
             this.loadTimeseries(metricName);
         });
 
@@ -344,6 +399,12 @@ class MetricsView {
     }
 
     timeWindow() {
+        if (this.trStart) {
+            return {
+                start_time: this.trStart.getTime() * 1_000_000,
+                end_time: (this.trEnd || new Date()).getTime() * 1_000_000,
+            };
+        }
         const windowMs = this.timeWindowHours * 3600 * 1000;
         const endMs = Date.now() - this.timeOffsetWindows * windowMs;
         const startMs = endMs - windowMs;
@@ -423,7 +484,13 @@ class MetricsView {
             }
             // Disable "next" button when at now
             const nextBtn = document.getElementById('chart-next');
-            if (nextBtn) nextBtn.disabled = this.timeOffsetWindows === 0;
+            if (nextBtn) {
+                if (this.trStart) {
+                    nextBtn.disabled = this.trEnd && this.trEnd.getTime() >= Date.now() - 1000;
+                } else {
+                    nextBtn.disabled = this.timeOffsetWindows === 0;
+                }
+            }
         } catch (error) {
             console.error('Failed to load timeseries:', error);
         }
@@ -674,6 +741,18 @@ class MetricsView {
             }
         });
         this._resizeObserver.observe(chartArea);
+    }
+
+    _toDatetimeLocal(date) {
+        const pad = n => String(n).padStart(2, '0');
+        return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`;
+    }
+
+    _syncMetricDateInputs() {
+        const startEl = document.getElementById('tr-start-metrics');
+        const endEl = document.getElementById('tr-end-metrics');
+        if (startEl) startEl.value = this.trStart ? this._toDatetimeLocal(this.trStart) : '';
+        if (endEl) endEl.value = this.trEnd ? this._toDatetimeLocal(this.trEnd) : '';
     }
 
     escapeHtml(text) {
