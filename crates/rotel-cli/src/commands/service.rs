@@ -214,6 +214,30 @@ pub async fn handle_stop() -> Result<()> {
     Ok(())
 }
 
+/// Stop the running daemon and start a fresh one
+pub async fn handle_restart(storage_path: String, addr: String) -> Result<()> {
+    // Verify a daemon is actually running before attempting restart
+    match read_pid()? {
+        None => {
+            return Err(Error::ConfigError(
+                "No rotel daemon is running. Use 'rotel start' to start one.".to_string(),
+            ));
+        },
+        Some(pid) if !is_process_running(pid) => {
+            return Err(Error::ConfigError(
+                "No rotel daemon is running. Use 'rotel start' to start one.".to_string(),
+            ));
+        },
+        _ => {},
+    }
+
+    println!("Stopping daemon...");
+    handle_stop().await?;
+
+    println!("Daemon stopped. Starting fresh...");
+    handle_start(storage_path, addr).await
+}
+
 /// Show the status of the rotel daemon
 pub async fn handle_status() -> Result<()> {
     let pid = match read_pid()? {

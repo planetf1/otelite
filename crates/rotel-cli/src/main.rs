@@ -95,6 +95,20 @@ enum Commands {
     /// Stop the `serve` background daemon
     #[command(after_help = "Examples:\n  rotel stop")]
     Stop,
+    /// Stop the running daemon and start a fresh one.
+    /// Picks up a freshly compiled binary if you ran `cargo build --release` first.
+    #[command(
+        after_help = "Examples:\n  rotel restart\n  rotel restart --addr 0.0.0.0:3000 --storage-path /data/rotel.db"
+    )]
+    Restart {
+        /// Server bind address
+        #[arg(long, default_value = "127.0.0.1:3000")]
+        addr: String,
+
+        /// Storage database path
+        #[arg(long, default_value = "rotel.db")]
+        storage_path: String,
+    },
     /// Show `serve` daemon status
     #[command(after_help = "Examples:\n  rotel status")]
     Status,
@@ -449,6 +463,9 @@ async fn run_cli() -> Result<()> {
             commands::service::handle_start(storage_path, addr).await
         },
         Some(Commands::Stop) => commands::service::handle_stop().await,
+        Some(Commands::Restart { addr, storage_path }) => {
+            commands::service::handle_restart(storage_path, addr).await
+        },
         Some(Commands::Status) => commands::service::handle_status().await,
         Some(Commands::Service { command }) => handle_service_command(command).await,
         Some(Commands::Logs { command }) => handle_logs_command(command, &config).await,
