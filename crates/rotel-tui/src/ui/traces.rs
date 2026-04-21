@@ -239,13 +239,12 @@ fn render_traces_table(frame: &mut Frame, area: Rect, state: &TracesState) {
         .iter()
         .map(|trace| {
             let error_indicator = if trace.has_errors { "⚠" } else { " " };
-            let duration_ms = trace.duration / 1_000_000; // Convert nanoseconds to milliseconds
 
             Row::new(vec![
                 format_timestamp(trace.start_time),
                 error_indicator.to_string(),
                 truncate_string(&trace.root_span_name, 40),
-                format!("{}ms", duration_ms),
+                format_duration(trace.duration),
                 trace.span_count.to_string(),
                 trace.service_names.join(", "),
             ])
@@ -359,8 +358,6 @@ fn render_detail_panel(frame: &mut Frame, area: Rect, state: &TracesState) {
 
 /// Format trace summary for display (when full details not loaded)
 fn format_trace_summary(summary: &TraceSummary) -> Text<'static> {
-    let duration_ms = summary.duration / 1_000_000;
-
     let lines = vec![
         Line::from(vec![
             TextSpan::styled("Trace ID: ", Style::default().add_modifier(Modifier::BOLD)),
@@ -380,7 +377,7 @@ fn format_trace_summary(summary: &TraceSummary) -> Text<'static> {
         ]),
         Line::from(vec![
             TextSpan::styled("Duration: ", Style::default().add_modifier(Modifier::BOLD)),
-            TextSpan::raw(format!("{}ms", duration_ms)),
+            TextSpan::raw(format_duration(summary.duration)),
         ]),
         Line::from(vec![
             TextSpan::styled(
@@ -426,7 +423,6 @@ fn format_trace_summary(summary: &TraceSummary) -> Text<'static> {
 
 /// Format detailed span information
 fn format_span_detail(span: &Span, trace: &Trace) -> Text<'static> {
-    let span_duration_ms = span.duration / 1_000_000;
     let relative_start_ms = (span.start_time - trace.start_time) / 1_000_000;
 
     let mut lines = vec![
@@ -462,7 +458,7 @@ fn format_span_detail(span: &Span, trace: &Trace) -> Text<'static> {
         ]),
         Line::from(vec![
             TextSpan::styled("Duration: ", Style::default().add_modifier(Modifier::BOLD)),
-            TextSpan::raw(format!("{}ms", span_duration_ms)),
+            TextSpan::raw(format_duration(span.duration)),
         ]),
         Line::from(""),
     ];
@@ -719,8 +715,6 @@ fn format_span_detail(span: &Span, trace: &Trace) -> Text<'static> {
 
 /// Format full trace detail for display
 fn format_trace_detail(trace: &Trace, state: &TracesState) -> Text<'static> {
-    let duration_ms = trace.duration / 1_000_000;
-
     let mut lines = vec![
         Line::from(vec![
             TextSpan::styled("Trace ID: ", Style::default().add_modifier(Modifier::BOLD)),
@@ -740,7 +734,7 @@ fn format_trace_detail(trace: &Trace, state: &TracesState) -> Text<'static> {
         Line::from(""),
         Line::from(vec![
             TextSpan::styled("Duration: ", Style::default().add_modifier(Modifier::BOLD)),
-            TextSpan::raw(format!("{}ms", duration_ms)),
+            TextSpan::raw(format_duration(trace.duration)),
         ]),
         Line::from(vec![
             TextSpan::styled("Spans: ", Style::default().add_modifier(Modifier::BOLD)),
@@ -763,7 +757,7 @@ fn format_trace_detail(trace: &Trace, state: &TracesState) -> Text<'static> {
     // Render each span with timing bar
     for (idx, node) in span_nodes.iter().enumerate() {
         let is_selected = idx == state.selected_span_index;
-        let span_duration_ms = node.span.duration / 1_000_000;
+        let span_duration = format_duration(node.span.duration);
         let indent = " ".repeat(node.depth * 2);
         let tree_char = if node.depth > 0 { "├─ " } else { "▶ " };
 
@@ -845,7 +839,7 @@ fn format_trace_detail(trace: &Trace, state: &TracesState) -> Text<'static> {
 
         row_spans.push(TextSpan::raw(" "));
         row_spans.push(TextSpan::styled(timing_bar, Style::default().fg(bar_color)));
-        row_spans.push(TextSpan::raw(format!(" {}ms", span_duration_ms)));
+        row_spans.push(TextSpan::raw(format!(" {}", span_duration)));
 
         lines.push(Line::from(row_spans));
     }
@@ -997,6 +991,17 @@ fn format_timestamp_full(timestamp_ns: i64) -> String {
                 .to_string()
         })
         .unwrap_or_else(|| "?".to_string())
+}
+
+/// Format a duration in nanoseconds as a human-readable string.
+/// Shows "<1ms" for sub-millisecond durations to avoid misleading "0ms".
+fn format_duration(ns: i64) -> String {
+    let ms = ns / 1_000_000;
+    if ms == 0 && ns > 0 {
+        "<1ms".to_string()
+    } else {
+        format!("{}ms", ms)
+    }
 }
 
 /// Truncate string to max length with ellipsis
