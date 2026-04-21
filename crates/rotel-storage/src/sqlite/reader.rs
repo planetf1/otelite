@@ -153,6 +153,53 @@ pub fn query_metrics(conn: &Connection, params: &QueryParams) -> Result<Vec<Metr
     Ok(metrics)
 }
 
+/// Query metrics returning only the most-recent data point per unique metric name.
+///
+/// Prevents high-frequency counters from crowding out less-frequent gauges and
+/// histograms when the caller only needs the current value for each metric (e.g.,
+/// the metrics list sidebar). The inner subquery selects the rowid of the row
+/// with the maximum timestamp for each name before any time-range filtering.
+pub fn query_latest_metrics(conn: &Connection, params: &QueryParams) -> Result<Vec<Metric>> {
+    // Outer query adds optional time/predicate filters on top of the dedup subquery.
+    let mut query = String::from(
+        "SELECT * FROM metrics WHERE rowid IN (\
+           SELECT rowid FROM metrics GROUP BY name HAVING timestamp = MAX(timestamp)\
+         ) AND 1=1",
+    );
+    let mut sql_params: Vec<Box<dyn rusqlite::ToSql>> = Vec::new();
+
+    if let Some(start) = params.start_time {
+        query.push_str(" AND timestamp >= ?");
+        sql_params.push(Box::new(start));
+    }
+    if let Some(end) = params.end_time {
+        query.push_str(" AND timestamp <= ?");
+        sql_params.push(Box::new(end));
+    }
+
+    append_predicates("metrics", &params.predicates, &mut query, &mut sql_params)?;
+
+    query.push_str(" ORDER BY name ASC");
+    if let Some(limit) = params.limit {
+        query.push_str(" LIMIT ?");
+        sql_params.push(Box::new(limit as i64));
+    }
+
+    let mut stmt = conn
+        .prepare(&query)
+        .map_err(|e| StorageError::QueryError(format!("Failed to prepare query: {}", e)))?;
+
+    let param_refs: Vec<&dyn rusqlite::ToSql> = sql_params.iter().map(|p| p.as_ref()).collect();
+
+    let metrics = stmt
+        .query_map(param_refs.as_slice(), parse_metric_row)
+        .map_err(|e| StorageError::QueryError(format!("Failed to execute query: {}", e)))?
+        .collect::<std::result::Result<Vec<_>, _>>()
+        .map_err(|e| StorageError::QueryError(format!("Failed to parse results: {}", e)))?;
+
+    Ok(metrics)
+}
+
 /// Get storage statistics
 pub fn get_stats(conn: &Connection) -> Result<StorageStats> {
     // Count records

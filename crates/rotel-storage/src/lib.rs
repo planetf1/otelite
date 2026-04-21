@@ -94,8 +94,12 @@ pub trait StorageBackend: Send + Sync {
     /// Query spans
     async fn query_spans(&self, params: &QueryParams) -> Result<Vec<Span>>;
 
-    /// Query metrics
+    /// Query metrics (raw time-series rows, latest first)
     async fn query_metrics(&self, params: &QueryParams) -> Result<Vec<Metric>>;
+
+    /// Query metrics returning the single most-recent data point per unique name.
+    /// Use this for list views where each metric should appear exactly once.
+    async fn query_latest_metrics(&self, params: &QueryParams) -> Result<Vec<Metric>>;
 
     /// Get storage statistics
     async fn stats(&self) -> Result<StorageStats>;

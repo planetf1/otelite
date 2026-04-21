@@ -100,16 +100,21 @@ pub async fn list_metrics(
         params.limit = Some(limit);
     }
 
-    // Query metrics from storage
-    let mut metrics = state.storage.query_metrics(&params).await.map_err(|e| {
-        (
-            StatusCode::INTERNAL_SERVER_ERROR,
-            Json(ErrorResponse::storage_error(format!(
-                "query metrics: {}",
-                e
-            ))),
-        )
-    })?;
+    // Query metrics from storage: use latest-per-name so that high-frequency
+    // counters don't push gauges/histograms out of the result window.
+    let mut metrics = state
+        .storage
+        .query_latest_metrics(&params)
+        .await
+        .map_err(|e| {
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(ErrorResponse::storage_error(format!(
+                    "query metrics: {}",
+                    e
+                ))),
+            )
+        })?;
 
     // Filter by name if specified
     if let Some(name_filter) = &query.name {

@@ -139,6 +139,15 @@ impl StorageBackend for SqliteBackend {
         reader::query_metrics(conn, params)
     }
 
+    async fn query_latest_metrics(&self, params: &QueryParams) -> Result<Vec<Metric>> {
+        let conn_guard = self.conn.lock().unwrap();
+        let conn = conn_guard
+            .as_ref()
+            .ok_or_else(|| StorageError::QueryError("Database not initialized".to_string()))?;
+
+        reader::query_latest_metrics(conn, params)
+    }
+
     async fn stats(&self) -> Result<StorageStats> {
         let conn_guard = self.conn.lock().unwrap();
         let conn = conn_guard
