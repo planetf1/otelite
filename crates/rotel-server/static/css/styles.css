@@ -1784,6 +1784,16 @@ body {
     font-weight: 500;
 }
 
+/* Compact inline GenAI badge in the span waterfall rows */
+.genai-waterfall-badge {
+    display: inline-block;
+    font-size: 0.75em;
+    color: #6b7280;
+    margin-left: 0.4em;
+    white-space: nowrap;
+    flex-shrink: 0;
+}
+
 /* Setup view */
 .setup-container {
     max-width: 860px;

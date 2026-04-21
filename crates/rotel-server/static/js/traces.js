@@ -480,6 +480,35 @@ class TracesView {
     }
 
     /**
+     * Build a compact inline GenAI badge string for waterfall rows.
+     * Returns an HTML string or empty string if not a GenAI span.
+     */
+    buildGenAiWaterfallBadge(span) {
+        const attrs = span.attributes || {};
+        const info = this.extractGenAiInfo(attrs);
+        if (!info) return '';
+
+        const model = info.responseModel || info.model;
+        const hasTokens = info.inputTokens !== null || info.outputTokens !== null;
+
+        let badgeText = '';
+        if (model && hasTokens) {
+            const inTok = (info.inputTokens ?? 0).toLocaleString();
+            const outTok = (info.outputTokens ?? 0).toLocaleString();
+            badgeText = `${this.escapeHtml(model)} \u00b7 ${inTok}\u2192${outTok}`;
+        } else if (model) {
+            badgeText = this.escapeHtml(model);
+        } else if (hasTokens) {
+            const inTok = (info.inputTokens ?? 0).toLocaleString();
+            const outTok = (info.outputTokens ?? 0).toLocaleString();
+            badgeText = `${inTok}\u2192${outTok}`;
+        }
+
+        if (!badgeText) return '';
+        return `<span class="genai-waterfall-badge">${badgeText}</span>`;
+    }
+
+    /**
      * Render span tree as waterfall
      */
     renderSpanTree(spans, traceStart, traceDuration, depth = 0, parentIds = null) {
@@ -505,12 +534,14 @@ class TracesView {
             const collapsedCountEl = hasChildren
                 ? `<span class="collapsed-count" data-count-id="${span.span_id}" style="display:none">(+${descCount})</span>`
                 : '';
+            const genAiBadge = this.buildGenAiWaterfallBadge(span);
 
             return `
                 <div class="span-row" data-row-span-id="${span.span_id}" style="padding-left: ${depth * 16 + 4}px;">
                     <div class="span-info">
                         ${toggleBtn}
                         <span class="span-name ${hasError ? 'span-error' : ''}" title="${this.escapeHtml(span.name)}">${this.escapeHtml(span.name)}${collapsedCountEl}</span>
+                        ${genAiBadge}
                         <span class="span-kind">${this.escapeHtml(kindLabel)}</span>
                         <span class="span-duration">${duration}ms</span>
                     </div>

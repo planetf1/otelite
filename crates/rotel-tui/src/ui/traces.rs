@@ -704,7 +704,28 @@ fn format_trace_detail(trace: &Trace, state: &TracesState) -> Text<'static> {
             status_color = Color::Cyan;
         }
 
-        lines.push(Line::from(vec![
+        // Build optional GenAI inline badge
+        let genai_info = GenAiSpanInfo::from_attributes(&node.span.attributes);
+        let genai_badge: Option<String> = if genai_info.is_genai {
+            let model = genai_info
+                .response_model
+                .as_deref()
+                .or(genai_info.model.as_deref());
+            match (model, genai_info.input_tokens, genai_info.output_tokens) {
+                (Some(m), Some(input), Some(output)) => {
+                    Some(format!(" [{} \u{00b7} {}\u{2192}{}]", m, input, output))
+                },
+                (Some(m), _, _) => Some(format!(" [{}]", m)),
+                (None, Some(input), Some(output)) => {
+                    Some(format!(" [{}\u{2192}{}]", input, output))
+                },
+                _ => None,
+            }
+        } else {
+            None
+        };
+
+        let mut row_spans = vec![
             TextSpan::styled(
                 selection_marker,
                 Style::default()
@@ -723,10 +744,20 @@ fn format_trace_detail(trace: &Trace, state: &TracesState) -> Text<'static> {
                         Modifier::empty()
                     }),
             ),
-            TextSpan::raw(" "),
-            TextSpan::styled(timing_bar, Style::default().fg(bar_color)),
-            TextSpan::raw(format!(" {}ms", span_duration_ms)),
-        ]));
+        ];
+
+        if let Some(badge) = genai_badge {
+            row_spans.push(TextSpan::styled(
+                badge,
+                Style::default().fg(Color::DarkGray),
+            ));
+        }
+
+        row_spans.push(TextSpan::raw(" "));
+        row_spans.push(TextSpan::styled(timing_bar, Style::default().fg(bar_color)));
+        row_spans.push(TextSpan::raw(format!(" {}ms", span_duration_ms)));
+
+        lines.push(Line::from(row_spans));
     }
 
     lines.push(Line::from(""));
