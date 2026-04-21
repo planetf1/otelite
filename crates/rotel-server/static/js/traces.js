@@ -14,6 +14,7 @@ class TracesView {
             startTime: null,
             endTime: null
         };
+        this.timeRangeHours = null;
         this.currentPage = 0;
         this.pageSize = 50;
         this.autoRefresh = false;
@@ -42,6 +43,14 @@ class TracesView {
                 <input type="text" id="trace-id-filter" placeholder="Trace ID" class="filter-input">
                 <input type="text" id="service-filter" placeholder="Service name" class="filter-input">
                 <input type="text" id="search-traces" placeholder="Search span names..." class="filter-input">
+                <select id="time-range-traces" class="filter-select">
+                    <option value="">All time</option>
+                    <option value="0.25">Last 15m</option>
+                    <option value="1">Last 1h</option>
+                    <option value="6">Last 6h</option>
+                    <option value="24">Last 24h</option>
+                    <option value="168">Last 7d</option>
+                </select>
                 <button id="apply-trace-filters" class="btn btn-primary">Apply Filters</button>
                 <button id="clear-trace-filters" class="btn btn-secondary">Clear</button>
             </div>
@@ -116,6 +125,12 @@ class TracesView {
                 offset: this.currentPage * this.pageSize,
                 ...this.filters
             };
+
+            if (this.timeRangeHours !== null) {
+                const nowMs = Date.now();
+                params.start_time = (nowMs - this.timeRangeHours * 3600 * 1000) * 1_000_000;
+                params.end_time = nowMs * 1_000_000;
+            }
 
             const response = await this.apiClient.getTraces(params);
             this.traces = response.traces;
@@ -491,6 +506,8 @@ class TracesView {
         this.filters.traceId = document.getElementById('trace-id-filter').value;
         this.filters.service = document.getElementById('service-filter').value;
         this.filters.search = document.getElementById('search-traces').value;
+        const rangeVal = document.getElementById('time-range-traces').value;
+        this.timeRangeHours = rangeVal ? parseFloat(rangeVal) : null;
         this.currentPage = 0;
         this.loadTraces();
     }
@@ -506,9 +523,11 @@ class TracesView {
             startTime: null,
             endTime: null
         };
+        this.timeRangeHours = null;
         document.getElementById('trace-id-filter').value = '';
         document.getElementById('service-filter').value = '';
         document.getElementById('search-traces').value = '';
+        document.getElementById('time-range-traces').value = '';
         this.currentPage = 0;
         this.loadTraces();
     }

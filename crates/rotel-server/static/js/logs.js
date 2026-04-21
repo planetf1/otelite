@@ -13,6 +13,7 @@ class LogsView {
             startTime: null,
             endTime: null
         };
+        this.timeRangeHours = null;
         this.currentPage = 0;
         this.pageSize = 100;
         this.autoRefresh = false;
@@ -48,6 +49,14 @@ class LogsView {
                     <option value="WARN">WARN</option>
                     <option value="ERROR">ERROR</option>
                     <option value="FATAL">FATAL</option>
+                </select>
+                <select id="time-range-logs" class="filter-select">
+                    <option value="">All time</option>
+                    <option value="0.25">Last 15m</option>
+                    <option value="1">Last 1h</option>
+                    <option value="6">Last 6h</option>
+                    <option value="24">Last 24h</option>
+                    <option value="168">Last 7d</option>
                 </select>
                 <input type="text" id="resource-filter" placeholder="Resource filter (e.g., service.name=my-service)" class="filter-input">
                 <button id="apply-filters" class="btn btn-primary">Apply Filters</button>
@@ -97,6 +106,12 @@ class LogsView {
                 offset: this.currentPage * this.pageSize,
                 ...this.filters
             };
+
+            if (this.timeRangeHours !== null) {
+                const nowMs = Date.now();
+                params.start_time = (nowMs - this.timeRangeHours * 3600 * 1000) * 1_000_000;
+                params.end_time = nowMs * 1_000_000;
+            }
 
             const response = await this.apiClient.getLogs(params);
             this.logs = response.logs;
@@ -266,6 +281,8 @@ class LogsView {
         this.filters.severity = document.getElementById('severity-filter').value;
         this.filters.resource = document.getElementById('resource-filter').value;
         this.filters.search = document.getElementById('search-logs').value;
+        const rangeVal = document.getElementById('time-range-logs').value;
+        this.timeRangeHours = rangeVal ? parseFloat(rangeVal) : null;
         this.currentPage = 0;
         this.loadLogs();
     }
@@ -281,9 +298,11 @@ class LogsView {
             startTime: null,
             endTime: null
         };
+        this.timeRangeHours = null;
         document.getElementById('severity-filter').value = '';
         document.getElementById('resource-filter').value = '';
         document.getElementById('search-logs').value = '';
+        document.getElementById('time-range-logs').value = '';
         this.currentPage = 0;
         this.loadLogs();
     }
