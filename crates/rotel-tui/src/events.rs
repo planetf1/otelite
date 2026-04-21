@@ -45,6 +45,10 @@ pub enum AppEvent {
     PageDown,
     /// Page up (move selection by page)
     PageUp,
+    /// A printable character (used for text input modes)
+    Char(char),
+    /// Backspace (used for text input modes)
+    Backspace,
     /// No event
     None,
 }
@@ -92,6 +96,8 @@ fn handle_key_event(key: KeyEvent) -> AppEvent {
         KeyCode::Char('r') => AppEvent::Refresh,
         KeyCode::PageDown => AppEvent::PageDown,
         KeyCode::PageUp => AppEvent::PageUp,
+        KeyCode::Char(c) => AppEvent::Char(c),
+        KeyCode::Backspace => AppEvent::Backspace,
 
         _ => AppEvent::None,
     }
@@ -192,10 +198,22 @@ mod tests {
     }
 
     #[test]
-    fn test_unknown_key_returns_none() {
+    fn test_char_event() {
         let key = KeyEvent::new(KeyCode::Char('x'), KeyModifiers::NONE);
-        assert_eq!(handle_key_event(key), AppEvent::None);
+        assert_eq!(handle_key_event(key), AppEvent::Char('x'));
 
+        let key = KeyEvent::new(KeyCode::Char('A'), KeyModifiers::NONE);
+        assert_eq!(handle_key_event(key), AppEvent::Char('A'));
+    }
+
+    #[test]
+    fn test_backspace_event() {
+        let key = KeyEvent::new(KeyCode::Backspace, KeyModifiers::NONE);
+        assert_eq!(handle_key_event(key), AppEvent::Backspace);
+    }
+
+    #[test]
+    fn test_unknown_key_returns_none() {
         let key = KeyEvent::new(KeyCode::F(1), KeyModifiers::NONE);
         assert_eq!(handle_key_event(key), AppEvent::None);
     }

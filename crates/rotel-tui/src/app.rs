@@ -39,6 +39,10 @@ pub struct App {
     traces_state: TracesState,
     metrics_state: MetricsState,
     last_refresh: Instant,
+    /// Whether filter input mode is active
+    pub filter_input_active: bool,
+    /// The string being typed in filter input mode
+    pub filter_input_buffer: String,
 }
 
 impl App {
@@ -61,23 +65,61 @@ impl App {
             traces_state: TracesState::new(),
             metrics_state: MetricsState::new(),
             last_refresh: Instant::now(),
+            filter_input_active: false,
+            filter_input_buffer: String::new(),
         }
     }
 
     /// Handle an application event
     pub fn handle_event(&mut self, event: AppEvent) {
+        // Filter input mode: intercept most keys for text entry
+        if self.filter_input_active {
+            match event {
+                AppEvent::Select => {
+                    // Enter: apply the filter and return to normal mode
+                    self.apply_filter_input();
+                    self.filter_input_active = false;
+                    self.filter_input_buffer.clear();
+                },
+                AppEvent::Back => {
+                    // Esc: cancel without applying
+                    self.filter_input_active = false;
+                    self.filter_input_buffer.clear();
+                },
+                AppEvent::Backspace => {
+                    self.filter_input_buffer.pop();
+                },
+                AppEvent::Char(c) => {
+                    self.filter_input_buffer.push(c);
+                },
+                _ => {},
+            }
+            return;
+        }
+
         match event {
             AppEvent::Quit => self.should_quit = true,
             AppEvent::SwitchToLogs => self.current_view = View::Logs,
             AppEvent::SwitchToTraces => self.current_view = View::Traces,
             AppEvent::SwitchToMetrics => self.current_view = View::Metrics,
             AppEvent::ShowHelp => self.current_view = View::Help,
+            AppEvent::Filter if matches!(self.current_view, View::Logs | View::Traces) => {
+                self.filter_input_active = true;
+                self.filter_input_buffer.clear();
+            },
             AppEvent::Back => {
                 if self.current_view == View::Help {
                     self.current_view = View::Logs;
                 } else {
-                    // Close detail panels in each view
+                    // If filters are active, Esc clears them first
                     match self.current_view {
+                        View::Logs if !self.logs_state.filters.is_empty() => {
+                            self.logs_state.clear_filters();
+                        },
+                        View::Traces if !self.traces_state.filters.is_empty() => {
+                            self.traces_state.clear_filters();
+                        },
+                        // Close detail panels in each view
                         View::Logs if self.logs_state.show_detail => {
                             self.logs_state.hide_detail_panel();
                         },
@@ -186,6 +228,45 @@ impl App {
         }
     }
 
+    /// Parse the filter input buffer and apply the filter to the current view's state.
+    ///
+    /// Format: `key=value` — splits on first `=`. If no `=`, treats the whole
+    /// string as a body search query.  Supported keys:
+    ///   Logs:   `severity`, `service` (matches resource attr `service.name`)
+    ///   Traces: `service`, `error` (maps to `has_errors`)
+    fn apply_filter_input(&mut self) {
+        let input = self.filter_input_buffer.trim().to_string();
+        if input.is_empty() {
+            return;
+        }
+
+        if let Some(eq_pos) = input.find('=') {
+            let key = input[..eq_pos].trim().to_string();
+            let value = input[eq_pos + 1..].trim().to_string();
+
+            // Normalise "error" -> "has_errors" for traces
+            let (key, value) = match (self.current_view.clone(), key.as_str()) {
+                (View::Traces, "error") => ("has_errors".to_string(), value),
+                (View::Logs, "service") => ("service.name".to_string(), value),
+                (View::Traces, "service") => ("service".to_string(), value),
+                _ => (key, value),
+            };
+
+            match self.current_view {
+                View::Logs => self.logs_state.set_filter(key, value),
+                View::Traces => self.traces_state.set_filter(key, value),
+                _ => {},
+            }
+        } else {
+            // No `=`: treat as body/name search query
+            match self.current_view {
+                View::Logs => self.logs_state.set_search_query(input),
+                View::Traces => self.traces_state.set_search_query(input),
+                _ => {},
+            }
+        }
+    }
+
     /// Check if the application should quit
     pub fn should_quit(&self) -> bool {
         self.should_quit
@@ -205,10 +286,22 @@ impl App {
             // Render based on current view
             match self.current_view {
                 View::Logs => {
-                    ui::render_logs_view(f, area, &self.logs_state);
+                    ui::render_logs_view(
+                        f,
+                        area,
+                        &self.logs_state,
+                        self.filter_input_active,
+                        &self.filter_input_buffer,
+                    );
                 },
                 View::Traces => {
-                    ui::render_traces_view(f, area, &self.traces_state);
+                    ui::render_traces_view(
+                        f,
+                        area,
+                        &self.traces_state,
+                        self.filter_input_active,
+                        &self.filter_input_buffer,
+                    );
                 },
                 View::Metrics => {
                     ui::render_metrics_view(f, area, &self.metrics_state);

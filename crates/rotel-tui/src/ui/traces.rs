@@ -146,15 +146,32 @@ fn get_timing_bar_color(status: &str, duration_percent: f64) -> Color {
 }
 
 /// Render the traces view
-pub fn render_traces_view(frame: &mut Frame, area: Rect, state: &TracesState) {
-    // Split the area into tab bar, main content and status bar
-    let chunks = Layout::default()
-        .direction(Direction::Vertical)
-        .constraints([
+pub fn render_traces_view(
+    frame: &mut Frame,
+    area: Rect,
+    state: &TracesState,
+    filter_input_active: bool,
+    filter_input_buffer: &str,
+) {
+    // Split the area: tab bar | main content | [filter bar] | status bar
+    let constraints = if filter_input_active {
+        vec![
+            Constraint::Length(1), // Tab bar
+            Constraint::Min(3),    // Main content
+            Constraint::Length(1), // Filter input bar
+            Constraint::Length(1), // Status bar
+        ]
+    } else {
+        vec![
             Constraint::Length(1), // Tab bar
             Constraint::Min(3),    // Main content
             Constraint::Length(1), // Status bar
-        ])
+        ]
+    };
+
+    let chunks = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints(constraints)
         .split(area);
 
     render_tab_bar(frame, chunks[0], "Traces");
@@ -166,8 +183,12 @@ pub fn render_traces_view(frame: &mut Frame, area: Rect, state: &TracesState) {
         render_traces_table(frame, chunks[1], state);
     }
 
-    // Render status bar
-    render_status_bar(frame, chunks[2], state);
+    if filter_input_active {
+        render_filter_input_bar(frame, chunks[2], filter_input_buffer);
+        render_status_bar(frame, chunks[3], state);
+    } else {
+        render_status_bar(frame, chunks[2], state);
+    }
 }
 
 /// Render traces table only
@@ -688,6 +709,25 @@ fn get_span_status_color(status: &str) -> Color {
         "UNSET" | "UNKNOWN" => Color::DarkGray,
         _ => Color::White,
     }
+}
+
+/// Render a single-line filter input bar (vim-style prompt at the bottom of the pane)
+fn render_filter_input_bar(frame: &mut Frame, area: Rect, buffer: &str) {
+    let line = Line::from(vec![
+        TextSpan::styled(
+            "Filter: ",
+            Style::default()
+                .fg(Color::Yellow)
+                .add_modifier(Modifier::BOLD),
+        ),
+        TextSpan::raw(buffer.to_string()),
+        TextSpan::styled("█", Style::default().fg(Color::Yellow)),
+        TextSpan::styled(
+            "  (Enter to apply, Esc to cancel, key=value or text)",
+            Style::default().fg(Color::DarkGray),
+        ),
+    ]);
+    frame.render_widget(Paragraph::new(line), area);
 }
 
 /// Render status bar
