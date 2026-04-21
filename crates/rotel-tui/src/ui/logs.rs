@@ -104,7 +104,7 @@ fn render_logs_with_detail(frame: &mut Frame, area: Rect, state: &LogsState) {
 
 /// Render log detail panel
 fn render_detail_panel(frame: &mut Frame, area: Rect, state: &LogsState) {
-    let content = if let Some(log) = state.selected_log() {
+    let content = if let Some(log) = state.selected_log_detail() {
         format_log_detail(log)
     } else {
         Text::from("No log selected")

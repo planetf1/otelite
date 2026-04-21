@@ -15,6 +15,10 @@ pub struct LogsState {
     pub selected_index: usize,
     /// Whether detail panel is shown
     pub show_detail: bool,
+    /// Cached log entry for the detail panel (avoids re-render on every refresh tick)
+    cached_detail: Option<LogEntry>,
+    /// Timestamp (ns) of the log currently shown in the detail cache
+    cached_detail_timestamp: Option<i64>,
     /// Search query
     pub search_query: String,
     /// Active filters (field -> value)
@@ -35,6 +39,8 @@ impl Default for LogsState {
             logs: PaginatedList::new(MAX_ITEMS_IN_MEMORY),
             selected_index: 0,
             show_detail: false,
+            cached_detail: None,
+            cached_detail_timestamp: None,
             search_query: String::new(),
             filters: HashMap::new(),
             auto_scroll: false,
@@ -117,10 +123,31 @@ impl LogsState {
             .collect()
     }
 
-    /// Get currently selected log
+    /// Get currently selected log (from the live list)
     pub fn selected_log(&self) -> Option<&LogEntry> {
         let filtered = self.filtered_logs();
         filtered.get(self.selected_index).copied()
+    }
+
+    /// Get the cached log entry for the detail panel.
+    ///
+    /// Returns the cached entry if the selection has not changed since it was
+    /// populated.  Call `refresh_detail_cache` after any action that may change
+    /// the selection so the cache stays in sync.
+    pub fn selected_log_detail(&self) -> Option<&LogEntry> {
+        self.cached_detail.as_ref()
+    }
+
+    /// Refresh the detail cache from the current selection.
+    ///
+    /// Only clones the selected entry when the timestamp has changed, so
+    /// repeated calls on the same selection are a no-op.
+    pub fn refresh_detail_cache(&mut self) {
+        let current_ts = self.selected_log().map(|l| l.timestamp);
+        if current_ts != self.cached_detail_timestamp {
+            self.cached_detail = self.selected_log().cloned();
+            self.cached_detail_timestamp = current_ts;
+        }
     }
 
     /// Move selection up
@@ -128,6 +155,9 @@ impl LogsState {
         if self.selected_index > 0 {
             self.selected_index -= 1;
             self.auto_scroll = false;
+            if self.show_detail {
+                self.refresh_detail_cache();
+            }
         }
     }
 
@@ -137,6 +167,9 @@ impl LogsState {
         if filtered_count > 0 && self.selected_index < filtered_count - 1 {
             self.selected_index += 1;
             self.auto_scroll = false;
+            if self.show_detail {
+                self.refresh_detail_cache();
+            }
         }
     }
 
@@ -145,9 +178,10 @@ impl LogsState {
         self.show_detail = !self.show_detail;
     }
 
-    /// Show detail panel
+    /// Show detail panel and populate the detail cache for the current selection
     pub fn show_detail_panel(&mut self) {
         self.show_detail = true;
+        self.refresh_detail_cache();
     }
 
     /// Hide detail panel
