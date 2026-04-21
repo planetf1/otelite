@@ -5,7 +5,7 @@ use predicates::prelude::*;
 
 #[test]
 fn test_cli_help_flag() {
-    let mut cmd = Command::cargo_bin("rotel-cli").unwrap();
+    let mut cmd = Command::cargo_bin("rotel").unwrap();
     cmd.arg("--help");
     cmd.assert().success().stdout(predicate::str::contains(
         "Lightweight OpenTelemetry receiver and dashboard",
@@ -14,7 +14,7 @@ fn test_cli_help_flag() {
 
 #[test]
 fn test_cli_version_flag() {
-    let mut cmd = Command::cargo_bin("rotel-cli").unwrap();
+    let mut cmd = Command::cargo_bin("rotel").unwrap();
     cmd.arg("--version");
     cmd.assert()
         .success()
@@ -23,7 +23,7 @@ fn test_cli_version_flag() {
 
 #[test]
 fn test_cli_invalid_log_level() {
-    let mut cmd = Command::cargo_bin("rotel-cli").unwrap();
+    let mut cmd = Command::cargo_bin("rotel").unwrap();
     cmd.args([
         "--endpoint",
         "http://localhost:1",
@@ -39,7 +39,7 @@ fn test_cli_invalid_log_level() {
 
 #[test]
 fn test_cli_logs_list_help() {
-    let mut cmd = Command::cargo_bin("rotel-cli").unwrap();
+    let mut cmd = Command::cargo_bin("rotel").unwrap();
     cmd.args(["logs", "list", "--help"]);
     cmd.assert()
         .success()
@@ -48,7 +48,7 @@ fn test_cli_logs_list_help() {
 
 #[test]
 fn test_cli_logs_search_help() {
-    let mut cmd = Command::cargo_bin("rotel-cli").unwrap();
+    let mut cmd = Command::cargo_bin("rotel").unwrap();
     cmd.args(["logs", "search", "--help"]);
     cmd.assert()
         .success()
@@ -57,7 +57,7 @@ fn test_cli_logs_search_help() {
 
 #[test]
 fn test_cli_logs_show_help() {
-    let mut cmd = Command::cargo_bin("rotel-cli").unwrap();
+    let mut cmd = Command::cargo_bin("rotel").unwrap();
     cmd.args(["logs", "show", "--help"]);
     cmd.assert()
         .success()
@@ -66,7 +66,7 @@ fn test_cli_logs_show_help() {
 
 #[test]
 fn test_cli_logs_export_help() {
-    let mut cmd = Command::cargo_bin("rotel-cli").unwrap();
+    let mut cmd = Command::cargo_bin("rotel").unwrap();
     cmd.args(["logs", "export", "--help"]);
     cmd.assert().success().stdout(predicate::str::contains(
         "Export log entries to file or stdout",
@@ -75,7 +75,7 @@ fn test_cli_logs_export_help() {
 
 #[test]
 fn test_cli_traces_list_help() {
-    let mut cmd = Command::cargo_bin("rotel-cli").unwrap();
+    let mut cmd = Command::cargo_bin("rotel").unwrap();
     cmd.args(["traces", "list", "--help"]);
     cmd.assert()
         .success()
@@ -84,7 +84,7 @@ fn test_cli_traces_list_help() {
 
 #[test]
 fn test_cli_traces_show_help() {
-    let mut cmd = Command::cargo_bin("rotel-cli").unwrap();
+    let mut cmd = Command::cargo_bin("rotel").unwrap();
     cmd.args(["traces", "show", "--help"]);
     cmd.assert().success().stdout(predicate::str::contains(
         "Show a single trace with all spans",
@@ -93,7 +93,7 @@ fn test_cli_traces_show_help() {
 
 #[test]
 fn test_cli_traces_export_help() {
-    let mut cmd = Command::cargo_bin("rotel-cli").unwrap();
+    let mut cmd = Command::cargo_bin("rotel").unwrap();
     cmd.args(["traces", "export", "--help"]);
     cmd.assert()
         .success()
@@ -102,7 +102,7 @@ fn test_cli_traces_export_help() {
 
 #[test]
 fn test_cli_metrics_list_help() {
-    let mut cmd = Command::cargo_bin("rotel-cli").unwrap();
+    let mut cmd = Command::cargo_bin("rotel").unwrap();
     cmd.args(["metrics", "list", "--help"]);
     cmd.assert()
         .success()
@@ -111,7 +111,7 @@ fn test_cli_metrics_list_help() {
 
 #[test]
 fn test_cli_metrics_show_help() {
-    let mut cmd = Command::cargo_bin("rotel-cli").unwrap();
+    let mut cmd = Command::cargo_bin("rotel").unwrap();
     cmd.args(["metrics", "show", "--help"]);
     cmd.assert()
         .success()
@@ -120,7 +120,7 @@ fn test_cli_metrics_show_help() {
 
 #[test]
 fn test_cli_metrics_export_help() {
-    let mut cmd = Command::cargo_bin("rotel-cli").unwrap();
+    let mut cmd = Command::cargo_bin("rotel").unwrap();
     cmd.args(["metrics", "export", "--help"]);
     cmd.assert()
         .success()
@@ -129,7 +129,7 @@ fn test_cli_metrics_export_help() {
 
 #[test]
 fn test_cli_dashboard_help() {
-    let mut cmd = Command::cargo_bin("rotel-cli").unwrap();
+    let mut cmd = Command::cargo_bin("rotel").unwrap();
     cmd.args(["dashboard", "--help"]);
     cmd.assert().success().stdout(predicate::str::contains(
         "Start the dashboard server with OTLP receivers",
@@ -138,7 +138,7 @@ fn test_cli_dashboard_help() {
 
 #[test]
 fn test_cli_logs_search_missing_query() {
-    let mut cmd = Command::cargo_bin("rotel-cli").unwrap();
+    let mut cmd = Command::cargo_bin("rotel").unwrap();
     cmd.args(["logs", "search"]);
     cmd.assert()
         .failure()
@@ -147,7 +147,7 @@ fn test_cli_logs_search_missing_query() {
 
 #[test]
 fn test_cli_logs_show_missing_id() {
-    let mut cmd = Command::cargo_bin("rotel-cli").unwrap();
+    let mut cmd = Command::cargo_bin("rotel").unwrap();
     cmd.args(["logs", "show"]);
     cmd.assert()
         .failure()
@@ -156,7 +156,7 @@ fn test_cli_logs_show_missing_id() {
 
 #[test]
 fn test_cli_traces_show_missing_id() {
-    let mut cmd = Command::cargo_bin("rotel-cli").unwrap();
+    let mut cmd = Command::cargo_bin("rotel").unwrap();
     cmd.args(["traces", "show"]);
     cmd.assert()
         .failure()
@@ -165,7 +165,7 @@ fn test_cli_traces_show_missing_id() {
 
 #[test]
 fn test_cli_metrics_show_missing_name() {
-    let mut cmd = Command::cargo_bin("rotel-cli").unwrap();
+    let mut cmd = Command::cargo_bin("rotel").unwrap();
     cmd.args(["metrics", "show"]);
     cmd.assert()
         .failure()
@@ -174,7 +174,7 @@ fn test_cli_metrics_show_missing_name() {
 
 #[test]
 fn test_cli_invalid_subcommand() {
-    let mut cmd = Command::cargo_bin("rotel-cli").unwrap();
+    let mut cmd = Command::cargo_bin("rotel").unwrap();
     cmd.arg("invalid");
     cmd.assert()
         .failure()
@@ -183,7 +183,7 @@ fn test_cli_invalid_subcommand() {
 
 #[test]
 fn test_cli_global_format_flag() {
-    let mut cmd = Command::cargo_bin("rotel-cli").unwrap();
+    let mut cmd = Command::cargo_bin("rotel").unwrap();
     cmd.args([
         "--endpoint",
         "http://localhost:1",
@@ -198,7 +198,7 @@ fn test_cli_global_format_flag() {
 
 #[test]
 fn test_cli_global_no_color_flag() {
-    let mut cmd = Command::cargo_bin("rotel-cli").unwrap();
+    let mut cmd = Command::cargo_bin("rotel").unwrap();
     cmd.args([
         "--endpoint",
         "http://localhost:1",
@@ -212,7 +212,7 @@ fn test_cli_global_no_color_flag() {
 
 #[test]
 fn test_cli_global_timeout_flag() {
-    let mut cmd = Command::cargo_bin("rotel-cli").unwrap();
+    let mut cmd = Command::cargo_bin("rotel").unwrap();
     cmd.args([
         "--endpoint",
         "http://localhost:1",
@@ -227,7 +227,7 @@ fn test_cli_global_timeout_flag() {
 
 #[test]
 fn test_cli_global_endpoint_flag() {
-    let mut cmd = Command::cargo_bin("rotel-cli").unwrap();
+    let mut cmd = Command::cargo_bin("rotel").unwrap();
     cmd.args(["--endpoint", "http://custom:9000", "logs", "list"]);
     // Will fail due to no server, but validates argument parsing
     cmd.assert().failure();
@@ -235,7 +235,7 @@ fn test_cli_global_endpoint_flag() {
 
 #[test]
 fn test_cli_logs_list_with_limit() {
-    let mut cmd = Command::cargo_bin("rotel-cli").unwrap();
+    let mut cmd = Command::cargo_bin("rotel").unwrap();
     cmd.args([
         "--endpoint",
         "http://localhost:1",
@@ -250,7 +250,7 @@ fn test_cli_logs_list_with_limit() {
 
 #[test]
 fn test_cli_logs_list_with_severity() {
-    let mut cmd = Command::cargo_bin("rotel-cli").unwrap();
+    let mut cmd = Command::cargo_bin("rotel").unwrap();
     cmd.args([
         "--endpoint",
         "http://localhost:1",
@@ -265,7 +265,7 @@ fn test_cli_logs_list_with_severity() {
 
 #[test]
 fn test_cli_logs_list_with_since() {
-    let mut cmd = Command::cargo_bin("rotel-cli").unwrap();
+    let mut cmd = Command::cargo_bin("rotel").unwrap();
     cmd.args([
         "--endpoint",
         "http://localhost:1",
@@ -280,7 +280,7 @@ fn test_cli_logs_list_with_since() {
 
 #[test]
 fn test_cli_traces_list_with_status() {
-    let mut cmd = Command::cargo_bin("rotel-cli").unwrap();
+    let mut cmd = Command::cargo_bin("rotel").unwrap();
     cmd.args([
         "--endpoint",
         "http://localhost:1",
@@ -295,7 +295,7 @@ fn test_cli_traces_list_with_status() {
 
 #[test]
 fn test_cli_traces_list_with_min_duration() {
-    let mut cmd = Command::cargo_bin("rotel-cli").unwrap();
+    let mut cmd = Command::cargo_bin("rotel").unwrap();
     cmd.args([
         "--endpoint",
         "http://localhost:1",
@@ -310,7 +310,7 @@ fn test_cli_traces_list_with_min_duration() {
 
 #[test]
 fn test_cli_metrics_list_with_name() {
-    let mut cmd = Command::cargo_bin("rotel-cli").unwrap();
+    let mut cmd = Command::cargo_bin("rotel").unwrap();
     cmd.args([
         "--endpoint",
         "http://localhost:1",
@@ -325,7 +325,7 @@ fn test_cli_metrics_list_with_name() {
 
 #[test]
 fn test_cli_metrics_list_with_label() {
-    let mut cmd = Command::cargo_bin("rotel-cli").unwrap();
+    let mut cmd = Command::cargo_bin("rotel").unwrap();
     cmd.args([
         "--endpoint",
         "http://localhost:1",
@@ -340,7 +340,7 @@ fn test_cli_metrics_list_with_label() {
 
 #[test]
 fn test_cli_dashboard_with_custom_addr() {
-    let mut cmd = Command::cargo_bin("rotel-cli").unwrap();
+    let mut cmd = Command::cargo_bin("rotel").unwrap();
     cmd.args(["dashboard", "--addr", "0.0.0.0:8080"]);
     // Will fail due to port binding, but validates argument parsing
     cmd.timeout(std::time::Duration::from_secs(2));
@@ -349,7 +349,7 @@ fn test_cli_dashboard_with_custom_addr() {
 
 #[test]
 fn test_cli_dashboard_with_storage_path() {
-    let mut cmd = Command::cargo_bin("rotel-cli").unwrap();
+    let mut cmd = Command::cargo_bin("rotel").unwrap();
     cmd.args(["dashboard", "--storage-path", "/tmp/test.db"]);
     // Will fail due to startup, but validates argument parsing
     cmd.timeout(std::time::Duration::from_secs(2));

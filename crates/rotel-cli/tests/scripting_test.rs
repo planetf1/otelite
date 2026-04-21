@@ -27,7 +27,7 @@ async fn test_exit_code_success() {
         .create_async()
         .await;
 
-    let mut cmd = Command::cargo_bin("rotel-cli").unwrap();
+    let mut cmd = Command::cargo_bin("rotel").unwrap();
     cmd.arg("--endpoint")
         .arg(server.url())
         .arg("logs")
@@ -39,7 +39,7 @@ async fn test_exit_code_success() {
 
 #[tokio::test]
 async fn test_exit_code_connection_error() {
-    let mut cmd = Command::cargo_bin("rotel-cli").unwrap();
+    let mut cmd = Command::cargo_bin("rotel").unwrap();
     cmd.arg("--endpoint")
         .arg("http://localhost:9999")
         .arg("--timeout")
@@ -64,7 +64,7 @@ async fn test_exit_code_not_found() {
         .create_async()
         .await;
 
-    let mut cmd = Command::cargo_bin("rotel-cli").unwrap();
+    let mut cmd = Command::cargo_bin("rotel").unwrap();
     cmd.arg("--endpoint")
         .arg(server.url())
         .arg("logs")
@@ -79,7 +79,7 @@ async fn test_exit_code_not_found() {
 
 #[tokio::test]
 async fn test_exit_code_invalid_argument() {
-    let mut cmd = Command::cargo_bin("rotel-cli").unwrap();
+    let mut cmd = Command::cargo_bin("rotel").unwrap();
     cmd.arg("--timeout")
         .arg("invalid")
         .arg("logs")
@@ -100,7 +100,7 @@ async fn test_errors_write_to_stderr() {
         .create_async()
         .await;
 
-    let mut cmd = Command::cargo_bin("rotel-cli").unwrap();
+    let mut cmd = Command::cargo_bin("rotel").unwrap();
     cmd.arg("--endpoint")
         .arg(server.url())
         .arg("logs")
@@ -114,7 +114,7 @@ async fn test_errors_write_to_stderr() {
 
 #[tokio::test]
 async fn test_connection_error_message_format() {
-    let mut cmd = Command::cargo_bin("rotel-cli").unwrap();
+    let mut cmd = Command::cargo_bin("rotel").unwrap();
     cmd.arg("--endpoint")
         .arg("http://localhost:9999")
         .arg("--timeout")
@@ -138,7 +138,7 @@ async fn test_not_found_error_message_format() {
         .create_async()
         .await;
 
-    let mut cmd = Command::cargo_bin("rotel-cli").unwrap();
+    let mut cmd = Command::cargo_bin("rotel").unwrap();
     cmd.arg("--endpoint")
         .arg(server.url())
         .arg("traces")
@@ -180,7 +180,7 @@ async fn test_data_writes_to_stdout() {
         .create_async()
         .await;
 
-    let mut cmd = Command::cargo_bin("rotel-cli").unwrap();
+    let mut cmd = Command::cargo_bin("rotel").unwrap();
     cmd.arg("--endpoint")
         .arg(server.url())
         .arg("logs")
@@ -218,7 +218,7 @@ async fn test_json_output_to_stdout() {
         .create_async()
         .await;
 
-    let mut cmd = Command::cargo_bin("rotel-cli").unwrap();
+    let mut cmd = Command::cargo_bin("rotel").unwrap();
     cmd.arg("--endpoint")
         .arg(server.url())
         .arg("--format")
@@ -261,7 +261,7 @@ async fn test_json_output_is_valid() {
         .create_async()
         .await;
 
-    let mut cmd = Command::cargo_bin("rotel-cli").unwrap();
+    let mut cmd = Command::cargo_bin("rotel").unwrap();
     let output = cmd
         .arg("--endpoint")
         .arg(server.url())
@@ -306,7 +306,7 @@ async fn test_json_output_can_be_piped() {
         .create_async()
         .await;
 
-    let mut cmd = Command::cargo_bin("rotel-cli").unwrap();
+    let mut cmd = Command::cargo_bin("rotel").unwrap();
     let output = cmd
         .arg("--endpoint")
         .arg(server.url())
@@ -344,7 +344,7 @@ async fn test_empty_json_array_is_valid() {
         .create_async()
         .await;
 
-    let mut cmd = Command::cargo_bin("rotel-cli").unwrap();
+    let mut cmd = Command::cargo_bin("rotel").unwrap();
     let output = cmd
         .arg("--endpoint")
         .arg(server.url())

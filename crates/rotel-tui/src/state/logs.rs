@@ -37,7 +37,7 @@ impl Default for LogsState {
             show_detail: false,
             search_query: String::new(),
             filters: HashMap::new(),
-            auto_scroll: true,
+            auto_scroll: false,
             scroll_offset: 0,
             error: None,
             update_tracker: UpdateTracker::new(MIN_REFRESH_INTERVAL),
@@ -246,7 +246,7 @@ mod tests {
         assert_eq!(state.logs.len(), 0);
         assert_eq!(state.selected_index, 0);
         assert!(!state.show_detail);
-        assert!(state.auto_scroll);
+        assert!(!state.auto_scroll);
     }
 
     #[test]
@@ -259,7 +259,7 @@ mod tests {
 
         state.update_logs(logs);
         assert_eq!(state.logs.len(), 2);
-        assert_eq!(state.selected_index, 1); // Auto-scrolled to bottom
+        assert_eq!(state.selected_index, 0); // Cursor stays at top (auto_scroll off by default)
     }
 
     #[test]
@@ -314,12 +314,12 @@ mod tests {
     #[test]
     fn test_auto_scroll_toggle() {
         let mut state = LogsState::new();
+        assert!(!state.auto_scroll); // default is off
+
+        state.toggle_auto_scroll();
         assert!(state.auto_scroll);
 
         state.toggle_auto_scroll();
         assert!(!state.auto_scroll);
-
-        state.toggle_auto_scroll();
-        assert!(state.auto_scroll);
     }
 }

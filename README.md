@@ -8,17 +8,15 @@ Rotel is a single-binary observability tool that receives OpenTelemetry data (lo
 
 ```bash
 # Development build and run
-cargo run --bin rotel-cli -- dashboard
+cargo run --bin rotel -- dashboard
 
-# Production build (optimised, single binary at target/release/rotel-cli)
-cargo build --release --bin rotel-cli
+# Production build (optimised, single binary at target/release/rotel)
+cargo build --release --bin rotel
 
 # Install to PATH
 cargo install --path crates/rotel-cli
-rotel-cli dashboard
+rotel dashboard
 ```
-
-> **Note:** The binary will be renamed to `rotel` in an upcoming release. For now it is `rotel-cli`.
 
 The dashboard starts three services:
 - **OTLP gRPC receiver** on `localhost:4317`
@@ -119,38 +117,38 @@ tp := trace.NewTracerProvider(trace.WithBatcher(exporter))
 
 ```bash
 # List recent logs
-rotel-cli logs list --severity ERROR --since 1h
+rotel logs list --severity ERROR --since 1h
 
 # Search logs
-rotel-cli logs search "database timeout"
+rotel logs search "database timeout"
 
 # Show a specific log
-rotel-cli logs show <timestamp>
+rotel logs show <timestamp>
 
 # List traces with duration filter
-rotel-cli traces list --min-duration 1s
+rotel traces list --min-duration 1s
 
 # Show trace details
-rotel-cli traces show <trace-id>
+rotel traces show <trace-id>
 
 # List metrics
-rotel-cli metrics list --name "http_*"
+rotel metrics list --name "http_*"
 
 # Show specific metric
-rotel-cli metrics show http_requests_total
+rotel metrics show http_requests_total
 
 # JSON output for scripting
-rotel-cli --format json logs list | jq '.[] | select(.severity == "ERROR")'
+rotel --format json logs list | jq '.[] | select(.severity == "ERROR")'
 ```
 
 ## Terminal UI
 
 ```bash
 # Start TUI
-rotel-cli tui
+rotel tui
 
 # Connect to custom API
-rotel-cli tui --api-url http://localhost:3000
+rotel tui --api-url http://localhost:3000
 ```
 
 **Keyboard shortcuts:**

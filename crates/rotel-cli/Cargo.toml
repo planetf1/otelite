@@ -8,7 +8,7 @@ license.workspace = true
 repository.workspace = true
 homepage.workspace = true
 [[bin]]
-name = "rotel-cli"
+name = "rotel"
 path = "src/main.rs"
 
 [lib]
