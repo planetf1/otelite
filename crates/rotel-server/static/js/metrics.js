@@ -158,6 +158,7 @@ class MetricsView {
         document.getElementById('window-select').addEventListener('change', (e) => {
             this.timeWindowHours = parseFloat(e.target.value);
             this.timeOffsetWindows = 0;
+            this.refreshCurrentValue(metricName);
             this.loadTimeseries(metricName);
         });
         document.getElementById('chart-prev').addEventListener('click', () => {
@@ -178,6 +179,14 @@ class MetricsView {
         await this.loadTimeseries(metricName);
     }
 
+    refreshCurrentValue(metricName) {
+        const heroEl = document.getElementById('metric-hero-value');
+        if (heroEl) heroEl.remove();
+        const bucketContainer = document.getElementById('histogram-bucket-container');
+        if (bucketContainer) bucketContainer.remove();
+        this.renderCurrentValue(metricName);
+    }
+
     renderCurrentValue(metricName) {
         const points = this.metrics.filter(m => m.name === metricName);
         if (points.length === 0) return;
@@ -192,6 +201,7 @@ class MetricsView {
                 const avg = (v.count > 0 && v.sum !== undefined) ? v.sum / v.count : 0;
                 const unit = latest.unit || '';
                 const heroEl = document.createElement('div');
+                heroEl.id = 'metric-hero-value';
                 heroEl.style.cssText = 'display:flex;align-items:baseline;gap:0.5rem;padding:0.5rem 0 0.75rem;border-bottom:1px solid var(--border-color);margin-bottom:0.5rem;flex-wrap:wrap;';
                 heroEl.innerHTML = `
                     <span style="font-size:2.5rem;font-weight:700;font-family:monospace;color:#818cf8;line-height:1;">${this.formatChartValue(avg)}</span>
@@ -223,6 +233,7 @@ class MetricsView {
         const formatted = this.formatValue(latest);
         const unit = latest.unit ? ` ${latest.unit}` : '';
         const heroEl = document.createElement('div');
+        heroEl.id = 'metric-hero-value';
         heroEl.style.cssText = 'display:flex;align-items:baseline;gap:0.5rem;padding:0.5rem 0 0.75rem;border-bottom:1px solid var(--border-color);margin-bottom:0.5rem;';
         heroEl.innerHTML = `
             <span style="font-size:2.5rem;font-weight:700;font-family:monospace;color:#818cf8;line-height:1;">${formatted}</span>
