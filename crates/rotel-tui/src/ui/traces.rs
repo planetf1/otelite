@@ -209,7 +209,7 @@ fn render_traces_table(frame: &mut Frame, area: Rect, state: &TracesState) {
     let table = Table::new(
         rows,
         [
-            Constraint::Length(10), // Time
+            Constraint::Length(16), // Time (YYYY-MM-DD HH:MM)
             Constraint::Length(2),  // Error indicator
             Constraint::Min(30),    // Operation
             Constraint::Length(10), // Duration
@@ -316,7 +316,7 @@ fn format_trace_summary(summary: &TraceSummary) -> Text<'static> {
                 "Start Time: ",
                 Style::default().add_modifier(Modifier::BOLD),
             ),
-            TextSpan::raw(format_timestamp(summary.start_time)),
+            TextSpan::raw(format_timestamp_full(summary.start_time)),
         ]),
         Line::from(vec![
             TextSpan::styled("Duration: ", Style::default().add_modifier(Modifier::BOLD)),
@@ -755,13 +755,29 @@ fn render_status_bar(frame: &mut Frame, area: Rect, state: &TracesState) {
     frame.render_widget(paragraph, area);
 }
 
-/// Format timestamp for display (timestamps stored as nanoseconds)
+/// Format timestamp for the traces list view (16 chars: YYYY-MM-DD HH:MM, local time).
 fn format_timestamp(timestamp_ns: i64) -> String {
-    use chrono::DateTime;
+    use chrono::{DateTime, Local, Utc};
 
-    // Timestamps are stored in nanoseconds; convert to milliseconds for chrono
-    DateTime::from_timestamp_millis(timestamp_ns / 1_000_000)
-        .map(|dt| dt.format("%H:%M:%S").to_string())
+    DateTime::<Utc>::from_timestamp_millis(timestamp_ns / 1_000_000)
+        .map(|dt| {
+            dt.with_timezone(&Local)
+                .format("%Y-%m-%d %H:%M")
+                .to_string()
+        })
+        .unwrap_or_else(|| "?".to_string())
+}
+
+/// Format timestamp for detail panels: full ISO 8601 with seconds and UTC offset.
+fn format_timestamp_full(timestamp_ns: i64) -> String {
+    use chrono::{DateTime, Local, Utc};
+
+    DateTime::<Utc>::from_timestamp_millis(timestamp_ns / 1_000_000)
+        .map(|dt| {
+            dt.with_timezone(&Local)
+                .format("%Y-%m-%d %H:%M:%S %z")
+                .to_string()
+        })
         .unwrap_or_else(|| "?".to_string())
 }
 
@@ -827,11 +843,13 @@ mod tests {
 
     #[test]
     fn test_format_timestamp() {
-        // April 17, 2024 in nanoseconds
         let timestamp_ns: i64 = 1713360896789 * 1_000_000;
         let formatted = format_timestamp(timestamp_ns);
+        // YYYY-MM-DD HH:MM — 16 chars, year-first ISO ordering
+        assert_eq!(formatted.len(), 16);
+        assert!(formatted.starts_with("20")); // year starts with 20xx
+        assert!(formatted.contains('-'));
         assert!(formatted.contains(':'));
-        assert_eq!(formatted.len(), 8); // HH:MM:SS
     }
 
     #[test]
