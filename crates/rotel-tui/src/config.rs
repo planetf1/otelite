@@ -15,6 +15,9 @@ pub struct Config {
     /// Enable debug logging (will be used when debug mode is implemented)
     #[allow(dead_code)]
     pub debug: bool,
+
+    /// Version string to display in the help screen (e.g. "0.1.0 (abc1234)")
+    pub version: String,
 }
 
 impl Default for Config {
@@ -24,6 +27,8 @@ impl Default for Config {
             refresh_interval: Duration::from_secs(2),
             initial_view: "logs".to_string(),
             debug: false,
+            version: concat!(env!("CARGO_PKG_VERSION"), " (", env!("ROTEL_GIT_SHA"), ")")
+                .to_string(),
         }
     }
 }

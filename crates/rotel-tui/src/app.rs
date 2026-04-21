@@ -214,7 +214,7 @@ impl App {
                     ui::render_metrics_view(f, area, &self.metrics_state);
                 },
                 View::Help => {
-                    ui::render_help_view(f, area);
+                    ui::render_help_view(f, area, &self.config.version);
                 },
             }
         })?;
@@ -361,6 +361,7 @@ mod tests {
             refresh_interval: Duration::from_secs(5),
             initial_view: "logs".to_string(),
             debug: false,
+            version: "0.0.0-test".to_string(),
         }
     }
 

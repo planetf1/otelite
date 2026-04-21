@@ -39,6 +39,7 @@ async fn main() -> Result<()> {
         refresh_interval: std::time::Duration::from_secs(args.refresh_interval),
         initial_view: args.view,
         debug: args.debug,
+        version: concat!(env!("CARGO_PKG_VERSION"), " (", env!("ROTEL_GIT_SHA"), ")").to_string(),
     };
 
     // Run the TUI application

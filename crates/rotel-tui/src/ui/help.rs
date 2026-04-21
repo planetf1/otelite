@@ -7,8 +7,8 @@ use ratatui::{
 };
 
 /// Render the help screen
-pub fn render_help_view(frame: &mut Frame, area: Rect) {
-    let help_text = create_help_text();
+pub fn render_help_view(frame: &mut Frame, area: Rect, version: &str) {
+    let help_text = create_help_text(version);
 
     let paragraph = Paragraph::new(help_text)
         .block(
@@ -23,13 +23,18 @@ pub fn render_help_view(frame: &mut Frame, area: Rect) {
 }
 
 /// Create help text content
-fn create_help_text() -> Text<'static> {
+fn create_help_text(version: &str) -> Text<'static> {
+    let version_line = format!("Version: {version}");
     let lines = vec![
         Line::from(vec![Span::styled(
             "Rotel TUI - OpenTelemetry Receiver & Dashboard",
             Style::default()
                 .fg(Color::Cyan)
                 .add_modifier(Modifier::BOLD),
+        )]),
+        Line::from(vec![Span::styled(
+            version_line,
+            Style::default().fg(Color::DarkGray),
         )]),
         Line::from(""),
         Line::from(vec![Span::styled(

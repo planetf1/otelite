@@ -20,7 +20,7 @@ use error::{Error, Result};
 
 #[derive(Parser, Debug)]
 #[command(name = "rotel")]
-#[command(version)]
+#[command(version = concat!(env!("CARGO_PKG_VERSION"), " (", env!("ROTEL_GIT_SHA"), ")"))]
 #[command(about = "Lightweight OpenTelemetry receiver and dashboard", long_about = None)]
 struct Cli {
     /// Rotel backend endpoint URL
@@ -736,6 +736,7 @@ async fn handle_tui_command(
         refresh_interval: std::time::Duration::from_secs(refresh_interval),
         initial_view: view,
         debug,
+        version: concat!(env!("CARGO_PKG_VERSION"), " (", env!("ROTEL_GIT_SHA"), ")").to_string(),
     };
 
     // Run the TUI application
