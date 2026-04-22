@@ -19,7 +19,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Project documentation
   - README.md with quick start guide
   - CONTRIBUTING.md with development guidelines
-  - ARCHITECTURE.md with system design documentation
+  - docs/architecture.md with system design documentation
   - CHANGELOG.md for tracking changes
 
 ### Changed

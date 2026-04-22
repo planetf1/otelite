@@ -347,7 +347,7 @@ Update relevant documentation in `docs/`:
 
 ### Architecture Documentation
 
-Update `ARCHITECTURE.md` for:
+Update `docs/architecture.md` for:
 - New components or modules
 - Architectural changes
 - Design decisions

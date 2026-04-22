@@ -30,7 +30,7 @@ All four must pass before every commit.
 
 ## Architecture Overview
 
-Otelite is an OpenTelemetry receiver and local observability server for LLM developers. See ARCHITECTURE.md for full detail.
+Otelite is an OpenTelemetry receiver and local observability server for LLM developers. See docs/architecture.md for full detail.
 
 **Crate structure:**
 - `crates/otelite-core` — telemetry domain types (LogRecord, Span, Metric, Resource, GenAiSpanInfo). No HTTP/storage deps.

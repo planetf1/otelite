@@ -245,7 +245,7 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for development workflow and [docs/testin
 - `otelite-cli` — Command-line interface binary
 - `otelite-tui` — Terminal user interface
 
-See [ARCHITECTURE.md](ARCHITECTURE.md) for detailed design.
+See [docs/architecture.md](docs/architecture.md) for detailed design.
 
 ## Performance
 
