@@ -268,7 +268,7 @@ fn render_traces_table(frame: &mut Frame, area: Rect, state: &TracesState) {
     let table = Table::new(
         rows,
         [
-            Constraint::Length(16), // Time (YYYY-MM-DD HH:MM)
+            Constraint::Length(8),  // Time (HH:MM:SS)
             Constraint::Length(2),  // Error indicator
             Constraint::Min(30),    // Operation
             Constraint::Length(10), // Duration
@@ -349,10 +349,14 @@ fn render_detail_panel(frame: &mut Frame, area: Rect, state: &TracesState) {
         " Trace Detail "
     };
 
-    let paragraph = Paragraph::new(content)
-        .block(Block::default().borders(Borders::ALL).title(title))
-        .wrap(Wrap { trim: true });
-
+    // Waterfall view must not wrap — line wrapping breaks the indented tree structure
+    // and `trim: true` would strip the leading spaces that represent span depth.
+    // Only the span detail text view benefits from wrapping.
+    let mut paragraph = Paragraph::new(content)
+        .block(Block::default().borders(Borders::ALL).title(title));
+    if state.show_span_detail {
+        paragraph = paragraph.wrap(Wrap { trim: false });
+    }
     frame.render_widget(paragraph, area);
 }
 
@@ -967,16 +971,12 @@ fn render_status_bar(frame: &mut Frame, area: Rect, state: &TracesState, api_err
     frame.render_widget(paragraph, area);
 }
 
-/// Format timestamp for the traces list view (16 chars: YYYY-MM-DD HH:MM, local time).
+/// Format timestamp for the traces list view (8 chars: HH:MM:SS, local time).
 fn format_timestamp(timestamp_ns: i64) -> String {
     use chrono::{DateTime, Local, Utc};
 
     DateTime::<Utc>::from_timestamp_millis(timestamp_ns / 1_000_000)
-        .map(|dt| {
-            dt.with_timezone(&Local)
-                .format("%Y-%m-%d %H:%M")
-                .to_string()
-        })
+        .map(|dt| dt.with_timezone(&Local).format("%H:%M:%S").to_string())
         .unwrap_or_else(|| "?".to_string())
 }
 
@@ -1068,10 +1068,8 @@ mod tests {
     fn test_format_timestamp() {
         let timestamp_ns: i64 = 1713360896789 * 1_000_000;
         let formatted = format_timestamp(timestamp_ns);
-        // YYYY-MM-DD HH:MM — 16 chars, year-first ISO ordering
-        assert_eq!(formatted.len(), 16);
-        assert!(formatted.starts_with("20")); // year starts with 20xx
-        assert!(formatted.contains('-'));
+        // HH:MM:SS — 8 chars
+        assert_eq!(formatted.len(), 8);
         assert!(formatted.contains(':'));
     }
 
