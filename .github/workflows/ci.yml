@@ -157,12 +157,12 @@ jobs:
             - Workspace line coverage: **${{ steps.coverage.outputs.workspace }}%**
             - Minimum workspace threshold: **${{ env.COVERAGE_THRESHOLD_WORKSPACE }}%**
             - Per-crate thresholds enforced in CI:
-              - `rotel-cli`: `${{ env.COVERAGE_THRESHOLD_ROTEL_CLI }}%`
-              - `rotel-core`: `${{ env.COVERAGE_THRESHOLD_ROTEL_CORE }}%`
-              - `rotel-dashboard`: `${{ env.COVERAGE_THRESHOLD_ROTEL_DASHBOARD }}%`
-              - `rotel-receiver`: `${{ env.COVERAGE_THRESHOLD_ROTEL_RECEIVER }}%`
-              - `rotel-storage`: `${{ env.COVERAGE_THRESHOLD_ROTEL_STORAGE }}%`
-              - `rotel-tui`: `${{ env.COVERAGE_THRESHOLD_ROTEL_TUI }}%`
+              - `otelite-cli`: `${{ env.COVERAGE_THRESHOLD_ROTEL_CLI }}%`
+              - `otelite-core`: `${{ env.COVERAGE_THRESHOLD_ROTEL_CORE }}%`
+              - `otelite-dashboard`: `${{ env.COVERAGE_THRESHOLD_ROTEL_DASHBOARD }}%`
+              - `otelite-receiver`: `${{ env.COVERAGE_THRESHOLD_ROTEL_RECEIVER }}%`
+              - `otelite-storage`: `${{ env.COVERAGE_THRESHOLD_ROTEL_STORAGE }}%`
+              - `otelite-tui`: `${{ env.COVERAGE_THRESHOLD_ROTEL_TUI }}%`
             - Detailed HTML and JSON reports are available in the workflow artifacts and in Codecov trends.
 
   security:

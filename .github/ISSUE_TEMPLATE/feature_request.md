@@ -1,6 +1,6 @@
 ---
 name: Feature Request
-about: Suggest a new feature or enhancement for Rotel
+about: Suggest a new feature or enhancement for Otelite
 title: '[FEATURE] '
 labels: enhancement
 assignees: ''
@@ -51,7 +51,7 @@ assignees: ''
 
 ## Priority
 <!-- How important is this feature to you? -->
-- [ ] Critical - Blocking my use of Rotel
+- [ ] Critical - Blocking my use of Otelite
 - [ ] High - Would significantly improve my workflow
 - [ ] Medium - Nice to have
 - [ ] Low - Minor improvement

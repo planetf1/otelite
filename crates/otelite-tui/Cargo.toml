@@ -1,0 +1,44 @@
+[package]
+name = "otelite-tui"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+description = "Terminal User Interface for Otelite OpenTelemetry receiver"
+repository.workspace = true
+
+[[bin]]
+name = "otelite-tui"
+path = "src/main.rs"
+
+[lib]
+name = "otelite_tui"
+path = "src/lib.rs"
+
+[dependencies]
+# TUI framework
+ratatui = { workspace = true }
+crossterm = { workspace = true }
+
+# Async runtime
+tokio = { workspace = true }
+
+# HTTP client
+reqwest = { workspace = true }
+
+# Serialization
+serde = { workspace = true }
+serde_json = { workspace = true }
+
+# Time handling
+chrono = { workspace = true }
+
+# Error handling
+anyhow = "1.0"
+
+# CLI parsing
+clap = { workspace = true }
+otelite-core = { path = "../otelite-core" }
+
+[dev-dependencies]
+mockito = "1.2"

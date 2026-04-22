@@ -1,6 +1,6 @@
-# Rotel TUI Quickstart Guide
+# Otelite TUI Quickstart Guide
 
-The Rotel Terminal User Interface (TUI) provides a powerful, keyboard-driven interface for viewing and analyzing OpenTelemetry data in real-time.
+The Otelite Terminal User Interface (TUI) provides a powerful, keyboard-driven interface for viewing and analyzing OpenTelemetry data in real-time.
 
 ## Installation
 
@@ -8,14 +8,14 @@ The Rotel Terminal User Interface (TUI) provides a powerful, keyboard-driven int
 
 ```bash
 # Clone the repository
-git clone https://github.com/planetf1/rotel.git
-cd rotel
+git clone https://github.com/planetf1/otelite.git
+cd otelite
 
 # Build the TUI
-cargo build --release --package rotel-tui
+cargo build --release --package otelite-tui
 
 # Run the TUI
-./target/release/rotel-tui
+./target/release/otelite-tui
 ```
 
 ## Quick Start
@@ -25,27 +25,27 @@ cargo build --release --package rotel-tui
 Start the TUI with default settings (connects to `http://localhost:4318`):
 
 ```bash
-rotel-tui
+otelite-tui
 ```
 
 ### Custom Configuration
 
-Connect to a different Rotel API endpoint:
+Connect to a different Otelite API endpoint:
 
 ```bash
-rotel-tui --api-url http://localhost:8080
+otelite-tui --api-url http://localhost:8080
 ```
 
 Set refresh interval (in seconds):
 
 ```bash
-rotel-tui --refresh-interval 5
+otelite-tui --refresh-interval 5
 ```
 
 Start with a specific view:
 
 ```bash
-rotel-tui --initial-view traces
+otelite-tui --initial-view traces
 ```
 
 ## Navigation
@@ -113,14 +113,14 @@ Monitor metrics with:
 ### Connection Issues
 
 If you see "Failed to fetch" errors:
-1. Verify the Rotel API is running: `curl http://localhost:4318/health`
-2. Check the API URL is correct: `rotel-tui --api-url http://your-host:port`
+1. Verify the Otelite API is running: `curl http://localhost:4318/health`
+2. Check the API URL is correct: `otelite-tui --api-url http://your-host:port`
 3. Ensure network connectivity between TUI and API
 
 ### Performance Issues
 
 If the TUI feels slow:
-1. Increase the refresh interval: `rotel-tui --refresh-interval 10`
+1. Increase the refresh interval: `otelite-tui --refresh-interval 10`
 2. Use filters to reduce the amount of data displayed
 3. Check your terminal emulator performance
 
@@ -135,7 +135,7 @@ If the UI looks corrupted:
 
 - See [Keyboard Shortcuts Reference](tui-shortcuts.md) for complete key bindings
 - Read [Troubleshooting Guide](tui-troubleshooting.md) for detailed problem resolution
-- Check the main [README](../README.md) for overall Rotel documentation
+- Check the main [README](../README.md) for overall Otelite documentation
 
 ## Examples
 
@@ -143,7 +143,7 @@ If the UI looks corrupted:
 
 ```bash
 # Connect to production API and start in logs view
-rotel-tui --api-url https://prod-rotel.example.com --initial-view logs
+otelite-tui --api-url https://prod-otelite.example.com --initial-view logs
 
 # Once running:
 # 1. Press 'f' to filter by severity
@@ -156,7 +156,7 @@ rotel-tui --api-url https://prod-rotel.example.com --initial-view logs
 
 ```bash
 # Start in traces view with faster refresh
-rotel-tui --initial-view traces --refresh-interval 2
+otelite-tui --initial-view traces --refresh-interval 2
 
 # Once running:
 # 1. Look for traces with long durations
@@ -169,7 +169,7 @@ rotel-tui --initial-view traces --refresh-interval 2
 
 ```bash
 # Start in metrics view
-rotel-tui --initial-view metrics
+otelite-tui --initial-view metrics
 
 # Once running:
 # 1. Use arrow keys to browse metrics
@@ -177,5 +177,3 @@ rotel-tui --initial-view metrics
 # 3. Use '+' and '-' to zoom in/out
 # 4. Press 'f' to filter by metric type
 ```
-
-<!-- Made with Bob -->

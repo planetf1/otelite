@@ -1,4 +1,4 @@
-# Clippy Configuration for Rotel
+# Clippy Configuration for Otelite
 # Enforces strict linting rules while allowing reasonable patterns
 
 # Deny all warnings in CI (fail on any clippy issue)

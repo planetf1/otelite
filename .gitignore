@@ -56,5 +56,7 @@ Thumbs.db
 *.db
 .beads-credential-key
 
-# Archived bobkit artifacts
-.archive/
+# SQLite WAL/SHM files from e2e tests (named after connection strings)
+crates/*/:memory:*
+crates/*/:memory:*-wal
+crates/*/:memory:*-shm

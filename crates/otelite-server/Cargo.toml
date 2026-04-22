@@ -1,0 +1,43 @@
+[package]
+name = "otelite-server"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+description = "Lightweight web dashboard for visualizing OpenTelemetry logs, traces, and metrics"
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+
+[dependencies]
+# Web framework
+axum = { workspace = true }
+tower = "0.5"
+tower-http = { version = "0.5", features = ["fs", "trace", "cors"] }
+
+# Async runtime (already used by otelite-receiver)
+tokio = { workspace = true }
+
+# Serialization
+serde = { workspace = true }
+serde_json = { workspace = true }
+
+# OpenAPI documentation
+utoipa = { version = "4", features = ["axum_extras"] }
+utoipa-swagger-ui = { version = "7", features = ["axum"] }
+
+# MIME type detection for static files
+mime_guess = "2.0"
+
+# Internal dependencies
+otelite-storage = { path = "../otelite-storage" }
+otelite-core = { path = "../otelite-core", features = ["openapi"] }
+
+# Logging
+tracing = { workspace = true }
+
+[dev-dependencies]
+# Testing
+tokio-test = "0.4"
+tower = { version = "0.5", features = ["util"] }
+http-body-util = "0.1"
+tempfile = { workspace = true }

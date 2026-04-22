@@ -1945,6 +1945,135 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "04744f49eae99ab78e0d5c0b603ab218f515ea8cfe5a456d7629ad883a3b6e7d"
 
 [[package]]
+name = "otelite-cli"
+version = "0.1.0"
+dependencies = [
+ "assert_cmd",
+ "atty",
+ "chrono",
+ "clap",
+ "comfy-table",
+ "csv",
+ "minus",
+ "mockito",
+ "nix",
+ "otelite-core",
+ "otelite-receiver",
+ "otelite-server",
+ "otelite-storage",
+ "otelite-tui",
+ "predicates",
+ "reqwest",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "term_size",
+ "tokio",
+ "tracing",
+ "tracing-appender",
+ "tracing-subscriber",
+]
+
+[[package]]
+name = "otelite-core"
+version = "0.1.0"
+dependencies = [
+ "assert_matches",
+ "chrono",
+ "env_logger",
+ "mockall",
+ "pretty_assertions",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "utoipa",
+]
+
+[[package]]
+name = "otelite-receiver"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "async-compression",
+ "axum 0.8.9",
+ "flate2",
+ "hyper",
+ "opentelemetry-proto",
+ "otelite-core",
+ "otelite-server",
+ "otelite-storage",
+ "pretty_assertions",
+ "prost",
+ "reqwest",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "thiserror 2.0.18",
+ "tokio",
+ "tokio-test",
+ "tonic",
+ "tower 0.4.13",
+ "tracing",
+ "tracing-subscriber",
+]
+
+[[package]]
+name = "otelite-server"
+version = "0.1.0"
+dependencies = [
+ "axum 0.8.9",
+ "http-body-util",
+ "mime_guess",
+ "otelite-core",
+ "otelite-storage",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "tokio",
+ "tokio-test",
+ "tower 0.5.3",
+ "tower-http 0.5.2",
+ "tracing",
+ "utoipa",
+ "utoipa-swagger-ui",
+]
+
+[[package]]
+name = "otelite-storage"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "chrono",
+ "dirs",
+ "otelite-core",
+ "rusqlite",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "thiserror 2.0.18",
+ "tokio",
+ "tokio-test",
+ "tracing",
+]
+
+[[package]]
+name = "otelite-tui"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "chrono",
+ "clap",
+ "crossterm 0.29.0",
+ "mockito",
+ "otelite-core",
+ "ratatui",
+ "reqwest",
+ "serde",
+ "serde_json",
+ "tokio",
+]
+
+[[package]]
 name = "parking_lot"
 version = "0.12.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2422,135 +2551,6 @@ dependencies = [
  "libc",
  "untrusted",
  "windows-sys 0.52.0",
-]
-
-[[package]]
-name = "rotel-cli"
-version = "0.1.0"
-dependencies = [
- "assert_cmd",
- "atty",
- "chrono",
- "clap",
- "comfy-table",
- "csv",
- "minus",
- "mockito",
- "nix",
- "predicates",
- "reqwest",
- "rotel-core",
- "rotel-receiver",
- "rotel-server",
- "rotel-storage",
- "rotel-tui",
- "serde",
- "serde_json",
- "tempfile",
- "term_size",
- "tokio",
- "tracing",
- "tracing-appender",
- "tracing-subscriber",
-]
-
-[[package]]
-name = "rotel-core"
-version = "0.1.0"
-dependencies = [
- "assert_matches",
- "chrono",
- "env_logger",
- "mockall",
- "pretty_assertions",
- "serde",
- "serde_json",
- "tempfile",
- "utoipa",
-]
-
-[[package]]
-name = "rotel-receiver"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "async-compression",
- "axum 0.8.9",
- "flate2",
- "hyper",
- "opentelemetry-proto",
- "pretty_assertions",
- "prost",
- "reqwest",
- "rotel-core",
- "rotel-server",
- "rotel-storage",
- "serde",
- "serde_json",
- "tempfile",
- "thiserror 2.0.18",
- "tokio",
- "tokio-test",
- "tonic",
- "tower 0.4.13",
- "tracing",
- "tracing-subscriber",
-]
-
-[[package]]
-name = "rotel-server"
-version = "0.1.0"
-dependencies = [
- "axum 0.8.9",
- "http-body-util",
- "mime_guess",
- "rotel-core",
- "rotel-storage",
- "serde",
- "serde_json",
- "tempfile",
- "tokio",
- "tokio-test",
- "tower 0.5.3",
- "tower-http 0.5.2",
- "tracing",
- "utoipa",
- "utoipa-swagger-ui",
-]
-
-[[package]]
-name = "rotel-storage"
-version = "0.1.0"
-dependencies = [
- "async-trait",
- "chrono",
- "dirs",
- "rotel-core",
- "rusqlite",
- "serde",
- "serde_json",
- "tempfile",
- "thiserror 2.0.18",
- "tokio",
- "tokio-test",
- "tracing",
-]
-
-[[package]]
-name = "rotel-tui"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "chrono",
- "clap",
- "crossterm 0.29.0",
- "mockito",
- "ratatui",
- "reqwest",
- "rotel-core",
- "serde",
- "serde_json",
- "tokio",
 ]
 
 [[package]]

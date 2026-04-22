@@ -227,4 +227,4 @@ At the end of every session, reflect and **capture findings as bead notes or new
 
 ## Historical Note
 
-This project was originally built with a "bobkit" spec-driven workflow. Those artifacts have been archived to `.archive/bobkit/` and are no longer used. Do not create or reference bobkit files.
+This project was originally developed with AI assistance using a spec-driven workflow. Do not create specification artifacts or template scaffolding files.

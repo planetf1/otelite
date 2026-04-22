@@ -30,17 +30,17 @@ All four must pass before every commit.
 
 ## Architecture Overview
 
-Rotel is an OpenTelemetry receiver and local observability server for LLM developers. See ARCHITECTURE.md for full detail.
+Otelite is an OpenTelemetry receiver and local observability server for LLM developers. See ARCHITECTURE.md for full detail.
 
 **Crate structure:**
-- `crates/rotel-core` — telemetry domain types (LogRecord, Span, Metric, Resource, GenAiSpanInfo). No HTTP/storage deps.
-- `crates/rotel-receiver` — OTLP ingest: gRPC (4317) and HTTP (4318), converts protobuf → rotel-core types
-- `crates/rotel-storage` — SQLite backend (WAL mode, FTS5). `StorageBackend` async trait with 10 methods. Only impl: `SqliteBackend`.
-- `crates/rotel-server` — HTTP server (port 3000): REST API + embedded static web UI.
-- `crates/rotel-cli` — clap CLI binary: `dashboard` (starts everything), `logs`/`traces`/`metrics` (query subcommands)
-- `crates/rotel-tui` — ratatui terminal UI, polls rotel-server REST API
+- `crates/otelite-core` — telemetry domain types (LogRecord, Span, Metric, Resource, GenAiSpanInfo). No HTTP/storage deps.
+- `crates/otelite-receiver` — OTLP ingest: gRPC (4317) and HTTP (4318), converts protobuf → otelite-core types
+- `crates/otelite-storage` — SQLite backend (WAL mode, FTS5). `StorageBackend` async trait with 10 methods. Only impl: `SqliteBackend`.
+- `crates/otelite-server` — HTTP server (port 3000): REST API + embedded static web UI.
+- `crates/otelite-cli` — clap CLI binary: `dashboard` (starts everything), `logs`/`traces`/`metrics` (query subcommands)
+- `crates/otelite-tui` — ratatui terminal UI, polls otelite-server REST API
 
-**Data flow:** OTLP Source → Receiver → Storage (SQLite) → rotel-server REST API → CLI / TUI / Web browser
+**Data flow:** OTLP Source → Receiver → Storage (SQLite) → otelite-server REST API → CLI / TUI / Web browser
 
 **Known gotchas for agents:**
 - `Span` has no `links` field

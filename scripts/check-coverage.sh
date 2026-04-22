@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Check code coverage for Rotel project
+# Check code coverage for Otelite project
 # Enforces minimum coverage threshold and generates reports
 
 set -euo pipefail
@@ -165,5 +165,3 @@ if [ "$OPEN_REPORT" = true ] && [ "$REPORT_FORMAT" = "html" ]; then
 fi
 
 exit $EXIT_CODE
-
-# Made with Bob

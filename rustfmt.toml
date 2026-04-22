@@ -1,4 +1,4 @@
-# Rustfmt Configuration for Rotel
+# Rustfmt Configuration for Otelite
 # Only includes options available on stable Rust channel
 
 # Rust edition (must match Cargo.toml)

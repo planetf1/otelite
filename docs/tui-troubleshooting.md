@@ -1,6 +1,6 @@
-# Rotel TUI Troubleshooting Guide
+# Otelite TUI Troubleshooting Guide
 
-Common issues and solutions for the Rotel Terminal User Interface.
+Common issues and solutions for the Otelite Terminal User Interface.
 
 ## Table of Contents
 
@@ -17,7 +17,7 @@ Common issues and solutions for the Rotel Terminal User Interface.
 
 ### Binary Not Found After Installation
 
-**Problem**: After running `cargo install rotel-tui`, the `rotel-tui` command is not found.
+**Problem**: After running `cargo install otelite-tui`, the `otelite-tui` command is not found.
 
 **Solution**:
 1. Ensure Cargo's bin directory is in your PATH:
@@ -28,12 +28,12 @@ Common issues and solutions for the Rotel Terminal User Interface.
 
 2. Verify the binary was installed:
    ```bash
-   ls -la ~/.cargo/bin/rotel-tui
+   ls -la ~/.cargo/bin/otelite-tui
    ```
 
 3. If missing, try reinstalling:
    ```bash
-   cargo install --force rotel-tui
+   cargo install --force otelite-tui
    ```
 
 ### Build Fails with Dependency Errors
@@ -59,7 +59,7 @@ Common issues and solutions for the Rotel Terminal User Interface.
 
 ## Connection Problems
 
-### Cannot Connect to Rotel API
+### Cannot Connect to Otelite API
 
 **Problem**: TUI shows "Connection failed" or "API unreachable" error.
 
@@ -78,13 +78,13 @@ Common issues and solutions for the Rotel Terminal User Interface.
 
 2. **Check API URL in config**:
    ```bash
-   cat ~/.config/rotel/tui.toml
+   cat ~/.config/otelite/tui.toml
    # Verify api_url is correct
    ```
 
 3. **Test with explicit URL**:
    ```bash
-   rotel-tui --api-url http://localhost:8080
+   otelite-tui --api-url http://localhost:8080
    ```
 
 4. **Check firewall settings**:
@@ -139,7 +139,7 @@ Common issues and solutions for the Rotel Terminal User Interface.
 2. **Set correct TERM variable**:
    ```bash
    export TERM=xterm-256color
-   rotel-tui
+   otelite-tui
    ```
 
 3. **Try different terminal emulator**:
@@ -156,7 +156,7 @@ Common issues and solutions for the Rotel Terminal User Interface.
 
 5. **Clear terminal before starting**:
    ```bash
-   clear && rotel-tui
+   clear && otelite-tui
    ```
 
 ### Unicode Characters Not Displaying
@@ -179,7 +179,7 @@ Common issues and solutions for the Rotel Terminal User Interface.
 
 3. **Use ASCII-only mode** (if available in future versions):
    ```bash
-   rotel-tui --ascii-only
+   otelite-tui --ascii-only
    ```
 
 ### Colors Not Displaying Correctly
@@ -195,12 +195,12 @@ Common issues and solutions for the Rotel Terminal User Interface.
 
 2. **Force 256 color mode**:
    ```bash
-   TERM=xterm-256color rotel-tui
+   TERM=xterm-256color otelite-tui
    ```
 
 3. **Disable colors** (if needed):
    ```bash
-   NO_COLOR=1 rotel-tui
+   NO_COLOR=1 otelite-tui
    ```
 
 ### Screen Flickers or Flashes
@@ -240,7 +240,7 @@ Common issues and solutions for the Rotel Terminal User Interface.
 
 3. **Check for runaway processes**:
    ```bash
-   top -p $(pgrep rotel-tui)
+   top -p $(pgrep otelite-tui)
    ```
 
 4. **Update to latest version** (may include performance fixes)
@@ -263,7 +263,7 @@ Common issues and solutions for the Rotel Terminal User Interface.
 
 4. **Monitor memory usage**:
    ```bash
-   ps aux | grep rotel-tui
+   ps aux | grep otelite-tui
    ```
 
 ### Slow Response to Input
@@ -354,7 +354,7 @@ Common issues and solutions for the Rotel Terminal User Interface.
 
 3. **Clear cache** (if caching is implemented):
    ```bash
-   rm -rf ~/.cache/rotel/
+   rm -rf ~/.cache/otelite/
    ```
 
 ## Keyboard and Input
@@ -406,17 +406,17 @@ Common issues and solutions for the Rotel Terminal User Interface.
 
 1. **Create config directory**:
    ```bash
-   mkdir -p ~/.config/rotel
+   mkdir -p ~/.config/otelite
    ```
 
 2. **Create default config**:
    ```bash
-   rotel-tui --print-default-config > ~/.config/rotel/tui.toml
+   otelite-tui --print-default-config > ~/.config/otelite/tui.toml
    ```
 
 3. **Verify config location**:
    ```bash
-   rotel-tui --config ~/.config/rotel/tui.toml
+   otelite-tui --config ~/.config/otelite/tui.toml
    ```
 
 ### Invalid Configuration
@@ -428,14 +428,14 @@ Common issues and solutions for the Rotel Terminal User Interface.
 1. **Validate TOML syntax**:
    ```bash
    # Use online TOML validator or:
-   python3 -c "import toml; toml.load('~/.config/rotel/tui.toml')"
+   python3 -c "import toml; toml.load('~/.config/otelite/tui.toml')"
    ```
 
 2. **Check for typos** in config keys
 
 3. **Use default config** temporarily:
    ```bash
-   rotel-tui --no-config
+   otelite-tui --no-config
    ```
 
 4. **Review error message** for specific issue
@@ -447,10 +447,10 @@ Common issues and solutions for the Rotel Terminal User Interface.
 For detailed troubleshooting information:
 
 ```bash
-RUST_LOG=debug rotel-tui 2> rotel-tui.log
+RUST_LOG=debug otelite-tui 2> otelite-tui.log
 ```
 
-Then check `rotel-tui.log` for detailed error messages.
+Then check `otelite-tui.log` for detailed error messages.
 
 ### Collect System Information
 
@@ -462,8 +462,8 @@ uname -a
 echo $TERM
 locale
 
-# Rotel version
-rotel-tui --version
+# Otelite version
+otelite-tui --version
 
 # Rust version
 rustc --version
@@ -473,14 +473,14 @@ tput cols
 tput lines
 
 # Config
-cat ~/.config/rotel/tui.toml
+cat ~/.config/otelite/tui.toml
 ```
 
 ### Report Issues
 
 If you encounter a bug or need help:
 
-1. **Check existing issues**: https://github.com/yourusername/rotel/issues
+1. **Check existing issues**: https://github.com/yourusername/otelite/issues
 2. **Create new issue** with:
    - Description of problem
    - Steps to reproduce
@@ -498,6 +498,4 @@ If you encounter a bug or need help:
 
 - [Quickstart Guide](tui-quickstart.md) - Getting started with the TUI
 - [Keyboard Shortcuts](tui-shortcuts.md) - Complete shortcuts reference
-- [Main README](../README.md) - Overall Rotel documentation
-
-<!-- Made with Bob -->
+- [Main README](../README.md) - Overall Otelite documentation

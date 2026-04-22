@@ -1,6 +1,6 @@
 # Troubleshooting Guide
 
-Common issues and solutions for Rotel development and deployment.
+Common issues and solutions for Otelite development and deployment.
 
 ## Table of Contents
 
@@ -75,7 +75,7 @@ sudo pacman -S base-devel pkg-config openssl
 
 ### Port Already in Use
 
-**Problem**: "Address already in use" error when starting Rotel
+**Problem**: "Address already in use" error when starting Otelite
 
 **Diagnosis**:
 ```bash
@@ -94,12 +94,12 @@ kill -9 <PID>
 **Solution 2**: Use different ports
 ```bash
 # Start with custom ports
-rotel start --grpc-port 14317 --http-port 14318 --dashboard-port 18080
+otelite start --grpc-port 14317 --http-port 14318 --dashboard-port 18080
 ```
 
 **Solution 3**: Update configuration
 ```toml
-# rotel.toml
+# otelite.toml
 [server]
 grpc_port = 14317
 http_port = 14318
@@ -113,51 +113,51 @@ dashboard_port = 18080
 **Solution**:
 ```bash
 # Create data directory with correct permissions
-mkdir -p ~/.rotel/data
-chmod 755 ~/.rotel/data
+mkdir -p ~/.otelite/data
+chmod 755 ~/.otelite/data
 
 # Or specify different directory
-rotel start --data-dir /tmp/rotel-data
+otelite start --data-dir /tmp/otelite-data
 ```
 
 ### High Memory Usage
 
-**Problem**: Rotel using more than 100MB memory
+**Problem**: Otelite using more than 100MB memory
 
 **Diagnosis**:
 ```bash
 # Check memory usage
-ps aux | grep rotel
+ps aux | grep otelite
 
 # Or use top
-top -p $(pgrep rotel)
+top -p $(pgrep otelite)
 ```
 
 **Solution**:
 ```toml
-# rotel.toml - Reduce memory limits
+# otelite.toml - Reduce memory limits
 [limits]
 max_memory_mb = 50
 max_queue_size = 5000
 batch_size = 500
 ```
 
-### Rotel Crashes on Startup
+### Otelite Crashes on Startup
 
-**Problem**: Rotel exits immediately after starting
+**Problem**: Otelite exits immediately after starting
 
 **Diagnosis**:
 ```bash
 # Run with verbose logging
-rotel start --log-level debug
+otelite start --log-level debug
 
 # Check logs
-tail -f ~/.rotel/logs/rotel.log
+tail -f ~/.otelite/logs/otelite.log
 ```
 
 **Common Causes**:
-1. **Invalid configuration**: Check `rotel.toml` syntax
-2. **Corrupted data**: Delete `~/.rotel/data` and restart
+1. **Invalid configuration**: Check `otelite.toml` syntax
+2. **Corrupted data**: Delete `~/.otelite/data` and restart
 3. **Missing permissions**: Check file/directory permissions
 
 ## Development Issues
@@ -324,20 +324,20 @@ cargo test -- --nocapture --test-threads=1
 
 ### High CPU Usage
 
-**Problem**: Rotel using excessive CPU
+**Problem**: Otelite using excessive CPU
 
 **Diagnosis**:
 ```bash
 # Check CPU usage
-top -p $(pgrep rotel)
+top -p $(pgrep otelite)
 
 # Profile with flamegraph
-cargo flamegraph --bin rotel
+cargo flamegraph --bin otelite
 ```
 
 **Solution**:
 ```toml
-# rotel.toml - Reduce processing load
+# otelite.toml - Reduce processing load
 [limits]
 max_events_per_second = 500
 batch_timeout_ms = 2000
@@ -357,12 +357,12 @@ batch_timeout_ms = 2000
 
 ### Connection Refused
 
-**Problem**: Application can't connect to Rotel
+**Problem**: Application can't connect to Otelite
 
 **Diagnosis**:
 ```bash
-# Check if Rotel is running
-ps aux | grep rotel
+# Check if Otelite is running
+ps aux | grep otelite
 
 # Check if ports are listening
 netstat -an | grep LISTEN | grep -E '4317|4318|8080'
@@ -372,10 +372,10 @@ curl http://localhost:4318/v1/metrics
 ```
 
 **Solution**:
-1. **Start Rotel**: `rotel start`
+1. **Start Otelite**: `otelite start`
 2. **Check firewall**: Allow ports 4317, 4318, 8080
 3. **Verify endpoint**: Use correct URL in application
-4. **Check logs**: `rotel logs` for errors
+4. **Check logs**: `otelite logs` for errors
 
 ### TLS/SSL Errors
 
@@ -387,7 +387,7 @@ curl http://localhost:4318/v1/metrics
 export OTEL_EXPORTER_OTLP_INSECURE=true
 
 # Or configure TLS properly
-rotel start --tls-cert /path/to/cert.pem --tls-key /path/to/key.pem
+otelite start --tls-cert /path/to/cert.pem --tls-key /path/to/key.pem
 ```
 
 ### Timeout Errors
@@ -400,7 +400,7 @@ rotel start --tls-cert /path/to/cert.pem --tls-key /path/to/key.pem
 [exporter]
 timeout_seconds = 30
 
-# Or in Rotel
+# Or in Otelite
 [server]
 request_timeout_seconds = 30
 ```
@@ -414,19 +414,19 @@ request_timeout_seconds = 30
 **Diagnosis**:
 ```bash
 # Check disk usage
-df -h ~/.rotel/data
+df -h ~/.otelite/data
 
 # Check data directory size
-du -sh ~/.rotel/data
+du -sh ~/.otelite/data
 ```
 
 **Solution**:
 ```bash
 # Clean old data
-rotel clean --older-than 7d
+otelite clean --older-than 7d
 
 # Or configure retention
-# rotel.toml
+# otelite.toml
 [storage]
 retention_days = 7
 max_size_gb = 5
@@ -439,14 +439,14 @@ max_size_gb = 5
 **Solution**:
 ```bash
 # Backup data
-cp -r ~/.rotel/data ~/.rotel/data.backup
+cp -r ~/.otelite/data ~/.otelite/data.backup
 
 # Try repair
-rotel repair
+otelite repair
 
 # If repair fails, delete and restart
-rm -rf ~/.rotel/data
-rotel start
+rm -rf ~/.otelite/data
+otelite start
 ```
 
 ### Slow Writes
@@ -455,7 +455,7 @@ rotel start
 
 **Solution**:
 ```toml
-# rotel.toml - Optimize write performance
+# otelite.toml - Optimize write performance
 [storage]
 batch_size = 2000
 batch_timeout_ms = 500
@@ -477,38 +477,38 @@ uname -a
 rustc --version
 cargo --version
 
-# Rotel version
-rotel --version
+# Otelite version
+otelite --version
 
 # Configuration
-cat rotel.toml
+cat otelite.toml
 
 # Logs (last 100 lines)
-tail -n 100 ~/.rotel/logs/rotel.log
+tail -n 100 ~/.otelite/logs/otelite.log
 
 # Resource usage
-ps aux | grep rotel
-df -h ~/.rotel/data
+ps aux | grep otelite
+df -h ~/.otelite/data
 ```
 
 ### Enabling Debug Logging
 
 ```bash
 # Start with debug logging
-rotel start --log-level debug
+otelite start --log-level debug
 
 # Or set environment variable
 export RUST_LOG=debug
-rotel start
+otelite start
 
 # For specific modules
-export RUST_LOG=rotel_receiver=debug,rotel_storage=trace
-rotel start
+export RUST_LOG=otelite_receiver=debug,otelite_storage=trace
+otelite start
 ```
 
 ### Reporting Bugs
 
-1. **Search existing issues**: Check [GitHub Issues](https://github.com/YOUR_USERNAME/rotel/issues)
+1. **Search existing issues**: Check [GitHub Issues](https://github.com/YOUR_USERNAME/otelite/issues)
 2. **Create new issue**: Use bug report template
 3. **Include**:
    - Clear description of problem
@@ -522,7 +522,7 @@ rotel start
 - **GitHub Issues**: Bug reports and feature requests
 - **GitHub Discussions**: Questions and general discussion
 - **Documentation**: Check [docs](.) for guides
-- **Security Issues**: Email security@rotel.dev (do not use public issues)
+- **Security Issues**: Email security@otelite.dev (do not use public issues)
 
 ## Common Error Messages
 
@@ -595,4 +595,4 @@ batch_size = 500
 
 ---
 
-**Still having issues?** Open a [GitHub Issue](https://github.com/YOUR_USERNAME/rotel/issues) or start a [Discussion](https://github.com/YOUR_USERNAME/rotel/discussions).
+**Still having issues?** Open a [GitHub Issue](https://github.com/YOUR_USERNAME/otelite/issues) or start a [Discussion](https://github.com/YOUR_USERNAME/otelite/discussions).

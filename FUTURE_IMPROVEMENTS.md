@@ -1,12 +1,12 @@
-# Future Improvements for Rotel
+# Future Improvements for Otelite
 
 ## Completed ✅
 
-### ~~1. Add Serde Derives to rotel-core Types~~ ✅
+### ~~1. Add Serde Derives to otelite-core Types~~ ✅
 **Status**: COMPLETED - All types now have proper Serialize/Deserialize derives
 
 **Changes Made**:
-- Added `serde = { workspace = true, features = ["derive"] }` to rotel-core Cargo.toml
+- Added `serde = { workspace = true, features = ["derive"] }` to otelite-core Cargo.toml
 - Added `#[derive(Serialize, Deserialize)]` to all telemetry types:
   - `Resource`, `LogRecord`, `SeverityLevel` in log.rs
   - `Metric`, `MetricType`, `HistogramBucket`, `Quantile` in metric.rs

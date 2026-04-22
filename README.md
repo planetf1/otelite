@@ -1,32 +1,32 @@
-# Rotel
+# Otelite
 
 **Lightweight OpenTelemetry receiver and dashboard for local development**
 
-Rotel is a single-binary observability tool that receives OpenTelemetry data (logs, traces, metrics) and provides a web dashboard and terminal UI for viewing it. Designed for local LLM development with minimal resource usage (<100MB memory, <5% CPU), it starts in seconds and requires no external dependencies.
+Otelite is a single-binary observability tool that receives OpenTelemetry data (logs, traces, metrics) and provides a web dashboard and terminal UI for viewing it. Designed for local LLM development with minimal resource usage (<100MB memory, <5% CPU), it starts in seconds and requires no external dependencies.
 
 ## Quick Start
 
 ### Build and run (development)
 
 ```bash
-cargo run --bin rotel -- serve
+cargo run --bin otelite -- serve
 ```
 
 ### Production build
 
 ```bash
 # Optimised release binary — ~5x faster startup, much smaller
-cargo build --release --bin rotel
+cargo build --release --bin otelite
 
 # The binary is at:
-./target/release/rotel serve
+./target/release/otelite serve
 
-# Install to PATH (then just run `rotel` anywhere)
-cargo install --path crates/rotel-cli
-rotel serve
+# Install to PATH (then just run `otelite` anywhere)
+cargo install --path crates/otelite-cli
+otelite serve
 ```
 
-`rotel serve` starts three services:
+`otelite serve` starts three services:
 - **OTLP gRPC receiver** on `localhost:4317`
 - **OTLP HTTP receiver** on `localhost:4318`
 - **Web dashboard and REST API** on `http://localhost:3000`
@@ -39,8 +39,8 @@ Open `http://localhost:3000` in your browser to view telemetry.
 - **Full OTLP Support**: Metrics, logs, and traces via gRPC (4317) and HTTP (4318)
 - **Embedded Storage**: SQLite-based, no external database required
 - **Web Dashboard**: View and filter telemetry data at `http://localhost:3000`
-- **Terminal UI**: Full-featured TUI with `rotel tui`
-- **CLI**: Query and export data with `rotel logs`, `rotel traces`, `rotel metrics`, `rotel usage`
+- **Terminal UI**: Full-featured TUI with `otelite tui`
+- **CLI**: Query and export data with `otelite logs`, `otelite traces`, `otelite metrics`, `otelite usage`
 - **Single Binary**: Zero runtime dependencies
 - **GenAI/LLM support**: First-class OTel GenAI semconv — token counts, cache hits, tool calls, model routing
 
@@ -120,51 +120,51 @@ tp := trace.NewTracerProvider(trace.WithBatcher(exporter))
 
 ```bash
 # Start the server (foreground)
-rotel serve
+otelite serve
 
 # Start as background daemon
-rotel start
+otelite start
 
 # Stop daemon
-rotel stop
+otelite stop
 
 # Restart daemon (picks up recompiled binary)
-rotel restart
+otelite restart
 
 # Check daemon status
-rotel status
+otelite status
 
 # List recent logs
-rotel logs list --severity ERROR --since 1h
+otelite logs list --severity ERROR --since 1h
 
 # Search logs
-rotel logs search "database timeout"
+otelite logs search "database timeout"
 
 # List traces with duration filter
-rotel traces list --min-duration 1s
+otelite traces list --min-duration 1s
 
 # Show trace details
-rotel traces show <trace-id>
+otelite traces show <trace-id>
 
 # List metrics
-rotel metrics list --name "http_*"
+otelite metrics list --name "http_*"
 
 # Token usage summary (GenAI/LLM)
-rotel usage --since 24h
-rotel usage --since 7d --by-model
+otelite usage --since 24h
+otelite usage --since 7d --by-model
 
 # JSON output for scripting
-rotel --format json logs list | jq '.[] | select(.severity == "ERROR")'
+otelite --format json logs list | jq '.[] | select(.severity == "ERROR")'
 ```
 
 ## Terminal UI
 
 ```bash
 # Start TUI (connects to localhost:3000 by default)
-rotel tui
+otelite tui
 
 # Connect to custom API URL
-rotel tui --api-url http://localhost:3000
+otelite tui --api-url http://localhost:3000
 ```
 
 **Keyboard shortcuts:**
@@ -202,8 +202,8 @@ curl "http://localhost:3000/api/health"
 
 ```bash
 # Clone and build
-git clone https://github.com/planetf1/rotel.git
-cd rotel
+git clone https://github.com/planetf1/otelite.git
+cd otelite
 cargo build --workspace
 
 # Run tests
@@ -221,27 +221,27 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for development workflow and [docs/testin
 ```
 ┌─────────────────────────────────────────────┐
 │         Web Dashboard (port 3000)           │
-│         + REST API (rotel-server)           │
+│         + REST API (otelite-server)           │
 └─────────────────┬───────────────────────────┘
                   │
 ┌─────────────────▼───────────────────────────┐
-│       SQLite Storage (rotel-storage)        │
+│       SQLite Storage (otelite-storage)        │
 │            with FTS5 search                 │
 └─────────────────▲───────────────────────────┘
                   │
 ┌─────────────────┴───────────────────────────┐
-│       OTLP Receivers (rotel-receiver)       │
+│       OTLP Receivers (otelite-receiver)       │
 │    gRPC (4317) + HTTP (4318)                │
 └─────────────────────────────────────────────┘
 ```
 
 **Crate structure:**
-- `rotel-core` — Domain types (LogRecord, Span, Metric, Resource, GenAiSpanInfo)
-- `rotel-storage` — SQLite backend with async trait
-- `rotel-receiver` — OTLP gRPC and HTTP ingest
-- `rotel-server` — REST API and web dashboard
-- `rotel-cli` — Command-line interface binary
-- `rotel-tui` — Terminal user interface
+- `otelite-core` — Domain types (LogRecord, Span, Metric, Resource, GenAiSpanInfo)
+- `otelite-storage` — SQLite backend with async trait
+- `otelite-receiver` — OTLP gRPC and HTTP ingest
+- `otelite-server` — REST API and web dashboard
+- `otelite-cli` — Command-line interface binary
+- `otelite-tui` — Terminal user interface
 
 See [ARCHITECTURE.md](ARCHITECTURE.md) for detailed design.
 

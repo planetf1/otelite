@@ -1,8 +1,8 @@
-# Rotel CLI Design - Canonical Noun-Verb Structure
+# Otelite CLI Design - Canonical Noun-Verb Structure
 
 ## Design Principles
 
-1. **Consistent noun-verb ordering**: `rotel <noun> <verb> [flags]`
+1. **Consistent noun-verb ordering**: `otelite <noun> <verb> [flags]`
 2. **Same verb means same thing**: `show` always means "get one by ID", `list` always means "get many"
 3. **Standard flags available everywhere applicable**: `--since`, `--limit`, `--format`
 4. **Signal-specific flags only where needed**: `--severity` for logs, `--status` for traces, etc.
@@ -52,42 +52,42 @@
 
 ```bash
 # List recent logs
-rotel logs list [--since <duration>] [--severity <level>] [--limit <n>] [--format <fmt>]
+otelite logs list [--since <duration>] [--severity <level>] [--limit <n>] [--format <fmt>]
 
 # Show single log entry
-rotel logs show <id>
+otelite logs show <id>
 
 # Search logs by content
-rotel logs search <query> [--limit <n>] [--format <fmt>]
+otelite logs search <query> [--limit <n>] [--format <fmt>]
 
 # Export logs to file
-rotel logs export [--since <duration>] [--severity <level>] [--output <file>] [--format json|csv]
+otelite logs export [--since <duration>] [--severity <level>] [--output <file>] [--format json|csv]
 ```
 
 ### Traces
 
 ```bash
 # List recent traces
-rotel traces list [--since <duration>] [--status <status>] [--min-duration <duration>] [--limit <n>] [--format <fmt>]
+otelite traces list [--since <duration>] [--status <status>] [--min-duration <duration>] [--limit <n>] [--format <fmt>]
 
 # Show single trace with spans
-rotel traces show <id>
+otelite traces show <id>
 
 # Export traces to file
-rotel traces export [--since <duration>] [--status <status>] [--output <file>] [--format json|csv]
+otelite traces export [--since <duration>] [--status <status>] [--output <file>] [--format json|csv]
 ```
 
 ### Metrics
 
 ```bash
 # List available metrics
-rotel metrics list [--since <duration>] [--name <pattern>] [--label <key=value>] [--limit <n>] [--format <fmt>]
+otelite metrics list [--since <duration>] [--name <pattern>] [--label <key=value>] [--limit <n>] [--format <fmt>]
 
 # Show metric values by name (CHANGED FROM 'get' TO 'show')
-rotel metrics show <name> [--label <key=value>] [--format <fmt>]
+otelite metrics show <name> [--label <key=value>] [--format <fmt>]
 
 # Export metrics to file
-rotel metrics export [--since <duration>] [--name <pattern>] [--output <file>] [--format json|csv]
+otelite metrics export [--since <duration>] [--name <pattern>] [--output <file>] [--format json|csv]
 ```
 
 ## Help Text Template
@@ -97,7 +97,7 @@ Every command follows this structure:
 ```
 <Brief description>
 
-Usage: rotel <noun> <verb> [OPTIONS] [ARGS]
+Usage: otelite <noun> <verb> [OPTIONS] [ARGS]
 
 Options:
   <Standard flags first, alphabetically>
@@ -146,7 +146,7 @@ Query parameters match CLI flag names (e.g., `--since` → `?since=`, `--severit
 
 ### Future Changes (Separate Beads)
 
-1. **Add `export` subcommands** (rotel-fo0)
+1. **Add `export` subcommands** (otelite-fo0)
    - `logs export`
    - `traces export`
    - `metrics export`
@@ -161,22 +161,22 @@ After changes:
 
 ```bash
 # Build and test
-cargo build -p rotel-cli
-cargo test -p rotel-cli
+cargo build -p otelite-cli
+cargo test -p otelite-cli
 
 # Verify help consistency
-rotel --help
-rotel logs --help
-rotel logs list --help
-rotel traces --help
-rotel traces list --help
-rotel metrics --help
-rotel metrics list --help
-rotel metrics show --help  # Changed from 'get'
+otelite --help
+otelite logs --help
+otelite logs list --help
+otelite traces --help
+otelite traces list --help
+otelite metrics --help
+otelite metrics list --help
+otelite metrics show --help  # Changed from 'get'
 
 # Test commands work
-rotel logs list --since 1h --limit 10
-rotel traces list --status ERROR --min-duration 1s
-rotel metrics list --name http --since 24h
-rotel metrics show http_requests_total --label method=GET
+otelite logs list --since 1h --limit 10
+otelite traces list --status ERROR --min-duration 1s
+otelite metrics list --name http --since 24h
+otelite metrics show http_requests_total --label method=GET
 ```

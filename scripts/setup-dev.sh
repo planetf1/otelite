@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# Development Environment Setup Script for Rotel
+# Development Environment Setup Script for Otelite
 #
 # This script automates the setup of the development environment including:
 # - Rust toolchain verification
@@ -45,7 +45,7 @@ command_exists() {
 # Main setup function
 main() {
     echo ""
-    info "Setting up Rotel development environment..."
+    info "Setting up Otelite development environment..."
     echo ""
 
     # Step 1: Verify Rust installation
@@ -241,5 +241,3 @@ main() {
 
 # Run main function
 main "$@"
-
-# Made with Bob

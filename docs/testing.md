@@ -1,6 +1,6 @@
 # Testing Guide
 
-This guide covers testing practices, tools, and workflows for Rotel development.
+This guide covers testing practices, tools, and workflows for Otelite development.
 
 ## Table of Contents
 
@@ -15,7 +15,7 @@ This guide covers testing practices, tools, and workflows for Rotel development.
 
 ## Overview
 
-Rotel uses a comprehensive testing strategy to ensure code quality and reliability:
+Otelite uses a comprehensive testing strategy to ensure code quality and reliability:
 
 - **Unit Tests**: Test individual functions and modules
 - **Integration Tests**: Test component interactions
@@ -39,7 +39,7 @@ Rotel uses a comprehensive testing strategy to ensure code quality and reliabili
 
 **Example**:
 ```rust
-// crates/rotel-core/src/lib.rs
+// crates/otelite-core/src/lib.rs
 pub fn add(a: i32, b: i32) -> i32 {
     a + b
 }
@@ -72,8 +72,8 @@ mod tests {
 **Example**:
 ```rust
 // tests/integration/receiver_test.rs
-use rotel_receiver::OtlpReceiver;
-use rotel_storage::EmbeddedStorage;
+use otelite_receiver::OtlpReceiver;
+use otelite_storage::EmbeddedStorage;
 
 #[tokio::test]
 async fn test_receiver_storage_integration() {
@@ -107,7 +107,7 @@ async fn test_receiver_storage_integration() {
 // tests/e2e/full_pipeline_test.rs
 #[tokio::test]
 async fn test_full_telemetry_pipeline() {
-    // Start Rotel server
+    // Start Otelite server
     let server = start_test_server().await;
 
     // Send OTLP data
@@ -146,7 +146,7 @@ async fn test_full_telemetry_pipeline() {
 /// # Examples
 ///
 /// ```
-/// use rotel_core::add;
+/// use otelite_core::add;
 ///
 /// let result = add(2, 2);
 /// assert_eq!(result, 4);
@@ -171,7 +171,7 @@ pub fn add(a: i32, b: i32) -> i32 {
 cargo test
 
 # Run tests in specific crate
-cargo test -p rotel-core
+cargo test -p otelite-core
 
 # Run specific test
 cargo test test_add
@@ -376,12 +376,12 @@ Workspace total: **73.4% line coverage**
 
 | Crate | Line Coverage |
 |-------|--------------|
-| rotel-core | ~94% |
-| rotel-storage | ~78% |
-| rotel-receiver | ~80% |
-| rotel-dashboard | ~20% (API handlers untested — see bead rotel-9mx) |
-| rotel-cli | ~83% |
-| rotel-tui | ~60% |
+| otelite-core | ~94% |
+| otelite-storage | ~78% |
+| otelite-receiver | ~80% |
+| otelite-dashboard | ~20% (API handlers untested — see bead otelite-9mx) |
+| otelite-cli | ~83% |
+| otelite-tui | ~60% |
 
 ### Coverage Requirements
 
@@ -474,12 +474,12 @@ The coverage job now provides continuous monitoring on every pull request:
 Current enforced minimums:
 
 - **Workspace**: 80%
-- **rotel-cli**: 75%
-- **rotel-core**: 85%
-- **rotel-dashboard**: 70%
-- **rotel-receiver**: 80%
-- **rotel-storage**: 85%
-- **rotel-tui**: 70%
+- **otelite-cli**: 75%
+- **otelite-core**: 85%
+- **otelite-dashboard**: 70%
+- **otelite-receiver**: 80%
+- **otelite-storage**: 85%
+- **otelite-tui**: 70%
 
 ### Local CI Simulation
 

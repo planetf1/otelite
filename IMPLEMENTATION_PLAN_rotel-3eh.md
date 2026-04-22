@@ -1,7 +1,7 @@
-# Implementation Plan: OTLP-to-Internal Type Conversion (rotel-3eh)
+# Implementation Plan: OTLP-to-Internal Type Conversion (otelite-3eh)
 
 ## Overview
-Implement conversion functions to transform OTLP protobuf types into rotel-core internal types. This enables the receiver to process incoming telemetry data and store it in the internal format.
+Implement conversion functions to transform OTLP protobuf types into otelite-core internal types. This enables the receiver to process incoming telemetry data and store it in the internal format.
 
 ## Design Decisions (from user clarification)
 
@@ -26,7 +26,7 @@ Implement conversion functions to transform OTLP protobuf types into rotel-core 
 
 ## File Structure
 
-### New file: `crates/rotel-receiver/src/conversion.rs`
+### New file: `crates/otelite-receiver/src/conversion.rs`
 
 ```rust
 // Module structure:
@@ -39,16 +39,16 @@ Implement conversion functions to transform OTLP protobuf types into rotel-core 
 
 ## Implementation Steps
 
-### Step 1: Add rotel-core dependency
-**File**: `crates/rotel-receiver/Cargo.toml`
+### Step 1: Add otelite-core dependency
+**File**: `crates/otelite-receiver/Cargo.toml`
 
 Add under `[dependencies]`:
 ```toml
-rotel-core = { path = "../rotel-core" }
+otelite-core = { path = "../otelite-core" }
 ```
 
 ### Step 2: Declare conversion module
-**File**: `crates/rotel-receiver/src/lib.rs`
+**File**: `crates/otelite-receiver/src/lib.rs`
 
 Add after existing module declarations:
 ```rust
@@ -59,7 +59,7 @@ pub mod conversion;
 
 **Helper functions needed**:
 
-1. `convert_resource(otlp_resource: Option<Resource>) -> Option<rotel_core::telemetry::Resource>`
+1. `convert_resource(otlp_resource: Option<Resource>) -> Option<otelite_core::telemetry::Resource>`
    - Convert OTLP Resource to internal Resource
    - Extract attributes from KeyValue vec
 
@@ -82,7 +82,7 @@ pub mod conversion;
 
 ### Step 4: Implement convert_logs
 
-**Signature**: `pub fn convert_logs(request: ExportLogsServiceRequest) -> Vec<rotel_core::telemetry::LogRecord>`
+**Signature**: `pub fn convert_logs(request: ExportLogsServiceRequest) -> Vec<otelite_core::telemetry::LogRecord>`
 
 **Algorithm**:
 ```
@@ -118,7 +118,7 @@ Return flattened vec of all LogRecords
 
 ### Step 5: Implement convert_traces
 
-**Signature**: `pub fn convert_traces(request: ExportTraceServiceRequest) -> Vec<rotel_core::telemetry::Trace>`
+**Signature**: `pub fn convert_traces(request: ExportTraceServiceRequest) -> Vec<otelite_core::telemetry::Trace>`
 
 **Algorithm**:
 ```
@@ -177,7 +177,7 @@ SpanStatus {
 
 ### Step 6: Implement convert_metrics
 
-**Signature**: `pub fn convert_metrics(request: ExportMetricsServiceRequest) -> Vec<rotel_core::telemetry::Metric>`
+**Signature**: `pub fn convert_metrics(request: ExportMetricsServiceRequest) -> Vec<otelite_core::telemetry::Metric>`
 
 **Algorithm**:
 ```
@@ -303,11 +303,11 @@ Return flattened vec of all Metrics
 ### Step 8: Integration with signal handlers (future work, not in this bead)
 
 After this bead is complete, the conversion functions will be called from:
-- `crates/rotel-receiver/src/signals/logs.rs` - LogsHandler::process()
-- `crates/rotel-receiver/src/signals/traces.rs` - TracesHandler::process()
-- `crates/rotel-receiver/src/signals/metrics.rs` - MetricsHandler::process()
+- `crates/otelite-receiver/src/signals/logs.rs` - LogsHandler::process()
+- `crates/otelite-receiver/src/signals/traces.rs` - TracesHandler::process()
+- `crates/otelite-receiver/src/signals/metrics.rs` - MetricsHandler::process()
 
-This will be done in a separate bead (rotel-xfw) that injects the storage backend.
+This will be done in a separate bead (otelite-xfw) that injects the storage backend.
 
 ## Verification Commands
 
@@ -316,13 +316,13 @@ This will be done in a separate bead (rotel-xfw) that injects the storage backen
 cargo build --workspace
 
 # Test conversion module specifically
-cargo test -p rotel-receiver -- conversion
+cargo test -p otelite-receiver -- conversion
 
 # Run all receiver tests
-cargo test -p rotel-receiver
+cargo test -p otelite-receiver
 
 # Clippy
-cargo clippy -p rotel-receiver -- -D warnings
+cargo clippy -p otelite-receiver -- -D warnings
 
 # Format check
 cargo fmt --check
@@ -330,7 +330,7 @@ cargo fmt --check
 
 ## Acceptance Criteria
 
-- [x] rotel-core added as dependency in rotel-receiver/Cargo.toml
+- [x] otelite-core added as dependency in otelite-receiver/Cargo.toml
 - [x] conversion module declared in lib.rs
 - [x] conversion.rs created with all three public functions
 - [x] Helper functions implemented for common conversions

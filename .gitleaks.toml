@@ -1,7 +1,7 @@
-# Gitleaks Configuration for Rotel
+# Gitleaks Configuration for Otelite
 # Detects secrets, API keys, passwords, and tokens in commits and staged files
 
-title = "Gitleaks Configuration for Rotel"
+title = "Gitleaks Configuration for Otelite"
 
 # Extend default gitleaks config
 [extend]
@@ -10,10 +10,10 @@ useDefault = true
 
 # Custom rules for additional secret patterns
 [[rules]]
-id = "rotel-api-key"
-description = "Rotel API Key"
-regex = '''(?i)(rotel[_-]?api[_-]?key|rotel[_-]?token)\s*[:=]\s*['"]?([a-zA-Z0-9_\-]{32,})['"]?'''
-tags = ["api-key", "rotel"]
+id = "otelite-api-key"
+description = "Otelite API Key"
+regex = '''(?i)(otelite[_-]?api[_-]?key|otelite[_-]?token)\s*[:=]\s*['"]?([a-zA-Z0-9_\-]{32,})['"]?'''
+tags = ["api-key", "otelite"]
 
 [[rules]]
 id = "generic-api-key"
@@ -51,7 +51,7 @@ description = "Allowlist for test fixtures and example code"
 
 # Allowlist specific paths (test fixtures, examples, documentation)
 paths = [
-    '''crates/rotel-core/tests/fixtures/.*''',
+    '''crates/otelite-core/tests/fixtures/.*''',
     '''tests/fixtures/.*''',
     '''examples/.*''',
     '''docs/.*\.md$''',

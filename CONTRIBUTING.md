@@ -1,6 +1,6 @@
-# Contributing to Rotel
+# Contributing to Otelite
 
-Thank you for your interest in contributing to Rotel! This document provides guidelines and instructions for contributing to the project.
+Thank you for your interest in contributing to Otelite! This document provides guidelines and instructions for contributing to the project.
 
 ## Table of Contents
 
@@ -37,8 +37,8 @@ We are committed to providing a welcoming and inclusive environment for all cont
 
 1. **Fork and clone the repository**:
    ```bash
-   git clone https://github.com/YOUR_USERNAME/rotel.git
-   cd rotel
+   git clone https://github.com/YOUR_USERNAME/otelite.git
+   cd otelite
    ```
 
 2. **Run the setup script**:
@@ -345,7 +345,7 @@ Use the [bug report template](.github/ISSUE_TEMPLATE/bug_report.md):
 - **Steps to Reproduce**: Minimal steps to reproduce
 - **Expected Behavior**: What should happen
 - **Actual Behavior**: What actually happens
-- **Environment**: OS, Rust version, Rotel version
+- **Environment**: OS, Rust version, Otelite version
 - **Logs**: Relevant error messages or logs
 
 ### Feature Requests
@@ -361,7 +361,7 @@ Use the [feature request template](.github/ISSUE_TEMPLATE/feature_request.md):
 
 **DO NOT** report security vulnerabilities in public issues.
 
-Instead, email security@rotel.dev with:
+Instead, email security@otelite.dev with:
 - Description of the vulnerability
 - Steps to reproduce
 - Potential impact
@@ -377,8 +377,8 @@ We will respond within 48 hours and work with you to address the issue.
 
 ## License
 
-By contributing to Rotel, you agree that your contributions will be licensed under the [Apache License 2.0](LICENSE).
+By contributing to Otelite, you agree that your contributions will be licensed under the [Apache License 2.0](LICENSE).
 
 ---
 
-Thank you for contributing to Rotel! Your efforts help make observability better for the LLM community. 🚀
+Thank you for contributing to Otelite! Your efforts help make observability better for the LLM community. 🚀

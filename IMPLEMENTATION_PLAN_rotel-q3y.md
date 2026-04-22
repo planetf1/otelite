@@ -1,4 +1,4 @@
-# Implementation Plan: Token Usage Summary View (rotel-q3y)
+# Implementation Plan: Token Usage Summary View (otelite-q3y)
 
 ## Overview
 Add token usage aggregation and visualization for LLM/GenAI spans to provide cost visibility.
@@ -6,11 +6,11 @@ Add token usage aggregation and visualization for LLM/GenAI spans to provide cos
 ## Current State Analysis
 
 ### Existing Infrastructure
-- ✅ GenAI span detection: `rotel-core/src/telemetry/genai.rs`
+- ✅ GenAI span detection: `otelite-core/src/telemetry/genai.rs`
 - ✅ Span storage: SQLite with JSON attributes
 - ✅ JSON extraction: `json_extract()` already used in reader.rs
-- ✅ API structure: Existing patterns in `rotel-server/src/api/`
-- ✅ CLI structure: Existing commands in `rotel-cli/src/commands/`
+- ✅ API structure: Existing patterns in `otelite-server/src/api/`
+- ✅ CLI structure: Existing commands in `otelite-cli/src/commands/`
 
 ### GenAI Attributes Available
 From `genai.rs`, spans contain:
@@ -22,9 +22,9 @@ From `genai.rs`, spans contain:
 
 ## Implementation Steps
 
-### Step 1: Define Response Types (rotel-core)
+### Step 1: Define Response Types (otelite-core)
 
-**File:** `crates/rotel-core/src/api.rs`
+**File:** `crates/otelite-core/src/api.rs`
 
 Add new types:
 ```rust
@@ -60,9 +60,9 @@ pub struct SystemUsage {
 }
 ```
 
-### Step 2: Storage Query (rotel-storage)
+### Step 2: Storage Query (otelite-storage)
 
-**File:** `crates/rotel-storage/src/sqlite/reader.rs`
+**File:** `crates/otelite-storage/src/sqlite/reader.rs`
 
 Add function:
 ```rust
@@ -115,9 +115,9 @@ ORDER BY input_tokens + output_tokens DESC;
 - Filter by time range if provided
 - Return empty results if no GenAI spans found
 
-### Step 3: API Endpoint (rotel-server)
+### Step 3: API Endpoint (otelite-server)
 
-**File:** `crates/rotel-server/src/api/genai.rs` (new file)
+**File:** `crates/otelite-server/src/api/genai.rs` (new file)
 
 ```rust
 use axum::{extract::{Query, State}, response::Json};
@@ -149,20 +149,20 @@ pub async fn get_token_usage(
 }
 ```
 
-**File:** `crates/rotel-server/src/api/mod.rs`
+**File:** `crates/otelite-server/src/api/mod.rs`
 - Add `pub mod genai;`
 
-**File:** `crates/rotel-server/src/server.rs`
+**File:** `crates/otelite-server/src/server.rs`
 - Add route: `.route("/api/genai/usage", get(api::genai::get_token_usage))`
 - Update OpenAPI spec to include genai tag and endpoint
 
-### Step 4: CLI Command (rotel-cli)
+### Step 4: CLI Command (otelite-cli)
 
-**File:** `crates/rotel-cli/src/commands/usage.rs` (new file)
+**File:** `crates/otelite-cli/src/commands/usage.rs` (new file)
 
 ```rust
 use clap::Args;
-use rotel_storage::SqliteStorage;
+use otelite_storage::SqliteStorage;
 
 #[derive(Debug, Args)]
 pub struct UsageCommand {

@@ -1,6 +1,6 @@
 ---
 name: Bug Report
-about: Report a bug to help us improve Rotel
+about: Report a bug to help us improve Otelite
 title: '[BUG] '
 labels: bug
 assignees: ''
@@ -26,14 +26,14 @@ assignees: ''
 <!-- Please complete the following information -->
 - **OS**: [e.g., macOS 14.0, Ubuntu 22.04]
 - **Architecture**: [e.g., x86_64, ARM64]
-- **Rotel Version**: [e.g., 0.1.0-alpha]
+- **Otelite Version**: [e.g., 0.1.0-alpha]
 - **Rust Version**: [e.g., 1.77.0]
 - **Installation Method**: [e.g., binary, source, homebrew]
 
 ## Configuration
 <!-- If applicable, include relevant configuration -->
 ```toml
-# rotel.toml
+# otelite.toml
 [server]
 grpc_port = 4317
 # ... other relevant config
@@ -68,4 +68,4 @@ grpc_port = 4317
 - [ ] I have searched existing issues to ensure this is not a duplicate
 - [ ] I have included all relevant information above
 - [ ] I have included logs and error messages
-- [ ] I have tested with the latest version of Rotel
+- [ ] I have tested with the latest version of Otelite

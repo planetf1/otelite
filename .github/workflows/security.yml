@@ -122,5 +122,3 @@ jobs:
             exit 1
           fi
           echo "✅ All security checks passed"
-
-# Made with Bob

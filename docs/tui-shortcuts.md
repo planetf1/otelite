@@ -1,6 +1,6 @@
-# Rotel TUI Keyboard Shortcuts Reference
+# Otelite TUI Keyboard Shortcuts Reference
 
-Complete reference for all keyboard shortcuts in the Rotel Terminal User Interface.
+Complete reference for all keyboard shortcuts in the Otelite Terminal User Interface.
 
 ## Global Shortcuts
 
@@ -158,12 +158,10 @@ Currently, keyboard shortcuts are not customizable. If you need different key bi
 
 ### Screen Reader Compatibility
 
-The TUI is primarily visual and may have limited screen reader support. For accessible alternatives, consider using the Rotel CLI or API directly.
+The TUI is primarily visual and may have limited screen reader support. For accessible alternatives, consider using the Otelite CLI or API directly.
 
 ## See Also
 
 - [Quickstart Guide](tui-quickstart.md) - Getting started with the TUI
 - [Troubleshooting Guide](tui-troubleshooting.md) - Common issues and solutions
-- [Main README](../README.md) - Overall Rotel documentation
-
-<!-- Made with Bob -->
+- [Main README](../README.md) - Overall Otelite documentation

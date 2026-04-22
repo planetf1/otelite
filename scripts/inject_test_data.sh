@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Inject test traces, logs, and metrics into Rotel via OTLP HTTP
+# Inject test traces, logs, and metrics into Otelite via OTLP HTTP
 # Usage: ./scripts/inject_test_data.sh [http://localhost:4318]
 
 set -euo pipefail

@@ -1,6 +1,6 @@
-# Rotel Quick Start Guide
+# Otelite Quick Start Guide
 
-Get up and running with Rotel in 5 minutes.
+Get up and running with Otelite in 5 minutes.
 
 ## Installation
 
@@ -8,25 +8,25 @@ Get up and running with Rotel in 5 minutes.
 
 ```bash
 # Clone repository
-git clone https://github.com/YOUR_USERNAME/rotel.git
-cd rotel
+git clone https://github.com/YOUR_USERNAME/otelite.git
+cd otelite
 
 # Build and install
-cargo install --path crates/rotel-cli
+cargo install --path crates/otelite-cli
 ```
 
 Verify installation:
 
 ```bash
-rotel --version
+otelite --version
 ```
 
 ## First Run
 
-Start the Rotel dashboard:
+Start the Otelite dashboard:
 
 ```bash
-rotel dashboard
+otelite dashboard
 ```
 
 This starts:
@@ -38,7 +38,7 @@ This starts:
 You should see output like:
 
 ```
-🚀 Rotel starting...
+🚀 Otelite starting...
 ✓ OTLP gRPC receiver listening on 0.0.0.0:4317
 ✓ OTLP HTTP receiver listening on 0.0.0.0:4318
 ✓ REST API listening on http://0.0.0.0:3000
@@ -120,7 +120,7 @@ trace.get_tracer_provider().add_span_processor(BatchSpanProcessor(otlp_exporter)
 # Send trace
 tracer = trace.get_tracer(__name__)
 with tracer.start_as_current_span("test-operation"):
-    print("Sending test trace to Rotel")
+    print("Sending test trace to Otelite")
 ```
 
 ## Viewing Data
@@ -144,18 +144,18 @@ Query data using the CLI:
 
 ```bash
 # List recent logs
-rotel logs list
+otelite logs list
 
 # List traces
-rotel traces list
+otelite traces list
 
 # List metrics
-rotel metrics list
+otelite metrics list
 ```
 
 ## Next Steps
 
-- **CLI Reference**: See [CLI documentation](../crates/rotel-cli/README.md) for all commands
+- **CLI Reference**: See [CLI documentation](../crates/otelite-cli/README.md) for all commands
 - **TUI Guide**: Learn about the [terminal UI](tui-quickstart.md)
 - **Configuration**: Customize [configuration options](../ARCHITECTURE.md#configuration)
 - **Testing**: Set up [testing infrastructure](testing.md)
@@ -177,7 +177,7 @@ lsof -i :3000
 
 If your application can't connect:
 
-1. Verify Rotel is running: `ps aux | grep rotel`
+1. Verify Otelite is running: `ps aux | grep otelite`
 2. Check the endpoint URL matches: `http://localhost:4317` (gRPC) or `http://localhost:4318` (HTTP)
 3. Check firewall settings
 
@@ -185,7 +185,7 @@ If your application can't connect:
 
 If you send data but don't see it:
 
-1. Check Rotel logs for errors
+1. Check Otelite logs for errors
 2. Verify the OTLP endpoint is correct
 3. Ensure your application is using the correct protocol (gRPC vs HTTP)
 4. Try the curl example above to verify the receiver is working
@@ -193,5 +193,5 @@ If you send data but don't see it:
 ## Getting Help
 
 - **Documentation**: Check the [docs](.) directory
-- **Issues**: Report bugs on [GitHub Issues](https://github.com/YOUR_USERNAME/rotel/issues)
-- **Discussions**: Ask questions on [GitHub Discussions](https://github.com/YOUR_USERNAME/rotel/discussions)
+- **Issues**: Report bugs on [GitHub Issues](https://github.com/YOUR_USERNAME/otelite/issues)
+- **Discussions**: Ask questions on [GitHub Discussions](https://github.com/YOUR_USERNAME/otelite/discussions)

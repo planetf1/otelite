@@ -1,12 +1,12 @@
-# Test Coverage Review - Rotel Project
+# Test Coverage Review - Otelite Project
 
 **Date:** 2026-04-19  
 **Reviewer:** Automated Analysis  
-**Bead:** rotel-52f
+**Bead:** otelite-52f
 
 ## Executive Summary
 
-The Rotel project has **477 passing tests** across 6 crates with comprehensive coverage of unit, integration, and end-to-end tests. Test code comprises approximately 13,328 lines across test files.
+The Otelite project has **477 passing tests** across 6 crates with comprehensive coverage of unit, integration, and end-to-end tests. Test code comprises approximately 13,328 lines across test files.
 
 **Actual Code Coverage (via cargo-llvm-cov):**
 - **Overall: 68.93% line coverage, 70.67% function coverage, 70.61% region coverage**
@@ -15,12 +15,12 @@ The Rotel project has **477 passing tests** across 6 crates with comprehensive c
 
 | Crate | Unit Tests | Integration Tests | E2E Tests | Total | Line Coverage |
 |-------|-----------|-------------------|-----------|-------|---------------|
-| rotel-cli | 93 (lib) + 93 (bin) | 10 (logs) + 11 (metrics) + 12 (scripting) + 9 (traces) | - | 228 | 80-95% |
-| rotel-core | 43 | 2 | 3 | 48 | 90-100% |
-| rotel-dashboard | 4 | - | - | 4 | 0-20% ⚠️ |
-| rotel-receiver | 83 | 16 (pipeline) + 6 (utils) | 4 + 11 (grpc) + 15 (http json) + 14 (http proto) + 15 (grpc signals) | 164 | 90-100% |
-| rotel-storage | 24 | 4 (persistence) + 4 (zero-config) | - | 32 | 65-95% |
-| rotel-tui | 24 (lib) + 24 (bin) | - | - | 48 | 0-80% (UI: 0-20%) |
+| otelite-cli | 93 (lib) + 93 (bin) | 10 (logs) + 11 (metrics) + 12 (scripting) + 9 (traces) | - | 228 | 80-95% |
+| otelite-core | 43 | 2 | 3 | 48 | 90-100% |
+| otelite-dashboard | 4 | - | - | 4 | 0-20% ⚠️ |
+| otelite-receiver | 83 | 16 (pipeline) + 6 (utils) | 4 + 11 (grpc) + 15 (http json) + 14 (http proto) + 15 (grpc signals) | 164 | 90-100% |
+| otelite-storage | 24 | 4 (persistence) + 4 (zero-config) | - | 32 | 65-95% |
+| otelite-tui | 24 (lib) + 24 (bin) | - | - | 48 | 0-80% (UI: 0-20%) |
 | **TOTAL** | **392** | **53** | **32** | **477** | **68.93%** |
 
 ## Current Test Status
@@ -32,7 +32,7 @@ The Rotel project has **477 passing tests** across 6 crates with comprehensive c
 
 ## Detailed Coverage Analysis by Crate
 
-### 1. rotel-cli (228 tests) ✅ EXCELLENT - 80-95% coverage
+### 1. otelite-cli (228 tests) ✅ EXCELLENT - 80-95% coverage
 
 **Coverage Highlights:**
 - api/client.rs: 86.52% lines, 91.67% functions
@@ -57,7 +57,7 @@ The Rotel project has **477 passing tests** across 6 crates with comprehensive c
 - No tests for CLI argument parsing
 - Missing tests for configuration file loading
 
-### 2. rotel-core (48 tests) ✅ EXCELLENT - 90-100% coverage
+### 2. otelite-core (48 tests) ✅ EXCELLENT - 90-100% coverage
 
 **Coverage Highlights:**
 - telemetry/genai.rs: 100% lines, 100% functions
@@ -75,7 +75,7 @@ The Rotel project has **477 passing tests** across 6 crates with comprehensive c
 - lib.rs: 0% coverage (module declarations)
 - Limited integration test coverage (only 2 tests)
 
-### 3. rotel-dashboard (4 tests) ⚠️ CRITICAL - 0-20% coverage
+### 3. otelite-dashboard (4 tests) ⚠️ CRITICAL - 0-20% coverage
 
 **Coverage Highlights:**
 - cache.rs: 100% lines, 100% functions ✅
@@ -92,7 +92,7 @@ The Rotel project has **477 passing tests** across 6 crates with comprehensive c
 
 **Recommendation:** This is the highest priority area for improvement.
 
-### 4. rotel-receiver (164 tests) ✅ EXCELLENT - 90-100% coverage
+### 4. otelite-receiver (164 tests) ✅ EXCELLENT - 90-100% coverage
 
 **Coverage Highlights:**
 - conversion.rs: 96.09% lines, 100% functions
@@ -116,7 +116,7 @@ The Rotel project has **477 passing tests** across 6 crates with comprehensive c
 - config.rs: 67.62% lines (validation logic partially covered)
 - Some error paths not fully tested
 
-### 5. rotel-storage (32 tests) ✅ GOOD - 65-95% coverage
+### 5. otelite-storage (32 tests) ✅ GOOD - 65-95% coverage
 
 **Coverage Highlights:**
 - error.rs: 100% lines, 100% functions
@@ -140,7 +140,7 @@ The Rotel project has **477 passing tests** across 6 crates with comprehensive c
 - Missing tests for concurrent read/write scenarios
 - No tests for FTS5 full-text search functionality
 
-### 6. rotel-tui (48 tests) ⚠️ MIXED - 0-80% coverage
+### 6. otelite-tui (48 tests) ⚠️ MIXED - 0-80% coverage
 
 **Coverage Highlights:**
 - state/logs.rs: 76.87% lines, 56.67% functions
@@ -176,13 +176,13 @@ The Rotel project has **477 passing tests** across 6 crates with comprehensive c
 2. **Real-World Scenarios:** Integration tests cover realistic use cases
 3. **Edge Case Handling:** Tests include empty responses, special characters, large batches
 4. **Multiple Protocols:** Good coverage of gRPC, HTTP/JSON, HTTP/Protobuf
-5. **Concurrency Testing:** rotel-receiver has dedicated concurrent tests
+5. **Concurrency Testing:** otelite-receiver has dedicated concurrent tests
 6. **Error Path Testing:** Most crates test error conditions
 
 ### ⚠️ Areas for Improvement
 
-1. **rotel-dashboard:** Critically under-tested (only 4 tests, 0-20% coverage)
-2. **rotel-tui UI code:** Very low coverage (0-20% for rendering)
+1. **otelite-dashboard:** Critically under-tested (only 4 tests, 0-20% coverage)
+2. **otelite-tui UI code:** Very low coverage (0-20% for rendering)
 3. **Entry points:** Main.rs files have 0% coverage across crates
 4. **Performance Testing:** No visible performance or benchmark tests
 5. **Security Testing:** No visible security-focused tests
@@ -192,9 +192,9 @@ The Rotel project has **477 passing tests** across 6 crates with comprehensive c
 
 ### High Priority (P0)
 
-1. **rotel-dashboard API endpoints:** No tests for REST API endpoints (0% coverage)
-2. **rotel-tui UI rendering:** No tests for terminal rendering (0-20% coverage)
-3. **rotel-tui event handling:** No tests for keyboard input (0% coverage)
+1. **otelite-dashboard API endpoints:** No tests for REST API endpoints (0% coverage)
+2. **otelite-tui UI rendering:** No tests for terminal rendering (0-20% coverage)
+3. **otelite-tui event handling:** No tests for keyboard input (0% coverage)
 4. **Entry point testing:** All main.rs files have 0% coverage
 
 ### Medium Priority (P1)
@@ -202,7 +202,7 @@ The Rotel project has **477 passing tests** across 6 crates with comprehensive c
 1. **CLI argument parsing:** No tests for command-line argument validation
 2. **Configuration file loading:** Missing tests for config file parsing
 3. **Storage query performance:** No performance tests for storage queries
-4. **Full-text search:** No tests for FTS5 search functionality (rotel-storage)
+4. **Full-text search:** No tests for FTS5 search functionality (otelite-storage)
 5. **Storage reader:** Only 69.62% coverage, complex queries not fully tested
 
 ### Low Priority (P2)
@@ -231,10 +231,10 @@ This will:
 
 ### Immediate Actions (P0)
 
-1. **Add rotel-dashboard tests:** Create comprehensive API endpoint tests
+1. **Add otelite-dashboard tests:** Create comprehensive API endpoint tests
    - Target: Increase coverage from 0-20% to 70%+
    - Focus: HTTP handlers, routing, error responses
-2. **Add rotel-tui UI tests:** Test terminal rendering and event handling
+2. **Add otelite-tui UI tests:** Test terminal rendering and event handling
    - Target: Increase UI coverage from 0-20% to 50%+
    - Focus: Rendering logic, keyboard input, screen updates
 3. **Test entry points:** Add tests for main.rs files
@@ -276,10 +276,10 @@ This will:
 
 ## Conclusion
 
-The Rotel project has **strong test coverage overall (477 tests, 68.93% line coverage)** with particularly excellent coverage in rotel-cli, rotel-core, and rotel-receiver. The main weaknesses are:
+The Otelite project has **strong test coverage overall (477 tests, 68.93% line coverage)** with particularly excellent coverage in otelite-cli, otelite-core, and otelite-receiver. The main weaknesses are:
 
-1. **rotel-dashboard:** Only 4 tests, 0-20% coverage (critical gap)
-2. **rotel-tui UI code:** 0-20% coverage (needs improvement)
+1. **otelite-dashboard:** Only 4 tests, 0-20% coverage (critical gap)
+2. **otelite-tui UI code:** 0-20% coverage (needs improvement)
 3. **Entry points:** 0% coverage across all main.rs files
 
 **Overall Grade: B (80/100)**
@@ -291,9 +291,9 @@ The Rotel project has **strong test coverage overall (477 tests, 68.93% line cov
 - Coverage: C+ (68.93% overall, but critical gaps in dashboard and TUI)
 
 **Priority Actions:**
-1. Add rotel-dashboard API endpoint tests (P0)
-2. Add rotel-tui UI rendering tests (P0)
-3. Improve rotel-storage reader coverage (P1)
+1. Add otelite-dashboard API endpoint tests (P0)
+2. Add otelite-tui UI rendering tests (P0)
+3. Improve otelite-storage reader coverage (P1)
 4. Add CLI argument parsing tests (P1)
 5. Set up continuous coverage monitoring (P1)
 

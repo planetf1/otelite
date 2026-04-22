@@ -1,22 +1,22 @@
 [workspace]
 resolver = "2"
 members = [
-    "crates/rotel-core",
-    "crates/rotel-receiver",
-    "crates/rotel-cli",
-    "crates/rotel-storage",
-    "crates/rotel-tui",
-    "crates/rotel-server",
+    "crates/otelite-core",
+    "crates/otelite-receiver",
+    "crates/otelite-cli",
+    "crates/otelite-storage",
+    "crates/otelite-tui",
+    "crates/otelite-server",
 ]
 
 [workspace.package]
 version = "0.1.0"
 edition = "2021"
 rust-version = "1.77"
-authors = ["Rotel Contributors"]
+authors = ["Otelite Contributors"]
 license = "Apache-2.0"
-repository = "https://github.com/rotel/rotel"
-homepage = "https://github.com/rotel/rotel"
+repository = "https://github.com/otelite/otelite"
+homepage = "https://github.com/otelite/otelite"
 
 [workspace.dependencies]
 # Async runtime

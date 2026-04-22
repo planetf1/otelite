@@ -110,11 +110,11 @@ Security-related changes and fixes
 
 ## Contributing
 
-See [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines on contributing to Rotel.
+See [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines on contributing to Otelite.
 
 When making changes, please update this changelog following the [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) format.
 
 ---
 
-**Maintained by**: Rotel Contributors  
+**Maintained by**: Otelite Contributors  
 **License**: Apache 2.0

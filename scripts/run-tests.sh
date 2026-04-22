@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Run all tests for Rotel project
+# Run all tests for Otelite project
 # This script runs unit tests, integration tests, and doc tests
 
 set -euo pipefail
@@ -16,7 +16,7 @@ PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 
 cd "$PROJECT_ROOT"
 
-echo -e "${YELLOW}Running Rotel Test Suite${NC}"
+echo -e "${YELLOW}Running Otelite Test Suite${NC}"
 echo "========================================"
 
 # Parse arguments
@@ -131,5 +131,3 @@ else
     echo -e "${RED}$FAILED test suite(s) failed${NC}"
     exit 1
 fi
-
-# Made with Bob
