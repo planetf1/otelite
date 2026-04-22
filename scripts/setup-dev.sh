@@ -176,7 +176,7 @@ main() {
     echo ""
 
     # Step 5: Configure pre-commit hooks
-    info "Step 5/7: Configuring pre-commit hooks..."
+    info "Step 5/6: Configuring pre-commit hooks..."
     if [ -f ".git/hooks/pre-commit" ]; then
         success "pre-commit hooks already configured"
     else
@@ -186,25 +186,8 @@ main() {
     fi
     echo ""
 
-    # Step 6: Set up beads issue tracking (optional)
-    info "Step 6/7: Setting up beads issue tracking..."
-    if ! command_exists bd; then
-        warning "beads (bd) not found — issue tracking integration will be inactive"
-        echo ""
-        echo "  To install beads, see: https://github.com/steveyegge/beads"
-        echo "  After installing, re-run this script or run: bd doctor && bd dolt pull"
-        echo ""
-    else
-        info "Running bd doctor to install hook integration..."
-        bd doctor 2>/dev/null || true
-        info "Pulling issue data from remote..."
-        bd dolt pull 2>/dev/null || warning "Could not pull beads data (remote may not be configured yet)"
-        success "beads set up"
-    fi
-    echo ""
-
     # Step 7: Verify workspace
-    info "Step 7/7: Verifying workspace..."
+    info "Step 6/6: Verifying workspace..."
 
     info "Checking workspace compilation..."
     if cargo check --workspace --all-features; then
@@ -248,8 +231,7 @@ main() {
     echo "  4. Format code:            cargo fmt"
     echo "  5. Run linter:             cargo clippy --all-targets --all-features -- -D warnings"
     echo "  6. Run pre-commit:         pre-commit run --all-files"
-    echo "  7. View open issues:       bd ready     (requires beads)"
-    echo ""
+      echo ""
     echo "For more information, see:"
     echo "  - README.md"
     echo "  - CONTRIBUTING.md"

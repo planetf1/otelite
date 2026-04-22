@@ -1,67 +1,57 @@
 # Agent Instructions
 
-This project uses **bd** (beads) for issue tracking. Run `bd prime` for full workflow context.
+This file provides workflow guidance for AI agents working on Otelite. For technical context (architecture, crate structure, gotchas), see **CLAUDE.md**.
 
-## Quick Reference
+## Issue Tracking
+
+Issues are tracked on GitHub: https://github.com/planetf1/otelite/issues
 
 ```bash
-bd ready              # Find available work
-bd show <id>          # View issue details
-bd update <id> --claim  # Claim work atomically
-bd close <id>         # Complete work
-bd dolt push          # Sync beads to remote (run at session end)
+gh issue list --state open --label "priority:p2"   # Find available work
+gh issue list --state open --assignee @me           # Your current work
+gh issue view <number>                              # Read issue details
+gh issue comment <number> --body "Starting this"   # Claim it
 ```
 
-## Rules
-
-- Use `bd` for ALL task tracking — do NOT use TodoWrite, TaskCreate, or markdown TODO lists
-- Run `bd prime` for detailed command reference and session close protocol
-- Use `bd remember` for persistent knowledge — do NOT use MEMORY.md files
-- No agent attribution in commits — do not add Co-Authored-By, Assisted-by, or similar trailers
+Labels: `priority:p1`–`p4`, `area:*` (receiver/storage/server/cli/tui/web/core/ci/ai), `type:*` (bug/feature/test/docs/refactor/chore).
 
 ## How to Start a Session
 
-1. Run `bd ready` to see available beads sorted by priority
-2. Pick the highest-priority unblocked bead
-3. Run `bd show <id>` to read the full description — it has step-by-step instructions
-4. Run `bd update <id> --claim` to claim it
-5. Follow the instructions in the bead description precisely
-6. When done: quality gates, commit, push, close bead (see below)
-7. Repeat with the next bead
+1. Run `gh issue list --state open --label "priority:p2" --limit 20` to see available work
+2. Pick the highest-priority unblocked issue
+3. Read the full issue: `gh issue view <number>`
+4. Check for blocking dependencies noted in the issue body
+5. Follow the instructions in the issue precisely
 
-## Commit and Push After EVERY Bead
+## Commit and Push After Every Issue
 
-**This is critical.** After completing each bead:
+After completing each issue:
 
-1. Run quality gates:
+1. Run all quality gates (see below)
+2. Commit with a clear message — no agent attribution trailers
+3. Push: `git push`
+4. Comment on the issue with what was done, then close it:
    ```bash
-   cargo build --workspace
-   cargo test --workspace
-   cargo clippy --workspace --all-targets -- -D warnings
-   cargo fmt --check
+   gh issue comment <number> --body "Done: <what was done>"
+   gh issue close <number>
    ```
-2. If any gate fails, fix the issue before committing
-3. Commit with a clear message describing what was done (no agent attribution trailers)
-4. Push immediately: `git push`
-5. Close the bead: `bd close <id> --reason "what was done"`
 
-**Do NOT batch multiple beads into one commit.** Each bead = one commit + push.
-Beads data is stored in Dolt (not git) — no need to commit `.beads/` files. Run `bd dolt push` at session end to sync.
+**Do not batch multiple issues into one commit.** One issue = one commit + push.
 
 ## Non-Interactive Shell Commands
 
-**ALWAYS use non-interactive flags** to avoid hanging on confirmation prompts.
+Always use non-interactive flags to avoid hanging:
 
 ```bash
-cp -f source dest           # NOT: cp source dest
-mv -f source dest           # NOT: mv source dest
-rm -f file                  # NOT: rm file
-rm -rf directory            # NOT: rm -r directory
+cp -f source dest
+mv -f source dest
+rm -f file
+rm -rf directory
 ```
 
 ## Quality Gates
 
-ALL code changes must pass before committing:
+All code changes must pass before committing:
 
 ```bash
 cargo build --workspace                                    # must compile
@@ -76,154 +66,80 @@ cargo fmt --check                                          # formatting ok
 rustup run stable cargo llvm-cov --workspace --all-features --summary-only
 ```
 
-**Why `rustup run stable`?** The repo has a `rust-toolchain.toml` pinning `channel = "stable"`, but on macOS with Homebrew Rust the system `cargo` may resolve to Homebrew's binary, which lacks `llvm-tools`. Using `rustup run stable` explicitly uses the rustup-managed toolchain that has `llvm-tools` installed.
+**Why `rustup run stable`?** The repo pins `channel = "stable"` in `rust-toolchain.toml`. On macOS with Homebrew Rust, the system `cargo` may lack `llvm-tools`. `rustup run stable` uses the rustup-managed toolchain which has them.
 
-### Code Standards
+## Code Standards
 
 - No `unwrap()` or `expect()` on user-facing code paths (tests are fine)
-- No silent error swallowing — propagate errors with context
-- No TODO comments without a corresponding bead (`bd create`)
-- Error messages must explain: what was attempted, what failed, what to try next
-- Tests must assert specific values, not just "doesn't panic"
+- No silent error swallowing — every `?` propagates with context
+- No TODO comments without a corresponding GitHub issue
+- Error messages explain: what was attempted, what failed, what to try next
+- Tests assert specific values, not just "doesn't panic"
 - No `#[allow(dead_code)]` without a comment explaining why the code is needed
 
-### Testing Requirements
+## Testing Requirements
 
 **New code requires new tests. No exceptions.**
 
 | What you added | Minimum test required |
 |---|---|
-| New HTTP endpoint | Integration test in `tests/` covering at least: empty state + data present |
+| New HTTP endpoint | Integration test covering at least: empty state + data present |
 | New function or method | Unit test in the same file's `#[cfg(test)]` module |
 | Bug fix | Regression test that would have failed before the fix |
 | New CLI command | Integration test using mockito or equivalent |
 | Refactor | No net reduction in test count; all existing tests still pass |
 
-**Verify new tests were actually written.** Before closing a bead, confirm the test count increased:
+Verify new tests were actually written before closing an issue:
 
 ```bash
 cargo test --workspace 2>&1 | grep "test result: ok" | awk '{sum += $4} END {print sum " total tests"}'
 ```
 
-If the count is the same as before you started and the bead adds production code, you missed tests. Go back and add them.
+If the count is the same as before and you added production code, you missed tests.
 
-**Tests must be run after writing them.** Don't just add test functions — run `cargo test -p <crate>` and confirm they appear in the output and pass.
-
-## Working with Beads
-
-Each bead has a detailed description with step-by-step instructions, exact file paths, verification commands, and acceptance criteria.
-
-**Always read the full bead description** (`bd show <id>`) before starting work. Follow the instructions precisely.
+**Run tests after writing them.** Don't just add test functions — run `cargo test -p <crate>` and confirm they appear in the output and pass.
 
 ## Picking What to Work On
 
-Use beads priorities, labels, and dependencies to decide:
+- **type:bug** before **type:feature** at the same priority
+- Issues that unblock other issues first (check "Blocks: #N" in the issue body)
+- Smaller issues over larger ones (quicker wins, faster feedback)
 
-```bash
-bd ready                    # Show all unblocked beads, sorted by priority
-bd ready -l pipeline        # Show only pipeline-related beads
-bd ready -l cli             # Show only CLI beads
-bd ready -l bugfix          # Show only bug fixes
-```
+### Priority guide
 
-### Priority rules
-
-- **P0 (critical):** Must be done first. These form a dependency chain — do them in order. They connect the core pipeline (OTLP → storage → API).
-- **P1 (high):** Core functionality and design. Do after P0 chain completes (some are unblocked earlier). The `cli` label P1 bead for noun-verb design should be done early as it shapes later CLI work.
-- **P2 (medium):** Quality, polish, and secondary features. Bug fixes (`bugfix` label) first, then `quality` label, then features.
-- **P3 (low):** Advanced features, documentation, nice-to-haves. Do these last.
-
-### Label meanings
-
-| Label | Meaning |
-|-------|---------|
-| `pipeline` | Core OTLP → storage → API data flow |
-| `cli` | CLI commands, output, structure |
-| `tui` | Terminal UI |
-| `web` | Web dashboard |
-| `api` | REST API endpoints |
-| `genai` / `llm` | LLM/GenAI-specific features |
-| `quality` | Tests, clippy, error handling, code review |
-| `docs` | Documentation |
-| `infra` | Config, logging, CI, service mode |
-| `ai` | AI chat integration, MCP |
-| `cleanup` | Remove dead code, archive artifacts |
-| `bugfix` | Bug fixes |
-| `testing` | Test suites |
-| `search` | Search and query features |
-
-### Dependency rules
-
-If `bd show <id>` lists dependencies, those must be completed first. The tool enforces this — blocked beads won't appear in `bd ready` output.
-
-### Within the same priority, prefer
-
-1. Bug fixes (`bugfix` label)
-2. Beads that unblock other beads (check with `bd dep list <id> --direction up`)
-3. Smaller beads (quicker wins, faster feedback)
+| Priority | Meaning |
+|----------|---------|
+| `priority:p1` | High — blocking or urgent |
+| `priority:p2` | Medium — should be done soon |
+| `priority:p3` | Lower — nice to have |
+| `priority:p4` | Backlog — deferred |
 
 ## When You're Stuck
 
-If you can't complete a bead:
+1. **Compilation error you can't fix:** Check if a dependent issue should be done first. If so, stop — the issue is blocked.
+2. **Test failure you don't understand:** Run with `cargo test -p <crate> -- <test_name> --nocapture`.
+3. **Unclear issue description:** Don't guess. Leave a comment on the issue asking for clarification, then move to the next unblocked issue.
+4. **Issue is too large:** Break it into smaller issues via `gh issue create`, add cross-references, close the original as a parent.
 
-1. **Compilation error you can't fix:** Read the error carefully. Check if a dependency bead should have been done first (`bd dep list <id>`). If so, stop — the bead is blocked.
-2. **Test failure you don't understand:** Run the single failing test with `cargo test -p <crate> -- <test_name> --nocapture` to see output.
-3. **Unclear bead description:** Don't guess. File a new bead describing what's unclear, add it as a blocker, and move to the next unblocked bead.
-4. **Bead is too large:** If a bead involves more than 3 files or 2 components, break it into smaller beads with `bd create` and add dependencies. Close the original as a parent.
-
-**Never submit incomplete work.** If you can't finish a bead, leave it as `in_progress` with a comment (`bd update <id> --notes "got stuck on X"`) and move on.
+**Never submit incomplete work.** If you can't finish, leave a comment on the issue describing where you stopped.
 
 ## Definition of Done
 
-A bead is complete when ALL of these are true:
+An issue is complete when ALL of these are true:
 
-1. Acceptance criteria in `bd show <id>` are met
+1. Acceptance criteria in the issue are met
 2. All quality gates pass (build, test, clippy, fmt)
-3. **New production code has new tests** — if you added a function, endpoint, command, or data path, at least one test exercises it in the same commit (see Testing Requirements below)
+3. New production code has new tests
 4. Changes are committed with a clear message
 5. `git push` succeeded
-6. `bd close <id> --reason "..."` called with a specific reason
-7. `bd dolt push` to sync bead state to remote (so the next agent sees it)
-
-## Before Context Compaction
-
-Your context may be compacted mid-session without warning. Protect your work:
-
-- **Commit and push frequently** — after every bead, not at the end
-- **Update bead status immediately** — `bd update <id> --claim` when starting, `bd close` when done
-- **Leave notes on in-progress beads** — `bd update <id> --notes "completed step 2, starting step 3"` so the next context can resume
-- **Don't hold state in your head** — if you've figured something out (e.g., "the function signature needs to change"), write it in a bead note or commit it
-- **Before any significant change** (editing multiple files, refactoring, changing public APIs), update the bead with your plan: `bd update <id> --append-notes "About to change X because Y"` then `bd dolt push`. If the session aborts mid-change, the next agent can pick up from your notes rather than guessing
-
-If you resume after compaction: run `bd ready` and `git status` to understand current state.
+6. Issue is commented and closed
 
 ## Session End
 
-Before ending a session:
-
-1. Check for uncommitted changes: `git status` (should show "nothing to commit, working tree clean")
-2. If there are uncommitted changes, commit and push them immediately
-3. Ensure all work is committed and pushed (`git push` must succeed)
-4. Close completed beads, file new beads for unfinished work
-5. Push beads: `bd dolt push`
-6. Run retrospective (see below)
-
-## Retrospective
-
-At the end of every session, reflect and **capture findings as bead notes or new beads**:
-
-1. **Process friction** — What slowed you down? Unclear bead? Missing dependency? Flaky test?
-   → Fix it now if small, or `bd create` a bead for it.
-2. **Rules** — Should anything in this file or CLAUDE.md change?
-   → Edit the file directly and commit.
-3. **Bead quality** — Were descriptions clear enough? Did you need info that wasn't there?
-   → Update the bead with `bd update <id> --notes "needed X, add it for next time"`.
-4. **Documentation** — Is any doc now stale from your changes?
-   → Update it or file a bead.
-5. **Tooling** — Would a script or alias save time?
-   → File a bead with label `infra`.
-
-**The retrospective is not optional.** Even a one-line "nothing to improve" note on the last bead you worked on counts. The goal is that each session leaves the project slightly easier to work on.
+1. `git status` — should show nothing uncommitted
+2. If there are uncommitted changes, commit and push them
+3. Close any completed issues
+4. Leave comments on in-progress issues describing current state
 
 ## Historical Note
 
