@@ -90,6 +90,16 @@ repos:
     args: [ '--markdown-linebreak-ext=md' ]
 
 
+# Warn if beads (bd) is not installed — issue tracking hooks will be inactive
+- repo: local
+  hooks:
+  - id: beads-check
+    name: beads (bd) installed
+    language: script
+    entry: scripts/check-beads.sh
+    pass_filenames: false
+    verbose: true
+
 # CI mode: stricter checks for CI environment
 # Run with: pre-commit run --all-files --show-diff-on-failure
 ci:

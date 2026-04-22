@@ -63,3 +63,6 @@ crates/*/:memory:*-shm
 
 # Prevent accidental commit of absolute-path hook files
 Users/
+
+# Claude Code local settings (each contributor manages their own)
+.claude/

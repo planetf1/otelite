@@ -32,6 +32,7 @@ We are committed to providing a welcoming and inclusive environment for all cont
 - **Rust**: 1.77+ (stable channel)
 - **Git**: For version control
 - **Pre-commit**: For automated code quality checks (optional but recommended)
+- **Beads (bd)**: For issue tracking integration (optional — see [beads setup](#beads-issue-tracking))
 
 ### Setup Development Environment
 
@@ -58,6 +59,22 @@ We are committed to providing a welcoming and inclusive environment for all cont
    cargo clippy --all-targets --all-features -- -D warnings
    cargo fmt --check
    ```
+
+## Beads Issue Tracking
+
+This project uses [beads](https://github.com/steveyegge/beads) (`bd`) for issue tracking. It is optional — you can build, test, and contribute without it — but installing it gives you access to the project issue list and integrates with git commits.
+
+### Install beads
+
+Follow the [beads installation guide](https://github.com/steveyegge/beads) then run:
+
+```bash
+bd doctor          # installs hook integration into .git/hooks/
+bd dolt pull       # downloads issue data from the remote
+bd ready           # shows issues ready to work on
+```
+
+If `bd` is not installed, commit hooks skip the integration silently and a reminder is printed.
 
 ## Development Workflow
 

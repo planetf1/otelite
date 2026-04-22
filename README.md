@@ -4,6 +4,8 @@
 
 Otelite is a single-binary observability tool that receives OpenTelemetry data (logs, traces, metrics) and provides a web dashboard and terminal UI for viewing it. Designed for local LLM development with minimal resource usage (<100MB memory, <5% CPU), it starts in seconds and requires no external dependencies.
 
+> **Personal project** — developed and maintained on a best-efforts basis by [@planetf1](https://github.com/planetf1). Not an official or supported product. Contributions and feedback welcome via GitHub issues and pull requests.
+
 ## Quick Start
 
 ### Build and run (development)
