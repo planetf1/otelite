@@ -147,7 +147,8 @@ fn render_metrics_table(frame: &mut Frame, area: Rect, state: &MetricsState) {
     .block(
         Block::default()
             .borders(Borders::ALL)
-            .title(format!(" Metrics ({}) ", unique_metrics.len())),
+            .title(format!(" Metrics ({}) ", unique_metrics.len()))
+            .border_style(Style::default().fg(Color::Magenta)),
     )
     .row_highlight_style(
         Style::default()
@@ -417,7 +418,7 @@ fn render_status_bar(frame: &mut Frame, area: Rect, state: &MetricsState, api_er
     // Item count
     status_parts.push(Span::styled(
         format!(" | Metrics: {} ", state.unique_filtered_metrics().len()),
-        Style::default().fg(Color::DarkGray),
+        Style::default().fg(Color::Gray),
     ));
 
     // Search indicator
@@ -456,8 +457,8 @@ fn render_status_bar(frame: &mut Frame, area: Rect, state: &MetricsState, api_er
     // Help text
     status_parts.push(Span::raw(" | "));
     status_parts.push(Span::styled(
-        "↑↓: Navigate | Enter: Detail | /: Search | f: Filter | q: Quit",
-        Style::default().fg(Color::DarkGray),
+        "↑↓/jk: Navigate | Enter: Detail | /: Search | f: Filter | q: Quit",
+        Style::default().fg(Color::Gray),
     ));
 
     let status_line = Line::from(status_parts);

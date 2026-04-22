@@ -241,6 +241,42 @@ impl App {
             AppEvent::PageUp if self.current_view == View::Metrics => {
                 self.metrics_state.select_page_up(10);
             },
+            // Vim-style j/k navigation. filter_input_active returns early above so these
+            // only fire in normal mode, preserving j/k as text input inside filters.
+            AppEvent::Char('j') if self.current_view == View::Logs => {
+                self.logs_state.select_next();
+            },
+            AppEvent::Char('k') if self.current_view == View::Logs => {
+                self.logs_state.select_previous();
+            },
+            AppEvent::Char('j')
+                if self.current_view == View::Traces && !self.traces_state.show_span_detail =>
+            {
+                if self.traces_state.show_detail {
+                    if let Some(trace) = self.traces_state.selected_trace_details() {
+                        self.traces_state.select_next_span(trace.spans.len());
+                    }
+                } else {
+                    self.traces_state.select_next();
+                }
+            },
+            AppEvent::Char('k')
+                if self.current_view == View::Traces && !self.traces_state.show_span_detail =>
+            {
+                if self.traces_state.show_detail {
+                    if self.traces_state.selected_trace_details().is_some() {
+                        self.traces_state.select_previous_span();
+                    }
+                } else {
+                    self.traces_state.select_previous();
+                }
+            },
+            AppEvent::Char('j') if self.current_view == View::Metrics => {
+                self.metrics_state.select_next();
+            },
+            AppEvent::Char('k') if self.current_view == View::Metrics => {
+                self.metrics_state.select_previous();
+            },
             _ => {},
         }
     }

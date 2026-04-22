@@ -239,6 +239,11 @@ fn render_traces_table(frame: &mut Frame, area: Rect, state: &TracesState) {
         .iter()
         .map(|trace| {
             let error_indicator = if trace.has_errors { "⚠" } else { " " };
+            let row_style = if trace.has_errors {
+                Style::default().fg(Color::LightRed)
+            } else {
+                Style::default()
+            };
 
             Row::new(vec![
                 format_timestamp(trace.start_time),
@@ -249,6 +254,7 @@ fn render_traces_table(frame: &mut Frame, area: Rect, state: &TracesState) {
                 trace.service_names.join(", "),
             ])
             .height(1)
+            .style(row_style)
         })
         .collect();
 
@@ -280,7 +286,8 @@ fn render_traces_table(frame: &mut Frame, area: Rect, state: &TracesState) {
     .block(
         Block::default()
             .borders(Borders::ALL)
-            .title(format!(" Traces ({}) ", filtered_traces.len())),
+            .title(format!(" Traces ({}) ", filtered_traces.len()))
+            .border_style(Style::default().fg(Color::Cyan)),
     )
     .row_highlight_style(
         Style::default()
@@ -349,11 +356,29 @@ fn render_detail_panel(frame: &mut Frame, area: Rect, state: &TracesState) {
         " Trace Detail "
     };
 
+    // Auto-scroll to keep the selected span visible in the waterfall.
+    // 8 header lines (trace_id, op, blank, duration, spans, blank, label, blank) precede spans.
+    let scroll_y = if !state.show_span_detail
+        && state.selected_trace_details().is_some_and(|t| !t.spans.is_empty())
+    {
+        const HEADER_LINES: u16 = 8;
+        let target_line = HEADER_LINES + state.selected_span_index as u16;
+        let visible_height = area.height.saturating_sub(2);
+        target_line.saturating_sub(visible_height / 2)
+    } else {
+        0
+    };
+
     // Use trim: false so leading indent spaces (span depth) are preserved in the waterfall.
-    // trim: true was stripping them and scrambling the tree structure.
     let paragraph = Paragraph::new(content)
-        .block(Block::default().borders(Borders::ALL).title(title))
-        .wrap(Wrap { trim: false });
+        .block(
+            Block::default()
+                .borders(Borders::ALL)
+                .title(title)
+                .border_style(Style::default().fg(Color::Cyan)),
+        )
+        .wrap(Wrap { trim: false })
+        .scroll((scroll_y, 0));
     frame.render_widget(paragraph, area);
 }
 
@@ -416,7 +441,7 @@ fn format_trace_summary(summary: &TraceSummary) -> Text<'static> {
     all_lines.push(Line::from(""));
     all_lines.push(Line::from(vec![TextSpan::styled(
         "Press Enter to load full trace details",
-        Style::default().fg(Color::DarkGray),
+        Style::default().fg(Color::Yellow),
     )]));
 
     Text::from(all_lines)
@@ -708,7 +733,7 @@ fn format_span_detail(span: &Span, trace: &Trace) -> Text<'static> {
 
     lines.push(Line::from(vec![TextSpan::styled(
         "Press Esc to return to trace view",
-        Style::default().fg(Color::DarkGray),
+        Style::default().fg(Color::Yellow),
     )]));
 
     Text::from(lines)
@@ -744,7 +769,9 @@ fn format_trace_detail(trace: &Trace, state: &TracesState) -> Text<'static> {
         Line::from(""),
         Line::from(vec![TextSpan::styled(
             "Span Waterfall:",
-            Style::default().add_modifier(Modifier::BOLD),
+            Style::default()
+                .add_modifier(Modifier::BOLD)
+                .fg(Color::Cyan),
         )]),
         Line::from(""),
     ];
@@ -762,11 +789,13 @@ fn format_trace_detail(trace: &Trace, state: &TracesState) -> Text<'static> {
         let is_selected = idx == state.selected_span_index;
         let span_duration = format_duration(node.span.duration);
         let indent = " ".repeat(node.depth * 2);
-        let tree_char = if node.depth > 0 { "├─ " } else { "▶ " };
+        // Both markers are exactly 2 display columns — critical for bar alignment
+        let tree_char = if node.depth > 0 { "└ " } else { "  " };
 
-        // Truncate name to fit
+        // Truncate name to fit, then pad to fixed width so the bar column is constant
         let max_name_len = 25_usize.saturating_sub(node.depth * 2);
-        let span_name = truncate_string(&node.span.name, max_name_len);
+        let truncated = truncate_string(&node.span.name, max_name_len);
+        let span_name = format!("{:<width$}", truncated, width = max_name_len);
 
         // Render timing bar
         let timing_bar = render_timing_bar(
@@ -780,13 +809,21 @@ fn format_trace_detail(trace: &Trace, state: &TracesState) -> Text<'static> {
         let bar_color = get_timing_bar_color(status_str, node.duration_percent);
         let mut status_color = get_span_status_color(status_str);
 
+        // Depth-based color for tree connector so the hierarchy is visually clear
+        let tree_color = match node.depth {
+            0 => Color::White,
+            1 => Color::Cyan,
+            2 => Color::Blue,
+            _ => Color::Gray,
+        };
+
         // Highlight selected span
         let selection_marker = if is_selected { "▶ " } else { "  " };
         if is_selected {
             status_color = Color::Cyan;
         }
 
-        // Build optional GenAI inline badge
+        // Build optional GenAI inline badge — placed AFTER duration so it never shifts the bar
         let genai_info = GenAiSpanInfo::from_attributes(&node.span.attributes);
         let genai_badge: Option<String> = if genai_info.is_genai {
             if genai_info.is_tool_call() {
@@ -820,7 +857,7 @@ fn format_trace_detail(trace: &Trace, state: &TracesState) -> Text<'static> {
                     .add_modifier(Modifier::BOLD),
             ),
             TextSpan::raw(indent),
-            TextSpan::styled(tree_char, Style::default().fg(Color::DarkGray)),
+            TextSpan::styled(tree_char, Style::default().fg(tree_color)),
             TextSpan::styled(
                 span_name,
                 Style::default()
@@ -831,18 +868,18 @@ fn format_trace_detail(trace: &Trace, state: &TracesState) -> Text<'static> {
                         Modifier::empty()
                     }),
             ),
+            TextSpan::raw(" "),
+            TextSpan::styled(timing_bar, Style::default().fg(bar_color)),
+            TextSpan::raw(format!(" {:>6}", span_duration)),
         ];
 
+        // GenAI badge after duration — doesn't disturb bar column alignment
         if let Some(badge) = genai_badge {
             row_spans.push(TextSpan::styled(
                 badge,
-                Style::default().fg(Color::DarkGray),
+                Style::default().fg(Color::Magenta),
             ));
         }
-
-        row_spans.push(TextSpan::raw(" "));
-        row_spans.push(TextSpan::styled(timing_bar, Style::default().fg(bar_color)));
-        row_spans.push(TextSpan::raw(format!(" {}", span_duration)));
 
         lines.push(Line::from(row_spans));
     }
@@ -850,7 +887,7 @@ fn format_trace_detail(trace: &Trace, state: &TracesState) -> Text<'static> {
     lines.push(Line::from(""));
     lines.push(Line::from(vec![TextSpan::styled(
         "Press Enter on a span to view details",
-        Style::default().fg(Color::DarkGray),
+        Style::default().fg(Color::Yellow),
     )]));
 
     Text::from(lines)
@@ -861,7 +898,7 @@ fn get_span_status_color(status: &str) -> Color {
     match status.to_uppercase().as_str() {
         "OK" | "SUCCESS" => Color::Green,
         "ERROR" | "FAILED" => Color::Red,
-        "UNSET" | "UNKNOWN" => Color::DarkGray,
+        "UNSET" | "UNKNOWN" => Color::Gray,
         _ => Color::White,
     }
 }
@@ -915,7 +952,7 @@ fn render_status_bar(frame: &mut Frame, area: Rect, state: &TracesState, api_err
     // Item count
     status_parts.push(TextSpan::styled(
         format!(" | Traces: {} ", state.filtered_traces().len()),
-        Style::default().fg(Color::DarkGray),
+        Style::default().fg(Color::Gray),
     ));
 
     // Search indicator
@@ -962,7 +999,7 @@ fn render_status_bar(frame: &mut Frame, area: Rect, state: &TracesState, api_err
     };
     status_parts.push(TextSpan::styled(
         help_text,
-        Style::default().fg(Color::DarkGray),
+        Style::default().fg(Color::Gray),
     ));
 
     let status_line = Line::from(status_parts);
@@ -1050,7 +1087,7 @@ mod tests {
     fn test_get_span_status_color() {
         assert_eq!(get_span_status_color("OK"), Color::Green);
         assert_eq!(get_span_status_color("ERROR"), Color::Red);
-        assert_eq!(get_span_status_color("UNSET"), Color::DarkGray);
+        assert_eq!(get_span_status_color("UNSET"), Color::Gray);
         assert_eq!(get_span_status_color("SUCCESS"), Color::Green);
         assert_eq!(get_span_status_color("FAILED"), Color::Red);
     }

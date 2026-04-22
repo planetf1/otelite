@@ -34,14 +34,14 @@ pub fn render_tab_bar(frame: &mut Frame, area: Rect, active: &str) {
         } else {
             spans.push(Span::styled(
                 format!(" {key}:{name} "),
-                Style::default().fg(Color::DarkGray),
+                Style::default().fg(Color::White),
             ));
         }
         spans.push(Span::raw("  "));
     }
-    spans.push(Span::styled("?:Help", Style::default().fg(Color::DarkGray)));
+    spans.push(Span::styled("?:Help", Style::default().fg(Color::Yellow)));
     spans.push(Span::raw("  "));
-    spans.push(Span::styled("q:Quit", Style::default().fg(Color::DarkGray)));
+    spans.push(Span::styled("q:Quit", Style::default().fg(Color::Red)));
 
     let line = Line::from(spans);
     frame.render_widget(Paragraph::new(line), area);

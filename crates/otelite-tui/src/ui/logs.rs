@@ -106,7 +106,8 @@ fn render_logs_table(frame: &mut Frame, area: Rect, state: &LogsState) {
             Row::new(vec![
                 Cell::from(format_timestamp(log.timestamp)),
                 Cell::from(log.severity.clone()).style(get_severity_style(&log.severity)),
-                Cell::from(truncate_string(&log.body, 80)),
+                Cell::from(truncate_string(&log.body, 80))
+                    .style(Style::default().fg(get_severity_body_color(&log.severity))),
             ])
             .height(1)
         })
@@ -130,7 +131,8 @@ fn render_logs_table(frame: &mut Frame, area: Rect, state: &LogsState) {
     .block(
         Block::default()
             .borders(Borders::ALL)
-            .title(format!(" Logs ({}) ", filtered_logs.len())),
+            .title(format!(" Logs ({}) ", filtered_logs.len()))
+            .border_style(Style::default().fg(Color::Blue)),
     )
     .row_highlight_style(
         Style::default()
@@ -271,7 +273,7 @@ fn render_status_bar(frame: &mut Frame, area: Rect, state: &LogsState, api_error
     // Item count
     status_parts.push(Span::styled(
         format!(" | Logs: {} ", state.filtered_logs().len()),
-        Style::default().fg(Color::DarkGray),
+        Style::default().fg(Color::Gray),
     ));
 
     // Search indicator
@@ -316,8 +318,8 @@ fn render_status_bar(frame: &mut Frame, area: Rect, state: &LogsState, api_error
     // Help text
     status_parts.push(Span::raw(" | "));
     status_parts.push(Span::styled(
-        "↑↓:Navigate  Enter:Detail  /:Search  f:Filter  a:AutoScroll  r:Refresh",
-        Style::default().fg(Color::DarkGray),
+        "↑↓/jk:Navigate  Enter:Detail  /:Search  f:Filter  a:AutoScroll  r:Refresh",
+        Style::default().fg(Color::Gray),
     ));
 
     let status_line = Line::from(status_parts);
@@ -349,6 +351,19 @@ fn render_filter_input_bar(frame: &mut Frame, area: Rect, buffer: &str) {
         ),
     ]);
     frame.render_widget(Paragraph::new(line), area);
+}
+
+/// Get a subtle foreground color for the message body based on severity.
+/// Gives the whole row a tinted feel without overwhelming the severity badge.
+fn get_severity_body_color(severity: &str) -> Color {
+    match severity.to_uppercase().as_str() {
+        "ERROR" | "FATAL" | "CRITICAL" => Color::LightRed,
+        "WARN" | "WARNING" => Color::LightYellow,
+        "INFO" => Color::White,
+        "DEBUG" => Color::Gray,
+        "TRACE" => Color::DarkGray,
+        _ => Color::White,
+    }
 }
 
 /// Get color style for severity level
