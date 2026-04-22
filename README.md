@@ -71,7 +71,7 @@ Open `http://localhost:3000` in your browser to view telemetry.
 
 ![Setup page](docs/screenshots/setup.png)
 
-> **The web dashboard isn't the only interface — don't miss the [Terminal UI](#terminal-ui) (`otelite tui`) and the [CLI](#cli-usage) (`otelite logs`, `otelite traces`, `otelite metrics`).**
+> **The web dashboard isn't the only interface — don't miss the [Terminal UI](#terminal-ui) (`otelite tui`) and the [CLI](#cli-usage) (`otelite logs`, `otelite traces`, `otelite metrics`).** See the [TUI guide](docs/tui-quickstart.md) and [CLI reference](docs/cli-reference.md) for full documentation with examples.
 
 ## Sending Data
 
@@ -186,6 +186,8 @@ otelite usage --since 7d --by-model
 otelite --format json logs list | jq '.[] | select(.severity == "ERROR")'
 ```
 
+See [docs/cli-reference.md](docs/cli-reference.md) for the full reference with real example output.
+
 ## Terminal UI
 
 ```bash
@@ -199,11 +201,14 @@ otelite tui --api-url http://localhost:3000
 **Keyboard shortcuts:**
 - `l` / `t` / `m` — switch to Logs / Traces / Metrics view
 - `Tab` / `Shift+Tab` — cycle between views
+- `↑` / `↓` or `j` / `k` — navigate items
+- `Enter` — open detail / span waterfall
 - `/` — search
 - `f` — filter
-- `PageUp` / `PageDown` — scroll
 - `?` — help
 - `q` — quit
+
+See [docs/tui-quickstart.md](docs/tui-quickstart.md) for the full guide with ASCII mockups of each view.
 
 ## REST API
 
