@@ -349,14 +349,11 @@ fn render_detail_panel(frame: &mut Frame, area: Rect, state: &TracesState) {
         " Trace Detail "
     };
 
-    // Waterfall view must not wrap — line wrapping breaks the indented tree structure
-    // and `trim: true` would strip the leading spaces that represent span depth.
-    // Only the span detail text view benefits from wrapping.
-    let mut paragraph = Paragraph::new(content)
-        .block(Block::default().borders(Borders::ALL).title(title));
-    if state.show_span_detail {
-        paragraph = paragraph.wrap(Wrap { trim: false });
-    }
+    // Use trim: false so leading indent spaces (span depth) are preserved in the waterfall.
+    // trim: true was stripping them and scrambling the tree structure.
+    let paragraph = Paragraph::new(content)
+        .block(Block::default().borders(Borders::ALL).title(title))
+        .wrap(Wrap { trim: false });
     frame.render_widget(paragraph, area);
 }
 
@@ -755,8 +752,10 @@ fn format_trace_detail(trace: &Trace, state: &TracesState) -> Text<'static> {
     // Build span tree with timing information
     let span_nodes = build_span_tree(trace);
 
-    // Calculate bar width (assume 80 char width, reserve space for name and duration)
-    let bar_width = 40;
+    // Bar width sized to keep lines within ~78 cols (50% split panel minus borders).
+    // Fixed cost per line: 2 (selector) + 3 (tree) + 25 (name) + 1 + 1 + 6 (duration) = 38.
+    // 78 - 38 = 40, but GenAI badges add ~20 chars, so use 20 to avoid wrapping.
+    let bar_width = 20;
 
     // Render each span with timing bar
     for (idx, node) in span_nodes.iter().enumerate() {
