@@ -1,179 +1,220 @@
 # Otelite TUI Quickstart Guide
 
-The Otelite Terminal User Interface (TUI) provides a powerful, keyboard-driven interface for viewing and analyzing OpenTelemetry data in real-time.
+The Otelite Terminal User Interface (TUI) provides a keyboard-driven dashboard for viewing
+OpenTelemetry data in real-time — no browser required.
 
-## Installation
+## Starting the TUI
 
-### From Source
-
-```bash
-# Clone the repository
-git clone https://github.com/planetf1/otelite.git
-cd otelite
-
-# Build the TUI
-cargo build --release --package otelite-tui
-
-# Run the TUI
-./target/release/otelite-tui
-```
-
-## Quick Start
-
-### Basic Usage
-
-Start the TUI with default settings (connects to `http://localhost:4318`):
+The TUI connects to a running `otelite serve` instance on `localhost:3000` by default:
 
 ```bash
-otelite-tui
+otelite tui
 ```
 
-### Custom Configuration
-
-Connect to a different Otelite API endpoint:
+Options:
 
 ```bash
-otelite-tui --api-url http://localhost:8080
+otelite tui --api-url http://localhost:3000   # default
+otelite tui --view traces                     # open directly on Traces tab
+otelite tui --view metrics                    # open directly on Metrics tab
+otelite tui --refresh-interval 5             # poll every 5 seconds (default: 2)
 ```
 
-Set refresh interval (in seconds):
+## Layout
 
-```bash
-otelite-tui --refresh-interval 5
+Every view follows the same three-row structure:
+
+```text
+┌─ tab bar ──────────────────────────────────────────────────────────────┐
+│ [l:Logs]   t:Traces   m:Metrics      ?:Help   q:Quit                  │
+├─ main content ─────────────────────────────────────────────────────────┤
+│                                                                         │
+│   (table or split table/detail panel)                                  │
+│                                                                         │
+├─ status bar ───────────────────────────────────────────────────────────┤
+│  LOGS  Connected | Logs: 42 | ↑↓/jk: Navigate  Enter: Detail ...      │
+└────────────────────────────────────────────────────────────────────────┘
 ```
 
-Start with a specific view:
+The active tab is shown with a **cyan highlight** and square brackets. Inactive tabs are white.
 
-```bash
-otelite-tui --initial-view traces
+---
+
+## Logs View (`l`)
+
+```text
+ [l:Logs]   t:Traces   m:Metrics      ?:Help   q:Quit
+
+┌ Logs (42) ─────────────────────────────────────────────────────────────────┐
+│ Timestamp        │ Severity  │ Message                                      │
+│══════════════════╪═══════════╪══════════════════════════════════════════════│
+│ 2026-04-22 15:11 │ INFO      │ claude_code.api_request_body                 │
+│ 2026-04-22 15:11 │ INFO      │ claude_code.api_request                      │
+│ 2026-04-22 15:10 │ INFO      │ claude_code.hook_execution_complete          │
+│ 2026-04-22 15:10 │ INFO      │ claude_code.tool_result                      │
+│ 2026-04-22 14:01 │ WARN      │ slow query detected: 450ms                   │
+│ 2026-04-20 22:15 │ ERROR     │ Test ERROR log from inject_test_data.sh      │
+│ 2026-04-20 22:15 │ DEBUG     │ http server initializing                     │
+└────────────────────────────────────────────────────────────────────────────┘
+
+ LOGS  Connected | Logs: 42 | ↑↓/jk: Navigate  Enter: Detail  f: Filter
 ```
 
-## Navigation
+- Severity is **color-coded**: ERROR=red, WARN=yellow, INFO=white, DEBUG=gray, TRACE=dark gray
+- Message body is also tinted by severity for at-a-glance scanning
+- Press **Enter** on any row to open a detail panel on the right showing full attributes and resource
 
-### View Switching
+**Filtering:**
 
-- **`l`** - Switch to Logs view
-- **`t`** - Switch to Traces view  
-- **`m`** - Switch to Metrics view
-- **`?` or `h`** - Show help screen
+```text
+f         → opens filter prompt:  Filter: █  (Enter to apply, Esc to cancel)
+            type  severity=ERROR   or  service=myapp   or just text
+Esc       → clears active filter
+```
 
-### Within Views
+**Log detail panel (Enter):**
 
-- **`↑/↓`** - Navigate up/down through items
-- **`Enter`** - Expand selected item to show details
-- **`Esc`** - Close detail panel or return to previous view
-- **`/`** - Start search
-- **`f`** - Apply filters
-- **`r`** - Refresh data manually
+```text
+┌ Logs (42) ──────────────────┐┌ Log Detail ─────────────────┐
+│ ...table rows...             ││ Timestamp: 2026-04-20 22:15 │
+│ 2026-04-20 22:15  ERROR  Tes>││ Severity:  ERROR            │
+│                              ││                             │
+│                              ││ Message:                    │
+│                              ││ Test ERROR log from         │
+│                              ││ inject_test_data.sh         │
+│                              ││                             │
+│                              ││ Attributes:                 │
+│                              ││   service.name: test-svc    │
+│                              ││   host.name: localhost      │
+└──────────────────────────────┘└─────────────────────────────┘
+```
 
-### Application Control
+---
 
-- **`q`** - Quit application
-- **`Ctrl+C`** - Force quit
+## Traces View (`t`)
 
-## Views Overview
+```text
+ l:Logs   [t:Traces]   m:Metrics      ?:Help   q:Quit
 
-### Logs View
+┌ Traces (3) ────────────────────────────────────────────────────────────────┐
+│ Time     │ E │ Operation                    │ Duration  │ Spans │ Services │
+│══════════╪═══╪══════════════════════════════╪═══════════╪═══════╪══════════│
+│ 15:11:10 │   │ claude_code.llm_request      │ 5121ms    │ 1     │ claude   │
+│ 15:10:46 │ ⚠ │ claude_code.tool.execution   │ 187016ms  │ 28    │ claude   │
+│ 14:01:24 │   │ claude_code.llm_request      │ 138240ms  │ 43    │ claude   │
+└────────────────────────────────────────────────────────────────────────────┘
 
-View and search through log entries with:
-- Timestamp, severity level, and message
-- Color-coded severity (ERROR=red, WARN=yellow, INFO=green, DEBUG=blue)
-- Full log details including attributes and resource information
-- Search and filter capabilities
-- Auto-scroll toggle with `s` key
+ TRACES  Connected | Traces: 3 | ↑↓/jk: Navigate  Enter: Detail  f: Filter
+```
 
-### Traces View
+- The **E** column shows `⚠` for traces with errors (row is highlighted red)
+- Press **Enter** to load the trace and show a span waterfall on the right
 
-Analyze distributed traces with:
-- Trace ID, operation name, duration, and status
-- Span waterfall visualization showing hierarchy
-- Error highlighting for failed spans
-- Detailed span information including attributes, events, and links
-- Filter by duration, status, or service
+**Span waterfall (Enter → trace detail):**
 
-### Metrics View
+```text
+┌ Traces (3) ──────────────────┐┌ Trace Detail ────────────────────────────┐
+│ ...table...                  ││ Trace ID: 53ecf8c87568682bc4f4344bbacb   │
+│ 15:10:46 ⚠ claude_code.tool>││ Operation: claude_code.interaction        │
+│                              ││ Duration:  138240ms | Spans: 43           │
+│                              ││                                           │
+│                              ││ Span Waterfall:                           │
+│                              ││                                           │
+│                              ││   claude_code.interaction  ██████░░  138s │
+│                              ││ ▶ └ claude_code.llm_request ░░█░░░░  31s  │
+│                              ││     └ claude_code.tool      ░░░█░░░   1ms │
+│                              ││       └ tool.execution      ░░░█░░░   0ms │
+│                              ││       └ tool.blocked_on_us  ░░░█░░░   1ms │
+│                              ││                                           │
+│                              ││ Press Enter on a span to view details     │
+└──────────────────────────────┘└───────────────────────────────────────────┘
+```
 
-Monitor metrics with:
-- Metric name, type, latest value, and data points
-- Sparkline charts showing value trends
-- Min/max/avg statistics
-- Filter by metric type or unit
-- Zoom controls with `+` and `-` keys
+- The **timing bar** (█/░) shows each span's position and duration within the overall trace
+- Bar colour: green=normal, yellow=slow (>50% of trace), red=error
+- **Selected span** is highlighted cyan with `▶` marker
+- Navigate spans with `↑↓` or `j/k`; press **Enter** on a span for full attribute detail
+- GenAI spans show an inline badge: `[claude-sonnet-4-6 · 1→384]` (input→output tokens)
 
-## Tips
+---
 
-1. **Performance**: The TUI automatically limits data to 1000 items per view to maintain responsiveness
-2. **Refresh**: Data refreshes automatically based on the configured interval (default: 5 seconds)
-3. **Search**: Use `/` to search within the current view - search is case-insensitive
-4. **Filters**: Press `f` to apply filters - useful for focusing on specific severity levels, services, or metric types
-5. **Help**: Press `?` anytime to see the full keyboard shortcuts reference
+## Metrics View (`m`)
+
+```text
+ l:Logs   t:Traces   [m:Metrics]      ?:Help   q:Quit
+
+┌ Metrics (11) ─────────────────────────────────────────────────────────────┐
+│ Name                              │ Type      │ Latest Value │ Description │
+│═══════════════════════════════════╪═══════════╪══════════════╪═════════════│
+│ claude_code.active_time.total     │ counter   │ 55.00        │             │
+│ claude_code.token.usage           │ counter   │ 1.00         │             │
+│ http.request.duration             │ histogram │ avg 125.0    │             │
+│ http.requests.total               │ counter   │ 1234.00      │             │
+│ memory.usage                      │ gauge     │ 52428800.00  │             │
+└────────────────────────────────────────────────────────────────────────────┘
+
+ METRICS  Connected | Metrics: 11 | ↑↓/jk: Navigate  Enter: Detail
+```
+
+- Metric type is colour-coded: counter=green, gauge=blue, histogram=magenta, summary=yellow
+- Press **Enter** to see a sparkline trend chart and stats panel
+
+**Metric detail with sparkline:**
+
+```text
+┌ Metric Info ─────────────────────────────────────────────────────────────┐
+│ Name:  http.request.duration                                              │
+│ Type:  histogram                                                          │
+│ Unit:  ms                                                                 │
+│ Value: count=150, sum=18750.00                                            │
+│ Description: Duration of HTTP requests                                    │
+└───────────────────────────────────────────────────────────────────────────┘
+┌ Trend (last 20 points) ──────────────────────────────────────────────────┐
+│  ▁▂▁▃▄▃▅▄▆▄▅▅▃▄▅▆▇▆▅▄                                                   │
+└───────────────────────────────────────────────────────────────────────────┘
+┌ Stats ────────────────────────────────────────────────────────────────────┐
+│ Min: 45.00  Max: 312.00  Current: 125.00 ↑                               │
+└───────────────────────────────────────────────────────────────────────────┘
+```
+
+---
+
+## Keyboard Reference
+
+| Key                    | Action                                     |
+| ---------------------- | ------------------------------------------ |
+| `l` / `t` / `m`        | Switch to Logs / Traces / Metrics view     |
+| `Tab` / `Shift+Tab`    | Cycle to next / previous view              |
+| `↑` / `↓` or `j` / `k` | Navigate items                             |
+| `Enter`                | Open detail panel                          |
+| `Esc`                  | Close detail / clear filter                |
+| `f`                    | Open filter prompt (`key=value` or text)   |
+| `s`                    | Toggle auto-scroll (Logs view)             |
+| `r`                    | Force refresh                              |
+| `?`                    | Help screen                                |
+| `q` / `Ctrl+C`         | Quit                                       |
+
+Filter syntax examples:
+
+```text
+severity=ERROR        → only ERROR-level logs
+service=my-svc        → filter by service name
+error=true            → only traces with errors (Traces view)
+database timeout      → full-text search (any view)
+```
+
+---
 
 ## Troubleshooting
 
-### Connection Issues
-
-If you see "Failed to fetch" errors:
-1. Verify the Otelite API is running: `curl http://localhost:4318/health`
-2. Check the API URL is correct: `otelite-tui --api-url http://your-host:port`
-3. Ensure network connectivity between TUI and API
-
-### Performance Issues
-
-If the TUI feels slow:
-1. Increase the refresh interval: `otelite-tui --refresh-interval 10`
-2. Use filters to reduce the amount of data displayed
-3. Check your terminal emulator performance
-
-### Display Issues
-
-If the UI looks corrupted:
-1. Ensure your terminal supports 256 colors
-2. Try resizing the terminal window (minimum 80x24 recommended)
-3. Check terminal compatibility with `echo $TERM`
-
-## Next Steps
-
-- See [Keyboard Shortcuts Reference](tui-shortcuts.md) for complete key bindings
-- Read [Troubleshooting Guide](tui-troubleshooting.md) for detailed problem resolution
-- Check the main [README](../README.md) for overall Otelite documentation
-
-## Examples
-
-### Monitoring Production Logs
+**"Cannot connect to API"** — make sure `otelite serve` is running:
 
 ```bash
-# Connect to production API and start in logs view
-otelite-tui --api-url https://prod-otelite.example.com --initial-view logs
-
-# Once running:
-# 1. Press 'f' to filter by severity
-# 2. Select ERROR to see only errors
-# 3. Press '/' to search for specific terms
-# 4. Press Enter on a log to see full details
+otelite serve
 ```
 
-### Analyzing Trace Performance
+**Display looks garbled** — minimum terminal size is 80×24. Resize the window and the TUI
+redraws automatically. Ensure `$TERM` reports a colour terminal (`xterm-256color` or similar).
 
-```bash
-# Start in traces view with faster refresh
-otelite-tui --initial-view traces --refresh-interval 2
-
-# Once running:
-# 1. Look for traces with long durations
-# 2. Press Enter to see span waterfall
-# 3. Identify slow spans in the hierarchy
-# 4. Press 'f' to filter by service or status
-```
-
-### Monitoring Metrics
-
-```bash
-# Start in metrics view
-otelite-tui --initial-view metrics
-
-# Once running:
-# 1. Use arrow keys to browse metrics
-# 2. Press Enter to see sparkline chart
-# 3. Use '+' and '-' to zoom in/out
-# 4. Press 'f' to filter by metric type
-```
+**`?:Help` / `q:Quit` are invisible** — your terminal may not support true 16-colour output.
+Try `otelite tui --no-color` to fall back to plain styling.
