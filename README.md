@@ -71,6 +71,8 @@ Open `http://localhost:3000` in your browser to view telemetry.
 
 ![Setup page](docs/screenshots/setup.png)
 
+> **The web dashboard isn't the only interface — don't miss the [Terminal UI](#terminal-ui) (`otelite tui`) and the [CLI](#cli-usage) (`otelite logs`, `otelite traces`, `otelite metrics`).**
+
 ## Sending Data
 
 ### Using otel-cli (easiest for testing)
@@ -250,16 +252,16 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for development workflow and [docs/testin
 ```
 ┌─────────────────────────────────────────────┐
 │         Web Dashboard (port 3000)           │
-│         + REST API (otelite-server)           │
+│         + REST API (otelite-server)         │
 └─────────────────┬───────────────────────────┘
                   │
 ┌─────────────────▼───────────────────────────┐
-│       SQLite Storage (otelite-storage)        │
+│       SQLite Storage (otelite-storage)      │
 │            with FTS5 search                 │
 └─────────────────▲───────────────────────────┘
                   │
 ┌─────────────────┴───────────────────────────┐
-│       OTLP Receivers (otelite-receiver)       │
+│       OTLP Receivers (otelite-receiver)     │
 │    gRPC (4317) + HTTP (4318)                │
 └─────────────────────────────────────────────┘
 ```
