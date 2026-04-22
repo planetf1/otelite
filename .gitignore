@@ -60,3 +60,6 @@ Thumbs.db
 crates/*/:memory:*
 crates/*/:memory:*-wal
 crates/*/:memory:*-shm
+
+# Prevent accidental commit of absolute-path hook files
+Users/
