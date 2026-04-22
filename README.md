@@ -46,6 +46,31 @@ Open `http://localhost:3000` in your browser to view telemetry.
 - **Single Binary**: Zero runtime dependencies
 - **GenAI/LLM support**: First-class OTel GenAI semconv — token counts, cache hits, tool calls, model routing
 
+## Screenshots
+
+**Logs** — search, filter by severity, and inspect structured attributes
+
+![Logs list](docs/screenshots/logs-list.png)
+![Log detail](docs/screenshots/logs-detail.png)
+
+**Traces** — waterfall view with span-level timing and GenAI attributes (token counts, cache hits, TTFT)
+
+![Traces waterfall](docs/screenshots/traces-list.png)
+![Trace span detail](docs/screenshots/traces-detail.png)
+
+**Metrics** — time-series counters and histogram bucket distribution
+
+![Metrics counter](docs/screenshots/metrics-counter.png)
+![Metrics histogram](docs/screenshots/metrics-histogram.png)
+
+**Usage** — GenAI/LLM token and request summary by model and provider
+
+![GenAI usage](docs/screenshots/usage.png)
+
+**Setup** — live endpoint display and copy-paste configuration snippets for every SDK
+
+![Setup page](docs/screenshots/setup.png)
+
 ## Sending Data
 
 ### Using otel-cli (easiest for testing)
