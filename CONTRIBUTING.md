@@ -29,15 +29,22 @@ We are committed to providing a welcoming and inclusive environment for all cont
 
 ### Prerequisites
 
-- **Rust**: 1.77+ (stable channel)
+- **Rust**: 1.77+ (stable channel) — install via [rustup](https://rustup.rs/)
 - **Git**: For version control
 - **Pre-commit**: For automated code quality checks (optional but recommended)
+
+Install Rust on macOS or Linux:
+
+```bash
+curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
+source "$HOME/.cargo/env"
+```
 
 ### Setup Development Environment
 
 1. **Fork and clone the repository**:
    ```bash
-   git clone https://github.com/YOUR_USERNAME/otelite.git
+   git clone https://github.com/planetf1/otelite.git
    cd otelite
    ```
 
@@ -359,15 +366,9 @@ Use the [feature request template](.github/ISSUE_TEMPLATE/feature_request.md):
 
 ## Security Vulnerabilities
 
-**DO NOT** report security vulnerabilities in public issues.
+**Do not** report security vulnerabilities in public issues.
 
-Instead, email security@otelite.dev with:
-- Description of the vulnerability
-- Steps to reproduce
-- Potential impact
-- Suggested fix (if any)
-
-We will respond within 48 hours and work with you to address the issue.
+See [SECURITY.md](SECURITY.md) for the full policy. Use [GitHub private vulnerability reporting](https://github.com/planetf1/otelite/security/advisories/new) to submit a report.
 
 ## Questions?
 

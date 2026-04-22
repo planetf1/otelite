@@ -202,6 +202,8 @@ curl "http://localhost:3000/api/health"
 
 ## Development
 
+Issues and feature requests are tracked on [GitHub Issues](https://github.com/planetf1/otelite/issues).
+
 ```bash
 # Clone and build
 git clone https://github.com/planetf1/otelite.git

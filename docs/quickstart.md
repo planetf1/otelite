@@ -2,13 +2,27 @@
 
 Get up and running with Otelite in 5 minutes.
 
+## Prerequisites
+
+### Install Rust
+
+If you don't have Rust installed, use [rustup](https://rustup.rs/):
+
+```bash
+# macOS and Linux
+curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
+source "$HOME/.cargo/env"
+```
+
+Otelite requires Rust stable (1.77+). `rustup` installs the latest stable by default.
+
 ## Installation
 
 ### Build from Source
 
 ```bash
 # Clone repository
-git clone https://github.com/YOUR_USERNAME/otelite.git
+git clone https://github.com/planetf1/otelite.git
 cd otelite
 
 # Build and install
@@ -23,10 +37,10 @@ otelite --version
 
 ## First Run
 
-Start the Otelite dashboard:
+Start the Otelite server:
 
 ```bash
-otelite dashboard
+otelite serve
 ```
 
 This starts:
@@ -38,11 +52,11 @@ This starts:
 You should see output like:
 
 ```
-🚀 Otelite starting...
-✓ OTLP gRPC receiver listening on 0.0.0.0:4317
-✓ OTLP HTTP receiver listening on 0.0.0.0:4318
-✓ REST API listening on http://0.0.0.0:3000
-✓ Web dashboard available at http://localhost:3000
+Otelite starting...
+OTLP gRPC receiver listening on 0.0.0.0:4317
+OTLP HTTP receiver listening on 0.0.0.0:4318
+REST API listening on http://0.0.0.0:3000
+Web dashboard available at http://localhost:3000
 ```
 
 ## Sending Test Data
@@ -193,5 +207,5 @@ If you send data but don't see it:
 ## Getting Help
 
 - **Documentation**: Check the [docs](.) directory
-- **Issues**: Report bugs on [GitHub Issues](https://github.com/YOUR_USERNAME/otelite/issues)
-- **Discussions**: Ask questions on [GitHub Discussions](https://github.com/YOUR_USERNAME/otelite/discussions)
+- **Issues**: Report bugs on [GitHub Issues](https://github.com/planetf1/otelite/issues)
+- **Discussions**: Ask questions on [GitHub Discussions](https://github.com/planetf1/otelite/discussions)
