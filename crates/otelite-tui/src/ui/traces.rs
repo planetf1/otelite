@@ -356,10 +356,15 @@ fn render_detail_panel(frame: &mut Frame, area: Rect, state: &TracesState) {
         " Trace Detail "
     };
 
-    // Auto-scroll to keep the selected span visible in the waterfall.
-    // 8 header lines (trace_id, op, blank, duration, spans, blank, label, blank) precede spans.
-    let scroll_y = if !state.show_span_detail
-        && state.selected_trace_details().is_some_and(|t| !t.spans.is_empty())
+    // scroll_y calculation:
+    // - Span detail (show_span_detail): user-controlled via PageDown/PageUp
+    // - Trace waterfall (!show_span_detail): auto-scroll to keep selected span centred
+    // - Anything else (summary / loading): no scroll
+    let scroll_y = if state.show_span_detail {
+        state.span_detail_scroll
+    } else if state
+        .selected_trace_details()
+        .is_some_and(|t| !t.spans.is_empty())
     {
         const HEADER_LINES: u16 = 8;
         let target_line = HEADER_LINES + state.selected_span_index as u16;
@@ -875,10 +880,7 @@ fn format_trace_detail(trace: &Trace, state: &TracesState) -> Text<'static> {
 
         // GenAI badge after duration — doesn't disturb bar column alignment
         if let Some(badge) = genai_badge {
-            row_spans.push(TextSpan::styled(
-                badge,
-                Style::default().fg(Color::Magenta),
-            ));
+            row_spans.push(TextSpan::styled(badge, Style::default().fg(Color::Magenta)));
         }
 
         lines.push(Line::from(row_spans));

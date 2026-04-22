@@ -29,6 +29,8 @@ pub struct TracesState {
     pub span_scroll_offset: usize,
     /// Whether to show span detail (nested detail within trace detail)
     pub show_span_detail: bool,
+    /// Scroll offset for the span detail text panel (PageDown/PageUp when span detail is open)
+    pub span_detail_scroll: u16,
     /// Search query
     pub search_query: String,
     /// Active filters (field -> value)
@@ -52,6 +54,7 @@ impl Default for TracesState {
             selected_span_index: 0,
             span_scroll_offset: 0,
             show_span_detail: false,
+            span_detail_scroll: 0,
             search_query: String::new(),
             filters: HashMap::new(),
             scroll_offset: 0,
@@ -283,6 +286,7 @@ impl TracesState {
     /// Toggle span detail panel
     pub fn toggle_span_detail(&mut self) {
         self.show_span_detail = !self.show_span_detail;
+        self.span_detail_scroll = 0;
     }
 
     /// Reset span selection when switching traces
@@ -290,6 +294,29 @@ impl TracesState {
         self.selected_span_index = 0;
         self.span_scroll_offset = 0;
         self.show_span_detail = false;
+        self.span_detail_scroll = 0;
+    }
+
+    /// Scroll the span detail text panel down by n lines
+    pub fn scroll_span_detail_down(&mut self, n: u16) {
+        self.span_detail_scroll = self.span_detail_scroll.saturating_add(n);
+    }
+
+    /// Scroll the span detail text panel up by n lines
+    pub fn scroll_span_detail_up(&mut self, n: u16) {
+        self.span_detail_scroll = self.span_detail_scroll.saturating_sub(n);
+    }
+
+    /// Page the span selection down by n items in the waterfall
+    pub fn select_next_span_page(&mut self, max_spans: usize, n: usize) {
+        if max_spans > 0 {
+            self.selected_span_index = (self.selected_span_index + n).min(max_spans - 1);
+        }
+    }
+
+    /// Page the span selection up by n items in the waterfall
+    pub fn select_previous_span_page(&mut self, n: usize) {
+        self.selected_span_index = self.selected_span_index.saturating_sub(n);
     }
 }
 

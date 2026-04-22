@@ -218,21 +218,53 @@ impl App {
             AppEvent::Select if self.current_view == View::Metrics => {
                 self.metrics_state.show_detail_panel();
             },
-            // Page navigation
+            // Page navigation — most-specific guards first so the right arm matches
+            // Logs: PageDown/PageUp scrolls detail text when detail panel is open,
+            //       otherwise pages through the list.
+            AppEvent::PageDown
+                if self.current_view == View::Logs && self.logs_state.show_detail =>
+            {
+                self.logs_state.scroll_detail_down(10);
+            },
+            AppEvent::PageUp if self.current_view == View::Logs && self.logs_state.show_detail => {
+                self.logs_state.scroll_detail_up(10);
+            },
             AppEvent::PageDown if self.current_view == View::Logs => {
                 self.logs_state.select_page_down(10);
             },
             AppEvent::PageUp if self.current_view == View::Logs => {
                 self.logs_state.select_page_up(10);
             },
+            // Traces: scroll span detail text → page waterfall spans → page trace list
             AppEvent::PageDown
-                if self.current_view == View::Traces && !self.traces_state.show_detail =>
+                if self.current_view == View::Traces && self.traces_state.show_span_detail =>
             {
-                self.traces_state.select_page_down(10);
+                self.traces_state.scroll_span_detail_down(10);
             },
             AppEvent::PageUp
-                if self.current_view == View::Traces && !self.traces_state.show_detail =>
+                if self.current_view == View::Traces && self.traces_state.show_span_detail =>
             {
+                self.traces_state.scroll_span_detail_up(10);
+            },
+            AppEvent::PageDown
+                if self.current_view == View::Traces && self.traces_state.show_detail =>
+            {
+                let max = self
+                    .traces_state
+                    .selected_trace_details()
+                    .map(|t| t.spans.len())
+                    .unwrap_or(0);
+                self.traces_state.select_next_span_page(max, 10);
+            },
+            AppEvent::PageUp
+                if self.current_view == View::Traces && self.traces_state.show_detail =>
+            {
+                self.traces_state.select_previous_span_page(10);
+            },
+            AppEvent::PageDown if self.current_view == View::Traces => {
+                self.traces_state.select_page_down(10);
+            },
+            AppEvent::PageUp if self.current_view == View::Traces => {
                 self.traces_state.select_page_up(10);
             },
             AppEvent::PageDown if self.current_view == View::Metrics => {

@@ -186,6 +186,7 @@ Esc       → clears active filter
 | `l` / `t` / `m`        | Switch to Logs / Traces / Metrics view     |
 | `Tab` / `Shift+Tab`    | Cycle to next / previous view              |
 | `↑` / `↓` or `j` / `k` | Navigate items                             |
+| `PgDn` / `PgUp`        | Page through list / scroll detail text     |
 | `Enter`                | Open detail panel                          |
 | `Esc`                  | Close detail / clear filter                |
 | `f`                    | Open filter prompt (`key=value` or text)   |

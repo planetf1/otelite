@@ -175,7 +175,8 @@ fn render_detail_panel(frame: &mut Frame, area: Rect, state: &LogsState) {
 
     let paragraph = Paragraph::new(content)
         .block(Block::default().borders(Borders::ALL).title(" Log Detail "))
-        .wrap(Wrap { trim: true });
+        .wrap(Wrap { trim: true })
+        .scroll((state.detail_scroll, 0));
 
     frame.render_widget(paragraph, area);
 }

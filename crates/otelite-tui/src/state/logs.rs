@@ -27,6 +27,8 @@ pub struct LogsState {
     pub auto_scroll: bool,
     /// Scroll offset for the logs table (will be used when UI implements scrolling)
     pub scroll_offset: usize,
+    /// Scroll offset for the log detail text panel (PageDown/PageUp when detail is open)
+    pub detail_scroll: u16,
     /// Last error message
     pub error: Option<String>,
     /// Update tracker for debouncing
@@ -45,6 +47,7 @@ impl Default for LogsState {
             filters: HashMap::new(),
             auto_scroll: false,
             scroll_offset: 0,
+            detail_scroll: 0,
             error: None,
             update_tracker: UpdateTracker::new(MIN_REFRESH_INTERVAL),
         }
@@ -156,6 +159,7 @@ impl LogsState {
             self.selected_index -= 1;
             self.auto_scroll = false;
             if self.show_detail {
+                self.detail_scroll = 0;
                 self.refresh_detail_cache();
             }
         }
@@ -168,6 +172,7 @@ impl LogsState {
             self.selected_index += 1;
             self.auto_scroll = false;
             if self.show_detail {
+                self.detail_scroll = 0;
                 self.refresh_detail_cache();
             }
         }
@@ -178,6 +183,7 @@ impl LogsState {
         self.selected_index = self.selected_index.saturating_sub(n);
         self.auto_scroll = false;
         if self.show_detail {
+            self.detail_scroll = 0;
             self.refresh_detail_cache();
         }
     }
@@ -189,6 +195,7 @@ impl LogsState {
             self.selected_index = (self.selected_index + n).min(filtered_count - 1);
             self.auto_scroll = false;
             if self.show_detail {
+                self.detail_scroll = 0;
                 self.refresh_detail_cache();
             }
         }
@@ -202,12 +209,24 @@ impl LogsState {
     /// Show detail panel and populate the detail cache for the current selection
     pub fn show_detail_panel(&mut self) {
         self.show_detail = true;
+        self.detail_scroll = 0;
         self.refresh_detail_cache();
     }
 
     /// Hide detail panel
     pub fn hide_detail_panel(&mut self) {
         self.show_detail = false;
+        self.detail_scroll = 0;
+    }
+
+    /// Scroll the detail text panel down by n lines
+    pub fn scroll_detail_down(&mut self, n: u16) {
+        self.detail_scroll = self.detail_scroll.saturating_add(n);
+    }
+
+    /// Scroll the detail text panel up by n lines
+    pub fn scroll_detail_up(&mut self, n: u16) {
+        self.detail_scroll = self.detail_scroll.saturating_sub(n);
     }
 
     /// Set search query

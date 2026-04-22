@@ -202,6 +202,7 @@ otelite tui --api-url http://localhost:3000
 - `l` / `t` / `m` — switch to Logs / Traces / Metrics view
 - `Tab` / `Shift+Tab` — cycle between views
 - `↑` / `↓` or `j` / `k` — navigate items
+- `PgDn` / `PgUp` — page through list / scroll detail panels
 - `Enter` — open detail / span waterfall
 - `/` — search
 - `f` — filter
