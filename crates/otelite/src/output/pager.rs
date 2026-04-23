@@ -1,7 +1,7 @@
 //! Pager support for long CLI output
 
 use crate::config::Config;
-use std::io::{self, Write};
+use std::io::{self, IsTerminal, Write};
 
 /// Determines if output should be paged based on terminal state and config
 pub fn should_use_pager(config: &Config, output_lines: usize) -> bool {
@@ -11,7 +11,7 @@ pub fn should_use_pager(config: &Config, output_lines: usize) -> bool {
     }
 
     // Don't page if stdout is not a TTY (e.g., piped to another command)
-    if !atty::is(atty::Stream::Stdout) {
+    if !io::stdout().is_terminal() {
         return false;
     }
 
@@ -24,7 +24,7 @@ pub fn should_use_pager(config: &Config, output_lines: usize) -> bool {
 
 /// Get the terminal height in lines
 fn get_terminal_height() -> Option<usize> {
-    term_size::dimensions().map(|(_, height)| height)
+    terminal_size::terminal_size().map(|(_, terminal_size::Height(h))| h as usize)
 }
 
 /// Write output through a pager if appropriate, otherwise write directly to stdout

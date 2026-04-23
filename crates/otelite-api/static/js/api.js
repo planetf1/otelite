@@ -32,7 +32,7 @@ class ApiClient {
 
             return await response.json();
         } catch (error) {
-            console.error(`API GET ${endpoint} failed:`, error);
+            console.error('API GET failed:', endpoint, error);
             throw error;
         }
     }

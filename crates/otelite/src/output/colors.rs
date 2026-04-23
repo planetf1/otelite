@@ -2,11 +2,12 @@
 
 use comfy_table::Color;
 use std::env;
+use std::io::IsTerminal;
 
 /// Check if colors should be disabled
 pub fn colors_disabled() -> bool {
     // Check --no-color flag (handled by clap) or NO_COLOR env var
-    env::var("NO_COLOR").is_ok() || !atty::is(atty::Stream::Stdout)
+    env::var("NO_COLOR").is_ok() || !std::io::stdout().is_terminal()
 }
 
 /// Color scheme for severity levels

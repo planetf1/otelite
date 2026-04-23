@@ -351,7 +351,7 @@ class LogsView {
                     <span class="log-timestamp">${timestamp.toISOString()}</span>
                     <span class="log-severity ${severityClass}">${log.severity}</span>
                     <span class="log-body-preview">${bodyPreview}</span>
-                    ${log.trace_id ? `<span class="log-trace-id" title="Trace ID">${log.trace_id.substring(0, 8)}...</span>` : ''}`;
+                    ${log.trace_id ? `<span class="log-trace-id" title="Trace ID">${this.escapeHtml(log.trace_id.substring(0, 8))}...</span>` : ''}`;
         }
 
         return `
@@ -361,7 +361,7 @@ class LogsView {
                 </div>
                 <div class="log-details" style="display: none;">
                     <div class="log-body">${this.escapeHtml(log.body)}</div>
-                    ${log.trace_id ? `<div class="log-field"><strong>Trace ID:</strong> ${log.trace_id}</div>` : ''}
+                    ${log.trace_id ? `<div class="log-field"><strong>Trace ID:</strong> ${this.escapeHtml(log.trace_id)}</div>` : ''}
                     ${log.span_id ? `<div class="log-field"><strong>Span ID:</strong> ${log.span_id}</div>` : ''}
                     ${Object.keys(attrs).length > 0 ? `
                         <div class="log-field">

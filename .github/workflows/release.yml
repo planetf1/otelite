@@ -48,11 +48,12 @@ jobs:
 
       - name: Bump version in Cargo.toml
         id: bump
+        env:
+          BUMP_KIND: ${{ inputs.bump || 'patch' }}
         run: |
           current=$(grep '^version' Cargo.toml | head -1 | sed 's/.*"\(.*\)".*/\1/')
           IFS='.' read -r major minor patch <<< "$current"
-          bump="${{ inputs.bump || 'patch' }}"
-          case "$bump" in
+          case "$BUMP_KIND" in
             major) new="$((major+1)).0.0" ;;
             minor) new="$major.$((minor+1)).0" ;;
             patch) new="$major.$minor.$((patch+1))" ;;

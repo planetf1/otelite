@@ -11,20 +11,21 @@ use otelite_storage::{StorageBackend, StorageConfig};
 use std::sync::Arc;
 use tower::ServiceExt;
 
-async fn setup_test_server() -> (DashboardServer, Arc<dyn StorageBackend>) {
+async fn setup_test_server() -> (DashboardServer, Arc<dyn StorageBackend>, tempfile::TempDir) {
+    let temp_dir = tempfile::TempDir::new().unwrap();
     let config = DashboardConfig::default();
-    let storage_config = StorageConfig::default();
+    let storage_config = StorageConfig::default().with_data_dir(temp_dir.path().to_path_buf());
     let mut storage = SqliteBackend::new(storage_config);
     storage.initialize().await.unwrap();
     let storage: Arc<dyn StorageBackend> = Arc::new(storage);
 
     let server = DashboardServer::new(config, storage.clone());
-    (server, storage)
+    (server, storage, temp_dir)
 }
 
 #[tokio::test]
 async fn test_get_token_usage_empty() {
-    let (server, _storage) = setup_test_server().await;
+    let (server, _storage, _temp_dir) = setup_test_server().await;
     let app = server.build_router();
 
     let response = app
@@ -53,7 +54,7 @@ async fn test_get_token_usage_empty() {
 
 #[tokio::test]
 async fn test_get_token_usage_with_time_params() {
-    let (server, _storage) = setup_test_server().await;
+    let (server, _storage, _temp_dir) = setup_test_server().await;
     let app = server.build_router();
 
     let response = app
@@ -80,7 +81,7 @@ async fn test_get_token_usage_with_time_params() {
 
 #[tokio::test]
 async fn test_get_token_usage_response_structure() {
-    let (server, _storage) = setup_test_server().await;
+    let (server, _storage, _temp_dir) = setup_test_server().await;
     let app = server.build_router();
 
     let response = app

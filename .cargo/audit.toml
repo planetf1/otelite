@@ -1,0 +1,10 @@
+[advisories]
+ignore = [
+    # paste - unmaintained; transitive dep via ratatui. No vulnerability, no upstream fix.
+    "RUSTSEC-2024-0436",
+    # proc-macro-error - unmaintained; transitive dep via utoipa-gen. No vulnerability.
+    "RUSTSEC-2024-0370",
+    # lru - IterMut UB via Stacked Borrows; transitive dep via ratatui.
+    # Only triggered by mutable iteration of the LRU cache, which ratatui does not do.
+    "RUSTSEC-2026-0002",
+]
