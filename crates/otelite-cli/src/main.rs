@@ -1,7 +1,7 @@
 //! Otelite CLI - OpenTelemetry receiver and dashboard
 
 use clap::{Parser, Subcommand};
-use otelite_server::{DashboardConfig, DashboardServer};
+use otelite_api::{DashboardConfig, DashboardServer};
 use otelite_storage::{sqlite::SqliteBackend, StorageBackend, StorageConfig};
 use std::net::SocketAddr;
 use std::path::PathBuf;

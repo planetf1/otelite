@@ -1945,6 +1945,28 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "04744f49eae99ab78e0d5c0b603ab218f515ea8cfe5a456d7629ad883a3b6e7d"
 
 [[package]]
+name = "otelite-api"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "axum 0.8.9",
+ "http-body-util",
+ "mime_guess",
+ "otelite-core",
+ "otelite-storage",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "tokio",
+ "tokio-test",
+ "tower 0.5.3",
+ "tower-http 0.5.2",
+ "tracing",
+ "utoipa",
+ "utoipa-swagger-ui",
+]
+
+[[package]]
 name = "otelite-cli"
 version = "0.1.0"
 dependencies = [
@@ -1957,9 +1979,9 @@ dependencies = [
  "minus",
  "mockito",
  "nix",
+ "otelite-api",
  "otelite-core",
  "otelite-receiver",
- "otelite-server",
  "otelite-storage",
  "otelite-tui",
  "predicates",
@@ -2001,8 +2023,8 @@ dependencies = [
  "flate2",
  "hyper",
  "opentelemetry-proto",
+ "otelite-api",
  "otelite-core",
- "otelite-server",
  "otelite-storage",
  "pretty_assertions",
  "prost",
@@ -2017,28 +2039,6 @@ dependencies = [
  "tower 0.4.13",
  "tracing",
  "tracing-subscriber",
-]
-
-[[package]]
-name = "otelite-server"
-version = "0.1.0"
-dependencies = [
- "async-trait",
- "axum 0.8.9",
- "http-body-util",
- "mime_guess",
- "otelite-core",
- "otelite-storage",
- "serde",
- "serde_json",
- "tempfile",
- "tokio",
- "tokio-test",
- "tower 0.5.3",
- "tower-http 0.5.2",
- "tracing",
- "utoipa",
- "utoipa-swagger-ui",
 ]
 
 [[package]]

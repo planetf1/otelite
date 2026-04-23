@@ -38,7 +38,7 @@ anyhow = "1.0"
 
 # CLI parsing
 clap = { workspace = true }
-otelite-core = { path = "../otelite-core" }
+otelite-core = { path = "../otelite-core", version = "0.1.0" }
 
 [dev-dependencies]
 mockito = "1.2"

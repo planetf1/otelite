@@ -1,5 +1,5 @@
 [package]
-name = "otelite-server"
+name = "otelite-api"
 version.workspace = true
 edition.workspace = true
 authors.workspace = true

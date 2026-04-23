@@ -7,9 +7,9 @@ use otelite_core::telemetry::log::{LogRecord, SeverityLevel};
 use otelite_core::telemetry::metric::{Metric, MetricType};
 use otelite_core::telemetry::trace::{Span, SpanKind, SpanStatus, StatusCode as SpanStatusCode};
 use otelite_core::telemetry::Resource;
-use otelite_server::api::health::HealthResponse;
-use otelite_server::api::metrics::AggregateResponse;
-use otelite_server::server::{AppState, QueryCache};
+use otelite_api::api::health::HealthResponse;
+use otelite_api::api::metrics::AggregateResponse;
+use otelite_api::server::{AppState, QueryCache};
 use otelite_storage::sqlite::SqliteBackend;
 use otelite_storage::{StorageBackend, StorageConfig};
 use std::collections::HashMap;
@@ -37,55 +37,55 @@ fn build_test_router(storage: Arc<dyn StorageBackend>) -> Router {
     Router::new()
         .route(
             "/api/health",
-            axum::routing::get(otelite_server::api::health::health_check),
+            axum::routing::get(otelite_api::api::health::health_check),
         )
         .route(
             "/api/help",
-            axum::routing::get(otelite_server::api::help::api_help),
+            axum::routing::get(otelite_api::api::help::api_help),
         )
         .route(
             "/api/logs",
-            axum::routing::get(otelite_server::api::logs::list_logs),
+            axum::routing::get(otelite_api::api::logs::list_logs),
         )
         .route(
             "/api/logs/export",
-            axum::routing::get(otelite_server::api::logs::export_logs),
+            axum::routing::get(otelite_api::api::logs::export_logs),
         )
         .route(
             "/api/logs/{timestamp}",
-            axum::routing::get(otelite_server::api::logs::get_log),
+            axum::routing::get(otelite_api::api::logs::get_log),
         )
         .route(
             "/api/traces",
-            axum::routing::get(otelite_server::api::traces::list_traces),
+            axum::routing::get(otelite_api::api::traces::list_traces),
         )
         .route(
             "/api/traces/export",
-            axum::routing::get(otelite_server::api::traces::export_traces),
+            axum::routing::get(otelite_api::api::traces::export_traces),
         )
         .route(
             "/api/traces/{trace_id}",
-            axum::routing::get(otelite_server::api::traces::get_trace),
+            axum::routing::get(otelite_api::api::traces::get_trace),
         )
         .route(
             "/api/metrics",
-            axum::routing::get(otelite_server::api::metrics::list_metrics),
+            axum::routing::get(otelite_api::api::metrics::list_metrics),
         )
         .route(
             "/api/metrics/names",
-            axum::routing::get(otelite_server::api::metrics::list_metric_names),
+            axum::routing::get(otelite_api::api::metrics::list_metric_names),
         )
         .route(
             "/api/metrics/aggregate",
-            axum::routing::get(otelite_server::api::metrics::aggregate_metrics),
+            axum::routing::get(otelite_api::api::metrics::aggregate_metrics),
         )
         .route(
             "/api/metrics/export",
-            axum::routing::get(otelite_server::api::metrics::export_metrics),
+            axum::routing::get(otelite_api::api::metrics::export_metrics),
         )
         .route(
             "/api/metrics/{name}/timeseries",
-            axum::routing::get(otelite_server::api::metrics::get_metric_timeseries),
+            axum::routing::get(otelite_api::api::metrics::get_metric_timeseries),
         )
         .route(
             "/api/openapi.json",
@@ -93,7 +93,7 @@ fn build_test_router(storage: Arc<dyn StorageBackend>) -> Router {
                 use utoipa::OpenApi;
                 #[derive(OpenApi)]
                 #[openapi(
-                    paths(otelite_server::api::health::health_check,),
+                    paths(otelite_api::api::health::health_check,),
                     info(title = "Otelite API", version = "1.0.0",)
                 )]
                 struct ApiDoc;
@@ -967,7 +967,7 @@ async fn test_get_metric_timeseries() {
     assert_eq!(response.status(), StatusCode::OK);
 
     let body = response.into_body().collect().await.unwrap().to_bytes();
-    let timeseries: Vec<otelite_server::api::metrics::TimeBucket> =
+    let timeseries: Vec<otelite_api::api::metrics::TimeBucket> =
         serde_json::from_slice(&body).unwrap();
 
     assert!(!timeseries.is_empty());
@@ -1030,7 +1030,7 @@ async fn test_get_metric_timeseries_with_time_range() {
     assert_eq!(response.status(), StatusCode::OK);
 
     let body = response.into_body().collect().await.unwrap().to_bytes();
-    let timeseries: Vec<otelite_server::api::metrics::TimeBucket> =
+    let timeseries: Vec<otelite_api::api::metrics::TimeBucket> =
         serde_json::from_slice(&body).unwrap();
 
     // Should only include metrics within the time range

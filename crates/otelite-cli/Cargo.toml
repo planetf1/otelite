@@ -7,6 +7,7 @@ authors.workspace = true
 license.workspace = true
 repository.workspace = true
 homepage.workspace = true
+description = "CLI for Otelite: serve an OTLP receiver and query logs, traces, and metrics locally"
 [[bin]]
 name = "otelite"
 path = "src/main.rs"
@@ -36,11 +37,11 @@ chrono = { workspace = true }
 nix = { version = "0.29", features = ["signal", "process"] }
 
 # Internal dependencies
-otelite-core = { path = "../otelite-core" }
-otelite-server = { path = "../otelite-server" }
-otelite-receiver = { path = "../otelite-receiver" }
-otelite-storage = { path = "../otelite-storage" }
-otelite-tui = { path = "../otelite-tui" }
+otelite-core = { path = "../otelite-core", version = "0.1.0" }
+otelite-api = { path = "../otelite-api", version = "0.1.0" }
+otelite-receiver = { path = "../otelite-receiver", version = "0.1.0" }
+otelite-storage = { path = "../otelite-storage", version = "0.1.0" }
+otelite-tui = { path = "../otelite-tui", version = "0.1.0" }
 
 [dev-dependencies]
 mockito = "1.2"
