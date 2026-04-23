@@ -9,8 +9,8 @@ env:
   CARGO_TERM_COLOR: always
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
-# Publish crates in dependency order. Each layer waits 60 s after the previous
-# one so crates.io has time to index before dependent crates reference it.
+# Publish crates in dependency order. Each layer waits 120 s after the previous
+# one so crates.io has time to index and rate limits don't trip on new crates.
 #
 # Dependency graph:
 #   otelite-core
@@ -45,7 +45,7 @@ jobs:
         with:
           toolchain: stable
       - name: Wait for crates.io index
-        run: sleep 60
+        run: sleep 120
       - run: cargo publish -p otelite-storage
         env:
           CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
@@ -60,7 +60,7 @@ jobs:
         with:
           toolchain: stable
       - name: Wait for crates.io index
-        run: sleep 60
+        run: sleep 120
       - run: cargo publish -p otelite-client
         env:
           CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
@@ -75,7 +75,7 @@ jobs:
         with:
           toolchain: stable
       - name: Wait for crates.io index
-        run: sleep 60
+        run: sleep 120
       - run: cargo publish -p otelite-api
         env:
           CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
@@ -90,7 +90,7 @@ jobs:
         with:
           toolchain: stable
       - name: Wait for crates.io index
-        run: sleep 60
+        run: sleep 120
       - run: cargo publish -p otelite-receiver
         env:
           CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
@@ -105,7 +105,7 @@ jobs:
         with:
           toolchain: stable
       - name: Wait for crates.io index
-        run: sleep 60
+        run: sleep 120
       - run: cargo publish -p otelite-tui
         env:
           CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
@@ -120,7 +120,7 @@ jobs:
         with:
           toolchain: stable
       - name: Wait for crates.io index
-        run: sleep 60
+        run: sleep 120
       - run: cargo publish -p otelite
         env:
           CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
