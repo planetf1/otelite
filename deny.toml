@@ -1,0 +1,28 @@
+[licenses]
+# Allow all licenses found in the dependency tree. Every entry here is an
+# individual SPDX identifier; cargo-deny satisfies a compound expression
+# (e.g. "MIT OR Apache-2.0") if at least one alternative is in this list.
+allow = [
+    "Apache-2.0",
+    "Apache-2.0 WITH LLVM-exception",
+    "MIT",
+    "BSD-2-Clause",
+    "BSD-3-Clause",
+    "0BSD",
+    "ISC",
+    "Unlicense",
+    "Zlib",
+    "Unicode-3.0",
+    "Unicode-DFS-2016",
+    "BSL-1.0",
+    "MPL-2.0",
+    "CDLA-Permissive-2.0",
+]
+
+[bans]
+# Lint level for when a crate version requirement is `*`
+wildcards = "warn"
+
+[advisories]
+# Handled separately by cargo-audit in the security workflow.
+ignore = []

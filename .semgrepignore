@@ -1,0 +1,5 @@
+# Browser static assets — Express/Node.js injection rules do not apply here.
+# These files use innerHTML with escapeHtml() for all user-controlled values.
+# The javascript.express.* rules target server-side Express rendering, not
+# client-side DOM manipulation, and produce false positives for this directory.
+crates/otelite-api/static/
