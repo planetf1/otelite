@@ -1,0 +1,82 @@
+name: Release
+
+# Creates a version bump commit + tag, which triggers publish.yml.
+#
+# Manual dispatch (recommended): go to Actions → Release → Run workflow,
+# pick patch / minor / major. Or from the CLI:
+#   gh workflow run release.yml --field bump=patch
+#
+# Every-merge auto-publish: uncomment the two lines marked AUTO-PUBLISH below.
+# A patch is bumped on every push to main. The skip condition prevents loops.
+
+on:
+  workflow_dispatch:
+    inputs:
+      bump:
+        description: 'Version component to bump'
+        required: true
+        default: patch
+        type: choice
+        options:
+          - patch
+          - minor
+          - major
+  # AUTO-PUBLISH: uncomment to bump + publish a patch on every merge to main
+  # push:
+  #   branches: [main]
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    name: Bump version and tag
+    runs-on: ubuntu-latest
+    # AUTO-PUBLISH: this guard prevents the version-bump commit from
+    # triggering another release. Keep it even when auto-publish is enabled.
+    if: "!startsWith(github.event.head_commit.message, 'chore: release v')"
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Configure git
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+      - name: Bump version in Cargo.toml
+        id: bump
+        run: |
+          current=$(grep '^version' Cargo.toml | head -1 | sed 's/.*"\(.*\)".*/\1/')
+          IFS='.' read -r major minor patch <<< "$current"
+          bump="${{ inputs.bump || 'patch' }}"
+          case "$bump" in
+            major) new="$((major+1)).0.0" ;;
+            minor) new="$major.$((minor+1)).0" ;;
+            patch) new="$major.$minor.$((patch+1))" ;;
+          esac
+          sed -i "s/^version = \"$current\"/version = \"$new\"/" Cargo.toml
+          echo "old=$current" >> "$GITHUB_OUTPUT"
+          echo "new=$new" >> "$GITHUB_OUTPUT"
+
+      - uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          toolchain: stable
+
+      - name: Update Cargo.lock
+        run: cargo metadata --format-version 1 > /dev/null
+
+      - name: Commit, tag, and push
+        run: |
+          git add Cargo.toml Cargo.lock
+          git commit -m "chore: release v${{ steps.bump.outputs.new }}"
+          git tag "v${{ steps.bump.outputs.new }}"
+          git push origin main "v${{ steps.bump.outputs.new }}"
+
+      - name: Summary
+        run: |
+          echo "### Released v${{ steps.bump.outputs.new }}" >> "$GITHUB_STEP_SUMMARY"
+          echo "Bumped \`${{ steps.bump.outputs.old }}\` → \`${{ steps.bump.outputs.new }}\`" >> "$GITHUB_STEP_SUMMARY"
+          echo "Tag \`v${{ steps.bump.outputs.new }}\` pushed — publish workflow is now running." >> "$GITHUB_STEP_SUMMARY"

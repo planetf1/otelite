@@ -1,0 +1,125 @@
+name: Publish to crates.io
+
+on:
+  push:
+    tags:
+      - 'v[0-9]*'
+
+env:
+  CARGO_TERM_COLOR: always
+
+# Publish crates in dependency order. Each layer waits 60 s after the previous
+# one so crates.io has time to index before dependent crates reference it.
+#
+# Dependency graph:
+#   otelite-core
+#   ├── otelite-storage, otelite-client
+#   │   └── otelite-api
+#   │       └── otelite-receiver
+#   │           └── otelite  (needs everything)
+#   └── otelite-client
+#       └── otelite-tui
+#           └── otelite
+
+jobs:
+  publish-core:
+    name: otelite-core
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          toolchain: stable
+      - run: cargo publish -p otelite-core
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
+
+  publish-storage:
+    name: otelite-storage
+    needs: publish-core
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          toolchain: stable
+      - name: Wait for crates.io index
+        run: sleep 60
+      - run: cargo publish -p otelite-storage
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
+
+  publish-client:
+    name: otelite-client
+    needs: publish-core
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          toolchain: stable
+      - name: Wait for crates.io index
+        run: sleep 60
+      - run: cargo publish -p otelite-client
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
+
+  publish-api:
+    name: otelite-api
+    needs: publish-storage
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          toolchain: stable
+      - name: Wait for crates.io index
+        run: sleep 60
+      - run: cargo publish -p otelite-api
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
+
+  publish-receiver:
+    name: otelite-receiver
+    needs: publish-api
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          toolchain: stable
+      - name: Wait for crates.io index
+        run: sleep 60
+      - run: cargo publish -p otelite-receiver
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
+
+  publish-tui:
+    name: otelite-tui
+    needs: publish-client
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          toolchain: stable
+      - name: Wait for crates.io index
+        run: sleep 60
+      - run: cargo publish -p otelite-tui
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
+
+  publish-otelite:
+    name: otelite
+    needs: [publish-receiver, publish-tui]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          toolchain: stable
+      - name: Wait for crates.io index
+        run: sleep 60
+      - run: cargo publish -p otelite
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
