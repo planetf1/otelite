@@ -5,6 +5,9 @@ edition.workspace = true
 authors.workspace = true
 license.workspace = true
 description = "Terminal User Interface for Otelite OpenTelemetry receiver"
+keywords = ["opentelemetry", "observability", "otlp", "tui", "terminal"]
+categories = ["command-line-utilities"]
+documentation = "https://docs.rs/otelite-tui"
 repository.workspace = true
 
 [lib]

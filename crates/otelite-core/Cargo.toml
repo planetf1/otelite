@@ -8,6 +8,9 @@ license.workspace = true
 repository.workspace = true
 homepage.workspace = true
 description = "Core telemetry domain types for the Otelite OpenTelemetry receiver"
+keywords = ["opentelemetry", "observability", "otlp", "telemetry"]
+categories = ["data-structures"]
+documentation = "https://docs.rs/otelite-core"
 
 [dependencies]
 serde = { workspace = true, features = ["derive"] }

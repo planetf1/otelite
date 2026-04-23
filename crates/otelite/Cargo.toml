@@ -8,6 +8,11 @@ license.workspace = true
 repository.workspace = true
 homepage.workspace = true
 description = "Otelite: OTLP receiver, dashboard, and CLI for local OpenTelemetry observability"
+readme = "../../README.md"
+keywords = ["opentelemetry", "observability", "otlp", "tracing", "llm"]
+categories = ["command-line-utilities", "development-tools"]
+documentation = "https://docs.rs/otelite"
+
 [[bin]]
 name = "otelite"
 path = "src/main.rs"

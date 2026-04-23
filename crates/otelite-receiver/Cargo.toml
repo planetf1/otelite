@@ -8,6 +8,9 @@ license.workspace = true
 repository.workspace = true
 homepage.workspace = true
 description = "OTLP receiver for Otelite: ingests gRPC and HTTP telemetry from OpenTelemetry SDKs"
+keywords = ["opentelemetry", "otlp", "grpc", "receiver", "telemetry"]
+categories = ["network-programming"]
+documentation = "https://docs.rs/otelite-receiver"
 
 [dependencies]
 # Async runtime

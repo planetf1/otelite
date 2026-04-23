@@ -8,6 +8,9 @@ license.workspace = true
 repository.workspace = true
 homepage.workspace = true
 description = "Typed HTTP client for the Otelite REST API"
+keywords = ["opentelemetry", "observability", "otlp", "client"]
+categories = ["web-programming"]
+documentation = "https://docs.rs/otelite-client"
 
 [dependencies]
 otelite-core = { path = "../otelite-core", version = "0.1.0" }

@@ -4,7 +4,10 @@ version.workspace = true
 edition.workspace = true
 authors.workspace = true
 license.workspace = true
-description = "Embedded storage layer for Otelite OTLP receiver"
+description = "Embedded SQLite storage layer for the Otelite OTLP receiver"
+keywords = ["opentelemetry", "observability", "sqlite", "storage"]
+categories = ["database"]
+documentation = "https://docs.rs/otelite-storage"
 repository.workspace = true
 
 [dependencies]
