@@ -1,6 +1,6 @@
 //! Tests for CLI argument parsing and configuration
 
-use otelite_cli::config::{Config, OutputFormat};
+use otelite::config::{Config, OutputFormat};
 use std::time::Duration;
 
 #[test]

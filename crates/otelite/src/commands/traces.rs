@@ -1,10 +1,10 @@
 //! Traces command handlers
 
-use crate::api::client::ApiClient;
-use crate::api::models::TraceEntry;
 use crate::config::Config;
 use crate::error::Result;
 use crate::output::{json, pretty};
+use otelite_client::models::TraceEntry;
+use otelite_client::ApiClient;
 
 /// Handle traces list command
 #[allow(clippy::too_many_arguments)]

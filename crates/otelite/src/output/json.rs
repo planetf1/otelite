@@ -1,7 +1,7 @@
 //! JSON output formatting for CLI
 
-use crate::api::models::{LogEntry, MetricResponse, TraceDetail, TraceEntry};
 use crate::error::Result;
+use otelite_client::models::{LogEntry, MetricResponse, TraceDetail, TraceEntry};
 use otelite_core::telemetry::GenAiSpanInfo;
 use serde_json::{self, json};
 
@@ -181,7 +181,7 @@ fn print_metric_json_impl(metric: &MetricResponse, compact: bool) -> Result<()> 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::api::models::{HistogramValue, MetricValue, SpanEntry, SpanStatus};
+    use otelite_client::models::{HistogramValue, MetricValue, SpanEntry, SpanStatus};
     use std::collections::HashMap;
 
     #[test]
@@ -233,7 +233,7 @@ mod tests {
 
     #[test]
     fn test_print_metrics_json() {
-        use crate::api::models::MetricValue;
+        use otelite_client::models::MetricValue;
 
         let metrics = vec![MetricResponse {
             name: "http_requests_total".to_string(),
@@ -560,7 +560,7 @@ mod tests {
 
     #[test]
     fn test_print_metric_json_with_histogram() {
-        use crate::api::models::HistogramBucket;
+        use otelite_client::models::HistogramBucket;
 
         let metric = MetricResponse {
             name: "response_time_ms".to_string(),

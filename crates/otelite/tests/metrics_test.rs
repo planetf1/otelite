@@ -5,16 +5,16 @@ use std::time::Duration;
 use tempfile::NamedTempFile;
 
 // Helper to create a mock API client
-async fn create_test_client(server_url: String) -> otelite_cli::api::client::ApiClient {
-    otelite_cli::api::client::ApiClient::new(server_url, Duration::from_secs(30)).unwrap()
+async fn create_test_client(server_url: String) -> otelite_client::ApiClient {
+    otelite_client::ApiClient::new(server_url, Duration::from_secs(30)).unwrap()
 }
 
 // Helper to create test config
 fn create_test_config(
     endpoint: String,
-    format: otelite_cli::config::OutputFormat,
-) -> otelite_cli::config::Config {
-    otelite_cli::config::Config {
+    format: otelite::config::OutputFormat,
+) -> otelite::config::Config {
+    otelite::config::Config {
         endpoint,
         timeout: Duration::from_secs(30),
         format,
@@ -66,9 +66,9 @@ async fn test_metrics_list_command() {
         .await;
 
     let client = create_test_client(server.url()).await;
-    let config = create_test_config(server.url(), otelite_cli::config::OutputFormat::Json);
+    let config = create_test_config(server.url(), otelite::config::OutputFormat::Json);
 
-    let result = otelite_cli::commands::metrics::handle_list(
+    let result = otelite::commands::metrics::handle_list(
         &client,
         &config,
         Some(10),
@@ -95,18 +95,11 @@ async fn test_metrics_list_empty() {
         .await;
 
     let client = create_test_client(server.url()).await;
-    let config = create_test_config(server.url(), otelite_cli::config::OutputFormat::Json);
+    let config = create_test_config(server.url(), otelite::config::OutputFormat::Json);
 
-    let result = otelite_cli::commands::metrics::handle_list(
-        &client,
-        &config,
-        None,
-        None,
-        vec![],
-        None,
-        None,
-    )
-    .await;
+    let result =
+        otelite::commands::metrics::handle_list(&client, &config, None, None, vec![], None, None)
+            .await;
 
     mock.assert_async().await;
     assert!(result.is_ok());
@@ -140,9 +133,9 @@ async fn test_metrics_list_with_name_filter() {
         .await;
 
     let client = create_test_client(server.url()).await;
-    let config = create_test_config(server.url(), otelite_cli::config::OutputFormat::Json);
+    let config = create_test_config(server.url(), otelite::config::OutputFormat::Json);
 
-    let result = otelite_cli::commands::metrics::handle_list(
+    let result = otelite::commands::metrics::handle_list(
         &client,
         &config,
         None,
@@ -190,9 +183,9 @@ async fn test_metrics_get_command() {
         .await;
 
     let client = create_test_client(server.url()).await;
-    let config = create_test_config(server.url(), otelite_cli::config::OutputFormat::Json);
+    let config = create_test_config(server.url(), otelite::config::OutputFormat::Json);
 
-    let result = otelite_cli::commands::metrics::handle_show(
+    let result = otelite::commands::metrics::handle_show(
         &client,
         &config,
         "http_requests_total",
@@ -221,9 +214,9 @@ async fn test_metrics_get_not_found() {
         .await;
 
     let client = create_test_client(server.url()).await;
-    let config = create_test_config(server.url(), otelite_cli::config::OutputFormat::Json);
+    let config = create_test_config(server.url(), otelite::config::OutputFormat::Json);
 
-    let result = otelite_cli::commands::metrics::handle_show(
+    let result = otelite::commands::metrics::handle_show(
         &client,
         &config,
         "nonexistent_metric",
@@ -266,9 +259,9 @@ async fn test_metrics_list_with_label_filter() {
         .await;
 
     let client = create_test_client(server.url()).await;
-    let config = create_test_config(server.url(), otelite_cli::config::OutputFormat::Json);
+    let config = create_test_config(server.url(), otelite::config::OutputFormat::Json);
 
-    let result = otelite_cli::commands::metrics::handle_list(
+    let result = otelite::commands::metrics::handle_list(
         &client,
         &config,
         None,
@@ -309,9 +302,9 @@ async fn test_metrics_list_with_multiple_label_filters() {
         .await;
 
     let client = create_test_client(server.url()).await;
-    let config = create_test_config(server.url(), otelite_cli::config::OutputFormat::Json);
+    let config = create_test_config(server.url(), otelite::config::OutputFormat::Json);
 
-    let result = otelite_cli::commands::metrics::handle_list(
+    let result = otelite::commands::metrics::handle_list(
         &client,
         &config,
         None,
@@ -358,9 +351,9 @@ async fn test_metrics_get_with_label_filter() {
         .await;
 
     let client = create_test_client(server.url()).await;
-    let config = create_test_config(server.url(), otelite_cli::config::OutputFormat::Json);
+    let config = create_test_config(server.url(), otelite::config::OutputFormat::Json);
 
-    let result = otelite_cli::commands::metrics::handle_show(
+    let result = otelite::commands::metrics::handle_show(
         &client,
         &config,
         "http_requests_total",
@@ -429,9 +422,9 @@ async fn test_metrics_time_series_json_output() {
         .await;
 
     let client = create_test_client(server.url()).await;
-    let config = create_test_config(server.url(), otelite_cli::config::OutputFormat::Json);
+    let config = create_test_config(server.url(), otelite::config::OutputFormat::Json);
 
-    let result = otelite_cli::commands::metrics::handle_show(
+    let result = otelite::commands::metrics::handle_show(
         &client,
         &config,
         "cpu_usage_percent",
@@ -475,16 +468,11 @@ async fn test_metrics_histogram_with_percentiles() {
         .await;
 
     let client = create_test_client(server.url()).await;
-    let config = create_test_config(server.url(), otelite_cli::config::OutputFormat::Json);
+    let config = create_test_config(server.url(), otelite::config::OutputFormat::Json);
 
-    let result = otelite_cli::commands::metrics::handle_show(
-        &client,
-        &config,
-        "response_time_ms",
-        vec![],
-        None,
-    )
-    .await;
+    let result =
+        otelite::commands::metrics::handle_show(&client, &config, "response_time_ms", vec![], None)
+            .await;
 
     mock.assert_async().await;
     assert!(result.is_ok());
@@ -514,18 +502,11 @@ async fn test_metrics_json_output_format() {
         .await;
 
     let client = create_test_client(server.url()).await;
-    let config = create_test_config(server.url(), otelite_cli::config::OutputFormat::Json);
+    let config = create_test_config(server.url(), otelite::config::OutputFormat::Json);
 
-    let result = otelite_cli::commands::metrics::handle_list(
-        &client,
-        &config,
-        None,
-        None,
-        vec![],
-        None,
-        None,
-    )
-    .await;
+    let result =
+        otelite::commands::metrics::handle_list(&client, &config, None, None, vec![], None, None)
+            .await;
 
     mock.assert_async().await;
     assert!(result.is_ok());
@@ -559,11 +540,10 @@ async fn test_metrics_export_json_stdout_is_valid_json_array() {
         .await;
 
     let client = create_test_client(server.url()).await;
-    let config = create_test_config(server.url(), otelite_cli::config::OutputFormat::Json);
+    let config = create_test_config(server.url(), otelite::config::OutputFormat::Json);
 
     let result =
-        otelite_cli::commands::metrics::handle_export(&client, &config, "json", None, None, None)
-            .await;
+        otelite::commands::metrics::handle_export(&client, &config, "json", None, None, None).await;
 
     mock.assert_async().await;
     assert!(result.is_ok());
@@ -600,11 +580,11 @@ async fn test_metrics_export_json_file_output_writes_valid_json() {
         .await;
 
     let client = create_test_client(server.url()).await;
-    let config = create_test_config(server.url(), otelite_cli::config::OutputFormat::Json);
+    let config = create_test_config(server.url(), otelite::config::OutputFormat::Json);
     let file = NamedTempFile::new().unwrap();
     let path = file.path().to_string_lossy().to_string();
 
-    let result = otelite_cli::commands::metrics::handle_export(
+    let result = otelite::commands::metrics::handle_export(
         &client,
         &config,
         "json",
@@ -653,9 +633,9 @@ async fn test_metrics_export_with_data_includes_metric_name_and_values() {
         .await;
 
     let client = create_test_client(server.url()).await;
-    let config = create_test_config(server.url(), otelite_cli::config::OutputFormat::Json);
+    let config = create_test_config(server.url(), otelite::config::OutputFormat::Json);
 
-    let result = otelite_cli::commands::metrics::handle_export(
+    let result = otelite::commands::metrics::handle_export(
         &client,
         &config,
         "json",
@@ -687,11 +667,10 @@ async fn test_metrics_export_empty_result_is_empty_array() {
         .await;
 
     let client = create_test_client(server.url()).await;
-    let config = create_test_config(server.url(), otelite_cli::config::OutputFormat::Json);
+    let config = create_test_config(server.url(), otelite::config::OutputFormat::Json);
 
     let result =
-        otelite_cli::commands::metrics::handle_export(&client, &config, "json", None, None, None)
-            .await;
+        otelite::commands::metrics::handle_export(&client, &config, "json", None, None, None).await;
 
     mock.assert_async().await;
     assert!(result.is_ok());

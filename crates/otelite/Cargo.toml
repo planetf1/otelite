@@ -1,5 +1,5 @@
 [package]
-name = "otelite-cli"
+name = "otelite"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
@@ -7,13 +7,13 @@ authors.workspace = true
 license.workspace = true
 repository.workspace = true
 homepage.workspace = true
-description = "CLI for Otelite: serve an OTLP receiver and query logs, traces, and metrics locally"
+description = "Otelite: OTLP receiver, dashboard, and CLI for local OpenTelemetry observability"
 [[bin]]
 name = "otelite"
 path = "src/main.rs"
 
 [lib]
-name = "otelite_cli"
+name = "otelite"
 path = "src/lib.rs"
 
 

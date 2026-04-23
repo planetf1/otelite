@@ -1,10 +1,10 @@
 //! Metrics command handlers
 
-use crate::api::client::ApiClient;
-use crate::api::models::MetricResponse;
 use crate::config::Config;
 use crate::error::Result;
 use crate::output::{json, pretty};
+use otelite_client::models::MetricResponse;
+use otelite_client::ApiClient;
 
 /// Handle metrics list command
 #[allow(clippy::too_many_arguments)]
@@ -214,7 +214,7 @@ pub fn filter_by_type(metrics: Vec<MetricResponse>, metric_type: &str) -> Vec<Me
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::api::models::{HistogramValue, MetricResponse, MetricValue};
+    use otelite_client::models::{HistogramValue, MetricResponse, MetricValue};
     use std::collections::HashMap;
 
     // T065: Unit tests for label filtering logic

@@ -1945,29 +1945,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "04744f49eae99ab78e0d5c0b603ab218f515ea8cfe5a456d7629ad883a3b6e7d"
 
 [[package]]
-name = "otelite-api"
-version = "0.1.0"
-dependencies = [
- "async-trait",
- "axum 0.8.9",
- "http-body-util",
- "mime_guess",
- "otelite-core",
- "otelite-storage",
- "serde",
- "serde_json",
- "tempfile",
- "tokio",
- "tokio-test",
- "tower 0.5.3",
- "tower-http 0.5.2",
- "tracing",
- "utoipa",
- "utoipa-swagger-ui",
-]
-
-[[package]]
-name = "otelite-cli"
+name = "otelite"
 version = "0.1.0"
 dependencies = [
  "assert_cmd",
@@ -1995,6 +1973,28 @@ dependencies = [
  "tracing",
  "tracing-appender",
  "tracing-subscriber",
+]
+
+[[package]]
+name = "otelite-api"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "axum 0.8.9",
+ "http-body-util",
+ "mime_guess",
+ "otelite-core",
+ "otelite-storage",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "tokio",
+ "tokio-test",
+ "tower 0.5.3",
+ "tower-http 0.5.2",
+ "tracing",
+ "utoipa",
+ "utoipa-swagger-ui",
 ]
 
 [[package]]
@@ -2079,7 +2079,6 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "chrono",
- "clap",
  "crossterm 0.29.0",
  "mockito",
  "otelite-client",

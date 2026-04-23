@@ -1,9 +1,9 @@
 //! Pretty-print table formatting for CLI output
 
-use crate::api::models::{LogEntry, MetricResponse, SpanEntry, TraceDetail, TraceEntry};
 use crate::config::Config;
 use crate::output::{colors, pager};
 use comfy_table::{presets::UTF8_FULL, Cell, ContentArrangement, Table};
+use otelite_client::models::{LogEntry, MetricResponse, SpanEntry, TraceDetail, TraceEntry};
 use otelite_core::telemetry::{format_attribute_value, GenAiSpanInfo};
 use std::collections::HashMap;
 use std::io;
@@ -300,8 +300,8 @@ pub fn print_metrics_table(metrics: &[MetricResponse], config: &Config) -> io::R
             Cell::new(&metric.metric_type).fg(color)
         };
 
-        use crate::api::models::MetricValue;
         use chrono::{DateTime, Utc};
+        use otelite_client::models::MetricValue;
 
         let value_str = match &metric.value {
             MetricValue::Gauge(v) => format!("{:.2}", v),
@@ -327,8 +327,8 @@ pub fn print_metrics_table(metrics: &[MetricResponse], config: &Config) -> io::R
 
 /// Print a single metric with full details including percentiles
 pub fn print_metric_details(metric: &MetricResponse, config: &Config) -> io::Result<()> {
-    use crate::api::models::MetricValue;
     use chrono::{DateTime, Utc};
+    use otelite_client::models::MetricValue;
     use std::fmt::Write;
     let mut output = String::new();
 
@@ -372,7 +372,7 @@ pub fn print_metric_details(metric: &MetricResponse, config: &Config) -> io::Res
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::api::models::{MetricValue, SpanStatus, TraceEntry};
+    use otelite_client::models::{MetricValue, SpanStatus, TraceEntry};
     use std::collections::HashMap;
 
     fn test_config() -> Config {
@@ -582,7 +582,7 @@ mod tests {
     // T041: Unit test for span tree formatter
     #[test]
     fn test_print_trace_tree_simple() {
-        use crate::api::models::SpanEntry;
+        use otelite_client::models::SpanEntry;
         let config = test_config();
 
         let trace = TraceDetail {
@@ -616,7 +616,7 @@ mod tests {
 
     #[test]
     fn test_print_trace_tree_with_hierarchy() {
-        use crate::api::models::SpanEntry;
+        use otelite_client::models::SpanEntry;
         let config = test_config();
 
         let trace = TraceDetail {
@@ -686,7 +686,7 @@ mod tests {
 
     #[test]
     fn test_print_trace_tree_deep_hierarchy() {
-        use crate::api::models::SpanEntry;
+        use otelite_client::models::SpanEntry;
         let config = test_config();
 
         let trace = TraceDetail {
@@ -821,7 +821,7 @@ mod tests {
 
     #[test]
     fn test_print_metric_details_with_histogram() {
-        use crate::api::models::{HistogramBucket, HistogramValue};
+        use otelite_client::models::{HistogramBucket, HistogramValue};
         let config = test_config();
 
         let metric = MetricResponse {

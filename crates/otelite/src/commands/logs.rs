@@ -1,10 +1,10 @@
 //! Logs command handlers
 
-use crate::api::client::ApiClient;
-use crate::api::models::LogEntry;
 use crate::config::{Config, OutputFormat};
 use crate::error::Result;
 use crate::output::{json, pretty};
+use otelite_client::models::LogEntry;
+use otelite_client::ApiClient;
 
 /// Handle the `logs list` command
 #[allow(clippy::too_many_arguments)]

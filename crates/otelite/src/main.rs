@@ -9,7 +9,6 @@ use std::sync::Arc;
 use tracing::{info, Level};
 use tracing_subscriber::{fmt, layer::SubscriberExt, util::SubscriberInitExt, EnvFilter};
 
-pub mod api;
 pub mod commands;
 pub mod config;
 pub mod error;
@@ -599,8 +598,8 @@ async fn run_dashboard(addr: SocketAddr, storage_path: String) -> Result<()> {
 }
 
 async fn handle_logs_command(command: LogsCommands, config: &Config) -> Result<()> {
-    use api::client::ApiClient;
     use commands::logs;
+    use otelite_client::ApiClient;
 
     let client = ApiClient::new(config.endpoint.clone(), config.timeout)?;
 
@@ -633,8 +632,8 @@ async fn handle_logs_command(command: LogsCommands, config: &Config) -> Result<(
 }
 
 async fn handle_traces_command(command: TracesCommands, config: &Config) -> Result<()> {
-    use api::client::ApiClient;
     use commands::traces;
+    use otelite_client::ApiClient;
     use output::parse_duration;
 
     let client = ApiClient::new(config.endpoint.clone(), config.timeout)?;
@@ -704,8 +703,8 @@ async fn handle_traces_command(command: TracesCommands, config: &Config) -> Resu
 }
 
 async fn handle_metrics_command(command: MetricsCommands, config: &Config) -> Result<()> {
-    use api::client::ApiClient;
     use commands::metrics;
+    use otelite_client::ApiClient;
 
     let client = ApiClient::new(config.endpoint.clone(), config.timeout)?;
 
@@ -757,7 +756,7 @@ async fn handle_tui_command(
     };
 
     // Run the TUI application
-    otelite_tui::app::run(config)
+    otelite_tui::run_tui(config)
         .await
         .map_err(|e| Error::ApiError(format!("TUI error: {}", e)))?;
 

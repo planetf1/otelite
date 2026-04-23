@@ -5,16 +5,16 @@ use std::time::Duration;
 use tempfile::NamedTempFile;
 
 // Helper to create a mock API client
-async fn create_test_client(server_url: String) -> otelite_cli::api::client::ApiClient {
-    otelite_cli::api::client::ApiClient::new(server_url, Duration::from_secs(30)).unwrap()
+async fn create_test_client(server_url: String) -> otelite_client::ApiClient {
+    otelite_client::ApiClient::new(server_url, Duration::from_secs(30)).unwrap()
 }
 
 // Helper to create test config
 fn create_test_config(
     endpoint: String,
-    format: otelite_cli::config::OutputFormat,
-) -> otelite_cli::config::Config {
-    otelite_cli::config::Config {
+    format: otelite::config::OutputFormat,
+) -> otelite::config::Config {
+    otelite::config::Config {
         endpoint,
         timeout: Duration::from_secs(30),
         format,
@@ -58,11 +58,10 @@ async fn test_logs_list_command() {
         .await;
 
     let client = create_test_client(server.url()).await;
-    let config = create_test_config(server.url(), otelite_cli::config::OutputFormat::Json);
+    let config = create_test_config(server.url(), otelite::config::OutputFormat::Json);
 
     let result =
-        otelite_cli::commands::logs::handle_list(&client, &config, Some(10), None, None, None)
-            .await;
+        otelite::commands::logs::handle_list(&client, &config, Some(10), None, None, None).await;
 
     mock.assert_async().await;
     assert!(result.is_ok());
@@ -99,9 +98,9 @@ async fn test_logs_list_with_severity_filter() {
         .await;
 
     let client = create_test_client(server.url()).await;
-    let config = create_test_config(server.url(), otelite_cli::config::OutputFormat::Json);
+    let config = create_test_config(server.url(), otelite::config::OutputFormat::Json);
 
-    let result = otelite_cli::commands::logs::handle_list(
+    let result = otelite::commands::logs::handle_list(
         &client,
         &config,
         None,
@@ -130,10 +129,10 @@ async fn test_logs_list_empty_response() {
         .await;
 
     let client = create_test_client(server.url()).await;
-    let config = create_test_config(server.url(), otelite_cli::config::OutputFormat::Json);
+    let config = create_test_config(server.url(), otelite::config::OutputFormat::Json);
 
     let result =
-        otelite_cli::commands::logs::handle_list(&client, &config, None, None, None, None).await;
+        otelite::commands::logs::handle_list(&client, &config, None, None, None, None).await;
 
     mock.assert_async().await;
     assert!(result.is_ok());
@@ -184,10 +183,10 @@ async fn test_logs_search_command() {
         .await;
 
     let client = create_test_client(server.url()).await;
-    let config = create_test_config(server.url(), otelite_cli::config::OutputFormat::Json);
+    let config = create_test_config(server.url(), otelite::config::OutputFormat::Json);
 
     let result =
-        otelite_cli::commands::logs::handle_search(&client, &config, "error", None, None).await;
+        otelite::commands::logs::handle_search(&client, &config, "error", None, None).await;
 
     mock.assert_async().await;
     assert!(result.is_ok());
@@ -212,10 +211,10 @@ async fn test_logs_search_with_limit() {
         .await;
 
     let client = create_test_client(server.url()).await;
-    let config = create_test_config(server.url(), otelite_cli::config::OutputFormat::Json);
+    let config = create_test_config(server.url(), otelite::config::OutputFormat::Json);
 
     let result =
-        otelite_cli::commands::logs::handle_search(&client, &config, "test", Some(5), None).await;
+        otelite::commands::logs::handle_search(&client, &config, "test", Some(5), None).await;
 
     mock.assert_async().await;
     assert!(result.is_ok());
@@ -249,10 +248,10 @@ async fn test_logs_show_command() {
         .await;
 
     let client = create_test_client(server.url()).await;
-    let config = create_test_config(server.url(), otelite_cli::config::OutputFormat::Json);
+    let config = create_test_config(server.url(), otelite::config::OutputFormat::Json);
 
     let result =
-        otelite_cli::commands::logs::handle_show(&client, &config, "1705315800000000000").await;
+        otelite::commands::logs::handle_show(&client, &config, "1705315800000000000").await;
 
     mock.assert_async().await;
     assert!(result.is_ok());
@@ -272,15 +271,14 @@ async fn test_logs_show_not_found() {
         .await;
 
     let client = create_test_client(server.url()).await;
-    let config = create_test_config(server.url(), otelite_cli::config::OutputFormat::Json);
+    let config = create_test_config(server.url(), otelite::config::OutputFormat::Json);
 
-    let result =
-        otelite_cli::commands::logs::handle_show(&client, &config, "9999999999999999").await;
+    let result = otelite::commands::logs::handle_show(&client, &config, "9999999999999999").await;
 
     mock.assert_async().await;
     assert!(result.is_err());
     match result.unwrap_err() {
-        otelite_cli::error::Error::NotFound(_) => {}, // Expected
+        otelite::error::Error::NotFound(_) => {}, // Expected
         _ => panic!("Expected NotFound error"),
     }
 }
@@ -317,17 +315,17 @@ async fn test_json_output_format() {
         .await;
 
     let client = create_test_client(server.url()).await;
-    let config = create_test_config(server.url(), otelite_cli::config::OutputFormat::Json);
+    let config = create_test_config(server.url(), otelite::config::OutputFormat::Json);
 
     let result =
-        otelite_cli::commands::logs::handle_list(&client, &config, None, None, None, None).await;
+        otelite::commands::logs::handle_list(&client, &config, None, None, None, None).await;
 
     mock.assert_async().await;
     assert!(result.is_ok());
 
     let logs = result.unwrap();
     let json_str = serde_json::to_string(&logs).unwrap();
-    let parsed: Vec<otelite_cli::api::models::LogEntry> = serde_json::from_str(&json_str).unwrap();
+    let parsed: Vec<otelite_client::models::LogEntry> = serde_json::from_str(&json_str).unwrap();
     assert_eq!(parsed.len(), 1);
     assert_eq!(parsed[0].timestamp, 1705315800000000000);
 }
@@ -363,10 +361,10 @@ async fn test_pretty_output_format() {
         .await;
 
     let client = create_test_client(server.url()).await;
-    let config = create_test_config(server.url(), otelite_cli::config::OutputFormat::Pretty);
+    let config = create_test_config(server.url(), otelite::config::OutputFormat::Pretty);
 
     let result =
-        otelite_cli::commands::logs::handle_list(&client, &config, None, None, None, None).await;
+        otelite::commands::logs::handle_list(&client, &config, None, None, None, None).await;
 
     mock.assert_async().await;
     assert!(result.is_ok());
@@ -438,9 +436,9 @@ async fn test_severity_filtering_integration() {
         .await;
 
     let client = create_test_client(server.url()).await;
-    let config = create_test_config(server.url(), otelite_cli::config::OutputFormat::Json);
+    let config = create_test_config(server.url(), otelite::config::OutputFormat::Json);
 
-    let result = otelite_cli::commands::logs::handle_list(
+    let result = otelite::commands::logs::handle_list(
         &client,
         &config,
         None,
@@ -487,11 +485,10 @@ async fn test_logs_export_json_stdout_is_valid_json_array() {
         .await;
 
     let client = create_test_client(server.url()).await;
-    let config = create_test_config(server.url(), otelite_cli::config::OutputFormat::Json);
+    let config = create_test_config(server.url(), otelite::config::OutputFormat::Json);
 
     let result =
-        otelite_cli::commands::logs::handle_export(&client, &config, "json", None, None, None)
-            .await;
+        otelite::commands::logs::handle_export(&client, &config, "json", None, None, None).await;
 
     mock.assert_async().await;
     assert!(result.is_ok());
@@ -515,10 +512,10 @@ async fn test_logs_export_csv_contains_header_and_data_row() {
         .await;
 
     let client = create_test_client(server.url()).await;
-    let config = create_test_config(server.url(), otelite_cli::config::OutputFormat::Json);
+    let config = create_test_config(server.url(), otelite::config::OutputFormat::Json);
 
     let result =
-        otelite_cli::commands::logs::handle_export(&client, &config, "csv", None, None, None).await;
+        otelite::commands::logs::handle_export(&client, &config, "csv", None, None, None).await;
 
     mock.assert_async().await;
     assert!(result.is_ok());
@@ -563,11 +560,11 @@ async fn test_logs_export_json_file_output_writes_valid_json() {
         .await;
 
     let client = create_test_client(server.url()).await;
-    let config = create_test_config(server.url(), otelite_cli::config::OutputFormat::Json);
+    let config = create_test_config(server.url(), otelite::config::OutputFormat::Json);
     let file = NamedTempFile::new().unwrap();
     let path = file.path().to_string_lossy().to_string();
 
-    let result = otelite_cli::commands::logs::handle_export(
+    let result = otelite::commands::logs::handle_export(
         &client,
         &config,
         "json",
@@ -614,9 +611,9 @@ async fn test_logs_export_with_query_filter_only_requests_matching_logs() {
         .await;
 
     let client = create_test_client(server.url()).await;
-    let config = create_test_config(server.url(), otelite_cli::config::OutputFormat::Json);
+    let config = create_test_config(server.url(), otelite::config::OutputFormat::Json);
 
-    let result = otelite_cli::commands::logs::handle_export(
+    let result = otelite::commands::logs::handle_export(
         &client,
         &config,
         "json",
@@ -648,11 +645,10 @@ async fn test_logs_export_empty_result_json_is_empty_array() {
         .await;
 
     let client = create_test_client(server.url()).await;
-    let config = create_test_config(server.url(), otelite_cli::config::OutputFormat::Json);
+    let config = create_test_config(server.url(), otelite::config::OutputFormat::Json);
 
     let result =
-        otelite_cli::commands::logs::handle_export(&client, &config, "json", None, None, None)
-            .await;
+        otelite::commands::logs::handle_export(&client, &config, "json", None, None, None).await;
 
     mock.assert_async().await;
     assert!(result.is_ok());
@@ -675,10 +671,10 @@ async fn test_logs_export_empty_result_csv_has_header_only() {
         .await;
 
     let client = create_test_client(server.url()).await;
-    let config = create_test_config(server.url(), otelite_cli::config::OutputFormat::Json);
+    let config = create_test_config(server.url(), otelite::config::OutputFormat::Json);
 
     let result =
-        otelite_cli::commands::logs::handle_export(&client, &config, "csv", None, None, None).await;
+        otelite::commands::logs::handle_export(&client, &config, "csv", None, None, None).await;
 
     mock.assert_async().await;
     assert!(result.is_ok());

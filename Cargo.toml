@@ -3,7 +3,7 @@ resolver = "2"
 members = [
     "crates/otelite-core",
     "crates/otelite-receiver",
-    "crates/otelite-cli",
+    "crates/otelite",
     "crates/otelite-storage",
     "crates/otelite-tui",
     "crates/otelite-api",
