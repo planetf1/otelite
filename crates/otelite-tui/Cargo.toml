@@ -23,12 +23,8 @@ crossterm = { workspace = true }
 # Async runtime
 tokio = { workspace = true }
 
-# HTTP client
-reqwest = { workspace = true }
-
-# Serialization
-serde = { workspace = true }
-serde_json = { workspace = true }
+# API client
+otelite-client = { path = "../otelite-client", version = "0.1.0" }
 
 # Time handling
 chrono = { workspace = true }

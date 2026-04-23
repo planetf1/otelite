@@ -1980,6 +1980,7 @@ dependencies = [
  "mockito",
  "nix",
  "otelite-api",
+ "otelite-client",
  "otelite-core",
  "otelite-receiver",
  "otelite-storage",
@@ -1994,6 +1995,19 @@ dependencies = [
  "tracing",
  "tracing-appender",
  "tracing-subscriber",
+]
+
+[[package]]
+name = "otelite-client"
+version = "0.1.0"
+dependencies = [
+ "mockito",
+ "otelite-core",
+ "reqwest",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.18",
+ "tokio",
 ]
 
 [[package]]
@@ -2068,11 +2082,9 @@ dependencies = [
  "clap",
  "crossterm 0.29.0",
  "mockito",
+ "otelite-client",
  "otelite-core",
  "ratatui",
- "reqwest",
- "serde",
- "serde_json",
  "tokio",
 ]
 

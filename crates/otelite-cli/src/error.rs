@@ -81,6 +81,18 @@ impl From<serde_json::Error> for Error {
     }
 }
 
+impl From<otelite_client::Error> for Error {
+    fn from(e: otelite_client::Error) -> Self {
+        match e {
+            otelite_client::Error::ApiError(msg) => Error::ApiError(msg),
+            otelite_client::Error::ConnectionError(msg) => Error::ConnectionError(msg),
+            otelite_client::Error::NotFound(msg) => Error::NotFound(msg),
+            otelite_client::Error::HttpError(e) => Error::HttpError(e),
+            otelite_client::Error::ParseError(e) => Error::JsonError(e),
+        }
+    }
+}
+
 impl From<std::io::Error> for Error {
     fn from(err: std::io::Error) -> Self {
         Error::IoError(err)

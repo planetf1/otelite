@@ -1,0 +1,21 @@
+[package]
+name = "otelite-client"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+description = "Typed HTTP client for the Otelite REST API"
+
+[dependencies]
+otelite-core = { path = "../otelite-core", version = "0.1.0" }
+reqwest = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+tokio = { workspace = true }
+
+[dev-dependencies]
+mockito = "1.2"

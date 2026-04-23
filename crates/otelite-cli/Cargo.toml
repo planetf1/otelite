@@ -39,6 +39,7 @@ nix = { version = "0.29", features = ["signal", "process"] }
 # Internal dependencies
 otelite-core = { path = "../otelite-core", version = "0.1.0" }
 otelite-api = { path = "../otelite-api", version = "0.1.0" }
+otelite-client = { path = "../otelite-client", version = "0.1.0" }
 otelite-receiver = { path = "../otelite-receiver", version = "0.1.0" }
 otelite-storage = { path = "../otelite-storage", version = "0.1.0" }
 otelite-tui = { path = "../otelite-tui", version = "0.1.0" }

@@ -56,7 +56,8 @@ impl App {
             _ => View::Logs,
         };
 
-        let api_client = ApiClient::new(config.api_url.clone());
+        let api_client = ApiClient::new(config.api_url.clone(), Duration::from_secs(30))
+            .expect("Failed to create HTTP client");
 
         Self {
             config,
@@ -411,7 +412,7 @@ impl App {
     pub async fn refresh_if_needed(&mut self) -> Result<()> {
         // Handle pending trace detail load immediately (don't wait for refresh interval)
         if let Some(trace_id) = self.traces_state.pending_detail_load.take() {
-            match self.api_client.get_trace(&trace_id).await {
+            match self.api_client.fetch_trace_by_id(&trace_id).await {
                 Ok(trace) => {
                     self.traces_state.set_trace_details(trace);
                     self.traces_state.clear_error();
@@ -473,7 +474,7 @@ impl App {
             },
             View::Metrics => {
                 // Note: Metrics API doesn't have query parameters in current implementation
-                match self.api_client.get_metrics().await {
+                match self.api_client.fetch_metrics(vec![]).await {
                     Ok(response) => {
                         self.metrics_state.update_metrics(response);
                         self.metrics_state.clear_error();

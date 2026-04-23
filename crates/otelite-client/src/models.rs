@@ -1,27 +1,15 @@
-//! API response models for Otelite TUI
-//!
-//! Re-exports shared types from otelite-core with TUI-specific aliases and helpers.
-
-// Re-export shared API types from otelite-core
 pub use otelite_core::api::{
-    LogEntry, LogsResponse, MetricResponse, MetricValue, SpanEntry, TraceDetail, TraceEntry,
+    HistogramBucket, HistogramValue, LogEntry, LogsResponse, MetricResponse, MetricValue, Quantile,
+    Resource, SpanEntry, SpanEvent, SpanStatus, SummaryValue, TraceDetail, TraceEntry,
     TracesResponse,
 };
 
-// Re-export types used in tests
-#[cfg(test)]
-pub use otelite_core::api::{
-    HistogramBucket, HistogramValue, Quantile, Resource, SpanStatus, SummaryValue,
-};
-
-// Type aliases for backward compatibility with TUI code
 pub type TraceSummary = TraceEntry;
 pub type Trace = TraceDetail;
 pub type Span = SpanEntry;
 pub type Metric = MetricResponse;
 pub type MetricsResponse = Vec<MetricResponse>;
 
-/// Query parameters for logs
 #[derive(Debug, Clone, serde::Serialize)]
 pub struct LogsQuery {
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -51,7 +39,6 @@ impl Default for LogsQuery {
     }
 }
 
-/// Query parameters for traces
 #[derive(Debug, Clone, serde::Serialize)]
 pub struct TracesQuery {
     #[serde(skip_serializing_if = "Option::is_none")]

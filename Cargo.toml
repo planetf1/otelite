@@ -7,6 +7,7 @@ members = [
     "crates/otelite-storage",
     "crates/otelite-tui",
     "crates/otelite-api",
+    "crates/otelite-client",
 ]
 
 [workspace.package]

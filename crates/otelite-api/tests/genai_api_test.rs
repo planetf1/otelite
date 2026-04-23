@@ -4,8 +4,8 @@ use axum::{
     body::Body,
     http::{Request, StatusCode},
 };
-use otelite_core::api::TokenUsageResponse;
 use otelite_api::{DashboardConfig, DashboardServer};
+use otelite_core::api::TokenUsageResponse;
 use otelite_storage::sqlite::SqliteBackend;
 use otelite_storage::{StorageBackend, StorageConfig};
 use std::sync::Arc;
