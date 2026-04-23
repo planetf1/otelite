@@ -63,7 +63,7 @@ pub enum ReceiverError {
 
     /// Storage error
     #[error("Storage error: {0}")]
-    StorageError(#[from] otelite_storage::StorageError),
+    StorageError(#[from] otelite_core::storage::StorageError),
 }
 
 impl ReceiverError {

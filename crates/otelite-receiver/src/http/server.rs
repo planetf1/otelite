@@ -48,7 +48,7 @@ impl HttpServer {
     /// Start the HTTP server
     pub async fn start(
         &self,
-        storage: Arc<dyn otelite_storage::StorageBackend>,
+        storage: Arc<dyn otelite_core::storage::StorageBackend>,
     ) -> Result<(), ReceiverError> {
         let addr = self.config.http_addr;
 

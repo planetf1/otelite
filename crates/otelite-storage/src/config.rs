@@ -1,6 +1,6 @@
 //! Storage configuration
 
-use crate::error::{Result, StorageError};
+use otelite_core::storage::{Result, StorageError};
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 

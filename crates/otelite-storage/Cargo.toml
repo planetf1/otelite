@@ -9,7 +9,7 @@ repository.workspace = true
 
 [dependencies]
 # Core dependencies
-otelite-core = { path = "../otelite-core" }
+otelite-core = { path = "../otelite-core", version = "0.1.0" }
 
 # SQLite embedded database
 rusqlite = { version = "0.31", features = ["bundled", "chrono"] }

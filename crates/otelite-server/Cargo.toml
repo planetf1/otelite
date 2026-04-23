@@ -29,8 +29,8 @@ utoipa-swagger-ui = { version = "7", features = ["axum"] }
 mime_guess = "2.0"
 
 # Internal dependencies
-otelite-storage = { path = "../otelite-storage" }
-otelite-core = { path = "../otelite-core", features = ["openapi"] }
+otelite-core = { path = "../otelite-core", version = "0.1.0", features = ["openapi"] }
+async-trait = "0.1"
 
 # Logging
 tracing = { workspace = true }
@@ -41,3 +41,4 @@ tokio-test = "0.4"
 tower = { version = "0.5", features = ["util"] }
 http-body-util = "0.1"
 tempfile = { workspace = true }
+otelite-storage = { path = "../otelite-storage", version = "0.1.0" }

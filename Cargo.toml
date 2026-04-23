@@ -15,8 +15,8 @@ edition = "2021"
 rust-version = "1.77"
 authors = ["Otelite Contributors"]
 license = "Apache-2.0"
-repository = "https://github.com/otelite/otelite"
-homepage = "https://github.com/otelite/otelite"
+repository = "https://github.com/planetf1/otelite"
+homepage = "https://github.com/planetf1/otelite"
 
 [workspace.dependencies]
 # Async runtime

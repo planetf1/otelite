@@ -1979,6 +1979,7 @@ name = "otelite-core"
 version = "0.1.0"
 dependencies = [
  "assert_matches",
+ "async-trait",
  "chrono",
  "env_logger",
  "mockall",
@@ -1986,6 +1987,7 @@ dependencies = [
  "serde",
  "serde_json",
  "tempfile",
+ "thiserror 2.0.18",
  "utoipa",
 ]
 
@@ -2021,6 +2023,7 @@ dependencies = [
 name = "otelite-server"
 version = "0.1.0"
 dependencies = [
+ "async-trait",
  "axum 0.8.9",
  "http-body-util",
  "mime_guess",

@@ -7,7 +7,7 @@ use axum::{
     routing::{get, post},
     Router,
 };
-use otelite_storage::StorageBackend;
+use otelite_core::storage::StorageBackend;
 use serde::Serialize;
 use std::sync::Arc;
 use std::time::{Duration, Instant};

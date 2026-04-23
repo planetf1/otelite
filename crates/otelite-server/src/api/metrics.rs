@@ -8,9 +8,9 @@ use otelite_core::api::{
     ErrorResponse, HistogramBucket, HistogramValue, MetricResponse, MetricValue, Quantile,
     Resource, SummaryValue,
 };
+use otelite_core::storage::QueryParams;
 use otelite_core::telemetry::metric::MetricType;
 use otelite_core::telemetry::Metric;
-use otelite_storage::QueryParams;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 

@@ -7,6 +7,7 @@ authors.workspace = true
 license.workspace = true
 repository.workspace = true
 homepage.workspace = true
+description = "OTLP receiver for Otelite: ingests gRPC and HTTP telemetry from OpenTelemetry SDKs"
 
 [dependencies]
 # Async runtime
@@ -25,8 +26,7 @@ tower = { version = "0.4", features = ["limit", "timeout"] }
 opentelemetry-proto = { version = "0.31", features = ["gen-tonic", "metrics", "logs", "trace", "with-serde"] }
 
 # Internal crates
-otelite-core = { path = "../otelite-core" }
-otelite-storage = { path = "../otelite-storage" }
+otelite-core = { path = "../otelite-core", version = "0.1.0" }
 
 # Serialization
 serde = { workspace = true }
@@ -49,4 +49,5 @@ tokio-test = "0.4"
 pretty_assertions = { workspace = true }
 tempfile = { workspace = true }
 reqwest = { workspace = true }
-otelite-server = { path = "../otelite-server" }
+otelite-server = { path = "../otelite-server", version = "0.1.0" }
+otelite-storage = { path = "../otelite-storage", version = "0.1.0" }

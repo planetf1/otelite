@@ -25,7 +25,10 @@ pub struct GrpcServer {
 
 impl GrpcServer {
     /// Create a new gRPC server with the given configuration
-    pub fn new(config: ReceiverConfig, storage: Arc<dyn otelite_storage::StorageBackend>) -> Self {
+    pub fn new(
+        config: ReceiverConfig,
+        storage: Arc<dyn otelite_core::storage::StorageBackend>,
+    ) -> Self {
         // Default to 1000 concurrent requests for backpressure
         let max_concurrent_requests = 1000;
 
@@ -43,7 +46,7 @@ impl GrpcServer {
     /// Create a new gRPC server with custom concurrency limit
     pub fn with_concurrency_limit(
         config: ReceiverConfig,
-        storage: Arc<dyn otelite_storage::StorageBackend>,
+        storage: Arc<dyn otelite_core::storage::StorageBackend>,
         max_concurrent: usize,
     ) -> Self {
         Self {

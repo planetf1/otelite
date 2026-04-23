@@ -6,8 +6,8 @@ use axum::{
     Json,
 };
 use otelite_core::api::{ErrorResponse, SpanEntry, TraceDetail, TraceEntry, TracesResponse};
+use otelite_core::storage::QueryParams;
 use otelite_core::telemetry::Span;
-use otelite_storage::QueryParams;
 use serde::{Deserialize, Serialize};
 
 /// Query parameters for trace listing

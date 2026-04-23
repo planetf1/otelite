@@ -1,11 +1,11 @@
 //! SQLite backend implementation
 
-use crate::error::{Result, StorageError};
-use crate::{
-    PurgeAllStats, PurgeOptions, QueryParams, StorageBackend, StorageConfig, StorageStats,
-};
+use crate::StorageConfig;
 use async_trait::async_trait;
 use chrono::Timelike;
+use otelite_core::storage::{
+    PurgeAllStats, PurgeOptions, QueryParams, Result, StorageBackend, StorageError, StorageStats,
+};
 use otelite_core::telemetry::{LogRecord, Metric, Span};
 use rusqlite::Connection;
 use std::path::PathBuf;
@@ -35,7 +35,6 @@ impl SqliteBackend {
         }
     }
 
-    /// Get the database path or URI to open
     fn db_path(&self) -> PathBuf {
         if self
             .config
@@ -56,30 +55,24 @@ impl StorageBackend for SqliteBackend {
         let db_path = self.db_path();
 
         if !db_path.to_string_lossy().starts_with(":memory:") {
-            // Create data directory if it doesn't exist
             std::fs::create_dir_all(&self.config.data_dir).map_err(|e| {
                 StorageError::InitializationError(format!("Failed to create data directory: {}", e))
             })?;
         }
 
-        // Open database connection
         let conn = Connection::open(&db_path).map_err(|e| {
             StorageError::InitializationError(format!("Failed to open database: {}", e))
         })?;
 
-        // Configure SQLite for better concurrency (WAL mode) and durability
         conn.execute_batch("PRAGMA journal_mode=WAL; PRAGMA synchronous=NORMAL;")
             .map_err(|e| {
                 StorageError::InitializationError(format!("Failed to configure SQLite: {}", e))
             })?;
 
-        // Initialize schema
-        schema::initialize_schema(&conn)?;
+        schema::initialize_schema(&conn).map_err(StorageError::from)?;
 
-        // Store connection
         *self.conn.lock().unwrap() = Some(conn);
 
-        // Start background purge scheduler if enabled
         if self.config.retention_days > 0 {
             self.start_purge_scheduler();
         }
@@ -93,7 +86,7 @@ impl StorageBackend for SqliteBackend {
             .as_ref()
             .ok_or_else(|| StorageError::WriteError("Database not initialized".to_string()))?;
 
-        writer::write_log(conn, log)
+        writer::write_log(conn, log).map_err(StorageError::from)
     }
 
     async fn write_span(&self, span: &Span) -> Result<()> {
@@ -102,7 +95,7 @@ impl StorageBackend for SqliteBackend {
             .as_ref()
             .ok_or_else(|| StorageError::WriteError("Database not initialized".to_string()))?;
 
-        writer::write_span(conn, span)
+        writer::write_span(conn, span).map_err(StorageError::from)
     }
 
     async fn write_metric(&self, metric: &Metric) -> Result<()> {
@@ -111,7 +104,7 @@ impl StorageBackend for SqliteBackend {
             .as_ref()
             .ok_or_else(|| StorageError::WriteError("Database not initialized".to_string()))?;
 
-        writer::write_metric(conn, metric)
+        writer::write_metric(conn, metric).map_err(StorageError::from)
     }
 
     async fn query_logs(&self, params: &QueryParams) -> Result<Vec<LogRecord>> {
@@ -120,7 +113,7 @@ impl StorageBackend for SqliteBackend {
             .as_ref()
             .ok_or_else(|| StorageError::QueryError("Database not initialized".to_string()))?;
 
-        reader::query_logs(conn, params)
+        reader::query_logs(conn, params).map_err(StorageError::from)
     }
 
     async fn query_spans(&self, params: &QueryParams) -> Result<Vec<Span>> {
@@ -129,7 +122,7 @@ impl StorageBackend for SqliteBackend {
             .as_ref()
             .ok_or_else(|| StorageError::QueryError("Database not initialized".to_string()))?;
 
-        reader::query_spans(conn, params)
+        reader::query_spans(conn, params).map_err(StorageError::from)
     }
 
     async fn query_metrics(&self, params: &QueryParams) -> Result<Vec<Metric>> {
@@ -138,7 +131,7 @@ impl StorageBackend for SqliteBackend {
             .as_ref()
             .ok_or_else(|| StorageError::QueryError("Database not initialized".to_string()))?;
 
-        reader::query_metrics(conn, params)
+        reader::query_metrics(conn, params).map_err(StorageError::from)
     }
 
     async fn query_latest_metrics(&self, params: &QueryParams) -> Result<Vec<Metric>> {
@@ -147,7 +140,7 @@ impl StorageBackend for SqliteBackend {
             .as_ref()
             .ok_or_else(|| StorageError::QueryError("Database not initialized".to_string()))?;
 
-        reader::query_latest_metrics(conn, params)
+        reader::query_latest_metrics(conn, params).map_err(StorageError::from)
     }
 
     async fn stats(&self) -> Result<StorageStats> {
@@ -156,40 +149,40 @@ impl StorageBackend for SqliteBackend {
             .as_ref()
             .ok_or_else(|| StorageError::QueryError("Database not initialized".to_string()))?;
 
-        reader::get_stats(conn)
+        reader::get_stats(conn).map_err(StorageError::from)
     }
 
     async fn purge(&self, options: &PurgeOptions) -> Result<u64> {
-        // Acquire purge lock
-        let _guard = self.purge_lock.try_lock().await?;
+        let _guard = self
+            .purge_lock
+            .try_lock()
+            .await
+            .map_err(StorageError::from)?;
 
         let mut conn_guard = self.conn.lock().unwrap();
         let conn = conn_guard
             .as_mut()
             .ok_or_else(|| StorageError::WriteError("Database not initialized".to_string()))?;
 
-        // Calculate cutoff timestamp
         let cutoff_timestamp = if let Some(older_than) = options.older_than {
             older_than
         } else {
-            // Default to retention period from config
             let cutoff =
                 chrono::Utc::now() - chrono::Duration::days(self.config.retention_days as i64);
             cutoff.timestamp_nanos_opt().unwrap_or(0)
         };
 
-        // Perform purge
         let record = purge::purge_old_data(
             conn,
             cutoff_timestamp,
             10000,
             &options.signal_types,
             options.dry_run,
-        )?;
+        )
+        .map_err(StorageError::from)?;
 
-        // Run VACUUM to reclaim space (only if not dry run)
         if !options.dry_run {
-            purge::vacuum(conn)?;
+            purge::vacuum(conn).map_err(StorageError::from)?;
         }
 
         let total_deleted = record.logs_deleted + record.spans_deleted + record.metrics_deleted;
@@ -197,8 +190,11 @@ impl StorageBackend for SqliteBackend {
     }
 
     async fn purge_all(&self) -> Result<PurgeAllStats> {
-        // Acquire purge lock
-        let _guard = self.purge_lock.try_lock().await?;
+        let _guard = self
+            .purge_lock
+            .try_lock()
+            .await
+            .map_err(StorageError::from)?;
 
         let mut conn_guard = self.conn.lock().unwrap();
         let conn = conn_guard
@@ -226,7 +222,7 @@ impl StorageBackend for SqliteBackend {
             StorageError::WriteError(format!("Failed to commit transaction: {}", e))
         })?;
 
-        purge::vacuum(conn)?;
+        purge::vacuum(conn).map_err(StorageError::from)?;
 
         Ok(PurgeAllStats {
             logs_deleted,
@@ -241,7 +237,7 @@ impl StorageBackend for SqliteBackend {
             .as_ref()
             .ok_or_else(|| StorageError::QueryError("Database not initialized".to_string()))?;
 
-        reader::distinct_resource_keys(conn, signal)
+        reader::distinct_resource_keys(conn, signal).map_err(StorageError::from)
     }
 
     async fn query_token_usage(
@@ -258,11 +254,10 @@ impl StorageBackend for SqliteBackend {
             .as_ref()
             .ok_or_else(|| StorageError::QueryError("Database not initialized".to_string()))?;
 
-        reader::query_token_usage(conn, start_time, end_time)
+        reader::query_token_usage(conn, start_time, end_time).map_err(StorageError::from)
     }
 
     async fn close(&mut self) -> Result<()> {
-        // Stop purge scheduler
         if let Some(handle) = self.purge_handle.lock().unwrap().take() {
             handle.abort();
         }
@@ -270,14 +265,13 @@ impl StorageBackend for SqliteBackend {
         let mut conn_guard = self.conn.lock().unwrap();
         if let Some(conn) = conn_guard.take() {
             conn.close()
-                .map_err(|(_, e)| StorageError::DatabaseError(e))?;
+                .map_err(|(_, e)| StorageError::DatabaseError(e.to_string()))?;
         }
         Ok(())
     }
 }
 
 impl SqliteBackend {
-    /// Start background purge scheduler
     fn start_purge_scheduler(&self) {
         let conn = self.conn.clone();
         let config = self.config.clone();
@@ -285,7 +279,6 @@ impl SqliteBackend {
 
         let handle = tokio::spawn(async move {
             loop {
-                // Calculate next purge time (daily at 2 AM)
                 let now = chrono::Local::now();
                 let next_purge = if now.hour() < 2 {
                     now.date_naive().and_hms_opt(2, 0, 0).unwrap()
@@ -300,12 +293,9 @@ impl SqliteBackend {
                     .to_std()
                     .unwrap_or(std::time::Duration::from_secs(86400));
 
-                // Sleep until next purge time
                 tokio::time::sleep(duration).await;
 
-                // Try to acquire purge lock
                 if let Ok(_guard) = purge_lock.try_lock().await {
-                    // Perform automatic purge
                     let mut conn_guard = conn.lock().unwrap();
                     if let Some(conn_ref) = conn_guard.as_mut() {
                         let cutoff = chrono::Utc::now()
@@ -330,7 +320,6 @@ impl SqliteBackend {
                                 record.metrics_deleted
                             );
 
-                            // Run VACUUM
                             let _ = purge::vacuum(conn_ref);
                         }
                     }
@@ -378,7 +367,6 @@ mod tests {
         let mut backend = SqliteBackend::new(config);
         backend.initialize().await.unwrap();
 
-        // Insert a log record
         let log = LogRecord {
             timestamp: 1000,
             observed_timestamp: Some(1000),
@@ -392,10 +380,8 @@ mod tests {
         };
         backend.write_log(&log).await.unwrap();
 
-        // Get stats
         let stats = backend.stats().await.unwrap();
 
-        // Verify non-zero counts
         assert_eq!(stats.log_count, 1);
         assert_eq!(stats.span_count, 0);
         assert_eq!(stats.metric_count, 0);

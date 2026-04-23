@@ -2,7 +2,7 @@
 
 use crate::{conversion, Result};
 use opentelemetry_proto::tonic::collector::trace::v1::ExportTraceServiceRequest;
-use otelite_storage::StorageBackend;
+use otelite_core::storage::StorageBackend;
 use std::sync::Arc;
 use tracing::{debug, info};
 
