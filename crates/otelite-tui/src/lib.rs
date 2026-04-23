@@ -17,6 +17,11 @@ pub mod state;
 pub mod ui;
 
 // Re-export commonly used types
-pub use app::{App, View};
+pub use app::{run, App, View};
 pub use config::Config;
 pub use events::{poll_event, AppEvent};
+
+/// Run the TUI application with the given configuration.
+pub async fn run_tui(config: Config) -> anyhow::Result<()> {
+    run(config).await
+}

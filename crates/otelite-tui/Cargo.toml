@@ -7,10 +7,6 @@ license.workspace = true
 description = "Terminal User Interface for Otelite OpenTelemetry receiver"
 repository.workspace = true
 
-[[bin]]
-name = "otelite-tui"
-path = "src/main.rs"
-
 [lib]
 name = "otelite_tui"
 path = "src/lib.rs"
@@ -32,8 +28,6 @@ chrono = { workspace = true }
 # Error handling
 anyhow = "1.0"
 
-# CLI parsing
-clap = { workspace = true }
 otelite-core = { path = "../otelite-core", version = "0.1.0" }
 
 [dev-dependencies]
