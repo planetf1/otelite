@@ -1,5 +1,9 @@
 # Otelite
 
+[![crates.io](https://img.shields.io/crates/v/otelite.svg)](https://crates.io/crates/otelite)
+[![CI](https://github.com/planetf1/otelite/actions/workflows/ci.yml/badge.svg)](https://github.com/planetf1/otelite/actions/workflows/ci.yml)
+[![License](https://img.shields.io/badge/license-Apache%202.0-blue.svg)](LICENSE)
+
 **Lightweight OpenTelemetry receiver and dashboard for local development**
 
 Otelite is a single-binary observability tool that receives OpenTelemetry data (logs, traces, metrics) and provides a web dashboard and terminal UI for viewing it. Designed for local LLM development with minimal resource usage (<100MB memory, <5% CPU), it starts in seconds and requires no external dependencies.
@@ -8,27 +12,12 @@ Otelite is a single-binary observability tool that receives OpenTelemetry data (
 
 ## Quick Start
 
-### Build and run (development)
-
 ```bash
-cargo run --bin otelite -- serve
-```
-
-### Production build
-
-```bash
-# Optimised release binary — ~5x faster startup, much smaller
-cargo build --release --bin otelite
-
-# The binary is at:
-./target/release/otelite serve
-
-# Install to PATH (then just run `otelite` anywhere)
-cargo install --path crates/otelite-cli
+cargo install otelite
 otelite serve
 ```
 
-`otelite serve` starts three services:
+That's it. `otelite serve` starts three services:
 - **OTLP gRPC receiver** on `localhost:4317`
 - **OTLP HTTP receiver** on `localhost:4318`
 - **Web dashboard and REST API** on `http://localhost:3000`
@@ -243,6 +232,9 @@ git clone https://github.com/planetf1/otelite.git
 cd otelite
 cargo build --workspace
 
+# Run directly from source
+cargo run -p otelite -- serve
+
 # Run tests
 cargo test --workspace
 
@@ -258,7 +250,7 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for development workflow and [docs/testin
 ```
 ┌─────────────────────────────────────────────┐
 │         Web Dashboard (port 3000)           │
-│         + REST API (otelite-server)         │
+│         + REST API (otelite-api)            │
 └─────────────────┬───────────────────────────┘
                   │
 ┌─────────────────▼───────────────────────────┐
@@ -276,9 +268,10 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for development workflow and [docs/testin
 - `otelite-core` — Domain types (LogRecord, Span, Metric, Resource, GenAiSpanInfo)
 - `otelite-storage` — SQLite backend with async trait
 - `otelite-receiver` — OTLP gRPC and HTTP ingest
-- `otelite-server` — REST API and web dashboard
-- `otelite-cli` — Command-line interface binary
+- `otelite-api` — REST API and web dashboard
+- `otelite-client` — HTTP client for the REST API
 - `otelite-tui` — Terminal user interface
+- `otelite` — CLI binary (`serve`, `logs`, `traces`, `metrics`, `usage`, `tui`)
 
 See [docs/architecture.md](docs/architecture.md) for detailed design.
 
@@ -293,7 +286,7 @@ See [docs/architecture.md](docs/architecture.md) for detailed design.
 
 ## Project Status
 
-**Current version:** 0.1.0-alpha — in active development. API may change.
+**Current version:** 0.1.0 — early release, core features stable. REST API may evolve.
 
 ## License
 
