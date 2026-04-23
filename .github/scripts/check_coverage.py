@@ -23,52 +23,50 @@ def _load_thresholds() -> dict[str, float]:
     return thresholds
 
 
-def _extract_line_percent(summary: dict) -> float:
-    lines = summary.get("lines")
-    if not isinstance(lines, dict):
-        raise ValueError("coverage summary did not contain a 'lines' section")
-    percent = lines.get("percent")
-    if percent is None:
-        raise ValueError("coverage summary lines section did not contain 'percent'")
-    return float(percent)
+def _line_percent(lines: dict) -> float:
+    count = lines.get("count", 0)
+    covered = lines.get("covered", 0)
+    if count == 0:
+        return 100.0
+    return covered / count * 100.0
 
 
-def _normalise_package_name(raw: str) -> str:
-    name = raw.strip()
-    if name.startswith("crates/"):
-        return name.split("/")[-1]
-    return name
+def _workspace_percent(data: dict) -> float:
+    # LLVM coverage JSON: data["data"][0]["totals"]["lines"]
+    totals = data["data"][0]["totals"]["lines"]
+    return _line_percent(totals)
 
 
-def _find_package_percentages(data: dict) -> dict[str, float]:
-    packages: dict[str, float] = {}
+def _crate_percentages(data: dict) -> dict[str, float]:
+    """Aggregate per-file line counts into per-crate percentages.
 
-    for entry in data.get("data", []):
-        if not isinstance(entry, dict):
-            continue
+    Files are grouped by the crate directory name extracted from their path
+    (the segment after 'crates/' in the filename).
+    """
+    counts: dict[str, list[int]] = {}  # crate -> [covered, total]
 
-        summary = entry.get("summary")
-        if not isinstance(summary, dict):
-            continue
-
-        raw_name = (
-            entry.get("package_name")
-            or entry.get("package")
-            or entry.get("name")
-            or entry.get("manifest_name")
-            or entry.get("manifest_path")
-            or ""
-        )
-        if not raw_name:
-            continue
-
-        name = _normalise_package_name(str(raw_name))
+    for file_entry in data["data"][0].get("files", []):
+        filename: str = file_entry.get("filename", "")
+        # Match paths like .../crates/otelite-core/src/lib.rs
+        parts = filename.replace("\\", "/").split("/")
         try:
-            packages[name] = _extract_line_percent(summary)
-        except ValueError:
+            idx = parts.index("crates")
+            crate_name = parts[idx + 1]
+        except (ValueError, IndexError):
             continue
 
-    return packages
+        lines = file_entry.get("summary", {}).get("lines", {})
+        covered = lines.get("covered", 0)
+        count = lines.get("count", 0)
+        if crate_name not in counts:
+            counts[crate_name] = [0, 0]
+        counts[crate_name][0] += covered
+        counts[crate_name][1] += count
+
+    return {
+        name: (vals[0] / vals[1] * 100.0 if vals[1] > 0 else 100.0)
+        for name, vals in counts.items()
+    }
 
 
 def main() -> int:
@@ -80,8 +78,8 @@ def main() -> int:
     data = json.loads(report_path.read_text())
 
     thresholds = _load_thresholds()
-    workspace = _extract_line_percent(data["summary"])
-    package_percentages = _find_package_percentages(data)
+    workspace = _workspace_percent(data)
+    package_percentages = _crate_percentages(data)
 
     print("Coverage threshold report")
     print("=========================")
@@ -99,7 +97,9 @@ def main() -> int:
 
         percent = package_percentages.get(package_name)
         if percent is None:
-            failures.append(f"package coverage for {package_name} was not present in coverage.json")
+            failures.append(
+                f"package coverage for {package_name} was not present in coverage.json"
+            )
             continue
 
         print(f"{package_name}: {percent:.2f}% (threshold {threshold:.2f}%)")

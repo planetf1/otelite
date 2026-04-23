@@ -114,7 +114,7 @@ jobs:
         run: cargo llvm-cov --workspace --all-features --lcov --output-path lcov.info
 
       - name: Generate coverage JSON summary
-        run: cargo llvm-cov --workspace --all-features --json --output-path coverage.json --summary-only
+        run: cargo llvm-cov --workspace --all-features --json --output-path coverage.json
 
       - name: Enforce workspace and crate thresholds
         id: coverage
