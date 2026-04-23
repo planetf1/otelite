@@ -11,12 +11,13 @@ env:
   CARGO_TERM_COLOR: always
   RUST_BACKTRACE: 1
   COVERAGE_THRESHOLD_WORKSPACE: "80"
-  COVERAGE_THRESHOLD_ROTEL_CLI: "75"
-  COVERAGE_THRESHOLD_ROTEL_CORE: "85"
-  COVERAGE_THRESHOLD_ROTEL_DASHBOARD: "70"
-  COVERAGE_THRESHOLD_ROTEL_RECEIVER: "80"
-  COVERAGE_THRESHOLD_ROTEL_STORAGE: "85"
-  COVERAGE_THRESHOLD_ROTEL_TUI: "70"
+  COVERAGE_THRESHOLD_OTELITE: "75"
+  COVERAGE_THRESHOLD_OTELITE_CORE: "85"
+  COVERAGE_THRESHOLD_OTELITE_API: "70"
+  COVERAGE_THRESHOLD_OTELITE_CLIENT: "70"
+  COVERAGE_THRESHOLD_OTELITE_RECEIVER: "80"
+  COVERAGE_THRESHOLD_OTELITE_STORAGE: "85"
+  COVERAGE_THRESHOLD_OTELITE_TUI: "70"
 
 jobs:
   format:
@@ -77,8 +78,11 @@ jobs:
       - name: Run unit tests
         run: cargo nextest run --workspace --lib --all-features
 
-      - name: Run integration tests
-        run: cargo nextest run --workspace --test '*' --all-features
+      - name: Run integration tests (non-receiver)
+        run: cargo nextest run --workspace --test '*' --all-features --exclude otelite-receiver
+
+      - name: Run integration tests (receiver, single-threaded to avoid port conflicts)
+        run: cargo nextest run -p otelite-receiver --test '*' --all-features --test-threads=1
 
       - name: Run doc tests
         run: cargo test --workspace --doc --all-features
@@ -116,12 +120,13 @@ jobs:
         run: python3 .github/scripts/check_coverage.py coverage.json
         env:
           COVERAGE_THRESHOLD_WORKSPACE: ${{ env.COVERAGE_THRESHOLD_WORKSPACE }}
-          COVERAGE_THRESHOLD_ROTEL_CLI: ${{ env.COVERAGE_THRESHOLD_ROTEL_CLI }}
-          COVERAGE_THRESHOLD_ROTEL_CORE: ${{ env.COVERAGE_THRESHOLD_ROTEL_CORE }}
-          COVERAGE_THRESHOLD_ROTEL_DASHBOARD: ${{ env.COVERAGE_THRESHOLD_ROTEL_DASHBOARD }}
-          COVERAGE_THRESHOLD_ROTEL_RECEIVER: ${{ env.COVERAGE_THRESHOLD_ROTEL_RECEIVER }}
-          COVERAGE_THRESHOLD_ROTEL_STORAGE: ${{ env.COVERAGE_THRESHOLD_ROTEL_STORAGE }}
-          COVERAGE_THRESHOLD_ROTEL_TUI: ${{ env.COVERAGE_THRESHOLD_ROTEL_TUI }}
+          COVERAGE_THRESHOLD_OTELITE: ${{ env.COVERAGE_THRESHOLD_OTELITE }}
+          COVERAGE_THRESHOLD_OTELITE_CORE: ${{ env.COVERAGE_THRESHOLD_OTELITE_CORE }}
+          COVERAGE_THRESHOLD_OTELITE_API: ${{ env.COVERAGE_THRESHOLD_OTELITE_API }}
+          COVERAGE_THRESHOLD_OTELITE_CLIENT: ${{ env.COVERAGE_THRESHOLD_OTELITE_CLIENT }}
+          COVERAGE_THRESHOLD_OTELITE_RECEIVER: ${{ env.COVERAGE_THRESHOLD_OTELITE_RECEIVER }}
+          COVERAGE_THRESHOLD_OTELITE_STORAGE: ${{ env.COVERAGE_THRESHOLD_OTELITE_STORAGE }}
+          COVERAGE_THRESHOLD_OTELITE_TUI: ${{ env.COVERAGE_THRESHOLD_OTELITE_TUI }}
 
       - name: Upload coverage JSON artifact
         uses: actions/upload-artifact@v4
@@ -157,12 +162,13 @@ jobs:
             - Workspace line coverage: **${{ steps.coverage.outputs.workspace }}%**
             - Minimum workspace threshold: **${{ env.COVERAGE_THRESHOLD_WORKSPACE }}%**
             - Per-crate thresholds enforced in CI:
-              - `otelite-cli`: `${{ env.COVERAGE_THRESHOLD_ROTEL_CLI }}%`
-              - `otelite-core`: `${{ env.COVERAGE_THRESHOLD_ROTEL_CORE }}%`
-              - `otelite-dashboard`: `${{ env.COVERAGE_THRESHOLD_ROTEL_DASHBOARD }}%`
-              - `otelite-receiver`: `${{ env.COVERAGE_THRESHOLD_ROTEL_RECEIVER }}%`
-              - `otelite-storage`: `${{ env.COVERAGE_THRESHOLD_ROTEL_STORAGE }}%`
-              - `otelite-tui`: `${{ env.COVERAGE_THRESHOLD_ROTEL_TUI }}%`
+              - `otelite`: `${{ env.COVERAGE_THRESHOLD_OTELITE }}%`
+              - `otelite-core`: `${{ env.COVERAGE_THRESHOLD_OTELITE_CORE }}%`
+              - `otelite-api`: `${{ env.COVERAGE_THRESHOLD_OTELITE_API }}%`
+              - `otelite-client`: `${{ env.COVERAGE_THRESHOLD_OTELITE_CLIENT }}%`
+              - `otelite-receiver`: `${{ env.COVERAGE_THRESHOLD_OTELITE_RECEIVER }}%`
+              - `otelite-storage`: `${{ env.COVERAGE_THRESHOLD_OTELITE_STORAGE }}%`
+              - `otelite-tui`: `${{ env.COVERAGE_THRESHOLD_OTELITE_TUI }}%`
             - Detailed HTML and JSON reports are available in the workflow artifacts and in Codecov trends.
 
   security:

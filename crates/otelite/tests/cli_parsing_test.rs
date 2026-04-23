@@ -104,8 +104,8 @@ fn test_output_format_from_string_invalid() {
 
 #[test]
 fn test_config_endpoint_from_env_default() {
-    // When ROTEL_ENDPOINT is not set, should return default
-    std::env::remove_var("ROTEL_ENDPOINT");
+    // When OTELITE_ENDPOINT is not set, should return default
+    std::env::remove_var("OTELITE_ENDPOINT");
     let endpoint = Config::endpoint_from_env();
     assert_eq!(endpoint, "http://localhost:3000");
 }

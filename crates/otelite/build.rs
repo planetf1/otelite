@@ -18,7 +18,7 @@ fn main() {
         .filter(|s| !s.is_empty())
         .unwrap_or_else(|| "unknown".to_string());
 
-    println!("cargo:rustc-env=ROTEL_GIT_SHA={sha}");
+    println!("cargo:rustc-env=OTELITE_GIT_SHA={sha}");
 
     // Emit build date in YYYY-MM-DD format
     let date = std::env::var("SOURCE_DATE_EPOCH")
@@ -41,7 +41,7 @@ fn main() {
             epoch_days_to_date(days)
         });
 
-    println!("cargo:rustc-env=ROTEL_BUILD_DATE={date}");
+    println!("cargo:rustc-env=OTELITE_BUILD_DATE={date}");
 
     // Re-run if HEAD changes
     println!("cargo:rerun-if-changed=../../.git/HEAD");

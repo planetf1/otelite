@@ -56,8 +56,8 @@ let config = StorageConfig::default()
 ### Environment Variables
 
 ```bash
-export ROTEL_DATA_DIR=/custom/path
-export ROTEL_RETENTION_DAYS=30
+export OTELITE_DATA_DIR=/custom/path
+export OTELITE_RETENTION_DAYS=30
 ```
 
 ```rust

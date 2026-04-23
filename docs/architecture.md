@@ -2,7 +2,7 @@
 
 This document describes the actual architecture, design decisions, and component interactions in Otelite.
 
-**Last Updated**: 2026-04-19
+**Last Updated**: 2026-04-23
 
 ---
 
@@ -20,14 +20,15 @@ Single binary, zero external dependencies, embedded storage.
 otelite-core        ← telemetry domain types (no deps on other crates)
 otelite-storage     ← SQLite persistence (depends on: otelite-core)
 otelite-receiver    ← OTLP ingest (depends on: otelite-core, otelite-storage)
-otelite-server      ← HTTP server: REST API + static web UI (depends on: otelite-core, otelite-storage)
-otelite-cli         ← CLI binary (depends on: otelite-core, otelite-server, otelite-receiver, otelite-storage)
-otelite-tui         ← ratatui terminal UI (depends on: otelite-core)
+otelite-api         ← HTTP server: REST API + static web UI (depends on: otelite-core, otelite-storage)
+otelite-client      ← HTTP client for the REST API (depends on: otelite-core)
+otelite             ← CLI binary (depends on: otelite-core, otelite-api, otelite-client, otelite-receiver, otelite-storage)
+otelite-tui         ← ratatui terminal UI (depends on: otelite-core, otelite-client)
 ```
 
 
 
-The CLI is the integration point: it wires receiver + server + storage into one process for the `dashboard` subcommand.
+The `otelite` binary is the integration point: it wires receiver + api + storage into one process for the `serve` subcommand.
 
 ---
 
@@ -49,7 +50,7 @@ otelite-storage (SQLite, WAL mode, FTS5)
   - Configurable retention + auto-purge
         │
         ▼
-otelite-server (HTTP server, port 3000)
+otelite-api (HTTP server, port 3000)
   - REST API: /api/logs, /api/traces, /api/metrics (+ export, aggregate endpoints)
   - Converts storage types to JSON response types
   - LRU query cache (100 entries, 5-min TTL)
@@ -57,7 +58,7 @@ otelite-server (HTTP server, port 3000)
         │
    ┌────┴─────┐
    ▼          ▼
-otelite-cli   otelite-tui
+otelite     otelite-tui
 (CLI)       (ratatui terminal UI)
 ```
 
@@ -119,7 +120,7 @@ Only implementation: `SqliteBackend` (`src/sqlite/mod.rs`). Uses WAL mode, FTS5 
 
 **There is no mock implementation.** Tests use `SqliteBackend` with an in-memory or temp-dir database.
 
-**Data Retention:** By default, otelite retains 90 days of telemetry data. The retention window is configurable via the `ROTEL_RETENTION_DAYS` environment variable (set to `0` to disable automatic purging). A background task runs daily at 02:00 local time and deletes records older than the retention threshold in batches of 10,000 rows to avoid locking the database. Users can also trigger an immediate full purge via `POST /api/admin/purge` or the "Clear all data" button in the web UI status popover.
+**Data Retention:** By default, otelite retains 90 days of telemetry data. The retention window is configurable via the `OTELITE_RETENTION_DAYS` environment variable (set to `0` to disable automatic purging). A background task runs daily at 02:00 local time and deletes records older than the retention threshold in batches of 10,000 rows to avoid locking the database. Users can also trigger an immediate full purge via `POST /api/admin/purge` or the "Clear all data" button in the web UI status popover.
 
 ---
 
@@ -137,11 +138,11 @@ Does not depend on `otelite-server` — decoupled from the query layer.
 
 ---
 
-### otelite-server
+### otelite-api
 
-**Path:** `crates/otelite-server/`
+**Path:** `crates/otelite-api/`
 
-HTTP server exposing the REST API and serving the embedded web UI. Despite the name, this is a server crate, not a frontend crate.
+HTTP server exposing the REST API and serving the embedded web UI.
 
 **`AppState`**: `Arc<dyn StorageBackend>` + `QueryCache` (LRU cache, 100 entries, 5-min TTL).
 
@@ -162,21 +163,21 @@ HTTP server exposing the REST API and serving the embedded web UI. Despite the n
 | `/api/metrics/export` | export metrics as JSON or CSV |
 | fallback | serve embedded static files |
 
-**API response types** are defined in `src/api/{logs,traces,metrics}.rs`. These types are duplicated in `otelite-cli/src/api/models.rs` and `otelite-tui/src/api/models.rs` — a known technical debt (bead otelite-d9q).
+**API response types** are defined in `src/api/{logs,traces,metrics}.rs`. These types are duplicated in `otelite/src/api/models.rs` and `otelite-tui/src/api/models.rs` — a known technical debt (bead otelite-d9q).
 
 > **Missing derives:** `LogsResponse`, `LogEntry`, `TracesResponse`, `TraceEntry`, `TraceDetail`, `SpanEntry`, `SpanStatus`, `SpanEvent` currently only derive `Serialize`, not `Deserialize`. This blocks test writing (bead otelite-6e8).
 
 ---
 
-### otelite-cli
+### otelite
 
-**Path:** `crates/otelite-cli/`
+**Path:** `crates/otelite/`
 
 clap-based CLI binary. Subcommands:
 
 | Command | Action |
 |---------|--------|
-| `otelite dashboard` | Start full server (receiver + REST API + web UI). This is the default subcommand. |
+| `otelite serve` | Start full server (receiver + REST API + web UI). This is the default subcommand. |
 | `otelite logs list` | List logs with filters |
 | `otelite logs search <query>` | Full-text search across logs |
 | `otelite logs show <timestamp>` | Show single log by timestamp |
@@ -200,7 +201,7 @@ Global flags: `--endpoint` (default: `http://localhost:3000`), `--format` (prett
 
 **Path:** `crates/otelite-tui/`
 
-ratatui-based terminal UI. Standalone binary, connects to otelite-server REST API via HTTP.
+ratatui-based terminal UI. Standalone binary, connects to otelite-api REST API via HTTP.
 
 Default endpoint: `http://localhost:3000`.
 

@@ -18,7 +18,7 @@ fn main() {
         .filter(|s| !s.is_empty())
         .unwrap_or_else(|| "unknown".to_string());
 
-    println!("cargo:rustc-env=ROTEL_GIT_SHA={sha}");
+    println!("cargo:rustc-env=OTELITE_GIT_SHA={sha}");
 
     // Re-run if HEAD changes
     println!("cargo:rerun-if-changed=../../.git/HEAD");

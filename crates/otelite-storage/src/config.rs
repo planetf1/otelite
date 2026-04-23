@@ -48,21 +48,21 @@ impl StorageConfig {
     pub fn from_env() -> Result<Self> {
         let mut config = Self::default();
 
-        if let Ok(data_dir) = std::env::var("ROTEL_DATA_DIR") {
+        if let Ok(data_dir) = std::env::var("OTELITE_DATA_DIR") {
             config.data_dir = PathBuf::from(data_dir);
         }
 
-        if let Ok(retention_days) = std::env::var("ROTEL_RETENTION_DAYS") {
+        if let Ok(retention_days) = std::env::var("OTELITE_RETENTION_DAYS") {
             config.retention_days = retention_days
                 .parse()
                 .map_err(|e| StorageError::ConfigError(format!("Invalid retention_days: {}", e)))?;
         }
 
-        if let Ok(purge_schedule) = std::env::var("ROTEL_PURGE_SCHEDULE") {
+        if let Ok(purge_schedule) = std::env::var("OTELITE_PURGE_SCHEDULE") {
             config.purge_schedule = purge_schedule;
         }
 
-        if let Ok(auto_purge) = std::env::var("ROTEL_AUTO_PURGE_ENABLED") {
+        if let Ok(auto_purge) = std::env::var("OTELITE_AUTO_PURGE_ENABLED") {
             config.auto_purge_enabled = auto_purge.parse().unwrap_or(true);
         }
 

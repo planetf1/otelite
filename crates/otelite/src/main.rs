@@ -19,11 +19,11 @@ use error::{Error, Result};
 
 #[derive(Parser, Debug)]
 #[command(name = "otelite")]
-#[command(version = concat!(env!("CARGO_PKG_VERSION"), " (", env!("ROTEL_GIT_SHA"), ")"))]
+#[command(version = concat!(env!("CARGO_PKG_VERSION"), " (", env!("OTELITE_GIT_SHA"), ")"))]
 #[command(about = "Lightweight OpenTelemetry receiver and dashboard", long_about = None)]
 struct Cli {
     /// Otelite backend endpoint URL
-    #[arg(long, env = "ROTEL_ENDPOINT", global = true)]
+    #[arg(long, env = "OTELITE_ENDPOINT", global = true)]
     endpoint: Option<String>,
 
     /// Output format (pretty or json)
@@ -752,7 +752,13 @@ async fn handle_tui_command(
         refresh_interval: std::time::Duration::from_secs(refresh_interval),
         initial_view: view,
         debug,
-        version: concat!(env!("CARGO_PKG_VERSION"), " (", env!("ROTEL_GIT_SHA"), ")").to_string(),
+        version: concat!(
+            env!("CARGO_PKG_VERSION"),
+            " (",
+            env!("OTELITE_GIT_SHA"),
+            ")"
+        )
+        .to_string(),
     };
 
     // Run the TUI application

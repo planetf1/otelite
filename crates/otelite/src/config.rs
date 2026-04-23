@@ -84,7 +84,7 @@ impl Config {
 
     /// Get endpoint from environment variable or use default
     pub fn endpoint_from_env() -> String {
-        std::env::var("ROTEL_ENDPOINT").unwrap_or_else(|_| "http://localhost:3000".to_string())
+        std::env::var("OTELITE_ENDPOINT").unwrap_or_else(|_| "http://localhost:3000".to_string())
     }
 
     /// Get the config directory path (~/.config/otelite)

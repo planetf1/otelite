@@ -27,8 +27,13 @@ impl Default for Config {
             refresh_interval: Duration::from_secs(2),
             initial_view: "logs".to_string(),
             debug: false,
-            version: concat!(env!("CARGO_PKG_VERSION"), " (", env!("ROTEL_GIT_SHA"), ")")
-                .to_string(),
+            version: concat!(
+                env!("CARGO_PKG_VERSION"),
+                " (",
+                env!("OTELITE_GIT_SHA"),
+                ")"
+            )
+            .to_string(),
         }
     }
 }

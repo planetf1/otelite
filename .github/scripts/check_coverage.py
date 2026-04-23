@@ -12,12 +12,13 @@ from pathlib import Path
 def _load_thresholds() -> dict[str, float]:
     thresholds = {
         "workspace": float(os.environ["COVERAGE_THRESHOLD_WORKSPACE"]),
-        "rotel-cli": float(os.environ["COVERAGE_THRESHOLD_ROTEL_CLI"]),
-        "rotel-core": float(os.environ["COVERAGE_THRESHOLD_ROTEL_CORE"]),
-        "rotel-dashboard": float(os.environ["COVERAGE_THRESHOLD_ROTEL_DASHBOARD"]),
-        "rotel-receiver": float(os.environ["COVERAGE_THRESHOLD_ROTEL_RECEIVER"]),
-        "rotel-storage": float(os.environ["COVERAGE_THRESHOLD_ROTEL_STORAGE"]),
-        "rotel-tui": float(os.environ["COVERAGE_THRESHOLD_ROTEL_TUI"]),
+        "otelite": float(os.environ["COVERAGE_THRESHOLD_OTELITE"]),
+        "otelite-core": float(os.environ["COVERAGE_THRESHOLD_OTELITE_CORE"]),
+        "otelite-api": float(os.environ["COVERAGE_THRESHOLD_OTELITE_API"]),
+        "otelite-client": float(os.environ["COVERAGE_THRESHOLD_OTELITE_CLIENT"]),
+        "otelite-receiver": float(os.environ["COVERAGE_THRESHOLD_OTELITE_RECEIVER"]),
+        "otelite-storage": float(os.environ["COVERAGE_THRESHOLD_OTELITE_STORAGE"]),
+        "otelite-tui": float(os.environ["COVERAGE_THRESHOLD_OTELITE_TUI"]),
     }
     return thresholds
 
