@@ -10,6 +10,15 @@ on:
         description: 'Tag or ref to publish (e.g. v0.1.1)'
         required: true
         type: string
+  workflow_call:
+    inputs:
+      ref:
+        description: 'Tag or ref to publish (e.g. v0.1.1)'
+        required: true
+        type: string
+    secrets:
+      CARGO_REGISTRY_TOKEN:
+        required: true
 
 env:
   CARGO_TERM_COLOR: always

@@ -1,6 +1,6 @@
 name: Release
 
-# Bumps version, creates a tag, and dispatches publish.yml.
+# Bumps version, creates a tag, and calls publish.yml as a reusable workflow.
 #
 # Triggers:
 #   - Every push to main bumps a patch version automatically.
@@ -9,6 +9,9 @@ name: Release
 #
 # The skip condition on the job prevents the version-bump commit itself
 # from re-triggering this workflow.
+#
+# Note: GITHUB_TOKEN pushes do not trigger other workflows (GitHub design).
+# publish.yml is called directly as a reusable workflow instead.
 
 on:
   push:
@@ -37,6 +40,8 @@ jobs:
     runs-on: ubuntu-latest
     # Guard: the version-bump commit must not re-trigger this workflow.
     if: "!startsWith(github.event.head_commit.message, 'chore: release v')"
+    outputs:
+      new_version: ${{ steps.bump.outputs.new }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -83,3 +88,12 @@ jobs:
           echo "### Released v${{ steps.bump.outputs.new }}" >> "$GITHUB_STEP_SUMMARY"
           echo "Bumped \`${{ steps.bump.outputs.old }}\` → \`${{ steps.bump.outputs.new }}\`" >> "$GITHUB_STEP_SUMMARY"
           echo "Tag \`v${{ steps.bump.outputs.new }}\` pushed — publish workflow triggered." >> "$GITHUB_STEP_SUMMARY"
+
+  publish:
+    name: Publish to crates.io
+    needs: release
+    uses: ./.github/workflows/publish.yml
+    with:
+      ref: "v${{ needs.release.outputs.new_version }}"
+    secrets:
+      CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
