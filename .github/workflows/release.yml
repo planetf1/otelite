@@ -78,11 +78,6 @@ jobs:
           git tag "v${{ steps.bump.outputs.new }}"
           git push origin main "v${{ steps.bump.outputs.new }}"
 
-      - name: Trigger publish workflow
-        run: gh workflow run publish.yml --field ref="v${{ steps.bump.outputs.new }}"
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
       - name: Summary
         run: |
           echo "### Released v${{ steps.bump.outputs.new }}" >> "$GITHUB_STEP_SUMMARY"
