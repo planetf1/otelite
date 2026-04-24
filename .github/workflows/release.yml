@@ -1,15 +1,18 @@
 name: Release
 
-# Creates a version bump commit + tag, which triggers publish.yml.
+# Bumps version, creates a tag, and dispatches publish.yml.
 #
-# Manual dispatch (recommended): go to Actions → Release → Run workflow,
-# pick patch / minor / major. Or from the CLI:
-#   gh workflow run release.yml --field bump=patch
+# Triggers:
+#   - Every push to main bumps a patch version automatically.
+#   - Manual dispatch: Actions → Release → Run workflow (patch/minor/major).
+#     CLI: gh workflow run release.yml --field bump=patch
 #
-# Every-merge auto-publish: uncomment the two lines marked AUTO-PUBLISH below.
-# A patch is bumped on every push to main. The skip condition prevents loops.
+# The skip condition on the job prevents the version-bump commit itself
+# from re-triggering this workflow.
 
 on:
+  push:
+    branches: [main]
   workflow_dispatch:
     inputs:
       bump:
@@ -21,9 +24,6 @@ on:
           - patch
           - minor
           - major
-  # AUTO-PUBLISH: uncomment to bump + publish a patch on every merge to main
-  # push:
-  #   branches: [main]
 
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
@@ -35,8 +35,7 @@ jobs:
   release:
     name: Bump version and tag
     runs-on: ubuntu-latest
-    # AUTO-PUBLISH: this guard prevents the version-bump commit from
-    # triggering another release. Keep it even when auto-publish is enabled.
+    # Guard: the version-bump commit must not re-trigger this workflow.
     if: "!startsWith(github.event.head_commit.message, 'chore: release v')"
     steps:
       - uses: actions/checkout@v4
@@ -80,9 +79,7 @@ jobs:
           git push origin main "v${{ steps.bump.outputs.new }}"
 
       - name: Trigger publish workflow
-        run: |
-          gh workflow run publish.yml --ref "v${{ steps.bump.outputs.new }}" \
-            --field ref="v${{ steps.bump.outputs.new }}"
+        run: gh workflow run publish.yml --field ref="v${{ steps.bump.outputs.new }}"
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
