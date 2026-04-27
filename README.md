@@ -32,6 +32,7 @@ Open `http://localhost:3000` in your browser to view telemetry.
 - **Web Dashboard**: View and filter telemetry data at `http://localhost:3000`
 - **Terminal UI**: Full-featured TUI with `otelite tui`
 - **CLI**: Query and export data with `otelite logs`, `otelite traces`, `otelite metrics`, `otelite usage`
+- **Offline import**: Load telemetry from JSONL files with `otelite import` — useful for CI artifacts and air-gapped environments
 - **Single Binary**: Zero runtime dependencies
 - **GenAI/LLM support**: First-class OTel GenAI semconv — token counts, cache hits, tool calls, model routing
 

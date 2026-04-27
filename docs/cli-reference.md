@@ -202,6 +202,55 @@ Flags:
 
 ---
 
+## Importing from files
+
+`otelite import` loads telemetry from a newline-delimited JSON file (JSONL) without a running
+receiver. Each line must be a complete OTLP JSON export request — the format produced by standard
+OTLP file exporters.
+
+### Import into the default database
+
+```bash
+otelite import telemetry.jsonl
+```
+
+### Import into an isolated database
+
+Useful for CI artifacts or any data you want to keep separate from your live session:
+
+```bash
+otelite import telemetry.jsonl --storage-path ./ci-run-42
+otelite serve --storage-path ./ci-run-42    # browse the imported data
+```
+
+### Force signal type (skip auto-detection)
+
+```bash
+otelite import metrics.jsonl --signal-type metrics
+otelite import spans.jsonl   --signal-type traces
+otelite import app.jsonl     --signal-type logs
+```
+
+### Read from stdin
+
+```bash
+cat metrics.jsonl | otelite import -
+```
+
+Signal type is auto-detected from the top-level key of the first non-empty line
+(`resourceMetrics`, `resourceLogs`, or `resourceSpans`). A summary is printed to stderr on
+completion:
+
+```text
+Import complete: 1247 records imported (0 errors, 3 empty lines skipped)
+```
+
+> **Note on historical data**: the metrics web UI time range selector offers presets up to 24h.
+> Data older than that is still stored and queryable via `otelite metrics list`, but will not
+> appear in the dashboard graphs without selecting a wider time range.
+
+---
+
 ## Common patterns
 
 ```bash
