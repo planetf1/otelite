@@ -24,6 +24,8 @@ pub enum Error {
     JsonError(serde_json::Error),
     /// IO error
     IoError(std::io::Error),
+    /// Storage error
+    StorageError(String),
 }
 
 impl fmt::Display for Error {
@@ -37,6 +39,7 @@ impl fmt::Display for Error {
             Error::HttpError(err) => write!(f, "HTTP error: {}", err),
             Error::JsonError(err) => write!(f, "JSON error: {}", err),
             Error::IoError(err) => write!(f, "IO error: {}", err),
+            Error::StorageError(msg) => write!(f, "Storage error: {}", msg),
         }
     }
 }
@@ -96,6 +99,12 @@ impl From<otelite_client::Error> for Error {
 impl From<std::io::Error> for Error {
     fn from(err: std::io::Error) -> Self {
         Error::IoError(err)
+    }
+}
+
+impl From<otelite_storage::StorageError> for Error {
+    fn from(e: otelite_storage::StorageError) -> Self {
+        Error::StorageError(e.to_string())
     }
 }
 

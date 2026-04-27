@@ -67,27 +67,27 @@ enum Commands {
     /// Start the server with OTLP receivers in the foreground (default if no subcommand)
     #[command(
         alias = "dashboard",
-        after_help = "Examples:\n  otelite serve\n  otelite serve --addr 0.0.0.0:8080 --storage-path /data/otelite.db"
+        after_help = "Examples:\n  otelite serve\n  otelite serve --addr 0.0.0.0:8080 --storage-path /data/myproject"
     )]
     Serve {
         /// Server bind address
         #[arg(long, default_value = "127.0.0.1:3000")]
         addr: SocketAddr,
 
-        /// Storage database path
+        /// Directory for the SQLite database (database file is always named otelite.db inside this directory)
         #[arg(long, default_value = "otelite.db")]
         storage_path: String,
     },
     /// Run `serve` as a background daemon
     #[command(
-        after_help = "Examples:\n  otelite start\n  otelite start --addr 0.0.0.0:3000 --storage-path /data/otelite.db"
+        after_help = "Examples:\n  otelite start\n  otelite start --addr 0.0.0.0:3000 --storage-path /data/myproject"
     )]
     Start {
         /// Server bind address
         #[arg(long, default_value = "127.0.0.1:3000")]
         addr: String,
 
-        /// Storage database path
+        /// Directory for the SQLite database (database file is always named otelite.db inside this directory)
         #[arg(long, default_value = "otelite.db")]
         storage_path: String,
     },
@@ -97,14 +97,14 @@ enum Commands {
     /// Stop the running daemon and start a fresh one.
     /// Picks up a freshly compiled binary if you ran `cargo build --release` first.
     #[command(
-        after_help = "Examples:\n  otelite restart\n  otelite restart --addr 0.0.0.0:3000 --storage-path /data/otelite.db"
+        after_help = "Examples:\n  otelite restart\n  otelite restart --addr 0.0.0.0:3000 --storage-path /data/myproject"
     )]
     Restart {
         /// Server bind address
         #[arg(long, default_value = "127.0.0.1:3000")]
         addr: String,
 
-        /// Storage database path
+        /// Directory for the SQLite database (database file is always named otelite.db inside this directory)
         #[arg(long, default_value = "otelite.db")]
         storage_path: String,
     },
@@ -168,6 +168,22 @@ enum Commands {
         /// Enable debug logging
         #[arg(long)]
         debug: bool,
+    },
+    /// Import telemetry data from a JSONL file into a local database (no server required)
+    #[command(
+        after_help = "Each line must be a complete OTLP JSON export request (ExportMetricsServiceRequest, ExportLogsServiceRequest, or ExportTraceServiceRequest).\n\nExamples:\n  otelite import ci-metrics.jsonl\n  otelite import --signal-type metrics build.jsonl\n  otelite import --storage-path ./ci-run-42 build.jsonl\n  otelite serve --storage-path ./ci-run-42   # browse imported data"
+    )]
+    Import {
+        /// Path to JSONL file (use '-' to read from stdin)
+        file: String,
+
+        /// Signal type to import: metrics, logs, or traces (auto-detected if omitted)
+        #[arg(long)]
+        signal_type: Option<String>,
+
+        /// Data directory for the target database (default: ~/.otelite/data)
+        #[arg(long)]
+        storage_path: Option<String>,
     },
 }
 
@@ -481,6 +497,14 @@ async fn run_cli() -> Result<()> {
             view,
             debug,
         }) => handle_tui_command(api_url, refresh_interval, view, debug).await,
+        Some(Commands::Import {
+            file,
+            signal_type,
+            storage_path,
+        }) => {
+            commands::import::handle_import(&file, signal_type.as_deref(), storage_path.as_deref())
+                .await
+        },
         None => {
             // Default: run dashboard
             run_dashboard("127.0.0.1:3000".parse().unwrap(), "otelite.db".to_string()).await
