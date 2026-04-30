@@ -3,6 +3,7 @@
 [![crates.io](https://img.shields.io/crates/v/otelite.svg)](https://crates.io/crates/otelite)
 [![CI](https://github.com/planetf1/otelite/actions/workflows/ci.yml/badge.svg)](https://github.com/planetf1/otelite/actions/workflows/ci.yml)
 [![License](https://img.shields.io/badge/license-Apache%202.0-blue.svg)](LICENSE)
+[![Homebrew](https://img.shields.io/badge/homebrew-planetf1%2Ftap-orange)](https://github.com/planetf1/homebrew-tap)
 
 **Lightweight OpenTelemetry receiver and dashboard for local development**
 
@@ -10,10 +11,31 @@ Otelite is a single-binary observability tool that receives OpenTelemetry data (
 
 > **Personal project** — developed and maintained on a best-efforts basis by [@planetf1](https://github.com/planetf1). Not an official or supported product. Contributions and feedback welcome via GitHub issues and pull requests.
 
-## Quick Start
+## Install
+
+**macOS (Homebrew) — recommended:**
+
+```bash
+brew install planetf1/tap/otelite
+```
+
+Supports Apple Silicon and Intel. To keep up to date: `brew upgrade otelite`.
+
+**Linux / any platform with Rust:**
 
 ```bash
 cargo install otelite
+```
+
+**Shell script (Linux/macOS, no Rust required):**
+
+```bash
+curl --proto '=https' --tlsv1.2 -LsSf https://github.com/planetf1/otelite/releases/latest/download/otelite-installer.sh | sh
+```
+
+## Quick Start
+
+```bash
 otelite serve
 ```
 
