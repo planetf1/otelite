@@ -1069,3 +1069,85 @@ async fn test_openapi_spec() {
     assert!(spec.is_object());
     assert!(spec.get("openapi").is_some());
 }
+
+#[tokio::test]
+async fn test_logs_filter_by_trace_id() {
+    let (storage, _tmp) = setup_test_storage().await;
+
+    let mut log_with_trace = create_test_log(1000, SeverityLevel::Info, "log with trace abc");
+    log_with_trace.trace_id = Some("abc123def456abc1".to_string());
+    log_with_trace.span_id = Some("span001".to_string());
+
+    let log_no_trace = create_test_log(2000, SeverityLevel::Info, "log without trace");
+
+    let mut log_other_trace = create_test_log(3000, SeverityLevel::Info, "log with other trace");
+    log_other_trace.trace_id = Some("xyz789xyz789xyz7".to_string());
+
+    storage.write_log(&log_with_trace).await.unwrap();
+    storage.write_log(&log_no_trace).await.unwrap();
+    storage.write_log(&log_other_trace).await.unwrap();
+
+    // Matching trace_id returns only that log
+    let response = build_test_router(Arc::clone(&storage))
+        .oneshot(
+            Request::builder()
+                .uri("/api/logs?trace_id=abc123def456abc1")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), StatusCode::OK);
+    let body = response.into_body().collect().await.unwrap().to_bytes();
+    let logs: LogsResponse = serde_json::from_slice(&body).unwrap();
+    assert_eq!(logs.total, 1, "expected exactly one log for trace abc");
+    assert_eq!(logs.logs[0].body, "log with trace abc");
+    assert_eq!(
+        logs.logs[0].trace_id,
+        Some("abc123def456abc1".to_string())
+    );
+
+    // Non-existent trace_id returns empty result
+    let response2 = build_test_router(Arc::clone(&storage))
+        .oneshot(
+            Request::builder()
+                .uri("/api/logs?trace_id=doesnotexist0000")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(response2.status(), StatusCode::OK);
+    let body2 = response2.into_body().collect().await.unwrap().to_bytes();
+    let logs2: LogsResponse = serde_json::from_slice(&body2).unwrap();
+    assert_eq!(logs2.total, 0);
+    assert!(logs2.logs.is_empty());
+}
+
+#[tokio::test]
+async fn test_logs_trace_id_empty_string_not_filtered() {
+    let (storage, _tmp) = setup_test_storage().await;
+
+    storage
+        .write_log(&create_test_log(1000, SeverityLevel::Info, "log one"))
+        .await
+        .unwrap();
+
+    // Empty trace_id param is treated as "no filter" — all logs returned
+    let response = build_test_router(storage)
+        .oneshot(
+            Request::builder()
+                .uri("/api/logs?trace_id=")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), StatusCode::OK);
+    let body = response.into_body().collect().await.unwrap().to_bytes();
+    let logs: LogsResponse = serde_json::from_slice(&body).unwrap();
+    assert_eq!(logs.total, 1, "empty trace_id should not filter");
+}

@@ -13,6 +13,7 @@ class LogsView {
             startTime: null,
             endTime: null
         };
+        this.filters.trace_id = null;
         this.attrFilters = [];
         this.trStart = null;
         this.trEnd = null;
@@ -316,6 +317,46 @@ class LogsView {
         container.querySelectorAll('.log-entry').forEach((entry, index) => {
             entry.addEventListener('click', () => this.toggleLogExpansion(index));
         });
+
+        // JSON expand/collapse toggle
+        container.querySelectorAll('.json-toggle').forEach(toggle => {
+            toggle.addEventListener('click', (e) => {
+                e.stopPropagation();
+                const wrapper = toggle.closest('.attribute-value-json, .log-body-json');
+                const jsonBlock = wrapper.querySelector('.json-block');
+                const rawBlock = wrapper.querySelector('.raw-block');
+                const expanded = toggle.classList.contains('json-toggle-open');
+                if (expanded) {
+                    jsonBlock.classList.add('json-collapsed');
+                    rawBlock.classList.add('json-collapsed');
+                    toggle.classList.remove('json-toggle-open');
+                } else {
+                    const rawBtn = wrapper.querySelector('.json-raw-btn');
+                    const showRaw = rawBtn && rawBtn.classList.contains('active');
+                    jsonBlock.classList.toggle('json-collapsed', showRaw);
+                    rawBlock.classList.toggle('json-collapsed', !showRaw);
+                    toggle.classList.add('json-toggle-open');
+                }
+            });
+        });
+
+        // JSON raw/formatted switch
+        container.querySelectorAll('.json-raw-btn').forEach(btn => {
+            btn.addEventListener('click', (e) => {
+                e.stopPropagation();
+                const wrapper = btn.closest('.attribute-value-json, .log-body-json');
+                const jsonBlock = wrapper.querySelector('.json-block');
+                const rawBlock = wrapper.querySelector('.raw-block');
+                const toggle = wrapper.querySelector('.json-toggle');
+                const isExpanded = toggle.classList.contains('json-toggle-open');
+                const isRaw = btn.classList.contains('active');
+                btn.classList.toggle('active', !isRaw);
+                if (isExpanded) {
+                    jsonBlock.classList.toggle('json-collapsed', !isRaw);
+                    rawBlock.classList.toggle('json-collapsed', isRaw);
+                }
+            });
+        });
     }
 
     /**
@@ -360,8 +401,8 @@ class LogsView {
                     ${headerCols}
                 </div>
                 <div class="log-details" style="display: none;">
-                    <div class="log-body">${this.escapeHtml(log.body)}</div>
-                    ${log.trace_id ? `<div class="log-field"><strong>Trace ID:</strong> ${this.escapeHtml(log.trace_id)}</div>` : ''}
+                    ${this.renderBodyField(log.body)}
+                    ${log.trace_id ? `<div class="log-field"><strong>Trace ID:</strong> <a class="trace-link" onclick="window.app.navigateToTrace('${this.escapeHtml(log.trace_id)}');return false;" href="#" title="View trace">${this.escapeHtml(log.trace_id)}</a></div>` : ''}
                     ${log.span_id ? `<div class="log-field"><strong>Span ID:</strong> ${log.span_id}</div>` : ''}
                     ${Object.keys(attrs).length > 0 ? `
                         <div class="log-field">
@@ -401,15 +442,59 @@ class LogsView {
     renderAttributeValue(value) {
         const formatted = this.tryFormatJsonString(value);
         if (formatted) {
+            const collapsed = formatted.autoExpand ? '' : 'json-collapsed';
+            const toggleOpen = formatted.autoExpand ? ' json-toggle-open' : '';
             return `
                 <div class="attribute-value attribute-value-json">
-                    <span class="attribute-preview">${this.escapeHtml(formatted.preview)}</span>
-                    <pre class="json-block"><code>${this.syntaxHighlightJson(formatted.pretty)}</code></pre>
+                    <div class="json-header">
+                        <span class="json-toggle${toggleOpen}">${this.escapeHtml(formatted.preview)}</span>
+                        <span class="json-raw-btn" title="Toggle raw/formatted">[raw]</span>
+                    </div>
+                    <pre class="json-block ${collapsed}"><code>${this.syntaxHighlightJson(formatted.pretty)}</code></pre>
+                    <pre class="raw-block json-collapsed">${this.escapeHtml(String(value))}</pre>
                 </div>
             `;
         }
 
+        // Value starts with { or [ but failed to parse — likely truncated JSON
+        if (typeof value === 'string') {
+            const trimmed = value.trimStart();
+            if (trimmed.startsWith('{') || trimmed.startsWith('[')) {
+                const preview = trimmed.startsWith('{') ? '{…truncated}' : '[…truncated]';
+                return `
+                    <div class="attribute-value attribute-value-json">
+                        <div class="json-header">
+                            <span class="json-toggle">${this.escapeHtml(preview)}</span>
+                            <span class="json-truncated-badge">truncated</span>
+                            <span class="json-raw-btn" title="Toggle raw/formatted">[raw]</span>
+                        </div>
+                        <pre class="json-block json-collapsed"><code>${this.syntaxHighlightJson(this.repairAndFormatTruncatedJson(value))}</code></pre>
+                        <pre class="raw-block json-collapsed">${this.escapeHtml(String(value))}</pre>
+                    </div>
+                `;
+            }
+        }
+
         return `<span class="attribute-value">${this.escapeHtml(String(value))}</span>`;
+    }
+
+    renderBodyField(body) {
+        const formatted = this.tryFormatJsonString(body);
+        if (formatted) {
+            const collapsed = formatted.autoExpand ? '' : 'json-collapsed';
+            const toggleOpen = formatted.autoExpand ? ' json-toggle-open' : '';
+            return `
+                <div class="log-body log-body-json">
+                    <div class="json-header">
+                        <span class="json-toggle${toggleOpen}">${this.escapeHtml(formatted.preview)}</span>
+                        <span class="json-raw-btn" title="Toggle raw/formatted">[raw]</span>
+                    </div>
+                    <pre class="json-block ${collapsed}"><code>${this.syntaxHighlightJson(formatted.pretty)}</code></pre>
+                    <pre class="raw-block json-collapsed">${this.escapeHtml(body)}</pre>
+                </div>
+            `;
+        }
+        return `<div class="log-body">${this.escapeHtml(body)}</div>`;
     }
 
     renderJsonBlock(value) {
@@ -424,10 +509,14 @@ class LogsView {
 
         try {
             const parsed = JSON.parse(value);
+            if (typeof parsed !== 'object' || parsed === null) {
+                return null;
+            }
             const pretty = JSON.stringify(parsed, null, 2);
             return {
                 preview: this.describeJsonValue(parsed),
-                pretty
+                pretty,
+                autoExpand: pretty.length <= 400
             };
         } catch (_error) {
             return null;
@@ -444,6 +533,76 @@ class LogsView {
         }
 
         return String(value);
+    }
+
+    // Close open brackets/strings so the truncated value can be parsed.
+    // Returns { pretty, wasRepaired } where pretty is the formatted string.
+    repairAndFormatTruncatedJson(str) {
+        // Strip known truncation marker added by the storage layer
+        const markerIdx = str.indexOf('[TRUNCATED');
+        let s = markerIdx >= 0 ? str.slice(0, markerIdx) : str;
+
+        // Walk once to find open contexts (stack of '{' or '[', plus inString state)
+        const stack = [];
+        let inString = false;
+        let escape = false;
+        for (let i = 0; i < s.length; i++) {
+            const ch = s[i];
+            if (escape) { escape = false; continue; }
+            if (inString) {
+                if (ch === '\\') { escape = true; continue; }
+                if (ch === '"') inString = false;
+                continue;
+            }
+            if (ch === '"') { inString = true; continue; }
+            if (ch === '{' || ch === '[') { stack.push(ch); continue; }
+            if (ch === '}' || ch === ']') { stack.pop(); continue; }
+        }
+
+        // Close any open string, strip trailing comma, close open brackets
+        if (inString) s += '"';
+        s = s.trimEnd();
+        while (s.endsWith(',') || s.endsWith(':')) s = s.slice(0, -1).trimEnd();
+        for (let i = stack.length - 1; i >= 0; i--) {
+            s += stack[i] === '{' ? '}' : ']';
+        }
+
+        try {
+            const parsed = JSON.parse(s);
+            return JSON.stringify(parsed, null, 2);
+        } catch (_) {
+            // Repair still failed — fall back to character-by-character indent
+            return this.prettyPrintPartialJson(str);
+        }
+    }
+
+    // Fallback formatter for when JSON repair fails.
+    prettyPrintPartialJson(str) {
+        let out = '';
+        let indent = 0;
+        let inString = false;
+        let escape = false;
+        const pad = () => '  '.repeat(indent);
+        for (let i = 0; i < str.length; i++) {
+            const ch = str[i];
+            if (escape) { out += ch; escape = false; continue; }
+            if (inString) {
+                if (ch === '\\') escape = true;
+                else if (ch === '"') inString = false;
+                out += ch;
+                continue;
+            }
+            switch (ch) {
+                case '"': inString = true; out += ch; break;
+                case '{': case '[': out += ch + '\n' + pad(++indent); break;
+                case '}': case ']': out += '\n' + pad(--indent < 0 ? (indent = 0) : indent) + ch; break;
+                case ',': out += ch + '\n' + pad(); break;
+                case ':': out += ': '; break;
+                case ' ': case '\t': case '\n': case '\r': break;
+                default: out += ch;
+            }
+        }
+        return out;
     }
 
     syntaxHighlightJson(json) {
@@ -497,7 +656,8 @@ class LogsView {
             resource: '',
             search: '',
             startTime: null,
-            endTime: null
+            endTime: null,
+            trace_id: null,
         };
         this.attrFilters = [];
         this._renderAttrChips();
