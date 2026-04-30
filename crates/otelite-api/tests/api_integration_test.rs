@@ -1103,10 +1103,7 @@ async fn test_logs_filter_by_trace_id() {
     let logs: LogsResponse = serde_json::from_slice(&body).unwrap();
     assert_eq!(logs.total, 1, "expected exactly one log for trace abc");
     assert_eq!(logs.logs[0].body, "log with trace abc");
-    assert_eq!(
-        logs.logs[0].trace_id,
-        Some("abc123def456abc1".to_string())
-    );
+    assert_eq!(logs.logs[0].trace_id, Some("abc123def456abc1".to_string()));
 
     // Non-existent trace_id returns empty result
     let response2 = build_test_router(Arc::clone(&storage))

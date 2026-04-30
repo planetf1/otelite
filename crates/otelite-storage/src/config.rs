@@ -36,14 +36,11 @@ impl Default for StorageConfig {
 }
 
 impl StorageConfig {
-    /// Get default data directory using the OS/XDG convention.
-    /// macOS: ~/Library/Application Support/otelite
-    /// Linux: ~/.local/share/otelite
     pub fn default_data_dir() -> PathBuf {
-        dirs::data_dir()
-            .or_else(dirs::home_dir)
+        dirs::home_dir()
             .unwrap_or_else(|| PathBuf::from("."))
-            .join("otelite")
+            .join(".otelite")
+            .join("data")
     }
 
     /// Create configuration from environment variables
@@ -125,6 +122,26 @@ mod tests {
         assert_eq!(config.purge_schedule, "0 2 * * *");
         assert!(config.auto_purge_enabled);
         assert_eq!(config.purge_batch_size, 1000);
+    }
+
+    #[test]
+    fn test_default_data_dir_is_dotfile() {
+        // Must stay under ~/.otelite/data — not ~/Library or ~/.local/share.
+        let dir = StorageConfig::default_data_dir();
+        let home = dirs::home_dir().expect("home dir must exist in test env");
+        assert!(
+            dir.starts_with(&home),
+            "data dir {:?} should be under home {:?}",
+            dir,
+            home
+        );
+        let rel = dir.strip_prefix(&home).unwrap();
+        assert_eq!(
+            rel,
+            std::path::Path::new(".otelite/data"),
+            "data dir must be ~/.otelite/data, got {:?}",
+            dir
+        );
     }
 
     #[test]
