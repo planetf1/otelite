@@ -2041,3 +2041,20 @@ body {
     font-weight: 600;
     color: var(--text-primary);
 }
+
+.footer {
+    text-align: center;
+    padding: 0.75rem;
+    font-size: 0.75rem;
+    color: var(--text-secondary);
+    border-top: 1px solid var(--border-color);
+}
+
+.footer a {
+    color: var(--text-secondary);
+    text-decoration: none;
+}
+
+.footer a:hover {
+    text-decoration: underline;
+}

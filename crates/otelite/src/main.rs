@@ -547,6 +547,8 @@ async fn run_dashboard(addr: SocketAddr, storage_path: Option<PathBuf>) -> Resul
         println!("  otelite traces list");
         println!("  otelite tui\n");
 
+        println!("GitHub: https://github.com/planetf1/otelite\n");
+
         if let Err(e) = Config::create_default_config() {
             eprintln!("Warning: Failed to create config file: {}", e);
         } else {
