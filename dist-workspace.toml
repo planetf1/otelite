@@ -21,5 +21,4 @@ pr-run-mode = "plan"
 cargo-dist-version = "0.31.0"
 # Whether to install an updater program
 install-updater = false
-# Inject the commit SHA so otelite --version shows it without needing fetch-depth: 0
-github-build-setup = "OTELITE_GIT_SHA: ${{ github.sha }}"
+# Note: OTELITE_GIT_SHA is injected via the build-local-artifacts job env in release.yml
