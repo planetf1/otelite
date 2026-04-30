@@ -21,4 +21,6 @@ pr-run-mode = "plan"
 cargo-dist-version = "0.31.0"
 # Whether to install an updater program
 install-updater = false
-# Note: OTELITE_GIT_SHA is injected via the build-local-artifacts job env in release.yml
+# Allow manual modifications to the generated release.yml (workflow_dispatch trigger,
+# OTELITE_GIT_SHA env injection, shell-injection fix)
+allow-dirty = ["ci"]
