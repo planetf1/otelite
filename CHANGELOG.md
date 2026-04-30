@@ -7,7 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## [0.1.9] - 2026-04-30
+## [0.1.10] - 2026-04-30
 
 ### Added
 
@@ -32,16 +32,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `GET /api/logs` response now includes `trace_id` and `span_id` fields in each log entry
   (these were already stored; now surfaced through the API query filter).
 
-### Fixed
-- N/A
-
-### Security
-- Implemented secret detection with gitleaks to prevent credential leaks
-- Added security scanning workflow with cargo-audit, cargo-deny, and semgrep
-
 ## [0.1.0-alpha] - 2026-04-17
 
 ### Added
+
 - Initial alpha release
 - Project constitution with 7 core principles
 - Basic project structure and workspace configuration
@@ -64,58 +58,3 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Contributing guidelines
   - Architecture documentation
   - Changelog
-
-### Known Issues
-- OTLP receiver not yet implemented (planned for 0.2.0)
-- Storage backend not yet implemented (planned for 0.2.0)
-- Dashboard UI not yet implemented (planned for 0.3.0)
-- Query engine not yet implemented (planned for 0.3.0)
-
-### Notes
-- This is an alpha release focused on establishing development infrastructure
-- The project is not yet functional for end users
-- Breaking changes are expected in future releases
-
----
-
-## Release Notes Format
-
-Each release should include:
-
-### Added
-New features and capabilities
-
-### Changed
-Changes to existing functionality
-
-### Deprecated
-Features that will be removed in future releases
-
-### Removed
-Features that have been removed
-
-### Fixed
-Bug fixes
-
-### Security
-Security-related changes and fixes
-
----
-
-## Version History
-
-- **0.1.0-alpha** (2026-04-17): Initial alpha release with development infrastructure
-- **Unreleased**: Current development version
-
----
-
-## Contributing
-
-See [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines on contributing to Otelite.
-
-When making changes, please update this changelog following the [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) format.
-
----
-
-**Maintained by**: Otelite Contributors  
-**License**: Apache 2.0
