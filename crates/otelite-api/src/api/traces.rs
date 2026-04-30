@@ -83,18 +83,21 @@ pub async fn list_traces(
     let query = QueryParams {
         start_time: params.start_time,
         end_time: params.end_time,
-        limit: Some(limit * 10), // Get more spans to aggregate into traces
         trace_id: params.trace_id.clone(),
         ..Default::default()
     };
 
-    // Query spans from storage
-    let spans = state.storage.query_spans(&query).await.map_err(|e| {
-        (
-            StatusCode::INTERNAL_SERVER_ERROR,
-            Json(ErrorResponse::storage_error(format!("query spans: {}", e))),
-        )
-    })?;
+    // Query spans from storage — two-step: get N most-recent trace IDs, then all their spans
+    let spans = state
+        .storage
+        .query_spans_for_trace_list(&query, limit)
+        .await
+        .map_err(|e| {
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(ErrorResponse::storage_error(format!("query spans: {}", e))),
+            )
+        })?;
 
     // Note: spans do not carry resource attributes in the current data model
     // (resource is on Trace, not Span). The resource query param is accepted

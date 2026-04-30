@@ -147,6 +147,12 @@ pub trait StorageBackend: Send + Sync {
     async fn write_metric(&self, metric: &Metric) -> Result<()>;
     async fn query_logs(&self, params: &QueryParams) -> Result<Vec<LogRecord>>;
     async fn query_spans(&self, params: &QueryParams) -> Result<Vec<Span>>;
+    /// Query all spans for the N most-recent distinct traces matching the filters.
+    async fn query_spans_for_trace_list(
+        &self,
+        params: &QueryParams,
+        trace_limit: usize,
+    ) -> Result<Vec<Span>>;
     /// Query metrics (raw time-series rows, latest first).
     async fn query_metrics(&self, params: &QueryParams) -> Result<Vec<Metric>>;
     /// Query metrics returning the single most-recent data point per unique name.

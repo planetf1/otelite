@@ -114,6 +114,51 @@ pub fn query_spans(conn: &Connection, params: &QueryParams) -> Result<Vec<Span>>
     Ok(spans)
 }
 
+/// Query all spans belonging to the N most-recent traces matching the filters.
+/// Avoids the "big trace eats the span budget" problem in list_traces.
+pub fn query_spans_for_trace_list(
+    conn: &Connection,
+    params: &QueryParams,
+    trace_limit: usize,
+) -> Result<Vec<Span>> {
+    let mut sql_params: Vec<Box<dyn rusqlite::ToSql>> = Vec::new();
+
+    let mut subquery = String::from("SELECT trace_id FROM spans WHERE 1=1");
+    if let Some(start) = params.start_time {
+        subquery.push_str(" AND start_time >= ?");
+        sql_params.push(Box::new(start));
+    }
+    if let Some(end) = params.end_time {
+        subquery.push_str(" AND end_time <= ?");
+        sql_params.push(Box::new(end));
+    }
+    if let Some(ref trace_id) = params.trace_id {
+        subquery.push_str(" AND trace_id = ?");
+        sql_params.push(Box::new(trace_id.clone()));
+    }
+    subquery.push_str(" GROUP BY trace_id ORDER BY MAX(start_time) DESC LIMIT ?");
+    sql_params.push(Box::new(trace_limit as i64));
+
+    let query = format!(
+        "SELECT * FROM spans WHERE trace_id IN ({}) ORDER BY start_time DESC",
+        subquery
+    );
+
+    let mut stmt = conn
+        .prepare(&query)
+        .map_err(|e| StorageError::QueryError(format!("Failed to prepare query: {}", e)))?;
+
+    let param_refs: Vec<&dyn rusqlite::ToSql> = sql_params.iter().map(|p| p.as_ref()).collect();
+
+    let spans = stmt
+        .query_map(param_refs.as_slice(), parse_span_row)
+        .map_err(|e| StorageError::QueryError(format!("Failed to execute query: {}", e)))?
+        .collect::<std::result::Result<Vec<_>, _>>()
+        .map_err(|e| StorageError::QueryError(format!("Failed to parse results: {}", e)))?;
+
+    Ok(spans)
+}
+
 /// Query metrics from the database
 pub fn query_metrics(conn: &Connection, params: &QueryParams) -> Result<Vec<Metric>> {
     let mut query = String::from("SELECT * FROM metrics WHERE 1=1");

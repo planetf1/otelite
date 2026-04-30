@@ -125,6 +125,19 @@ impl StorageBackend for SqliteBackend {
         reader::query_spans(conn, params).map_err(StorageError::from)
     }
 
+    async fn query_spans_for_trace_list(
+        &self,
+        params: &QueryParams,
+        trace_limit: usize,
+    ) -> Result<Vec<Span>> {
+        let conn_guard = self.conn.lock().unwrap();
+        let conn = conn_guard
+            .as_ref()
+            .ok_or_else(|| StorageError::QueryError("Database not initialized".to_string()))?;
+
+        reader::query_spans_for_trace_list(conn, params, trace_limit).map_err(StorageError::from)
+    }
+
     async fn query_metrics(&self, params: &QueryParams) -> Result<Vec<Metric>> {
         let conn_guard = self.conn.lock().unwrap();
         let conn = conn_guard
