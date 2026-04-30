@@ -508,9 +508,7 @@ async fn run_cli() -> Result<()> {
             commands::import::handle_import(&file, signal_type.as_deref(), storage_path.as_deref())
                 .await
         },
-        None => {
-            run_dashboard("127.0.0.1:3000".parse().unwrap(), None).await
-        },
+        None => run_dashboard("127.0.0.1:3000".parse().unwrap(), None).await,
     }
 }
 
@@ -560,7 +558,10 @@ async fn run_dashboard(addr: SocketAddr, storage_path: Option<PathBuf>) -> Resul
     }
 
     info!("Starting Otelite Dashboard with OTLP Receiver...");
-    info!("Initializing storage at {}", storage_config.data_dir.display());
+    info!(
+        "Initializing storage at {}",
+        storage_config.data_dir.display()
+    );
     let data_dir_str = storage_config.data_dir.to_string_lossy().into_owned();
 
     let mut storage = SqliteBackend::new(storage_config);

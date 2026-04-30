@@ -42,6 +42,8 @@ jobs:
     if: "!startsWith(github.event.head_commit.message, 'chore: release v')"
     outputs:
       new_version: ${{ steps.bump.outputs.new }}
+    env:
+      RELEASE_TOKEN: ${{ secrets.RELEASE_TOKEN }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -86,7 +88,7 @@ jobs:
       - name: Trigger binary release workflow
         # Requires RELEASE_TOKEN (PAT with repo + workflow scopes).
         # Without it, binary builds must be triggered manually.
-        if: ${{ secrets.RELEASE_TOKEN != '' }}
+        if: ${{ env.RELEASE_TOKEN != '' }}
         env:
           GH_TOKEN: ${{ secrets.RELEASE_TOKEN }}
         run: |

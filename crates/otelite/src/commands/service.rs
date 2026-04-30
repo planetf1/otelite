@@ -132,14 +132,14 @@ pub async fn handle_start(storage_path: Option<PathBuf>, addr: String) -> Result
     if let Some(path) = &storage_path {
         cmd.arg("--storage-path").arg(path);
     }
-    let child = cmd
-        .stdin(Stdio::null())
-        .stdout(log_file_handle.try_clone().map_err(|e| {
-            Error::ConfigError(format!("Failed to clone log file handle: {}", e))
-        })?)
-        .stderr(log_file_handle)
-        .spawn()
-        .map_err(|e| Error::ConfigError(format!("Failed to spawn daemon process: {}", e)))?;
+    let child =
+        cmd.stdin(Stdio::null())
+            .stdout(log_file_handle.try_clone().map_err(|e| {
+                Error::ConfigError(format!("Failed to clone log file handle: {}", e))
+            })?)
+            .stderr(log_file_handle)
+            .spawn()
+            .map_err(|e| Error::ConfigError(format!("Failed to spawn daemon process: {}", e)))?;
 
     let pid = child.id();
     write_pid(pid)?;
