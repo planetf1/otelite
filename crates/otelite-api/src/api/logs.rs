@@ -33,6 +33,10 @@ pub struct LogsQuery {
     #[serde(default)]
     pub end_time: Option<i64>,
 
+    /// Filter by trace ID
+    #[serde(default)]
+    pub trace_id: Option<String>,
+
     /// Maximum number of results (default: 100, max: 1000)
     #[serde(default = "default_limit")]
     pub limit: usize,
@@ -81,6 +85,7 @@ pub async fn list_logs(
         end_time: params.end_time,
         limit: Some(limit),
         search_text: params.search.filter(|s| !s.is_empty()),
+        trace_id: params.trace_id.filter(|s| !s.is_empty()),
         ..Default::default()
     };
 

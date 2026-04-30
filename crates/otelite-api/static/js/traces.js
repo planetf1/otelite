@@ -397,7 +397,7 @@ class TracesView {
                     </div>
                 </div>
                 <div class="trace-info">
-                    <div class="trace-info-item"><strong>Trace ID:</strong> <code>${trace.trace_id}</code></div>
+                    <div class="trace-info-item"><strong>Trace ID:</strong> <a class="trace-link" onclick="window.app.navigateToLogs('${this.escapeHtml(trace.trace_id)}');return false;" href="#" title="View logs for this trace"><code>${this.escapeHtml(trace.trace_id)}</code></a></div>
                     <div class="trace-info-item"><strong>Start:</strong> ${startTime.toISOString()}</div>
                     ${trace.service_names.length > 0 ? `<div class="trace-info-item"><strong>Services:</strong> ${this.escapeHtml(trace.service_names.join(', '))}</div>` : ''}
                 </div>

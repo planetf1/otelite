@@ -1065,6 +1065,65 @@ body {
     color: var(--accent-color);
 }
 
+.json-header {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+}
+
+.json-toggle {
+    cursor: pointer;
+    font-family: 'Courier New', monospace;
+    font-size: 0.75rem;
+    color: var(--accent-color);
+    user-select: none;
+}
+
+.json-toggle::before {
+    content: '▶ ';
+}
+
+.json-toggle.json-toggle-open::before {
+    content: '▼ ';
+}
+
+.json-toggle:hover {
+    opacity: 0.8;
+}
+
+.json-raw-btn {
+    cursor: pointer;
+    font-family: 'Courier New', monospace;
+    font-size: 0.7rem;
+    color: var(--text-secondary);
+    user-select: none;
+    border: 1px solid var(--border-color);
+    border-radius: 3px;
+    padding: 0 3px;
+}
+
+.json-raw-btn:hover {
+    color: var(--text-primary);
+}
+
+.json-raw-btn.active {
+    color: var(--accent-color);
+    border-color: var(--accent-color);
+}
+
+.raw-block {
+    font-family: 'Courier New', monospace;
+    font-size: 0.75rem;
+    background-color: var(--bg-primary);
+    padding: 0.75rem;
+    border: 1px solid var(--border-color);
+    border-radius: 4px;
+    overflow-x: auto;
+    white-space: pre-wrap;
+    word-break: break-all;
+    color: var(--text-primary);
+}
+
 .json-block {
     font-family: 'Courier New', monospace;
     font-size: 0.75rem;
@@ -1073,7 +1132,23 @@ body {
     border: 1px solid var(--border-color);
     border-radius: 4px;
     overflow-x: auto;
-    white-space: pre;
+    white-space: pre-wrap;
+    word-break: break-all;
+}
+
+.json-collapsed {
+    display: none;
+}
+
+.trace-link {
+    color: var(--accent-color);
+    text-decoration: none;
+    font-family: 'Courier New', monospace;
+    font-size: 0.85em;
+}
+
+.trace-link:hover {
+    text-decoration: underline;
 }
 
 .json-key {
@@ -1098,6 +1173,17 @@ body {
 
 .json-punctuation {
     color: var(--text-secondary);
+}
+
+.json-truncated-badge {
+    font-size: 0.65rem;
+    color: var(--warning-color);
+    border: 1px solid var(--warning-color);
+    border-radius: 3px;
+    padding: 0 4px;
+    line-height: 1.4;
+    vertical-align: middle;
+    user-select: none;
 }
 
 .pagination {

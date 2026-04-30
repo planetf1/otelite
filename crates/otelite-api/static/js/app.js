@@ -73,6 +73,29 @@ class App {
     }
 
     /**
+     * Navigate to the Traces view, pre-filtered to a specific trace ID.
+     */
+    navigateToTrace(traceId) {
+        this.switchView('traces');
+        const tracesView = this.views.traces;
+        tracesView.filters.traceId = traceId;
+        const el = document.getElementById('trace-id-filter');
+        if (el) el.value = traceId;
+        tracesView.loadTraces();
+    }
+
+    /**
+     * Navigate to the Logs view, pre-filtered to a specific trace ID.
+     */
+    navigateToLogs(traceId) {
+        this.switchView('logs');
+        const logsView = this.views.logs;
+        logsView.filters.trace_id = traceId;
+        logsView.currentPage = 0;
+        logsView.loadLogs();
+    }
+
+    /**
      * Dispatch custom event for view change
      */
     dispatchViewChange(viewName) {

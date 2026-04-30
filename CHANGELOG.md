@@ -7,29 +7,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.9] - 2026-04-30
+
 ### Added
-- Initial project structure with Cargo workspace
-- Development quality infrastructure (Feature 007)
-  - Comprehensive testing framework with unit, integration, and e2e tests
-  - Code quality tools: rustfmt, clippy with strict linting rules
-  - Secret detection with gitleaks
-  - Pre-commit hooks for automated quality checks
-  - CI/CD pipeline with GitHub Actions
-  - Security scanning workflow
-- Project documentation
-  - README.md with quick start guide
-  - CONTRIBUTING.md with development guidelines
-  - docs/architecture.md with system design documentation
-  - CHANGELOG.md for tracking changes
+
+- **Web UI: JSON field detection and rendering** — attribute values and log bodies that contain
+  JSON objects or arrays are now detected and rendered with syntax highlighting, collapse/expand
+  toggle (▶/▼), and a `[raw]` button to toggle between formatted and original string. Scalar
+  values (numbers, booleans, bare strings) are not affected.
+- **Web UI: smart expand heuristic** — small JSON values (≤ 400 chars formatted) default to
+  expanded; large values (LLM prompts, responses) default to collapsed.
+- **Web UI: truncated JSON handling** — attribute values that appear to be truncated JSON
+  (start with `{` or `[` but fail to parse) are repaired by closing open brackets, then
+  pretty-printed and syntax-highlighted with a small amber `[truncated]` badge. Raw toggle
+  still shows the original unmodified string.
+- **Web UI: log ↔ trace cross-navigation** — `trace_id` in log details is a clickable link
+  that switches to the Traces view pre-filtered to that trace. `trace_id` in trace detail
+  links back to the Logs view filtered by that trace.
+- **API: `trace_id` filter on `GET /api/logs`** — query parameter `?trace_id=` filters logs
+  to a specific trace. Empty string is treated as no filter.
 
 ### Changed
-- N/A
 
-### Deprecated
-- N/A
-
-### Removed
-- N/A
+- `GET /api/logs` response now includes `trace_id` and `span_id` fields in each log entry
+  (these were already stored; now surfaced through the API query filter).
 
 ### Fixed
 - N/A
