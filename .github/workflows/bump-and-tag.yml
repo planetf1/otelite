@@ -1,0 +1,110 @@
+name: Bump version and tag
+
+# Bumps version, creates a tag, publishes to crates.io, and triggers the dist
+# release workflow (binary builds + Homebrew formula update).
+#
+# Triggers:
+#   - Every push to main bumps a patch version automatically.
+#   - Manual dispatch: Actions → Bump version and tag → Run workflow (patch/minor/major).
+#     CLI: gh workflow run bump-and-tag.yml --field bump=patch
+#
+# Note: GITHUB_TOKEN tag pushes do NOT trigger other workflow `push: tags:` listeners
+# (GitHub design). Binary releases are triggered via `gh workflow run dist-release.yml`.
+# This requires RELEASE_TOKEN (PAT with `repo` + `workflow` scopes) to be set as a secret.
+# Without RELEASE_TOKEN, binary builds must be started manually after the tag is created.
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      bump:
+        description: 'Version component to bump'
+        required: true
+        default: patch
+        type: choice
+        options:
+          - patch
+          - minor
+          - major
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    name: Bump version and tag
+    runs-on: ubuntu-latest
+    # Guard: the version-bump commit must not re-trigger this workflow.
+    if: "!startsWith(github.event.head_commit.message, 'chore: release v')"
+    outputs:
+      new_version: ${{ steps.bump.outputs.new }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Configure git
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+      - name: Bump version in Cargo.toml
+        id: bump
+        env:
+          BUMP_KIND: ${{ inputs.bump || 'patch' }}
+        run: |
+          current=$(grep '^version' Cargo.toml | head -1 | sed 's/.*"\(.*\)".*/\1/')
+          IFS='.' read -r major minor patch <<< "$current"
+          case "$BUMP_KIND" in
+            major) new="$((major+1)).0.0" ;;
+            minor) new="$major.$((minor+1)).0" ;;
+            patch) new="$major.$minor.$((patch+1))" ;;
+          esac
+          sed -i "s/^version = \"$current\"/version = \"$new\"/" Cargo.toml
+          echo "old=$current" >> "$GITHUB_OUTPUT"
+          echo "new=$new" >> "$GITHUB_OUTPUT"
+
+      - uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          toolchain: stable
+
+      - name: Update Cargo.lock
+        run: cargo metadata --format-version 1 > /dev/null
+
+      - name: Commit, tag, and push
+        run: |
+          git add Cargo.toml Cargo.lock
+          git commit -m "chore: release v${{ steps.bump.outputs.new }}"
+          git tag "v${{ steps.bump.outputs.new }}"
+          git push origin main "v${{ steps.bump.outputs.new }}"
+
+      - name: Trigger binary release workflow
+        # Requires RELEASE_TOKEN (PAT with repo + workflow scopes).
+        # Without it, binary builds must be triggered manually.
+        if: ${{ secrets.RELEASE_TOKEN != '' }}
+        env:
+          GH_TOKEN: ${{ secrets.RELEASE_TOKEN }}
+        run: |
+          gh workflow run release.yml \
+            --ref "v${{ steps.bump.outputs.new }}" \
+            --repo "${{ github.repository }}"
+
+      - name: Summary
+        run: |
+          echo "### Released v${{ steps.bump.outputs.new }}" >> "$GITHUB_STEP_SUMMARY"
+          echo "Bumped \`${{ steps.bump.outputs.old }}\` → \`${{ steps.bump.outputs.new }}\`" >> "$GITHUB_STEP_SUMMARY"
+          echo "Tag \`v${{ steps.bump.outputs.new }}\` pushed — publish workflow triggered." >> "$GITHUB_STEP_SUMMARY"
+
+  publish:
+    name: Publish to crates.io
+    needs: release
+    uses: ./.github/workflows/publish.yml
+    with:
+      ref: "v${{ needs.release.outputs.new_version }}"
+    secrets:
+      CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}

@@ -74,9 +74,10 @@ enum Commands {
         #[arg(long, default_value = "127.0.0.1:3000")]
         addr: SocketAddr,
 
-        /// Directory for the SQLite database (database file is always named otelite.db inside this directory)
-        #[arg(long, default_value = "otelite.db")]
-        storage_path: String,
+        /// Directory for the SQLite database. Defaults to the OS data directory
+        /// (macOS: ~/Library/Application Support/otelite, Linux: ~/.local/share/otelite)
+        #[arg(long)]
+        storage_path: Option<PathBuf>,
     },
     /// Run `serve` as a background daemon
     #[command(
@@ -87,9 +88,10 @@ enum Commands {
         #[arg(long, default_value = "127.0.0.1:3000")]
         addr: String,
 
-        /// Directory for the SQLite database (database file is always named otelite.db inside this directory)
-        #[arg(long, default_value = "otelite.db")]
-        storage_path: String,
+        /// Directory for the SQLite database. Defaults to the OS data directory
+        /// (macOS: ~/Library/Application Support/otelite, Linux: ~/.local/share/otelite)
+        #[arg(long)]
+        storage_path: Option<PathBuf>,
     },
     /// Stop the `serve` background daemon
     #[command(after_help = "Examples:\n  otelite stop")]
@@ -104,9 +106,10 @@ enum Commands {
         #[arg(long, default_value = "127.0.0.1:3000")]
         addr: String,
 
-        /// Directory for the SQLite database (database file is always named otelite.db inside this directory)
-        #[arg(long, default_value = "otelite.db")]
-        storage_path: String,
+        /// Directory for the SQLite database. Defaults to the OS data directory
+        /// (macOS: ~/Library/Application Support/otelite, Linux: ~/.local/share/otelite)
+        #[arg(long)]
+        storage_path: Option<PathBuf>,
     },
     /// Show `serve` daemon status
     #[command(after_help = "Examples:\n  otelite status")]
@@ -506,19 +509,16 @@ async fn run_cli() -> Result<()> {
                 .await
         },
         None => {
-            // Default: run dashboard
-            run_dashboard("127.0.0.1:3000".parse().unwrap(), "otelite.db".to_string()).await
+            run_dashboard("127.0.0.1:3000".parse().unwrap(), None).await
         },
     }
 }
 
 /// Create storage backend from config
 fn create_storage(_config: &Config) -> Result<Arc<dyn StorageBackend>> {
-    let storage_path = "otelite.db";
-    let storage_config = StorageConfig::default().with_data_dir(PathBuf::from(storage_path));
+    let storage_config = StorageConfig::default();
 
     let mut storage = SqliteBackend::new(storage_config);
-    // Initialize synchronously using tokio runtime
     tokio::runtime::Runtime::new()
         .unwrap()
         .block_on(storage.initialize())
@@ -527,22 +527,19 @@ fn create_storage(_config: &Config) -> Result<Arc<dyn StorageBackend>> {
     Ok(Arc::new(storage))
 }
 
-async fn run_dashboard(addr: SocketAddr, storage_path: String) -> Result<()> {
-    // Check for first run and show welcome message
+async fn run_dashboard(addr: SocketAddr, storage_path: Option<PathBuf>) -> Result<()> {
+    let storage_config = match storage_path {
+        Some(path) => StorageConfig::default().with_data_dir(path),
+        None => StorageConfig::default(),
+    };
+
     let is_first_run = Config::is_first_run();
     if is_first_run {
         println!("\nWelcome to Otelite! Starting OpenTelemetry collector...\n");
         println!("  Dashboard:  http://{}", addr);
         println!("  OTLP gRPC:  localhost:4317");
         println!("  OTLP HTTP:  localhost:4318");
-
-        // Determine storage path display
-        let storage_display = if storage_path == "otelite.db" {
-            format!("~/.local/share/otelite/{}", storage_path)
-        } else {
-            storage_path.clone()
-        };
-        println!("  Storage:    {}\n", storage_display);
+        println!("  Storage:    {}\n", storage_config.data_dir.display());
 
         println!("To send test data:");
         println!("  otel-cli exec --endpoint http://localhost:4318 -- echo \"hello\"\n");
@@ -552,7 +549,6 @@ async fn run_dashboard(addr: SocketAddr, storage_path: String) -> Result<()> {
         println!("  otelite traces list");
         println!("  otelite tui\n");
 
-        // Create config file
         if let Err(e) = Config::create_default_config() {
             eprintln!("Warning: Failed to create config file: {}", e);
         } else {
@@ -564,10 +560,8 @@ async fn run_dashboard(addr: SocketAddr, storage_path: String) -> Result<()> {
     }
 
     info!("Starting Otelite Dashboard with OTLP Receiver...");
-
-    // Initialize storage backend
-    info!("Initializing storage at {}", storage_path);
-    let storage_config = StorageConfig::default().with_data_dir(PathBuf::from(&storage_path));
+    info!("Initializing storage at {}", storage_config.data_dir.display());
+    let data_dir_str = storage_config.data_dir.to_string_lossy().into_owned();
 
     let mut storage = SqliteBackend::new(storage_config);
     storage
@@ -610,7 +604,7 @@ async fn run_dashboard(addr: SocketAddr, storage_path: String) -> Result<()> {
 
     let config = DashboardConfig::default()
         .with_bind_address(addr)
-        .with_storage_path(storage_path);
+        .with_storage_path(data_dir_str);
 
     let server = DashboardServer::new(config, storage);
     server

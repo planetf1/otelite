@@ -36,12 +36,14 @@ impl Default for StorageConfig {
 }
 
 impl StorageConfig {
-    /// Get default data directory (~/.otelite/data)
-    fn default_data_dir() -> PathBuf {
-        dirs::home_dir()
+    /// Get default data directory using the OS/XDG convention.
+    /// macOS: ~/Library/Application Support/otelite
+    /// Linux: ~/.local/share/otelite
+    pub fn default_data_dir() -> PathBuf {
+        dirs::data_dir()
+            .or_else(dirs::home_dir)
             .unwrap_or_else(|| PathBuf::from("."))
-            .join(".otelite")
-            .join("data")
+            .join("otelite")
     }
 
     /// Create configuration from environment variables

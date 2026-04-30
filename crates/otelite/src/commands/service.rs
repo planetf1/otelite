@@ -1,19 +1,18 @@
 //! Service management commands for running otelite as a background daemon
 
 use crate::error::{Error, Result};
+use otelite_storage::StorageConfig;
 use std::fs;
 use std::io::Write;
 use std::path::PathBuf;
 use std::process::{Command, Stdio};
 use tracing::{info, warn};
 
-/// Get the directory for otelite runtime files (PID, logs)
+/// Get the directory for otelite runtime files (PID, logs, database).
+/// Delegates to StorageConfig so the path is always consistent with the server.
 fn get_runtime_dir() -> Result<PathBuf> {
-    let home = std::env::var("HOME")
-        .map_err(|_| Error::ConfigError("HOME environment variable not set".to_string()))?;
-    let runtime_dir = PathBuf::from(home).join(".local/share/otelite");
+    let runtime_dir = StorageConfig::default_data_dir();
 
-    // Create directory if it doesn't exist
     if !runtime_dir.exists() {
         fs::create_dir_all(&runtime_dir).map_err(|e| {
             Error::ConfigError(format!("Failed to create runtime directory: {}", e))
@@ -102,8 +101,7 @@ fn is_process_running(pid: u32) -> bool {
 }
 
 /// Start otelite as a background daemon
-pub async fn handle_start(storage_path: String, addr: String) -> Result<()> {
-    // Check if already running
+pub async fn handle_start(storage_path: Option<PathBuf>, addr: String) -> Result<()> {
     if let Some(pid) = read_pid()? {
         if is_process_running(pid) {
             return Err(Error::ConfigError(format!(
@@ -118,41 +116,42 @@ pub async fn handle_start(storage_path: String, addr: String) -> Result<()> {
 
     info!("Starting otelite daemon...");
 
-    // Get the current executable path
     let exe_path = std::env::current_exe()
         .map_err(|e| Error::ConfigError(format!("Failed to get executable path: {}", e)))?;
 
     let log_file = get_log_file()?;
 
-    // Open log file for stdout/stderr redirection
     let log_file_handle = fs::OpenOptions::new()
         .create(true)
         .append(true)
         .open(&log_file)
         .map_err(|e| Error::ConfigError(format!("Failed to open log file: {}", e)))?;
 
-    // Spawn the daemon process
-    let child =
-        Command::new(&exe_path)
-            .arg("serve")
-            .arg("--addr")
-            .arg(&addr)
-            .arg("--storage-path")
-            .arg(&storage_path)
-            .stdin(Stdio::null())
-            .stdout(log_file_handle.try_clone().map_err(|e| {
-                Error::ConfigError(format!("Failed to clone log file handle: {}", e))
-            })?)
-            .stderr(log_file_handle)
-            .spawn()
-            .map_err(|e| Error::ConfigError(format!("Failed to spawn daemon process: {}", e)))?;
+    let mut cmd = Command::new(&exe_path);
+    cmd.arg("serve").arg("--addr").arg(&addr);
+    if let Some(path) = &storage_path {
+        cmd.arg("--storage-path").arg(path);
+    }
+    let child = cmd
+        .stdin(Stdio::null())
+        .stdout(log_file_handle.try_clone().map_err(|e| {
+            Error::ConfigError(format!("Failed to clone log file handle: {}", e))
+        })?)
+        .stderr(log_file_handle)
+        .spawn()
+        .map_err(|e| Error::ConfigError(format!("Failed to spawn daemon process: {}", e)))?;
 
     let pid = child.id();
     write_pid(pid)?;
 
+    let storage_display = storage_path
+        .as_deref()
+        .map(|p| p.display().to_string())
+        .unwrap_or_else(|| StorageConfig::default_data_dir().display().to_string());
+
     println!("✓ Otelite daemon started with PID {}", pid);
     println!("  Logs: {}", log_file.display());
-    println!("  Storage: {}", storage_path);
+    println!("  Storage: {}", storage_display);
     println!("  Dashboard: http://{}", addr);
     println!("\nUse 'otelite stop' to stop the daemon");
     println!("Use 'otelite status' to check daemon status");
@@ -215,7 +214,7 @@ pub async fn handle_stop() -> Result<()> {
 }
 
 /// Stop the running daemon and start a fresh one
-pub async fn handle_restart(storage_path: String, addr: String) -> Result<()> {
+pub async fn handle_restart(storage_path: Option<PathBuf>, addr: String) -> Result<()> {
     // Verify a daemon is actually running before attempting restart
     match read_pid()? {
         None => {
@@ -311,7 +310,6 @@ async fn install_launchd_service() -> Result<()> {
 
     let launch_agents_dir = PathBuf::from(&home).join("Library/LaunchAgents");
 
-    // Create directory if it doesn't exist
     if !launch_agents_dir.exists() {
         fs::create_dir_all(&launch_agents_dir).map_err(|e| {
             Error::ConfigError(format!("Failed to create LaunchAgents directory: {}", e))
@@ -323,7 +321,6 @@ async fn install_launchd_service() -> Result<()> {
         .map_err(|e| Error::ConfigError(format!("Failed to get executable path: {}", e)))?;
 
     let log_file = get_log_file()?;
-    let storage_path = get_runtime_dir()?.join("otelite.db");
 
     let plist_content = format!(
         r#"<?xml version="1.0" encoding="UTF-8"?>
@@ -336,8 +333,6 @@ async fn install_launchd_service() -> Result<()> {
     <array>
         <string>{}</string>
         <string>serve</string>
-        <string>--storage-path</string>
-        <string>{}</string>
     </array>
     <key>RunAtLoad</key>
     <true/>
@@ -351,7 +346,6 @@ async fn install_launchd_service() -> Result<()> {
 </plist>
 "#,
         exe_path.display(),
-        storage_path.display(),
         log_file.display(),
         log_file.display()
     );
@@ -390,8 +384,6 @@ async fn install_systemd_service() -> Result<()> {
     let exe_path = std::env::current_exe()
         .map_err(|e| Error::ConfigError(format!("Failed to get executable path: {}", e)))?;
 
-    let storage_path = get_runtime_dir()?.join("otelite.db");
-
     let unit_content = format!(
         r#"[Unit]
 Description=Otelite OpenTelemetry Collector
@@ -399,15 +391,14 @@ After=network.target
 
 [Service]
 Type=simple
-ExecStart={} serve --storage-path {}
+ExecStart={} serve
 Restart=on-failure
 RestartSec=5
 
 [Install]
 WantedBy=default.target
 "#,
-        exe_path.display(),
-        storage_path.display()
+        exe_path.display()
     );
 
     fs::write(&unit_path, unit_content)

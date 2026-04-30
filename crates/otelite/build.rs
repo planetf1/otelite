@@ -1,21 +1,27 @@
 use std::process::Command;
 
 fn main() {
-    // Emit git short SHA, falling back to "unknown" if git is unavailable
-    let sha = Command::new("git")
-        .args(["rev-parse", "--short", "HEAD"])
-        .output()
+    // Allow CI to inject the full SHA via env var (avoids requiring fetch-depth: 0)
+    let sha = std::env::var("OTELITE_GIT_SHA")
         .ok()
-        .and_then(|out| {
-            if out.status.success() {
-                String::from_utf8(out.stdout)
-                    .ok()
-                    .map(|s| s.trim().to_string())
-            } else {
-                None
-            }
-        })
+        .map(|s| s.chars().take(7).collect::<String>())
         .filter(|s| !s.is_empty())
+        .or_else(|| {
+            Command::new("git")
+                .args(["rev-parse", "--short", "HEAD"])
+                .output()
+                .ok()
+                .and_then(|out| {
+                    if out.status.success() {
+                        String::from_utf8(out.stdout)
+                            .ok()
+                            .map(|s| s.trim().to_string())
+                    } else {
+                        None
+                    }
+                })
+                .filter(|s| !s.is_empty())
+        })
         .unwrap_or_else(|| "unknown".to_string());
 
     println!("cargo:rustc-env=OTELITE_GIT_SHA={sha}");

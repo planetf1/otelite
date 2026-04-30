@@ -65,3 +65,8 @@ strip = true
 [profile.test]
 opt-level = 1
 debug = true
+
+# The profile that 'dist' will build with
+[profile.dist]
+inherits = "release"
+lto = "thin"
