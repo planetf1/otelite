@@ -162,6 +162,50 @@ fn create_test_metric(name: &str, timestamp: i64, value: f64) -> Metric {
 }
 
 #[tokio::test]
+async fn test_time_range_validation_rejects_invalid_list_queries() {
+    let (storage, _tmp) = setup_test_storage().await;
+    let app = build_test_router(storage);
+
+    let invalid_queries = [
+        "/api/logs?start_time=2000&end_time=1000",
+        "/api/traces?start_time=-1&end_time=1000",
+        "/api/metrics?start_time=1000&end_time=-1",
+    ];
+
+    for uri in invalid_queries {
+        let response = app
+            .clone()
+            .oneshot(Request::builder().uri(uri).body(Body::empty()).unwrap())
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::BAD_REQUEST, "uri: {uri}");
+    }
+}
+
+#[tokio::test]
+async fn test_time_range_validation_allows_valid_empty_list_queries() {
+    let (storage, _tmp) = setup_test_storage().await;
+    let app = build_test_router(storage);
+
+    let valid_empty_queries = [
+        "/api/logs?start_time=1000&end_time=2000",
+        "/api/traces?start_time=1000&end_time=2000",
+        "/api/metrics?start_time=1000&end_time=2000",
+    ];
+
+    for uri in valid_empty_queries {
+        let response = app
+            .clone()
+            .oneshot(Request::builder().uri(uri).body(Body::empty()).unwrap())
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::OK, "uri: {uri}");
+    }
+}
+
+#[tokio::test]
 async fn test_health_check() {
     let (storage, _tmp) = setup_test_storage().await;
     let app = build_test_router(storage);

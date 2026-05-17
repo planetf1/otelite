@@ -11,6 +11,13 @@ have to work around), not implementation detail.
 
 ## [Unreleased]
 
+### Fixed
+
+- **API time filters now reject invalid ranges.** Logs, traces, and metrics
+  endpoints return `400 Bad Request` for negative timestamps or
+  `start_time >= end_time` instead of silently returning an empty response;
+  valid ranges with no data still return a normal empty `200 OK` response.
+
 ## [0.1.39] - 2026-05-15
 
 ### Fixed

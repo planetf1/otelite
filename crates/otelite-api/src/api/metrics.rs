@@ -1,3 +1,4 @@
+use super::validate_time_range;
 use crate::server::{AppState, QueryCache};
 use axum::{
     extract::{Query, State},
@@ -81,6 +82,7 @@ pub struct TimeBucket {
     params(MetricsQuery),
     responses(
         (status = 200, description = "List of metrics", body = Vec<MetricResponse>),
+        (status = 400, description = "Invalid time range", body = ErrorResponse),
         (status = 500, description = "Internal server error", body = ErrorResponse)
     ),
     tag = "metrics"
@@ -89,6 +91,8 @@ pub async fn list_metrics(
     State(state): State<AppState>,
     Query(query): Query<MetricsQuery>,
 ) -> Result<Json<Vec<MetricResponse>>, (StatusCode, Json<ErrorResponse>)> {
+    validate_time_range(query.start_time, query.end_time)?;
+
     // Check cache first
     let cache_key = QueryCache::make_key(&query);
     if let Some(cached) = state.cache.metrics.get(&cache_key) {
@@ -314,7 +318,7 @@ pub async fn list_metric_names(
     params(AggregateQuery),
     responses(
         (status = 200, description = "Aggregated metric result (count=0 if metric exists but no data in the requested window)", body = AggregateResponse),
-        (status = 400, description = "Invalid aggregation function", body = ErrorResponse),
+        (status = 400, description = "Invalid aggregation function or time range", body = ErrorResponse),
         (status = 404, description = "Metric name has never been ingested", body = ErrorResponse),
         (status = 500, description = "Internal server error", body = ErrorResponse)
     ),
@@ -324,6 +328,8 @@ pub async fn aggregate_metrics(
     State(state): State<AppState>,
     Query(query): Query<AggregateQuery>,
 ) -> Result<Json<AggregateResponse>, (StatusCode, Json<ErrorResponse>)> {
+    validate_time_range(query.start_time, query.end_time)?;
+
     // Check cache first
     let cache_key = QueryCache::make_key(&query);
     if let Some(cached) = state.cache.metrics.get(&cache_key) {
@@ -776,6 +782,7 @@ pub struct TimeseriesQuery {
     params(MetricsQuery),
     responses(
         (status = 200, description = "Exported metrics in JSON format"),
+        (status = 400, description = "Invalid time range", body = ErrorResponse),
         (status = 500, description = "Internal server error", body = ErrorResponse)
     ),
     tag = "metrics"
@@ -784,6 +791,8 @@ pub async fn export_metrics(
     State(state): State<AppState>,
     Query(query): Query<MetricsQuery>,
 ) -> Result<impl IntoResponse, (StatusCode, Json<ErrorResponse>)> {
+    validate_time_range(query.start_time, query.end_time)?;
+
     // Build query parameters
     let mut params = QueryParams::default();
 

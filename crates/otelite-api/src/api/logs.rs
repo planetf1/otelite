@@ -1,3 +1,4 @@
+use super::validate_time_range;
 use crate::server::{AppState, QueryCache};
 use axum::{
     extract::{Path, Query, State},
@@ -79,6 +80,7 @@ fn default_limit() -> usize {
     params(LogsQuery),
     responses(
         (status = 200, description = "List of logs matching query", body = LogsResponse),
+        (status = 400, description = "Invalid time range", body = ErrorResponse),
         (status = 500, description = "Internal server error", body = ErrorResponse)
     ),
     tag = "logs"
@@ -87,6 +89,8 @@ pub async fn list_logs(
     State(state): State<AppState>,
     Query(params): Query<LogsQuery>,
 ) -> Result<impl IntoResponse, (StatusCode, Json<ErrorResponse>)> {
+    validate_time_range(params.start_time, params.end_time)?;
+
     // Check cache first
     let cache_key = QueryCache::make_key(&params);
     if let Some(cached) = state.cache.logs.get(&cache_key) {
@@ -301,7 +305,7 @@ fn default_format() -> String {
     params(ExportQuery),
     responses(
         (status = 200, description = "Exported logs in requested format"),
-        (status = 400, description = "Invalid format parameter", body = ErrorResponse),
+        (status = 400, description = "Invalid format parameter or time range", body = ErrorResponse),
         (status = 500, description = "Internal server error", body = ErrorResponse)
     ),
     tag = "logs"
@@ -310,6 +314,8 @@ pub async fn export_logs(
     State(state): State<AppState>,
     Query(params): Query<ExportQuery>,
 ) -> Result<impl IntoResponse, (StatusCode, Json<ErrorResponse>)> {
+    validate_time_range(params.filters.start_time, params.filters.end_time)?;
+
     // Build query parameters (no limit for export, but cap at 10000)
     let mut query = QueryParams {
         start_time: params.filters.start_time,
