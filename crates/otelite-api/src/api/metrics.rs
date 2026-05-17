@@ -81,6 +81,7 @@ pub struct TimeBucket {
     params(MetricsQuery),
     responses(
         (status = 200, description = "List of metrics", body = Vec<MetricResponse>),
+        (status = 400, description = "Invalid query parameters", body = ErrorResponse),
         (status = 500, description = "Internal server error", body = ErrorResponse)
     ),
     tag = "metrics"
@@ -148,20 +149,26 @@ pub async fn list_metrics(
                 op: String,
                 value: Option<String>,
             }
-            if let Ok(filters) = serde_json::from_str::<Vec<AttrFilter>>(attrs_json) {
-                for f in filters {
-                    let op = match f.op.as_str() {
-                        "=" => Operator::Equal,
-                        "!=" => Operator::NotEqual,
-                        _ => continue,
-                    };
-                    if let Some(v) = f.value {
-                        params.predicates.push(QueryPredicate {
-                            field: f.key,
-                            operator: op,
-                            value: QueryValue::String(v),
-                        });
-                    }
+            let filters = serde_json::from_str::<Vec<AttrFilter>>(attrs_json).map_err(|e| {
+                (
+                    StatusCode::BAD_REQUEST,
+                    Json(ErrorResponse::bad_request(format!(
+                        "attrs must be valid JSON attribute filters: {e}"
+                    ))),
+                )
+            })?;
+            for f in filters {
+                let op = match f.op.as_str() {
+                    "=" => Operator::Equal,
+                    "!=" => Operator::NotEqual,
+                    _ => continue,
+                };
+                if let Some(v) = f.value {
+                    params.predicates.push(QueryPredicate {
+                        field: f.key,
+                        operator: op,
+                        value: QueryValue::String(v),
+                    });
                 }
             }
         }

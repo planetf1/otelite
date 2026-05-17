@@ -11,6 +11,13 @@ have to work around), not implementation detail.
 
 ## [Unreleased]
 
+### Fixed
+
+- **Metrics API now rejects malformed `attrs` filters instead of ignoring them.**
+  `GET /api/metrics?attrs=not-json` returns `400 Bad Request` with a clear
+  message, so users no longer receive unfiltered metric results after a typo in
+  the JSON filter parameter.
+
 ## [0.1.39] - 2026-05-15
 
 ### Fixed

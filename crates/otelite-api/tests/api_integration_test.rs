@@ -5,7 +5,9 @@ use http_body_util::BodyExt;
 use otelite_api::api::health::HealthResponse;
 use otelite_api::api::metrics::AggregateResponse;
 use otelite_api::server::{AppState, QueryCache};
-use otelite_core::api::{LogEntry, LogsResponse, MetricResponse, TraceDetail, TracesResponse};
+use otelite_core::api::{
+    ErrorResponse, LogEntry, LogsResponse, MetricResponse, TraceDetail, TracesResponse,
+};
 use otelite_core::telemetry::log::{LogRecord, SeverityLevel};
 use otelite_core::telemetry::metric::{Metric, MetricType};
 use otelite_core::telemetry::trace::{Span, SpanKind, SpanStatus, StatusCode as SpanStatusCode};
@@ -686,6 +688,31 @@ async fn test_list_metrics_empty() {
     let metrics: Vec<MetricResponse> = serde_json::from_slice(&body).unwrap();
 
     assert_eq!(metrics.len(), 0);
+}
+
+#[tokio::test]
+async fn test_list_metrics_rejects_malformed_attrs_json() {
+    let (storage, _tmp) = setup_test_storage().await;
+    let app = build_test_router(storage);
+
+    let response = app
+        .oneshot(
+            Request::builder()
+                .uri("/api/metrics?attrs=not-json")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+
+    let body = response.into_body().collect().await.unwrap().to_bytes();
+    let error: ErrorResponse = serde_json::from_slice(&body).unwrap();
+
+    assert_eq!(error.code, "BAD_REQUEST");
+    assert!(error.error.contains("attrs"));
+    assert!(error.error.contains("valid JSON"));
 }
 
 #[tokio::test]
