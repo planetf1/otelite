@@ -5,12 +5,16 @@ release/
 *.rs.bk
 *.rlib
 *.prof*
-Cargo.lock  # For applications; libraries should commit this
 
 # Environment variables
 .env
 .env.local
 .env.*.local
+.direnv/
+
+# Nix build results
+result
+result-*
 
 # IDE and editor files
 .vscode/

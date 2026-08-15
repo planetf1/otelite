@@ -33,6 +33,14 @@ cargo install otelite
 curl --proto '=https' --tlsv1.2 -LsSf https://github.com/planetf1/otelite/releases/latest/download/otelite-installer.sh | sh
 ```
 
+**Nix:**
+
+```bash
+nix profile install github:planetf1/otelite
+```
+
+Packages, development shells, and NixOS/nix-darwin service modules are available; see [Nix support](nix/README.md).
+
 ## Quick Start
 
 ```bash
