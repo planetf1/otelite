@@ -1,0 +1,50 @@
+name: Nix
+
+on:
+  push:
+    branches: [main, develop]
+    paths:
+      - flake.nix
+      - flake.lock
+      - nix/**
+      - Cargo.toml
+      - Cargo.lock
+      - rust-toolchain.toml
+      - rustfmt.toml
+      - clippy.toml
+      - .github/workflows/nix.yml
+  pull_request:
+    branches: [main, develop]
+    paths:
+      - flake.nix
+      - flake.lock
+      - nix/**
+      - Cargo.toml
+      - Cargo.lock
+      - rust-toolchain.toml
+      - rustfmt.toml
+      - clippy.toml
+      - .github/workflows/nix.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  nix-check:
+    name: Flake Check
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Install Nix
+        uses: DeterminateSystems/nix-installer-action@v22
+
+      - name: Enable Nix cache
+        uses: DeterminateSystems/magic-nix-cache-action@v14
+        with:
+          use-flakehub: false
+
+      - name: Check flake
+        run: nix flake check --print-build-logs
