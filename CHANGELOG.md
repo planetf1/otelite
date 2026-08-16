@@ -11,6 +11,11 @@ have to work around), not implementation detail.
 
 ## [Unreleased]
 
+### Added
+
+- **Install and run Otelite with Nix on Linux and Apple Silicon.** The flake also
+  provides NixOS and nix-darwin service modules for declarative deployments.
+
 ## [0.1.64] - 2026-08-18
 
 ### Added
