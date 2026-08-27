@@ -4,7 +4,7 @@ use crate::error::{Error, Result};
 use otelite_storage::StorageConfig;
 use std::fs;
 use std::io::Write;
-#[cfg(target_os = "macos")]
+#[cfg(unix)]
 use std::path::Path;
 use std::path::PathBuf;
 use std::process::{Command, Stdio};

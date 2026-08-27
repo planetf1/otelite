@@ -15,8 +15,9 @@ have to work around), not implementation detail.
 
 ### Internal
 
-- Fixed a Linux CI compile failure in the service-management test module
-  (a macOS-only import was not gated). No user-visible change.
+- Fixed a Linux CI compile failure in the service-management module
+  (macOS-only imports were not gated for the shared unix code path).
+  No user-visible change.
 
 ## [0.1.87] - 2026-08-27
 
