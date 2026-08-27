@@ -11,6 +11,8 @@ have to work around), not implementation detail.
 
 ## [Unreleased]
 
+## [0.1.87] - 2026-08-27
+
 ### Internal
 
 - Follow-up to the v0.1.86 dependency sweep: pinned `quinn-proto` to
