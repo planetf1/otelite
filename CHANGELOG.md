@@ -11,6 +11,18 @@ have to work around), not implementation detail.
 
 ## [Unreleased]
 
+### Fixed
+
+- **`otelite status` and `otelite stop` now see daemons started without
+  `otelite start`** — service-managed (launchd/systemd) and hand-run
+  `serve` instances alike. Discovery falls back from the PID file to the
+  process listening on the OTLP port (verified as otelite before any
+  signal is sent), so a healthy service-managed daemon no longer reports
+  as dead, and `stop` reaches it through its supervisor (launchd on
+  macOS) instead of claiming there is nothing to stop. A stale PID file
+  that no longer names the listening daemon is flagged and cleaned up
+  rather than trusted.
+
 ## [0.1.84] - 2026-08-27
 
 ### Added

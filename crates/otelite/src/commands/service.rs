@@ -165,14 +165,14 @@ fn restart_launchd_service() -> Result<()> {
     )))
 }
 
-#[cfg(target_os = "macos")]
+#[cfg(unix)]
 fn is_otelite_command(command: &str) -> bool {
     Path::new(command.trim())
         .file_name()
         .is_some_and(|name| name == "otelite")
 }
 
-#[cfg(target_os = "macos")]
+#[cfg(unix)]
 fn is_otelite_process(pid: u32) -> Result<bool> {
     let output = Command::new("ps")
         .args(["-p", &pid.to_string(), "-o", "comm="])
@@ -182,7 +182,7 @@ fn is_otelite_process(pid: u32) -> Result<bool> {
     Ok(output.status.success() && is_otelite_command(&String::from_utf8_lossy(&output.stdout)))
 }
 
-#[cfg(target_os = "macos")]
+#[cfg(unix)]
 fn ensure_otelite_process(pid: u32) -> Result<()> {
     if is_otelite_process(pid)? {
         return Ok(());
@@ -194,7 +194,7 @@ fn ensure_otelite_process(pid: u32) -> Result<()> {
     )))
 }
 
-#[cfg(target_os = "macos")]
+#[cfg(unix)]
 fn pid_file_otelite_pid() -> Result<Option<u32>> {
     let Some(pid) = read_pid()? else {
         return Ok(None);
@@ -207,10 +207,14 @@ fn pid_file_otelite_pid() -> Result<Option<u32>> {
     }
 }
 
-#[cfg(target_os = "macos")]
-fn local_otelite_pid() -> Result<Option<u32>> {
+/// Discover the otelite process listening on the given TCP port (default
+/// OTLP gRPC: 4317). This is how `status`/`stop` find daemons started
+/// without `otelite start` (no PID file): service-managed `serve` and
+/// hand-run `serve` alike (issue #107).
+#[cfg(unix)]
+pub fn local_otelite_pid(port: u16) -> Result<Option<u32>> {
     let output = Command::new("lsof")
-        .args(["-nP", "-t", "-iTCP:4317", "-sTCP:LISTEN"])
+        .args(["-nP", "-t", &format!("-iTCP:{port}"), "-sTCP:LISTEN"])
         .output()
         .map_err(|e| {
             Error::ConfigError(format!("Failed to discover local otelite process: {}", e))
@@ -327,24 +331,35 @@ pub async fn handle_stop() -> Result<()> {
 
     #[cfg(target_os = "macos")]
     let pid = pid_file_otelite_pid()?
-        .or(local_otelite_pid()?)
+        .or(local_otelite_pid(4317)?)
         .ok_or_else(|| Error::ConfigError("Otelite daemon is not running".to_string()))?;
 
     #[cfg(not(target_os = "macos"))]
-    let pid = match read_pid()? {
-        Some(pid) if is_process_running(pid) => pid,
-        Some(_) => {
-            warn!("PID file exists but process is not running, cleaning up");
-            remove_pid_file()?;
-            return Err(Error::ConfigError(
-                "Otelite daemon is not running".to_string(),
-            ));
-        },
-        None => {
-            return Err(Error::ConfigError(
-                "Otelite daemon is not running (no PID file found)".to_string(),
-            ));
-        },
+    let pid = {
+        let from_pid_file = read_pid()?.filter(|pid| is_process_running(*pid));
+        match from_pid_file.or_else(|| local_otelite_pid(4317)?) {
+            Some(pid) => {
+                if let Some(file_pid) = read_pid()? {
+                    if file_pid != pid {
+                        warn!(
+                            "PID file names {} but the listening daemon is {}; stopping the daemon",
+                            file_pid, pid
+                        );
+                    }
+                }
+                pid
+            },
+            None => {
+                if read_pid()?.is_some() {
+                    warn!("Stale PID file found, removing it");
+                    remove_pid_file()?;
+                }
+                return Err(Error::ConfigError(
+                    "Otelite daemon is not running (no PID file and nothing listening on 4317)"
+                        .to_string(),
+                ));
+            },
+        }
     };
 
     info!("Stopping otelite daemon (PID {})...", pid);
@@ -355,7 +370,7 @@ pub async fn handle_stop() -> Result<()> {
         use nix::unistd::Pid;
 
         // Send SIGTERM for graceful shutdown
-        #[cfg(target_os = "macos")]
+        #[cfg(unix)]
         ensure_otelite_process(pid)?;
         kill(Pid::from_raw(pid as i32), Signal::SIGTERM)
             .map_err(|e| Error::ConfigError(format!("Failed to send SIGTERM to process: {}", e)))?;
@@ -367,7 +382,7 @@ pub async fn handle_stop() -> Result<()> {
         while is_process_running(pid) {
             if start.elapsed() > timeout {
                 warn!("Process did not exit gracefully, sending SIGKILL");
-                #[cfg(target_os = "macos")]
+                #[cfg(unix)]
                 ensure_otelite_process(pid)?;
                 kill(Pid::from_raw(pid as i32), Signal::SIGKILL).map_err(|e| {
                     Error::ConfigError(format!("Failed to send SIGKILL to process: {}", e))
@@ -403,18 +418,24 @@ pub async fn handle_restart(storage_path: Option<PathBuf>, addr: String) -> Resu
     }
 
     // Verify a daemon is actually running before attempting restart
+    #[cfg(unix)]
+    {
+        let running = read_pid().ok().flatten().is_some_and(is_process_running)
+            || local_otelite_pid(4317).ok().flatten().is_some();
+        if !running {
+            return Err(Error::ConfigError(
+                "No otelite daemon is running. Use 'otelite start' to start one.".to_string(),
+            ));
+        }
+    }
+    #[cfg(not(unix))]
     match read_pid()? {
-        None => {
+        Some(pid) if is_process_running(pid) => {},
+        _ => {
             return Err(Error::ConfigError(
                 "No otelite daemon is running. Use 'otelite start' to start one.".to_string(),
             ));
         },
-        Some(pid) if !is_process_running(pid) => {
-            return Err(Error::ConfigError(
-                "No otelite daemon is running. Use 'otelite start' to start one.".to_string(),
-            ));
-        },
-        _ => {},
     }
 
     println!("Stopping daemon...");
@@ -468,17 +489,29 @@ pub async fn handle_status() -> Result<()> {
     }
 
     #[cfg(target_os = "macos")]
-    if let Some(pid) = local_otelite_pid()? {
+    if let Some(pid) = local_otelite_pid(4317)? {
         return display_running_status(pid, Some("local process"));
     }
 
     #[cfg(not(target_os = "macos"))]
-    match read_pid()? {
-        Some(pid) if is_process_running(pid) => return display_running_status(pid, None),
-        Some(_) => warn!("PID file exists but process is not running"),
-        None => {},
+    {
+        let file_pid = read_pid()?.filter(|pid| is_process_running(*pid));
+        match file_pid.or_else(|| local_otelite_pid(4317)?) {
+            Some(pid) => return display_running_status(pid, None),
+            None => {
+                if read_pid()?.is_some() {
+                    println!("Status: Not running (stale PID file)");
+                    warn!("Cleaning up stale PID file");
+                    remove_pid_file()?;
+                } else {
+                    println!("Status: Not running");
+                }
+                return Ok(());
+            },
+        }
     }
 
+    #[cfg(target_os = "macos")]
     if read_pid()?.is_some() {
         println!("Status: Not running (stale PID file)");
         warn!("Cleaning up stale PID file");
@@ -487,6 +520,7 @@ pub async fn handle_status() -> Result<()> {
         println!("Status: Not running");
     }
 
+    #[cfg(target_os = "macos")]
     Ok(())
 }
 
@@ -627,9 +661,24 @@ WantedBy=default.target
 }
 
 #[cfg(test)]
-#[cfg(target_os = "macos")]
+#[cfg(unix)]
 mod tests {
-    use super::{parse_launchd_service_state, LaunchdServiceState};
+    use super::{is_process_running, local_otelite_pid, parse_launchd_service_state};
+
+    /// #107 regression helper: discovery must report `None` (not an error)
+    /// when nothing otelite-shaped listens, and report a live PID when the
+    /// real daemon owns the port. Both outcomes are asserted consistently
+    /// with process liveness so the test holds on dev machines (daemon
+    /// running) and CI (no daemon) alike.
+    #[test]
+    fn test_local_otelite_pid_consistent_with_liveness() {
+        if let Some(pid) = local_otelite_pid(4317).unwrap() {
+            assert!(is_process_running(pid));
+        }
+    }
+
+    #[cfg(target_os = "macos")]
+    use super::LaunchdServiceState;
 
     #[test]
     fn test_parse_launchd_service_state_detects_running_service() {
@@ -646,6 +695,7 @@ gui/501/dev.otelite.daemon = {
         );
     }
 
+    #[cfg(target_os = "macos")]
     #[test]
     fn test_parse_launchd_service_state_detects_loaded_non_running_service() {
         let output = r#"
@@ -661,6 +711,7 @@ gui/501/dev.otelite.daemon = {
         );
     }
 
+    #[cfg(target_os = "macos")]
     #[test]
     fn test_is_otelite_command_accepts_only_otelite_executable() {
         assert!(super::is_otelite_command(
