@@ -11,6 +11,8 @@ have to work around), not implementation detail.
 
 ## [Unreleased]
 
+## [0.1.84] - 2026-08-27
+
 ### Added
 
 - **`otelite capabilities` — telemetry capability report per emitter.**
