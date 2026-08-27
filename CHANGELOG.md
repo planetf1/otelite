@@ -11,6 +11,14 @@ have to work around), not implementation detail.
 
 ## [Unreleased]
 
+### Internal
+
+- Follow-up to the v0.1.86 dependency sweep: pinned `quinn-proto` to
+  0.11.15 (newest release without a yanked transitive, with
+  RUSTSEC-2026-0185/0037 fixed) and updated `h2` to 0.4.19
+  (RUSTSEC-2026-0258), so `cargo audit --deny warnings` is fully green.
+  No user-visible change.
+
 ## [0.1.86] - 2026-08-27
 
 ### Internal
