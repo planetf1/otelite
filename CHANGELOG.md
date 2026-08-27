@@ -15,9 +15,12 @@ have to work around), not implementation detail.
 
 ### Internal
 
-- Bumped ratatui 0.29 → 0.30, which pulls `lru 0.18.2` and clears
-  RUSTSEC-2026-0253 (a panic-safety unsoundness in `lru 0.12` used by the
-  TUI). No user-visible change.
+- Dependency security sweep: ratatui 0.29 → 0.30 (pulls `lru 0.18.2`,
+  clearing RUSTSEC-2026-0253), `h2` 0.4.13 → 0.4.19 (RUSTSEC-2026-0258),
+  and `quinn-proto` pinned to 0.11.15 (clearest RUSTSEC-2026-0185 /
+  RUSTSEC-2026-0037 without pulling a yanked transitive crate). The
+  Security workflow's `cargo audit` is green again. No user-visible
+  change.
 
 ## [0.1.85] - 2026-08-27
 
