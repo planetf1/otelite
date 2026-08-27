@@ -11,6 +11,8 @@ have to work around), not implementation detail.
 
 ## [Unreleased]
 
+## [0.1.85] - 2026-08-27
+
 ### Fixed
 
 - **`otelite status` and `otelite stop` now see daemons started without
