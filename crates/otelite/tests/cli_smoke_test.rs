@@ -27,8 +27,19 @@ fn version_succeeds() {
 #[test]
 fn subcommand_help_succeeds() {
     let subcommands = [
-        "serve", "start", "stop", "restart", "status", "service", "logs", "traces", "metrics",
-        "usage", "tui", "import",
+        "serve",
+        "start",
+        "stop",
+        "restart",
+        "status",
+        "service",
+        "logs",
+        "traces",
+        "metrics",
+        "usage",
+        "capabilities",
+        "tui",
+        "import",
     ];
     for sub in subcommands {
         otelite()

@@ -156,6 +156,11 @@ enum Commands {
         after_help = "Examples:\n  otelite providers --since 24h\n  otelite providers --since 7d --format json"
     )]
     Providers(commands::providers::ProvidersCommand),
+    /// Show GenAI telemetry capability coverage per emitter identity
+    #[command(
+        after_help = "Examples:\n  otelite capabilities --since 7d\n  otelite capabilities --since 30d --format json"
+    )]
+    Capabilities(commands::capabilities::CapabilitiesCommand),
     /// Show cache economics (read/write split, hit rate, estimated savings)
     #[command(
         after_help = "Examples:\n  otelite cache --since 24h\n  otelite cache --since 7d --series --bucket-secs 86400"
@@ -569,6 +574,11 @@ async fn run_cli() -> Result<()> {
             Ok(())
         },
         Some(Commands::Cache(cmd)) => {
+            let storage = create_storage(&config).await?;
+            cmd.execute(storage, config.format).await?;
+            Ok(())
+        },
+        Some(Commands::Capabilities(cmd)) => {
             let storage = create_storage(&config).await?;
             cmd.execute(storage, config.format).await?;
             Ok(())

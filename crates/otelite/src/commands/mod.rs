@@ -2,6 +2,7 @@
 
 pub mod agents;
 pub mod cache;
+pub mod capabilities;
 pub mod diagnose;
 pub mod histogram;
 pub mod import;

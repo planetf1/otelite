@@ -935,7 +935,7 @@ impl UsageCommand {
 // ── display helpers ───────────────────────────────────────────────────────────
 
 /// Current wall-clock time in nanoseconds since the Unix epoch.
-fn now_ns() -> Result<i64> {
+pub(crate) fn now_ns() -> Result<i64> {
     std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .map_err(|e| Error::ApiError(format!("Failed to get current time: {}", e)))
@@ -945,7 +945,7 @@ fn now_ns() -> Result<i64> {
 /// Parse an exact --start/--end value (#142) to epoch nanoseconds:
 /// `YYYY-MM-DD` (midnight UTC), `YYYY-MM-DDTHH:MM:SS[.ffffff]` (UTC when no
 /// zone is given, RFC 3339 offsets otherwise), or epoch seconds/nanoseconds.
-fn parse_cli_time(value: &str) -> Result<i64> {
+pub(crate) fn parse_cli_time(value: &str) -> Result<i64> {
     // Epoch: 10-digit values are seconds, 16+ are nanoseconds.
     if value.chars().all(|c| c.is_ascii_digit()) {
         let n: i64 = value

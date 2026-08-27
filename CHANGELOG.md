@@ -11,6 +11,24 @@ have to work around), not implementation detail.
 
 ## [Unreleased]
 
+### Added
+
+- **`otelite capabilities` — telemetry capability report per emitter.**
+  Shows which metrics each observed provider/model/emitter identity
+  actually provides — input/output/cache tokens and TTFT — with
+  availability (`available` / `sparse` / `absent`), quality
+  (`reliable` / `invalid` / `degenerate` / `not_assessed`) and derivation
+  (`native` / `correlated` / `unavailable`), plus the valid/observed/
+  eligible counts and the attribute keys each value came from. Duplicate
+  OTLP deliveries are collapsed and counted, and a bounded sample is
+  declared when older spans were excluded. Malformed or out-of-range TTFT
+  values are reported as invalid rather than coerced to zero, and emitters
+  without a verified token signature (e.g. Codex) stay timing-only instead
+  of being guessed. `--start`/`--end` accept the same exact values as
+  `otelite usage`; JSON output matches the API
+  (`GET /api/genai/capabilities`) byte-for-byte, pinned by a versioned
+  fixture.
+
 ## [0.1.83] - 2026-08-27
 
 ### Added
