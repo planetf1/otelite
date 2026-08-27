@@ -11,6 +11,11 @@ have to work around), not implementation detail.
 
 ## [Unreleased]
 
+### Internal
+
+- Fixed a Linux CI compile failure in the service-management test module
+  (a macOS-only import was not gated). No user-visible change.
+
 ## [0.1.87] - 2026-08-27
 
 ### Internal

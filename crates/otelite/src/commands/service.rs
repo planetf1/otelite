@@ -663,7 +663,9 @@ WantedBy=default.target
 #[cfg(test)]
 #[cfg(unix)]
 mod tests {
-    use super::{is_process_running, local_otelite_pid, parse_launchd_service_state};
+    #[cfg(target_os = "macos")]
+    use super::parse_launchd_service_state;
+    use super::{is_process_running, local_otelite_pid};
 
     /// #107 regression helper: discovery must report `None` (not an error)
     /// when nothing otelite-shaped listens, and report a live PID when the
