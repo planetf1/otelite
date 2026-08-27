@@ -91,20 +91,17 @@ lsof -i :8080
 kill -9 <PID>
 ```
 
-**Solution 2**: Use different ports
+**Solution 2**: Use different addresses or ports
 ```bash
-# Start with custom ports
-otelite start --grpc-port 14317 --http-port 14318 --dashboard-port 18080
+otelite start \
+  --addr 127.0.0.1:18080 \
+  --grpc-addr 127.0.0.1:14317 \
+  --http-addr 127.0.0.1:14318
 ```
 
-**Solution 3**: Update configuration
-```toml
-# otelite.toml
-[server]
-grpc_port = 14317
-http_port = 14318
-dashboard_port = 18080
-```
+The same arguments work with `serve` and `restart`. Receiver values can also
+come from `OTELITE_GRPC_ADDR` and `OTELITE_HTTP_ADDR`; explicit command-line
+arguments take precedence.
 
 ### Permission Denied
 

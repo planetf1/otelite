@@ -39,12 +39,23 @@ curl --proto '=https' --tlsv1.2 -LsSf https://github.com/planetf1/otelite/releas
 otelite serve
 ```
 
-That's it. `otelite serve` starts three services:
-- **OTLP gRPC receiver** on `localhost:4317`
-- **OTLP HTTP receiver** on `localhost:4318`
-- **Web dashboard and REST API** on `http://localhost:3000`
+That's it. `otelite serve` starts three loopback-only services:
+- **OTLP gRPC receiver** on `127.0.0.1:4317`
+- **OTLP HTTP receiver** on `127.0.0.1:4318`
+- **Web dashboard and REST API** on `http://127.0.0.1:3000`
 
 Open `http://localhost:3000` in your browser to view telemetry.
+
+Override receiver listeners with `--grpc-addr` and `--http-addr`, or
+`OTELITE_GRPC_ADDR` and `OTELITE_HTTP_ADDR`. Command-line values take precedence
+over environment values. Bind `0.0.0.0` explicitly only when containers or
+other hosts need access:
+
+```bash
+otelite serve \
+  --grpc-addr 0.0.0.0:4317 \
+  --http-addr 0.0.0.0:4318
+```
 
 ## Features
 

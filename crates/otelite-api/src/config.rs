@@ -27,11 +27,11 @@ pub struct DashboardConfig {
     /// Auto-refresh interval in seconds (0 = disabled)
     pub auto_refresh_interval_secs: u64,
 
-    /// OTLP gRPC receiver port (shown in the web UI status popover)
-    pub otlp_grpc_port: u16,
+    /// OTLP gRPC receiver address (shown in health and the web UI)
+    pub otlp_grpc_addr: SocketAddr,
 
-    /// OTLP HTTP receiver port (shown in the web UI status popover)
-    pub otlp_http_port: u16,
+    /// OTLP HTTP receiver address (shown in health and the web UI)
+    pub otlp_http_addr: SocketAddr,
 }
 
 impl Default for DashboardConfig {
@@ -44,8 +44,8 @@ impl Default for DashboardConfig {
             default_page_size: 100,
             cache_size_mb: 10,
             auto_refresh_interval_secs: 1,
-            otlp_grpc_port: 4317,
-            otlp_http_port: 4318,
+            otlp_grpc_addr: SocketAddr::from(([127, 0, 0, 1], 4317)),
+            otlp_http_addr: SocketAddr::from(([127, 0, 0, 1], 4318)),
         }
     }
 }
@@ -69,10 +69,10 @@ impl DashboardConfig {
         self
     }
 
-    /// Set the OTLP receiver ports (shown in the web UI status popover)
-    pub fn with_otlp_ports(mut self, grpc_port: u16, http_port: u16) -> Self {
-        self.otlp_grpc_port = grpc_port;
-        self.otlp_http_port = http_port;
+    /// Set the resolved OTLP receiver addresses.
+    pub fn with_otlp_addresses(mut self, grpc_addr: SocketAddr, http_addr: SocketAddr) -> Self {
+        self.otlp_grpc_addr = grpc_addr;
+        self.otlp_http_addr = http_addr;
         self
     }
 }

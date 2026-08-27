@@ -1983,6 +1983,7 @@ dependencies = [
  "otelite-receiver",
  "otelite-storage",
  "otelite-tui",
+ "parking_lot",
  "predicates",
  "reqwest",
  "serde",

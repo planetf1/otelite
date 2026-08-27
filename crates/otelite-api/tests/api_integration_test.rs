@@ -38,8 +38,8 @@ fn build_test_router(storage: Arc<dyn StorageBackend>) -> Router {
         cache_state: otelite_api::cached::CacheState::new(),
         pricing: otelite_api::pricing_cache::PricingCache::new(),
         start_time: Arc::new(Instant::now()),
-        otlp_grpc_port: 4317,
-        otlp_http_port: 4318,
+        otlp_grpc_addr: "127.0.0.1:14317".to_string(),
+        otlp_http_addr: "127.0.0.1:14318".to_string(),
     };
 
     Router::new()
@@ -325,6 +325,8 @@ async fn test_health_check() {
     assert_eq!(health.status, "healthy");
     assert_eq!(health.storage, "connected");
     assert!(!health.version.is_empty());
+    assert_eq!(health.otlp_grpc_addr, "127.0.0.1:14317");
+    assert_eq!(health.otlp_http_addr, "127.0.0.1:14318");
 }
 
 // NEW TEST: GET /api/help

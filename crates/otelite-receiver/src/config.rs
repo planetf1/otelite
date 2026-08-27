@@ -5,10 +5,10 @@ use std::net::SocketAddr;
 /// Configuration for the OTLP receiver
 #[derive(Debug, Clone)]
 pub struct ReceiverConfig {
-    /// gRPC server address (default: 0.0.0.0:4317)
+    /// gRPC server address (default: 127.0.0.1:4317)
     pub grpc_addr: SocketAddr,
 
-    /// HTTP server address (default: 0.0.0.0:4318)
+    /// HTTP server address (default: 127.0.0.1:4318)
     pub http_addr: SocketAddr,
 
     /// Enable gRPC compression
@@ -24,8 +24,8 @@ pub struct ReceiverConfig {
 impl Default for ReceiverConfig {
     fn default() -> Self {
         Self {
-            grpc_addr: "0.0.0.0:4317".parse().expect("valid address"),
-            http_addr: "0.0.0.0:4318".parse().expect("valid address"),
+            grpc_addr: SocketAddr::from(([127, 0, 0, 1], 4317)),
+            http_addr: SocketAddr::from(([127, 0, 0, 1], 4318)),
             grpc_compression: true,
             http_compression: true,
             max_message_size: 10 * 1024 * 1024, // 10MB
@@ -77,8 +77,8 @@ mod tests {
     #[test]
     fn test_default_config() {
         let config = ReceiverConfig::default();
-        assert_eq!(config.grpc_addr.port(), 4317);
-        assert_eq!(config.http_addr.port(), 4318);
+        assert_eq!(config.grpc_addr, SocketAddr::from(([127, 0, 0, 1], 4317)));
+        assert_eq!(config.http_addr, SocketAddr::from(([127, 0, 0, 1], 4318)));
         assert!(config.grpc_compression);
         assert!(config.http_compression);
         assert_eq!(config.max_message_size, 10 * 1024 * 1024);

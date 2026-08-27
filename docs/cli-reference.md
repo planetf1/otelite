@@ -26,8 +26,23 @@ otelite serve           # Start server in the foreground (Ctrl+C to stop)
 otelite start           # Start as a background daemon
 otelite stop            # Stop the running daemon
 otelite restart         # Stop then start (picks up a freshly built binary)
-otelite status          # Show daemon status
+otelite status          # Show daemon status and resolved listener addresses
 ```
+
+`serve`, `start`, and `restart` accept the same listener arguments:
+
+```text
+--addr <ADDR>       Dashboard and REST API [default: 127.0.0.1:3000]
+--grpc-addr <ADDR>  OTLP/gRPC receiver [env: OTELITE_GRPC_ADDR]
+                    [default: 127.0.0.1:4317]
+--http-addr <ADDR>  OTLP/HTTP receiver [env: OTELITE_HTTP_ADDR]
+                    [default: 127.0.0.1:4318]
+```
+
+For each receiver, precedence is command-line argument, environment variable,
+then loopback default. Pass an explicit `0.0.0.0:<PORT>` address for container
+or LAN access. Startup output, `otelite status`, `/api/health`, and the web
+status popover report the resolved receiver addresses.
 
 ---
 

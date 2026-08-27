@@ -11,10 +11,10 @@ pub struct HealthResponse {
     pub version: String,
     pub storage: String,
     pub uptime_seconds: u64,
-    /// OTLP gRPC receiver port
-    pub otlp_grpc_port: u16,
-    /// OTLP HTTP receiver port
-    pub otlp_http_port: u16,
+    /// Resolved OTLP gRPC receiver address
+    pub otlp_grpc_addr: String,
+    /// Resolved OTLP HTTP receiver address
+    pub otlp_http_addr: String,
 }
 
 /// Health check handler
@@ -36,8 +36,8 @@ pub async fn health_check(
         version: crate::VERSION.to_string(),
         storage: "connected".to_string(),
         uptime_seconds: uptime,
-        otlp_grpc_port: state.otlp_grpc_port,
-        otlp_http_port: state.otlp_http_port,
+        otlp_grpc_addr: state.otlp_grpc_addr,
+        otlp_http_addr: state.otlp_http_addr,
     };
 
     Ok(Json(response))

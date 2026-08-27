@@ -11,6 +11,13 @@ have to work around), not implementation detail.
 
 ## [Unreleased]
 
+### Added
+
+- Run OTLP/gRPC and OTLP/HTTP receivers on loopback by default, choose their
+  listener addresses consistently for `serve`, `start`, and `restart` with
+  `--grpc-addr` / `--http-addr` or environment variables, and see the resolved
+  endpoints in startup, daemon status, health, and the web status popover.
+
 ## [0.1.83] - 2026-08-27
 
 ### Added

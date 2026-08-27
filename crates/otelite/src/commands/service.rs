@@ -4,14 +4,20 @@ use crate::error::{Error, Result};
 use otelite_storage::StorageConfig;
 use std::fs;
 use std::io::Write;
-#[cfg(target_os = "macos")]
-use std::path::Path;
-use std::path::PathBuf;
+use std::net::SocketAddr;
+use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use tracing::{info, warn};
 
 #[cfg(target_os = "macos")]
 const LAUNCHD_SERVICE_LABEL: &str = "dev.otelite.daemon";
+
+#[derive(Debug, PartialEq, Eq, serde::Deserialize, serde::Serialize)]
+struct DaemonState {
+    dashboard_addr: SocketAddr,
+    grpc_addr: SocketAddr,
+    http_addr: SocketAddr,
+}
 
 #[cfg(target_os = "macos")]
 #[derive(Debug, PartialEq, Eq)]
@@ -42,6 +48,56 @@ fn get_pid_file() -> Result<PathBuf> {
 /// Get the path to the log file
 fn get_log_file() -> Result<PathBuf> {
     Ok(get_runtime_dir()?.join("otelite.log"))
+}
+
+fn get_state_file() -> Result<PathBuf> {
+    Ok(get_runtime_dir()?.join("otelite-daemon.json"))
+}
+
+fn write_daemon_state(state_file: &Path, state: &DaemonState) -> Result<()> {
+    let contents = serde_json::to_vec_pretty(state).map_err(|e| {
+        Error::ConfigError(format!("Failed to serialize daemon endpoint state: {}", e))
+    })?;
+    fs::write(state_file, contents).map_err(|e| {
+        Error::ConfigError(format!(
+            "Failed to write daemon endpoint state at {}: {}",
+            state_file.display(),
+            e
+        ))
+    })
+}
+
+fn read_daemon_state(state_file: &Path) -> Result<Option<DaemonState>> {
+    if !state_file.exists() {
+        return Ok(None);
+    }
+    let contents = fs::read(state_file).map_err(|e| {
+        Error::ConfigError(format!(
+            "Failed to read daemon endpoint state at {}: {}",
+            state_file.display(),
+            e
+        ))
+    })?;
+    serde_json::from_slice(&contents).map(Some).map_err(|e| {
+        Error::ConfigError(format!(
+            "Invalid daemon endpoint state at {}: {}",
+            state_file.display(),
+            e
+        ))
+    })
+}
+
+fn remove_daemon_state(state_file: &Path) -> Result<()> {
+    if state_file.exists() {
+        fs::remove_file(state_file).map_err(|e| {
+            Error::ConfigError(format!(
+                "Failed to remove daemon endpoint state at {}: {}",
+                state_file.display(),
+                e
+            ))
+        })?;
+    }
+    Ok(())
 }
 
 /// Read the PID from the PID file
@@ -258,7 +314,12 @@ fn is_process_running(pid: u32) -> bool {
 }
 
 /// Start otelite as a background daemon
-pub async fn handle_start(storage_path: Option<PathBuf>, addr: String) -> Result<()> {
+pub async fn handle_start(
+    storage_path: Option<PathBuf>,
+    addr: SocketAddr,
+    grpc_addr: SocketAddr,
+    http_addr: SocketAddr,
+) -> Result<()> {
     if let Some(pid) = read_pid()? {
         if is_process_running(pid) {
             return Err(Error::ConfigError(format!(
@@ -285,7 +346,13 @@ pub async fn handle_start(storage_path: Option<PathBuf>, addr: String) -> Result
         .map_err(|e| Error::ConfigError(format!("Failed to open log file: {}", e)))?;
 
     let mut cmd = Command::new(&exe_path);
-    cmd.arg("serve").arg("--addr").arg(&addr);
+    cmd.arg("serve")
+        .arg("--addr")
+        .arg(addr.to_string())
+        .arg("--grpc-addr")
+        .arg(grpc_addr.to_string())
+        .arg("--http-addr")
+        .arg(http_addr.to_string());
     if let Some(path) = &storage_path {
         cmd.arg("--storage-path").arg(path);
     }
@@ -299,6 +366,15 @@ pub async fn handle_start(storage_path: Option<PathBuf>, addr: String) -> Result
             .map_err(|e| Error::ConfigError(format!("Failed to spawn daemon process: {}", e)))?;
 
     let pid = child.id();
+    let state_file = get_state_file()?;
+    write_daemon_state(
+        &state_file,
+        &DaemonState {
+            dashboard_addr: addr,
+            grpc_addr,
+            http_addr,
+        },
+    )?;
     write_pid(pid)?;
 
     let storage_display = storage_path
@@ -310,6 +386,8 @@ pub async fn handle_start(storage_path: Option<PathBuf>, addr: String) -> Result
     println!("  Logs: {}", log_file.display());
     println!("  Storage: {}", storage_display);
     println!("  Dashboard: http://{}", addr);
+    println!("  OTLP gRPC: {}", grpc_addr);
+    println!("  OTLP HTTP: {}", http_addr);
     println!("\nUse 'otelite stop' to stop the daemon");
     println!("Use 'otelite status' to check daemon status");
 
@@ -388,13 +466,19 @@ pub async fn handle_stop() -> Result<()> {
     if read_pid()? == Some(pid) {
         remove_pid_file()?;
     }
+    remove_daemon_state(&get_state_file()?)?;
     println!("✓ Otelite daemon stopped");
 
     Ok(())
 }
 
 /// Stop the running daemon and start a fresh one
-pub async fn handle_restart(storage_path: Option<PathBuf>, addr: String) -> Result<()> {
+pub async fn handle_restart(
+    storage_path: Option<PathBuf>,
+    addr: SocketAddr,
+    grpc_addr: SocketAddr,
+    http_addr: SocketAddr,
+) -> Result<()> {
     #[cfg(target_os = "macos")]
     if launchd_service_state()?.is_some() {
         restart_launchd_service()?;
@@ -421,7 +505,7 @@ pub async fn handle_restart(storage_path: Option<PathBuf>, addr: String) -> Resu
     handle_stop().await?;
 
     println!("Daemon stopped. Starting fresh...");
-    handle_start(storage_path, addr).await
+    handle_start(storage_path, addr, grpc_addr, http_addr).await
 }
 
 fn display_running_status(pid: u32, supervisor: Option<&str>) -> Result<()> {
@@ -451,6 +535,12 @@ fn display_running_status(pid: u32, supervisor: Option<&str>) -> Result<()> {
 
     let runtime_dir = get_runtime_dir()?;
     println!("Runtime directory: {}", runtime_dir.display());
+
+    if let Some(state) = read_daemon_state(&get_state_file()?)? {
+        println!("Dashboard: http://{}", state.dashboard_addr);
+        println!("OTLP gRPC: {}", state.grpc_addr);
+        println!("OTLP HTTP: {}", state.http_addr);
+    }
 
     Ok(())
 }
@@ -483,6 +573,7 @@ pub async fn handle_status() -> Result<()> {
         println!("Status: Not running (stale PID file)");
         warn!("Cleaning up stale PID file");
         remove_pid_file()?;
+        remove_daemon_state(&get_state_file()?)?;
     } else {
         println!("Status: Not running");
     }
@@ -627,10 +718,55 @@ WantedBy=default.target
 }
 
 #[cfg(test)]
-#[cfg(target_os = "macos")]
 mod tests {
+    use super::{
+        get_state_file, read_daemon_state, remove_daemon_state, write_daemon_state, DaemonState,
+    };
+    #[cfg(target_os = "macos")]
     use super::{parse_launchd_service_state, LaunchdServiceState};
+    use std::net::SocketAddr;
+    use tempfile::TempDir;
 
+    #[test]
+    fn daemon_state_path_uses_runtime_directory() {
+        assert_eq!(
+            get_state_file().unwrap().file_name().unwrap(),
+            "otelite-daemon.json"
+        );
+    }
+
+    #[test]
+    fn daemon_state_round_trips_resolved_endpoints() {
+        let temp_dir = TempDir::new().unwrap();
+        let state_file = temp_dir.path().join("daemon.json");
+        let state = DaemonState {
+            dashboard_addr: SocketAddr::from(([127, 0, 0, 1], 3852)),
+            grpc_addr: SocketAddr::from(([127, 0, 0, 1], 3850)),
+            http_addr: SocketAddr::from(([127, 0, 0, 1], 3851)),
+        };
+
+        write_daemon_state(&state_file, &state).unwrap();
+
+        assert_eq!(read_daemon_state(&state_file).unwrap(), Some(state));
+    }
+
+    #[test]
+    fn removing_daemon_state_makes_it_absent() {
+        let temp_dir = TempDir::new().unwrap();
+        let state_file = temp_dir.path().join("daemon.json");
+        let state = DaemonState {
+            dashboard_addr: SocketAddr::from(([127, 0, 0, 1], 3852)),
+            grpc_addr: SocketAddr::from(([127, 0, 0, 1], 3850)),
+            http_addr: SocketAddr::from(([127, 0, 0, 1], 3851)),
+        };
+        write_daemon_state(&state_file, &state).unwrap();
+
+        remove_daemon_state(&state_file).unwrap();
+
+        assert_eq!(read_daemon_state(&state_file).unwrap(), None);
+    }
+
+    #[cfg(target_os = "macos")]
     #[test]
     fn test_parse_launchd_service_state_detects_running_service() {
         let output = r#"
@@ -646,6 +782,7 @@ gui/501/dev.otelite.daemon = {
         );
     }
 
+    #[cfg(target_os = "macos")]
     #[test]
     fn test_parse_launchd_service_state_detects_loaded_non_running_service() {
         let output = r#"
@@ -661,6 +798,7 @@ gui/501/dev.otelite.daemon = {
         );
     }
 
+    #[cfg(target_os = "macos")]
     #[test]
     fn test_is_otelite_command_accepts_only_otelite_executable() {
         assert!(super::is_otelite_command(

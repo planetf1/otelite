@@ -1,6 +1,6 @@
 //! Otelite CLI - OpenTelemetry receiver and dashboard
 
-use clap::{Parser, Subcommand};
+use clap::{Args, Parser, Subcommand};
 use otelite_api::{DashboardConfig, DashboardServer};
 use otelite_storage::{sqlite::SqliteBackend, StorageBackend, StorageConfig};
 use std::net::SocketAddr;
@@ -62,6 +62,36 @@ struct Cli {
     command: Option<Commands>,
 }
 
+#[derive(Args, Debug, Clone)]
+struct ServerArgs {
+    /// Dashboard and REST API bind address
+    #[arg(long, default_value = "127.0.0.1:3000")]
+    addr: SocketAddr,
+
+    /// OTLP gRPC receiver bind address
+    #[arg(long, env = "OTELITE_GRPC_ADDR", default_value = "127.0.0.1:4317")]
+    grpc_addr: SocketAddr,
+
+    /// OTLP HTTP receiver bind address
+    #[arg(long, env = "OTELITE_HTTP_ADDR", default_value = "127.0.0.1:4318")]
+    http_addr: SocketAddr,
+
+    /// Directory for the SQLite database. Defaults to ~/.otelite/data
+    #[arg(long)]
+    storage_path: Option<PathBuf>,
+}
+
+impl Default for ServerArgs {
+    fn default() -> Self {
+        Self {
+            addr: SocketAddr::from(([127, 0, 0, 1], 3000)),
+            grpc_addr: SocketAddr::from(([127, 0, 0, 1], 4317)),
+            http_addr: SocketAddr::from(([127, 0, 0, 1], 4318)),
+            storage_path: None,
+        }
+    }
+}
+
 #[derive(Subcommand, Debug)]
 enum Commands {
     /// Start the server with OTLP receivers in the foreground (default if no subcommand)
@@ -70,28 +100,16 @@ enum Commands {
         after_help = "Examples:\n  otelite serve\n  otelite serve --addr 0.0.0.0:8080 --storage-path /data/myproject"
     )]
     Serve {
-        /// Server bind address
-        #[arg(long, default_value = "127.0.0.1:3000")]
-        addr: SocketAddr,
-
-        /// Directory for the SQLite database. Defaults to the OS data directory
-        /// (macOS: ~/Library/Application Support/otelite, Linux: ~/.local/share/otelite)
-        #[arg(long)]
-        storage_path: Option<PathBuf>,
+        #[command(flatten)]
+        server: ServerArgs,
     },
     /// Run `serve` as a background daemon
     #[command(
         after_help = "Examples:\n  otelite start\n  otelite start --addr 0.0.0.0:3000 --storage-path /data/myproject"
     )]
     Start {
-        /// Server bind address
-        #[arg(long, default_value = "127.0.0.1:3000")]
-        addr: String,
-
-        /// Directory for the SQLite database. Defaults to the OS data directory
-        /// (macOS: ~/Library/Application Support/otelite, Linux: ~/.local/share/otelite)
-        #[arg(long)]
-        storage_path: Option<PathBuf>,
+        #[command(flatten)]
+        server: ServerArgs,
     },
     /// Stop the `serve` background daemon
     #[command(after_help = "Examples:\n  otelite stop")]
@@ -102,14 +120,8 @@ enum Commands {
         after_help = "Examples:\n  otelite restart\n  otelite restart --addr 0.0.0.0:3000 --storage-path /data/myproject"
     )]
     Restart {
-        /// Server bind address
-        #[arg(long, default_value = "127.0.0.1:3000")]
-        addr: String,
-
-        /// Directory for the SQLite database. Defaults to the OS data directory
-        /// (macOS: ~/Library/Application Support/otelite, Linux: ~/.local/share/otelite)
-        #[arg(long)]
-        storage_path: Option<PathBuf>,
+        #[command(flatten)]
+        server: ServerArgs,
     },
     /// Show `serve` daemon status
     #[command(after_help = "Examples:\n  otelite status")]
@@ -545,13 +557,25 @@ async fn run_cli() -> Result<()> {
 
     // Handle commands
     match cli.command {
-        Some(Commands::Serve { addr, storage_path }) => run_dashboard(addr, storage_path).await,
-        Some(Commands::Start { addr, storage_path }) => {
-            commands::service::handle_start(storage_path, addr).await
+        Some(Commands::Serve { server }) => run_dashboard(server).await,
+        Some(Commands::Start { server }) => {
+            commands::service::handle_start(
+                server.storage_path,
+                server.addr,
+                server.grpc_addr,
+                server.http_addr,
+            )
+            .await
         },
         Some(Commands::Stop) => commands::service::handle_stop().await,
-        Some(Commands::Restart { addr, storage_path }) => {
-            commands::service::handle_restart(storage_path, addr).await
+        Some(Commands::Restart { server }) => {
+            commands::service::handle_restart(
+                server.storage_path,
+                server.addr,
+                server.grpc_addr,
+                server.http_addr,
+            )
+            .await
         },
         Some(Commands::Status) => commands::service::handle_status().await,
         Some(Commands::Service { command }) => handle_service_command(command).await,
@@ -620,7 +644,7 @@ async fn run_cli() -> Result<()> {
             commands::import::handle_import(&file, signal_type.as_deref(), storage_path.as_deref())
                 .await
         },
-        None => run_dashboard("127.0.0.1:3000".parse().unwrap(), None).await,
+        None => run_dashboard(ServerArgs::default()).await,
     }
 }
 
@@ -643,7 +667,13 @@ async fn create_storage(_config: &Config) -> Result<Arc<dyn StorageBackend>> {
     Ok(Arc::new(storage))
 }
 
-async fn run_dashboard(addr: SocketAddr, storage_path: Option<PathBuf>) -> Result<()> {
+async fn run_dashboard(server: ServerArgs) -> Result<()> {
+    let ServerArgs {
+        addr,
+        grpc_addr,
+        http_addr,
+        storage_path,
+    } = server;
     let storage_config = match storage_path {
         Some(path) => StorageConfig::default().with_data_dir(path),
         None => StorageConfig::default(),
@@ -653,12 +683,15 @@ async fn run_dashboard(addr: SocketAddr, storage_path: Option<PathBuf>) -> Resul
     if is_first_run {
         println!("\nWelcome to Otelite! Starting OpenTelemetry collector...\n");
         println!("  Dashboard:  http://{}", addr);
-        println!("  OTLP gRPC:  localhost:4317");
-        println!("  OTLP HTTP:  localhost:4318");
+        println!("  OTLP gRPC:  {}", grpc_addr);
+        println!("  OTLP HTTP:  {}", http_addr);
         println!("  Storage:    {}\n", storage_config.data_dir.display());
 
         println!("To send test data:");
-        println!("  otel-cli exec --endpoint http://localhost:4318 -- echo \"hello\"\n");
+        println!(
+            "  otel-cli exec --endpoint http://{} -- echo \"hello\"\n",
+            http_addr
+        );
 
         println!("To view data:");
         println!("  otelite logs list");
@@ -693,9 +726,9 @@ async fn run_dashboard(addr: SocketAddr, storage_path: Option<PathBuf>) -> Resul
 
     info!("Storage initialized successfully");
 
-    // Start gRPC receiver on port 4317
-    let grpc_addr = "0.0.0.0:4317".parse().unwrap();
-    let receiver_config = otelite_receiver::ReceiverConfig::new().with_grpc_addr(grpc_addr);
+    let receiver_config = otelite_receiver::ReceiverConfig::new()
+        .with_grpc_addr(grpc_addr)
+        .with_http_addr(http_addr);
 
     let grpc_server =
         otelite_receiver::grpc::GrpcServer::new(receiver_config.clone(), storage.clone());
@@ -707,11 +740,7 @@ async fn run_dashboard(addr: SocketAddr, storage_path: Option<PathBuf>) -> Resul
 
     info!("gRPC receiver started on {}", grpc_addr);
 
-    // Start HTTP receiver on port 4318
-    let http_addr = "0.0.0.0:4318".parse().unwrap();
-    let http_config = receiver_config.with_http_addr(http_addr);
-
-    let http_server = otelite_receiver::http::HttpServer::new(http_config);
+    let http_server = otelite_receiver::http::HttpServer::new(receiver_config);
 
     http_server
         .start(storage.clone())
@@ -726,7 +755,7 @@ async fn run_dashboard(addr: SocketAddr, storage_path: Option<PathBuf>) -> Resul
     let config = DashboardConfig::default()
         .with_bind_address(addr)
         .with_storage_path(data_dir_str)
-        .with_otlp_ports(grpc_addr.port(), http_addr.port());
+        .with_otlp_addresses(grpc_addr, http_addr);
 
     let server = DashboardServer::new(config, storage);
     server
@@ -914,4 +943,97 @@ async fn handle_tui_command(
         .map_err(|e| Error::ApiError(format!("TUI error: {}", e)))?;
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{Cli, Commands, ServerArgs};
+    use clap::Parser;
+    use parking_lot::Mutex;
+    use std::ffi::OsString;
+    use std::net::SocketAddr;
+
+    static ENV_LOCK: Mutex<()> = Mutex::new(());
+
+    struct ReceiverEnv {
+        grpc: Option<OsString>,
+        http: Option<OsString>,
+    }
+
+    impl ReceiverEnv {
+        fn capture() -> Self {
+            Self {
+                grpc: std::env::var_os("OTELITE_GRPC_ADDR"),
+                http: std::env::var_os("OTELITE_HTTP_ADDR"),
+            }
+        }
+    }
+
+    impl Drop for ReceiverEnv {
+        fn drop(&mut self) {
+            match self.grpc.take() {
+                Some(value) => std::env::set_var("OTELITE_GRPC_ADDR", value),
+                None => std::env::remove_var("OTELITE_GRPC_ADDR"),
+            }
+            match self.http.take() {
+                Some(value) => std::env::set_var("OTELITE_HTTP_ADDR", value),
+                None => std::env::remove_var("OTELITE_HTTP_ADDR"),
+            }
+        }
+    }
+
+    fn server_args(command: Commands) -> ServerArgs {
+        match command {
+            Commands::Serve { server }
+            | Commands::Start { server }
+            | Commands::Restart { server } => server,
+            other => panic!("expected server command, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn receiver_addresses_default_to_loopback_for_all_server_commands() {
+        let _lock = ENV_LOCK.lock();
+        let _environment = ReceiverEnv::capture();
+        std::env::remove_var("OTELITE_GRPC_ADDR");
+        std::env::remove_var("OTELITE_HTTP_ADDR");
+        for command in ["serve", "start", "restart"] {
+            let cli = Cli::try_parse_from(["otelite", command]).unwrap();
+            let server = server_args(cli.command.unwrap());
+            assert_eq!(server.grpc_addr, SocketAddr::from(([127, 0, 0, 1], 4317)));
+            assert_eq!(server.http_addr, SocketAddr::from(([127, 0, 0, 1], 4318)));
+        }
+    }
+
+    #[test]
+    fn receiver_address_precedence_is_cli_then_environment_then_default() {
+        let _guard = ENV_LOCK.lock();
+        let _environment = ReceiverEnv::capture();
+        std::env::set_var("OTELITE_GRPC_ADDR", "127.0.0.1:5317");
+        std::env::set_var("OTELITE_HTTP_ADDR", "127.0.0.1:5318");
+
+        let environment = Cli::try_parse_from(["otelite", "serve"]).unwrap();
+        let environment = server_args(environment.command.unwrap());
+        assert_eq!(
+            environment.grpc_addr,
+            SocketAddr::from(([127, 0, 0, 1], 5317))
+        );
+        assert_eq!(
+            environment.http_addr,
+            SocketAddr::from(([127, 0, 0, 1], 5318))
+        );
+
+        let cli = Cli::try_parse_from([
+            "otelite",
+            "serve",
+            "--grpc-addr",
+            "127.0.0.1:6317",
+            "--http-addr",
+            "127.0.0.1:6318",
+        ])
+        .unwrap();
+        let cli = server_args(cli.command.unwrap());
+        assert_eq!(cli.grpc_addr, SocketAddr::from(([127, 0, 0, 1], 6317)));
+        assert_eq!(cli.http_addr, SocketAddr::from(([127, 0, 0, 1], 6318)));
+    }
 }

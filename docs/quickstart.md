@@ -44,20 +44,34 @@ otelite serve
 ```
 
 This starts:
-- **OTLP/gRPC** receiver on `localhost:4317`
-- **OTLP/HTTP** receiver on `localhost:4318`
-- **REST API** on `http://localhost:3000`
-- **Web Dashboard** on `http://localhost:3000`
+- **OTLP/gRPC** receiver on `127.0.0.1:4317`
+- **OTLP/HTTP** receiver on `127.0.0.1:4318`
+- **REST API** on `http://127.0.0.1:3000`
+- **Web Dashboard** on `http://127.0.0.1:3000`
 
 You should see output like:
 
+```text
+Welcome to Otelite! Starting OpenTelemetry collector...
+
+  Dashboard:  http://127.0.0.1:3000
+  OTLP gRPC:  127.0.0.1:4317
+  OTLP HTTP:  127.0.0.1:4318
 ```
-Otelite starting...
-OTLP gRPC receiver listening on 0.0.0.0:4317
-OTLP HTTP receiver listening on 0.0.0.0:4318
-REST API listening on http://0.0.0.0:3000
-Web dashboard available at http://localhost:3000
+
+All three listeners bind only to loopback by default. To select different
+receiver interfaces or ports, use command-line arguments:
+
+```bash
+otelite serve \
+  --grpc-addr 127.0.0.1:14317 \
+  --http-addr 127.0.0.1:14318
 ```
+
+`OTELITE_GRPC_ADDR` and `OTELITE_HTTP_ADDR` provide environment defaults for
+`serve`, `start`, and `restart`. An explicit command-line argument overrides
+the corresponding environment value. Use `0.0.0.0` explicitly for container
+or LAN access.
 
 ## Sending Test Data
 
