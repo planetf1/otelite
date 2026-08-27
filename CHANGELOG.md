@@ -11,6 +11,8 @@ have to work around), not implementation detail.
 
 ## [Unreleased]
 
+## [0.1.86] - 2026-08-27
+
 ### Internal
 
 - Bumped ratatui 0.29 → 0.30, which pulls `lru 0.18.2` and clears
