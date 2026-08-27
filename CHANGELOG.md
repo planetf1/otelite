@@ -11,6 +11,8 @@ have to work around), not implementation detail.
 
 ## [Unreleased]
 
+## [0.1.88] - 2026-08-27
+
 ### Internal
 
 - Fixed a Linux CI compile failure in the service-management test module
