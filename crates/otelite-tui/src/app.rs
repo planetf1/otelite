@@ -608,6 +608,32 @@ impl App {
                         },
                     }
                 }
+                // Telemetry capability panel (#120): fixed 7-day window.
+                // Optional panel — a failure only blanks this panel.
+                {
+                    let now_ns = std::time::SystemTime::now()
+                        .duration_since(std::time::UNIX_EPOCH)
+                        .map(|d| d.as_nanos() as i64)
+                        .unwrap_or(0);
+                    let cap_start = (now_ns - 7 * 86_400_000_000_000).to_string();
+                    let cap_end = now_ns.to_string();
+                    match self
+                        .api_client
+                        .fetch_genai_capabilities(vec![
+                            ("start_time", cap_start),
+                            ("end_time", cap_end),
+                        ])
+                        .await
+                    {
+                        Ok(resp) => {
+                            self.usage_state.capabilities =
+                                crate::ui::usage::capability_rows(&resp);
+                        },
+                        Err(_) => {
+                            self.usage_state.capabilities = Vec::new();
+                        },
+                    }
+                }
                 // best-effort — Claude Code only; ignore errors silently
                 if let Ok(resp) = self.api_client.fetch_tool_approvals(vec![]).await {
                     self.usage_state.tool_approvals = Some(resp);

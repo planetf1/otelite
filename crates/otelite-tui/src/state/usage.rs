@@ -16,6 +16,20 @@ pub struct DailyThroughputRow {
     pub tps: String,
 }
 
+/// One emitter-identity row of the telemetry capability panel (issue #120).
+/// Cell text is pre-formatted (`availability/quality[/derivation] (n/m)`) so
+/// the render path stays trivially testable and the vocabulary
+/// (absent/sparse/invalid/degenerate/correlated/unavailable) stays distinct.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CapabilityRow {
+    pub identity: String,
+    pub emitter: String,
+    pub requests: usize,
+    pub input: String,
+    pub output: String,
+    pub ttft: String,
+}
+
 /// State for the Usage analytics view.
 #[derive(Debug, Default)]
 pub struct UsageState {
@@ -37,6 +51,8 @@ pub struct UsageState {
     pub daily_throughput: Vec<DailyThroughputRow>,
     /// IANA timezone the daily buckets align to (None until fetched).
     pub daily_throughput_tz: Option<String>,
+    /// Capability rows; empty until fetched.
+    pub capabilities: Vec<CapabilityRow>,
     pub error: Option<String>,
     pub is_loading: bool,
 }

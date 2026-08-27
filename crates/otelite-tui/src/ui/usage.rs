@@ -1,8 +1,10 @@
-use crate::state::usage::DailyThroughputRow;
+use crate::state::usage::{CapabilityRow, DailyThroughputRow};
 use crate::state::UsageState;
 use crate::ui::render_tab_bar;
 use chrono::{DateTime, Datelike, TimeZone, Timelike, Utc};
-use otelite_core::api::LatencyPercentilesResponse;
+use otelite_core::api::{
+    GenAiCapabilityResponse, GenAiMetricCapability, LatencyPercentilesResponse,
+};
 use ratatui::{
     layout::{Constraint, Direction, Layout, Rect},
     style::{Color, Modifier, Style},
@@ -67,6 +69,45 @@ pub fn daily_throughput_rows(
 /// Local calendar-day label (YYYY-MM-DD) for a bucket-start timestamp in ns.
 /// The API aligns `timestamp` to local midnight in the requested timezone, so
 /// shifting the instant by that timezone's offset yields the local date.
+/// Project the capability report into compact panel rows: one row per
+/// provider/model/emitter identity. Cells keep the full vocabulary
+/// (`availability/quality[/derivation] (valid/observed)`); derivation is only
+/// shown when not `native`. Wording mirrors the CLI's `capabilities` table
+/// (issue #120 parity contract).
+pub fn capability_rows(resp: &GenAiCapabilityResponse) -> Vec<CapabilityRow> {
+    let cell = |m: &GenAiMetricCapability| {
+        let mut c = format!("{}/{}", m.availability, m.quality);
+        if m.derivation != "native" {
+            c.push_str(&format!("/{}", m.derivation));
+        }
+        let n = if m.observed_count > 0 {
+            format!("{}/{} obs", m.valid_count, m.observed_count)
+        } else {
+            format!("0/{} elig", m.eligible_count)
+        };
+        format!("{c} ({n})")
+    };
+    resp.reports
+        .iter()
+        .map(|r| {
+            let identity = match (&r.provider, &r.model) {
+                (Some(p), Some(m)) => format!("{p}/{m}"),
+                (Some(p), None) => p.clone(),
+                (None, Some(m)) => m.clone(),
+                (None, None) => "(unknown)".to_string(),
+            };
+            CapabilityRow {
+                identity,
+                emitter: r.emitter.clone(),
+                requests: r.request_count,
+                input: cell(&r.input_tokens),
+                output: cell(&r.output_tokens),
+                ttft: cell(&r.ttft),
+            }
+        })
+        .collect()
+}
+
 fn day_label_local(ts_ns: i64, tz: &chrono_tz::Tz) -> String {
     let dt: DateTime<Utc> = DateTime::from_timestamp_nanos(ts_ns);
     // The offset at this instant shifts the instant into local wall time.
@@ -213,9 +254,13 @@ fn render_tables(frame: &mut Frame, area: Rect, state: &UsageState) {
     let show_hour = state.hour_of_day.iter().any(|b| b.llm_calls > 0);
     let show_calls = !state.calls_series.is_empty();
     let show_daily = !state.daily_throughput.is_empty();
+    let show_caps = !state.capabilities.is_empty();
 
     let mut constraints = vec![Constraint::Min(5)]; // latency always shown
     if show_daily {
+        constraints.push(Constraint::Length(9));
+    }
+    if show_caps {
         constraints.push(Constraint::Length(9));
     }
     if show_tools {
@@ -253,6 +298,10 @@ fn render_tables(frame: &mut Frame, area: Rect, state: &UsageState) {
     let mut idx = 1usize;
     if show_daily {
         render_daily_throughput_table(frame, sections[idx], state);
+        idx += 1;
+    }
+    if show_caps {
+        render_capability_table(frame, sections[idx], state);
         idx += 1;
     }
     if show_tools {
@@ -535,6 +584,74 @@ fn render_daily_throughput_table(frame: &mut Frame, area: Rect, state: &UsageSta
             Constraint::Length(5),  // N
             Constraint::Length(5),  // N*†
             Constraint::Min(16),    // tok/s triple
+        ],
+    )
+    .header(header)
+    .block(block);
+
+    frame.render_widget(table, area);
+}
+
+fn render_capability_table(frame: &mut Frame, area: Rect, state: &UsageState) {
+    let block = Block::default()
+        .borders(Borders::ALL)
+        .title(" Telemetry capabilities (availability/quality; unavailable is never zero) ");
+
+    if state.capabilities.is_empty() {
+        let msg = if state.is_loading {
+            "Loading…"
+        } else {
+            "No capability data"
+        };
+        frame.render_widget(Paragraph::new(msg).block(block), area);
+        return;
+    }
+
+    let header_style = Style::default()
+        .fg(Color::Cyan)
+        .add_modifier(Modifier::BOLD);
+    let header = Row::new(vec![
+        Cell::from("Identity").style(header_style),
+        Cell::from("Emitter").style(header_style),
+        Cell::from("Req").style(header_style),
+        Cell::from("Input").style(header_style),
+        Cell::from("Output").style(header_style),
+        Cell::from("TTFT").style(header_style),
+    ]);
+
+    let rows: Vec<Row> = state
+        .capabilities
+        .iter()
+        .map(|r| {
+            let cell_style = |text: &str| {
+                if text.contains("/invalid") || text.contains("/degenerate") {
+                    Style::default().fg(Color::Yellow)
+                } else if text.contains("absent") {
+                    Style::default().fg(Color::DarkGray)
+                } else {
+                    Style::default()
+                }
+            };
+            Row::new(vec![
+                Cell::from(truncate(&r.identity, 28)),
+                Cell::from(truncate(&r.emitter, 14)),
+                Cell::from(r.requests.to_string()),
+                Cell::from(r.input.clone()).style(cell_style(&r.input)),
+                Cell::from(r.output.clone()).style(cell_style(&r.output)),
+                Cell::from(r.ttft.clone()).style(cell_style(&r.ttft)),
+            ])
+        })
+        .collect();
+
+    let table = Table::new(
+        rows,
+        [
+            Constraint::Min(24),    // Identity
+            Constraint::Length(12), // Emitter
+            Constraint::Length(5),  // Req
+            Constraint::Min(16),    // Input
+            Constraint::Min(16),    // Output
+            Constraint::Min(16),    // TTFT
         ],
     )
     .header(header)
@@ -1344,7 +1461,9 @@ fn render_calls_series(frame: &mut Frame, area: Rect, state: &UsageState) {
 mod tests {
     use super::*;
     use otelite_core::api::{
-        LatencyPercentilePoint, LatencyPercentileSeries, LatencyPercentilesResponse, LatencyStats,
+        GenAiCapabilityReport, GenAiCapabilityResponse, GenAiCorrelationProvenance,
+        GenAiMetricCapability, LatencyPercentilePoint, LatencyPercentileSeries,
+        LatencyPercentilesResponse, LatencyStats,
     };
 
     fn make_latency(p95_ms: i64, ratio_p95: Option<f64>) -> LatencyStats {
@@ -1550,5 +1669,104 @@ mod tests {
         )]);
         let rows = daily_throughput_rows(&resp, "UTC");
         assert_eq!(rows[0].tps, "—");
+    }
+
+    /// (eligible, observed, valid, availability, quality, derivation).
+    fn cap(spec: (usize, usize, usize, &str, &str, &str)) -> GenAiMetricCapability {
+        let (eligible, observed, valid, availability, quality, derivation) = spec;
+        GenAiMetricCapability {
+            eligible_count: eligible,
+            observed_count: observed,
+            valid_count: valid,
+            invalid_count: observed.saturating_sub(valid),
+            availability: availability.to_string(),
+            quality: quality.to_string(),
+            derivation: derivation.to_string(),
+            source_attributes: Default::default(),
+        }
+    }
+
+    fn cap_resp(reports: Vec<GenAiCapabilityReport>) -> GenAiCapabilityResponse {
+        let canonical_span_count: usize = reports.iter().map(|r| r.request_count).sum();
+        GenAiCapabilityResponse {
+            reports,
+            canonical_span_count,
+            duplicate_span_count: 0,
+            truncated: false,
+            filters_applied: vec![],
+        }
+    }
+
+    fn cap_report(
+        provider: Option<&str>,
+        model: Option<&str>,
+        emitter: &str,
+        count: usize,
+        ttft: GenAiMetricCapability,
+    ) -> GenAiCapabilityReport {
+        let absent = cap((count, 0, 0, "absent", "not_assessed", "unavailable"));
+        GenAiCapabilityReport {
+            provider: provider.map(str::to_string),
+            model: model.map(str::to_string),
+            emitter_fingerprint: "fp".into(),
+            emitter: emitter.to_string(),
+            adapter_rule: "rule".into(),
+            request_count: count,
+            input_tokens: cap((count, count, count, "available", "reliable", "native")),
+            output_tokens: cap((count, count, count, "available", "reliable", "native")),
+            cache_creation_tokens: absent.clone(),
+            cache_read_tokens: absent,
+            ttft,
+            correlation: GenAiCorrelationProvenance {
+                rule: "none".into(),
+                matched_count: 0,
+                unmatched_count: 0,
+                rejected_count: 0,
+                ambiguous_count: 0,
+            },
+        }
+    }
+
+    #[test]
+    fn test_capability_rows_vocabulary_and_identity() {
+        let full = cap((5, 5, 5, "available", "reliable", "native"));
+        let invalid = cap((4, 3, 1, "sparse", "invalid", "native"));
+        let degenerate = cap((12, 12, 12, "available", "degenerate", "native"));
+        let absent = cap((3, 0, 0, "absent", "not_assessed", "unavailable"));
+        let resp = cap_resp(vec![
+            cap_report(Some("openai"), Some("gpt-4o"), "standard_otel", 5, full),
+            cap_report(
+                Some("openai"),
+                Some("gpt-4o-mini"),
+                "standard_otel",
+                4,
+                invalid,
+            ),
+            cap_report(
+                Some("anthropic"),
+                Some("claude-sonnet-4-5"),
+                "standard_otel",
+                12,
+                degenerate,
+            ),
+            cap_report(None, Some("claude-opus-4-6"), "claude_code", 3, absent),
+        ]);
+        let rows = capability_rows(&resp);
+        assert_eq!(rows.len(), 4);
+        // identity is the provider/model composite (bare model without provider)
+        assert_eq!(rows[0].identity, "openai/gpt-4o");
+        assert_eq!(rows[3].identity, "claude-opus-4-6");
+        assert_eq!(rows[0].requests, 5);
+        // native derivation is suppressed in the cell
+        assert_eq!(rows[0].input, "available/reliable (5/5 obs)");
+        assert_eq!(rows[1].ttft, "sparse/invalid (1/3 obs)");
+        assert_eq!(rows[2].ttft, "available/degenerate (12/12 obs)");
+        // absent keeps the derivation and shows the eligibility count
+        assert_eq!(rows[3].ttft, "absent/not_assessed/unavailable (0/3 elig)");
+    }
+
+    #[test]
+    fn test_capability_rows_empty() {
+        assert!(capability_rows(&cap_resp(vec![])).is_empty());
     }
 }

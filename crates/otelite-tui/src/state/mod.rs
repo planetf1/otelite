@@ -8,7 +8,7 @@ pub mod usage;
 pub use logs::LogsState;
 pub use metrics::MetricsState;
 pub use traces::TracesState;
-pub use usage::{DailyThroughputRow, UsageState};
+pub use usage::{CapabilityRow, DailyThroughputRow, UsageState};
 
 /// Maximum number of items to keep in memory per view
 pub const MAX_ITEMS_IN_MEMORY: usize = 1000;

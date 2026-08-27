@@ -29,7 +29,10 @@ have to work around), not implementation detail.
   of being guessed. `--start`/`--end` accept the same exact values as
   `otelite usage`; JSON output matches the API
   (`GET /api/genai/capabilities`) byte-for-byte, pinned by a versioned
-  fixture.
+  fixture. The web dashboard gains a "Telemetry Capabilities" analytics
+  section and the TUI Usage view gains a matching panel, both presenting
+  the same report (invalid/degenerate cells highlighted, absent metrics
+  dimmed and never shown as zero).
 
 ## [0.1.83] - 2026-08-27
 

@@ -103,6 +103,7 @@ class AnalyticsView {
                 ${this._renderSectionShell('latency', 'Latency', 'Response time · throughput · context size')}
                 ${this._renderSectionShell('reliability', 'Reliability', 'Errors · retries · truncation · drift')}
                 ${this._renderSectionShell('behavior', 'Behavior', 'Tool use · retrieval · request volume')}
+                ${this._renderSectionShell('capabilities', 'Telemetry Capabilities', 'Which metrics each emitter actually provides · availability & quality')}
             </div>
         `;
 
@@ -656,6 +657,7 @@ class AnalyticsView {
             latency: () => this._loadLatencySection(),
             reliability: () => this._loadReliabilitySection(),
             behavior: () => this._loadBehaviorSection(),
+            capabilities: () => this._loadCapabilitiesSection(),
         };
     }
 
@@ -1227,6 +1229,67 @@ class AnalyticsView {
      * @param {?string} tz   - IANA timezone the buckets align to
      * @returns {string} HTML block ('' when there is nothing to show)
      */
+    async _loadCapabilitiesSection() {
+        this._setSectionLoading('capabilities');
+        try {
+            const params = this._baseParams();
+            const resp = await this.api.getGenAiCapabilities(params).catch(() => null);
+            this._setSectionBody('capabilities', this._buildCapabilitiesTable(resp));
+            this.loadedSections.add('capabilities');
+        } catch (err) {
+            this._setSectionError('capabilities', err);
+        }
+    }
+
+    _capabilityCell(m) {
+        if (!m) return '<td class="num">—</td>';
+        const derivation = m.derivation && m.derivation !== 'native' ? `/${m.derivation}` : '';
+        const counts = m.observed_count > 0
+            ? `${m.valid_count}/${m.observed_count} obs`
+            : `0/${m.eligible_count} elig`;
+        let cls = '';
+        if (m.quality === 'invalid' || m.quality === 'degenerate') cls = ' class="warn"';
+        else if (m.availability === 'absent') cls = ' class="dim"';
+        return `<td${cls} title="valid ${m.valid_count} / observed ${m.observed_count} / eligible ${m.eligible_count}; invalid ${m.invalid_count}">${m.availability}/${m.quality}${derivation} (${counts})</td>`;
+    }
+
+    _buildCapabilitiesTable(resp) {
+        const reports = (resp && resp.reports) || [];
+        if (!reports.length) {
+            return `<h3>Telemetry capabilities</h3>
+                <div class="empty-state-hint">No LLM request spans in this window.</div>`;
+        }
+        const meta = [];
+        meta.push(`${resp.canonical_span_count} canonical request span${resp.canonical_span_count === 1 ? '' : 's'}`);
+        if (resp.duplicate_span_count > 0) meta.push(`${resp.duplicate_span_count} duplicate OTLP deliveries collapsed`);
+        if (resp.truncated) meta.push('bounded sample — older spans excluded');
+        const body = reports.map(r => {
+            const identity = [r.provider, r.model].filter(Boolean).join('/') || '(unknown)';
+            return `<tr>
+                <td>${this._esc(identity)}</td>
+                <td>${this._esc(r.emitter)}</td>
+                <td class="num">${r.request_count}</td>
+                ${this._capabilityCell(r.input_tokens)}
+                ${this._capabilityCell(r.output_tokens)}
+                ${this._capabilityCell(r.cache_creation_tokens)}
+                ${this._capabilityCell(r.cache_read_tokens)}
+                ${this._capabilityCell(r.ttft)}
+            </tr>`;
+        }).join('');
+        return `
+            <h3>Telemetry capabilities</h3>
+            <p class="table-hint">${meta.join(' · ')}. Cells are availability/quality(/derivation) with valid/observed counts. <span class="dim">absent</span> means the metric is not provided — it is never a measured zero. Emitters without a verified token signature (e.g. codex) stay timing-only with derivation <em>unavailable</em> instead of guessed values.</p>
+            <table class="data-table capabilities-table">
+                <thead><tr>
+                    <th>Provider / Model</th><th>Emitter</th><th>Requests</th>
+                    <th>Input tokens</th><th>Output tokens</th>
+                    <th>Cache write</th><th>Cache read</th><th>TTFT</th>
+                </tr></thead>
+                <tbody>${body}</tbody>
+            </table>
+            <p class="table-hint">availability: available · sparse · absent — quality: reliable · invalid · degenerate · not_assessed — derivation (shown when not native): correlated · unavailable.</p>`;
+    }
+
     _buildDailyThroughputTable(resp, tz) {
         const series = resp && resp.metrics && resp.metrics.duration;
         const models = (series && series.models) || {};

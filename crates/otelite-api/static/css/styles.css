@@ -2856,6 +2856,9 @@ body {
     font-size: 0.8rem;
     margin: -0.5rem 0 0.75rem;
 }
+.capabilities-table .warn { color: #f59e0b; font-weight: 600; }
+.capabilities-table .dim { color: var(--text-secondary); }
+
 
 /* Latency chart — two-tone bars: p95 faded, avg solid */
 .latency-chart-bar-p95 { fill: var(--accent-color, #3b82f6); opacity: 0.3; }
