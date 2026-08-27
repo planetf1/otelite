@@ -11,6 +11,12 @@ have to work around), not implementation detail.
 
 ## [Unreleased]
 
+### Internal
+
+- Bumped ratatui 0.29 → 0.30, which pulls `lru 0.18.2` and clears
+  RUSTSEC-2026-0253 (a panic-safety unsoundness in `lru 0.12` used by the
+  TUI). No user-visible change.
+
 ## [0.1.85] - 2026-08-27
 
 ### Fixed

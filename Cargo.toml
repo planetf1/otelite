@@ -50,7 +50,7 @@ tracing-subscriber = "0.3"
 axum = "0.8"
 reqwest = { version = "0.12", default-features = true, features = ["json"] }
 thiserror = "2.0"
-ratatui = "0.29"
+ratatui = "0.30"
 crossterm = "0.29"
 
 [profile.dev]

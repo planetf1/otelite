@@ -372,47 +372,54 @@ impl App {
 
     /// Render the current view
     pub fn render<B: ratatui::backend::Backend>(&self, terminal: &mut Terminal<B>) -> Result<()> {
-        terminal.draw(|f| {
-            let area = f.area();
+        terminal
+            .draw(|f| {
+                let area = f.area();
 
-            // Render based on current view
-            match self.current_view {
-                View::Logs => {
-                    ui::render_logs_view(
-                        f,
-                        area,
-                        &self.logs_state,
-                        self.filter_input_active,
-                        &self.filter_input_buffer,
-                        self.api_error.as_deref(),
-                    );
-                },
-                View::Traces => {
-                    ui::render_traces_view(
-                        f,
-                        area,
-                        &self.traces_state,
-                        self.filter_input_active,
-                        &self.filter_input_buffer,
-                        self.api_error.as_deref(),
-                    );
-                },
-                View::Metrics => {
-                    ui::render_metrics_view(
-                        f,
-                        area,
-                        &self.metrics_state,
-                        self.api_error.as_deref(),
-                    );
-                },
-                View::Usage => {
-                    ui::render_usage_view(f, area, &self.usage_state, self.api_error.as_deref());
-                },
-                View::Help => {
-                    ui::render_help_view(f, area, &self.config.version);
-                },
-            }
-        })?;
+                // Render based on current view
+                match self.current_view {
+                    View::Logs => {
+                        ui::render_logs_view(
+                            f,
+                            area,
+                            &self.logs_state,
+                            self.filter_input_active,
+                            &self.filter_input_buffer,
+                            self.api_error.as_deref(),
+                        );
+                    },
+                    View::Traces => {
+                        ui::render_traces_view(
+                            f,
+                            area,
+                            &self.traces_state,
+                            self.filter_input_active,
+                            &self.filter_input_buffer,
+                            self.api_error.as_deref(),
+                        );
+                    },
+                    View::Metrics => {
+                        ui::render_metrics_view(
+                            f,
+                            area,
+                            &self.metrics_state,
+                            self.api_error.as_deref(),
+                        );
+                    },
+                    View::Usage => {
+                        ui::render_usage_view(
+                            f,
+                            area,
+                            &self.usage_state,
+                            self.api_error.as_deref(),
+                        );
+                    },
+                    View::Help => {
+                        ui::render_help_view(f, area, &self.config.version);
+                    },
+                }
+            })
+            .map_err(|e| anyhow::anyhow!("Failed to draw terminal: {}", e))?;
 
         Ok(())
     }
