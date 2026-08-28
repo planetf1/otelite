@@ -22,6 +22,14 @@ have to work around), not implementation detail.
   generated template now documents only what the CLI reads, and the
   config directory honours `XDG_CONFIG_HOME`.
 
+### Fixed
+
+- The TUI help screen (press `?`) no longer documents keys that do
+  nothing (`/`, `c`) or bind auto-scroll to the wrong key (`a` — it is
+  `s`), and it now lists the keys it was missing: `u` (usage view),
+  `h` (help alias), `Ctrl+C` (quit) and PageUp/PageDown. Shipped in
+  v0.1.93.
+
 ## [0.1.92] - 2026-08-28
 
 ### Fixed
