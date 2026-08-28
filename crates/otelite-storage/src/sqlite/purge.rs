@@ -5,8 +5,8 @@
 
 use crate::error::StorageError;
 use rusqlite::{Connection, Transaction};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
-use tokio::sync::Mutex;
 
 /// Purge history record tracking purge operations
 #[derive(Debug, Clone)]
@@ -18,15 +18,21 @@ pub struct PurgeRecord {
     pub metrics_deleted: i64,
 }
 
-/// Purge lock to prevent concurrent purge operations
+/// Purge lock to prevent concurrent purge operations.
+///
+/// An `AtomicBool` rather than an async mutex: the guard releases
+/// synchronously in `drop`, so a dropped purge re-locks with no window
+/// in which the lock still appears held, and the release cannot panic
+/// if the guard is dropped outside a tokio runtime (a `tokio::spawn` in
+/// a Drop impl would).
 pub struct PurgeLock {
-    locked: Arc<Mutex<bool>>,
+    locked: Arc<AtomicBool>,
 }
 
 impl Default for PurgeLock {
     fn default() -> Self {
         Self {
-            locked: Arc::new(Mutex::new(false)),
+            locked: Arc::new(AtomicBool::new(false)),
         }
     }
 }
@@ -36,32 +42,28 @@ impl PurgeLock {
         Self::default()
     }
 
-    pub async fn try_lock(&self) -> Result<PurgeGuard, StorageError> {
-        let mut locked = self.locked.lock().await;
-        if *locked {
-            return Err(StorageError::WriteError(
-                "Purge operation already in progress".to_string(),
-            ));
-        }
-        *locked = true;
-        Ok(PurgeGuard {
-            locked: self.locked.clone(),
-        })
+    /// Attempt to acquire the purge lock. Fails immediately if a purge
+    /// is already in progress.
+    pub fn try_lock(&self) -> Result<PurgeGuard, StorageError> {
+        self.locked
+            .compare_exchange(false, true, Ordering::Acquire, Ordering::Relaxed)
+            .map(|_| PurgeGuard {
+                locked: self.locked.clone(),
+            })
+            .map_err(|_| {
+                StorageError::WriteError("Purge operation already in progress".to_string())
+            })
     }
 }
 
-/// Guard that releases purge lock when dropped
+/// Guard that releases the purge lock when dropped (synchronously).
 pub struct PurgeGuard {
-    locked: Arc<Mutex<bool>>,
+    locked: Arc<AtomicBool>,
 }
 
 impl Drop for PurgeGuard {
     fn drop(&mut self) {
-        let locked = self.locked.clone();
-        tokio::spawn(async move {
-            let mut lock = locked.lock().await;
-            *lock = false;
-        });
+        self.locked.store(false, Ordering::Release);
     }
 }
 
@@ -245,28 +247,23 @@ mod tests {
 
     #[test]
     fn test_purge_lock() {
-        let rt = tokio::runtime::Runtime::new().unwrap();
-        rt.block_on(async {
-            let lock = PurgeLock::new();
+        let lock = PurgeLock::new();
 
-            // First lock should succeed
-            let guard1 = lock.try_lock().await;
-            assert!(guard1.is_ok());
+        // First lock should succeed
+        let guard1 = lock.try_lock();
+        assert!(guard1.is_ok());
 
-            // Second lock should fail
-            let guard2 = lock.try_lock().await;
-            assert!(guard2.is_err());
+        // Second lock should fail
+        let guard2 = lock.try_lock();
+        assert!(guard2.is_err());
 
-            // Drop first guard
-            drop(guard1);
-
-            // Give tokio time to process the drop
-            tokio::time::sleep(tokio::time::Duration::from_millis(10)).await;
-
-            // Third lock should succeed
-            let guard3 = lock.try_lock().await;
-            assert!(guard3.is_ok());
-        });
+        // Drop first guard — release is synchronous, so the re-lock
+        // must succeed immediately, with no sleep in between (the old
+        // spawn-in-Drop release needed a yield and could still report
+        // the lock as held).
+        drop(guard1);
+        let guard3 = lock.try_lock();
+        assert!(guard3.is_ok());
     }
 
     #[test]

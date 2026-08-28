@@ -314,11 +314,7 @@ impl StorageBackend for SqliteBackend {
     }
 
     async fn purge(&self, options: &PurgeOptions) -> Result<u64> {
-        let _guard = self
-            .purge_lock
-            .try_lock()
-            .await
-            .map_err(StorageError::from)?;
+        let _guard = self.purge_lock.try_lock().map_err(StorageError::from)?;
 
         // Non-blocking check: if a write is in flight the database is
         // initialised by definition. If it is not initialised at all,
@@ -363,11 +359,7 @@ impl StorageBackend for SqliteBackend {
     }
 
     async fn purge_all(&self) -> Result<PurgeAllStats> {
-        let _guard = self
-            .purge_lock
-            .try_lock()
-            .await
-            .map_err(StorageError::from)?;
+        let _guard = self.purge_lock.try_lock().map_err(StorageError::from)?;
 
         // Non-blocking check (see purge()); a busy writer means the
         // database is initialised.
@@ -1025,7 +1017,7 @@ impl SqliteBackend {
 
                 tokio::time::sleep(duration).await;
 
-                if let Ok(_guard) = purge_lock.try_lock().await {
+                if let Ok(_guard) = purge_lock.try_lock() {
                     let cutoff =
                         chrono::Utc::now() - chrono::Duration::days(config.retention_days as i64);
                     let cutoff_timestamp = cutoff.timestamp_nanos_opt().unwrap_or(0);

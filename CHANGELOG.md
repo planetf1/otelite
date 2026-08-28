@@ -88,6 +88,12 @@ have to work around), not implementation detail.
   (useful for running a second instance, or for tests). `status`,
   `stop` and the `start` collision check honour the override when
   discovering the local daemon.
+- Fix a race in the purge lock: the lock was released from an async
+  task spawned in the guard's destructor, so a purge started right
+  after a previous one finished could briefly be rejected with
+  "Purge operation already in progress" (and the release would panic
+  if the guard was dropped outside a tokio runtime). The lock is now
+  an atomic flag released synchronously.
 
 ## [0.1.88] - 2026-08-27
 
