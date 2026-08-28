@@ -336,8 +336,11 @@ pub async fn handle_stop() -> Result<()> {
 
     #[cfg(not(target_os = "macos"))]
     let pid = {
-        let from_pid_file = read_pid()?.filter(|pid| is_process_running(*pid));
-        match from_pid_file.or_else(|| local_otelite_pid(4317)?) {
+        let mut pid = read_pid()?.filter(|pid| is_process_running(*pid));
+        if pid.is_none() {
+            pid = local_otelite_pid(4317)?;
+        }
+        match pid {
             Some(pid) => {
                 if let Some(file_pid) = read_pid()? {
                     if file_pid != pid {
@@ -495,8 +498,11 @@ pub async fn handle_status() -> Result<()> {
 
     #[cfg(not(target_os = "macos"))]
     {
-        let file_pid = read_pid()?.filter(|pid| is_process_running(*pid));
-        match file_pid.or_else(|| local_otelite_pid(4317)?) {
+        let mut pid = read_pid()?.filter(|pid| is_process_running(*pid));
+        if pid.is_none() {
+            pid = local_otelite_pid(4317)?;
+        }
+        match pid {
             Some(pid) => return display_running_status(pid, None),
             None => {
                 if read_pid()?.is_some() {

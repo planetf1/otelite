@@ -16,8 +16,9 @@ have to work around), not implementation detail.
 ### Internal
 
 - Fixed a Linux CI compile failure in the service-management module
-  (macOS-only imports were not gated for the shared unix code path).
-  No user-visible change.
+  (macOS-only imports were not gated for the shared unix discovery
+  path, and the port-probe call sites no longer compile against the
+  `Result` return type). No user-visible change.
 
 ## [0.1.87] - 2026-08-27
 
