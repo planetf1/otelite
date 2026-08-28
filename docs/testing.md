@@ -380,7 +380,7 @@ Workspace total: **73.4% line coverage**
 | otelite-storage | ~78% |
 | otelite-receiver | ~80% |
 | otelite-dashboard | ~20% (API handlers untested — see bead otelite-9mx) |
-| otelite-cli | ~83% |
+| otelite (CLI) | ~83% |
 | otelite-tui | ~60% |
 
 ### Coverage Requirements
@@ -474,7 +474,7 @@ The coverage job now provides continuous monitoring on every pull request:
 Current enforced minimums:
 
 - **Workspace**: 80%
-- **otelite-cli**: 75%
+- **otelite (CLI)**: 75%
 - **otelite-core**: 85%
 - **otelite-dashboard**: 70%
 - **otelite-receiver**: 80%

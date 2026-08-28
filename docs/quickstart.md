@@ -26,7 +26,7 @@ git clone https://github.com/planetf1/otelite.git
 cd otelite
 
 # Build and install
-cargo install --path crates/otelite-cli
+cargo install --path crates/otelite
 ```
 
 Verify installation:
@@ -165,7 +165,7 @@ otelite metrics list
 
 ## Next Steps
 
-- **CLI Reference**: See [CLI documentation](../crates/otelite-cli/README.md) for all commands
+- **CLI Reference**: See [CLI documentation](cli-reference.md) for all commands
 - **TUI Guide**: Learn about the [terminal UI](tui-quickstart.md)
 - **Configuration**: Customize [configuration options](../ARCHITECTURE.md#configuration)
 - **Testing**: Set up [testing infrastructure](testing.md)

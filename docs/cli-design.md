@@ -161,8 +161,8 @@ After changes:
 
 ```bash
 # Build and test
-cargo build -p otelite-cli
-cargo test -p otelite-cli
+cargo build -p otelite
+cargo test -p otelite
 
 # Verify help consistency
 otelite --help
