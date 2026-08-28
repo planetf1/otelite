@@ -752,9 +752,7 @@ async fn run_dashboard(addr: SocketAddr, storage_path: Option<PathBuf>) -> Resul
     let dashboard_shutdown = server.shutdown_handle();
     // The serve future's error type is not `Send`, so stringify it before
     // crossing the spawn boundary.
-    let serve_result = tokio::spawn(async move {
-        server.start().await.map_err(|e| e.to_string())
-    });
+    let serve_result = tokio::spawn(async move { server.start().await.map_err(|e| e.to_string()) });
 
     // SIGTERM/SIGINT used to be ignored: `axum::serve` blocks forever, so
     // the daemon only died when `otelite stop` escalated to SIGKILL after
@@ -823,7 +821,10 @@ async fn await_shutdown_signal() {
         let mut sigterm = match signal(SignalKind::terminate()) {
             Ok(handler) => handler,
             Err(e) => {
-                warn!("Failed to install SIGTERM handler: {}; waiting on SIGINT only", e);
+                warn!(
+                    "Failed to install SIGTERM handler: {}; waiting on SIGINT only",
+                    e
+                );
                 let _ = tokio::signal::ctrl_c().await;
                 return;
             },

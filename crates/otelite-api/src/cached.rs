@@ -68,7 +68,11 @@ struct InFlightGuard {
 
 impl Drop for InFlightGuard {
     fn drop(&mut self) {
-        let mut map = self.cache.in_flight.lock().expect("in_flight mutex poisoned");
+        let mut map = self
+            .cache
+            .in_flight
+            .lock()
+            .expect("in_flight mutex poisoned");
         match map.get(&self.key) {
             Some(current) if Arc::ptr_eq(current, &self.entry) => {
                 map.remove(&self.key);
@@ -595,9 +599,7 @@ mod tests {
         // Owner request first, so it is guaranteed to register the
         // in-flight entry before the duplicate joins it.
         let owner_app = app.clone();
-        let owner = tokio::spawn(async move {
-            owner_app.oneshot(get_request(uri)).await
-        });
+        let owner = tokio::spawn(async move { owner_app.oneshot(get_request(uri)).await });
         tokio::time::sleep(Duration::from_millis(150)).await;
         eprintln!(
             "DBG after owner sleep: count={} inflight={}",
@@ -607,9 +609,7 @@ mod tests {
 
         // A concurrent duplicate parks on the owner's entry.
         let waiter_app = app.clone();
-        let waiter = tokio::spawn(async move {
-            waiter_app.oneshot(get_request(uri)).await
-        });
+        let waiter = tokio::spawn(async move { waiter_app.oneshot(get_request(uri)).await });
         tokio::time::sleep(Duration::from_millis(50)).await;
         eprintln!(
             "DBG after waiter sleep: count={} inflight={}",
@@ -640,8 +640,8 @@ mod tests {
             (1..=2).contains(&runs),
             "expected the owner's and/or waiter's handler run, got {runs}"
         );
-        let parsed: serde_json::Value = serde_json::from_str(&waiter_body)
-            .expect("waiter got valid JSON");
+        let parsed: serde_json::Value =
+            serde_json::from_str(&waiter_body).expect("waiter got valid JSON");
         assert!(parsed.get("handler_runs").is_some());
         assert!(
             waiter_elapsed < Duration::from_secs(5),

@@ -293,10 +293,7 @@ fn test_status_recovers_from_corrupt_pid_file() {
     // via launchd and never touches the PID file — the recovery path
     // (and its file removal) is exercised by the other checks.
     if !text.contains("Running (launchd") {
-        assert!(
-            !pid_file.exists(),
-            "the corrupt PID file must be removed"
-        );
+        assert!(!pid_file.exists(), "the corrupt PID file must be removed");
     }
 }
 
@@ -401,8 +398,8 @@ fn test_serve_exits_gracefully_on_sigterm() {
     }
 
     // The dashboard and OTLP listeners must be released.
-    let freed = TcpStream::connect((std::net::IpAddr::from([127, 0, 0, 1]), dashboard_port))
-        .is_err();
+    let freed =
+        TcpStream::connect((std::net::IpAddr::from([127, 0, 0, 1]), dashboard_port)).is_err();
     assert!(freed, "dashboard port must be released after SIGTERM");
     for port in [grpc_port, http_port] {
         assert!(
@@ -451,10 +448,7 @@ fn test_serve_writes_rotating_log_file() {
         .expect("data dir exists")
         .filter_map(|e| e.ok())
         .map(|e| e.file_name())
-        .find(|name| {
-            name.to_string_lossy()
-                .starts_with("otelite.log.")
-        });
+        .find(|name| name.to_string_lossy().starts_with("otelite.log."));
     assert!(
         rotated.is_some(),
         "expected a dated otelite.log.* file; data dir contents: {:?}",

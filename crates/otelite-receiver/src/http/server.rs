@@ -78,7 +78,9 @@ impl HttpServer {
             self.health_checker.clone(),
             self.config.max_message_size,
         )
-        .layer(axum::extract::DefaultBodyLimit::max(self.config.max_message_size));
+        .layer(axum::extract::DefaultBodyLimit::max(
+            self.config.max_message_size,
+        ));
 
         // Create TCP listener
         let listener = tokio::net::TcpListener::bind(addr)

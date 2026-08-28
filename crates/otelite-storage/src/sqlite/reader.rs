@@ -157,7 +157,12 @@ pub fn query_spans_for_trace_list(
             // The trace only qualifies if a span inside the window also
             // matches the structured predicates, mirroring the span-list
             // query's WHERE clause.
-            append_predicates("spans", &params.predicates, &mut check_sql, &mut check_params)?;
+            append_predicates(
+                "spans",
+                &params.predicates,
+                &mut check_sql,
+                &mut check_params,
+            )?;
             check_sql.push_str(" LIMIT 1");
             let mut stmt = conn
                 .prepare(&check_sql)
@@ -7888,7 +7893,9 @@ mod tests {
             predicates: vec![model_pred],
             ..Default::default()
         };
-        assert!(query_spans_for_trace_list(&conn, &params, 10).unwrap().is_empty());
+        assert!(query_spans_for_trace_list(&conn, &params, 10)
+            .unwrap()
+            .is_empty());
     }
 
     #[test]

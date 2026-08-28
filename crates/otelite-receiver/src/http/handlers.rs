@@ -251,11 +251,7 @@ pub async fn handle_unified(
 /// past the limit is rejected with 413, and the decoder stops reading
 /// at the cap so memory stays bounded regardless of the compression
 /// ratio. Unknown encodings are rejected with 415.
-fn decode_body(
-    headers: &HeaderMap,
-    body: Bytes,
-    max_bytes: usize,
-) -> Result<Bytes, ReceiverError> {
+fn decode_body(headers: &HeaderMap, body: Bytes, max_bytes: usize) -> Result<Bytes, ReceiverError> {
     let encoding = headers
         .get("content-encoding")
         .and_then(|v| v.to_str().ok())
@@ -298,9 +294,9 @@ fn decompress_bounded<R: std::io::Read>(
     let mut out = Vec::with_capacity(64 * 1024);
     let mut buf = [0u8; 64 * 1024];
     loop {
-        let n = reader
-            .read(&mut buf)
-            .map_err(|e| ReceiverError::CompressionError(format!("Failed to decode {name} body: {e}")))?;
+        let n = reader.read(&mut buf).map_err(|e| {
+            ReceiverError::CompressionError(format!("Failed to decode {name} body: {e}"))
+        })?;
         if n == 0 {
             break;
         }

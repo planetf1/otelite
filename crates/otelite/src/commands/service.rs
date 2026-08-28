@@ -77,12 +77,13 @@ pub fn read_pid_file(pid_file: &Path) -> Result<Option<u32>> {
     match content.trim().parse::<u32>() {
         Ok(pid) if pid != 0 => Ok(Some(pid)),
         _ => {
-            warn!(
-                "Corrupt PID file at {}, removing it",
-                pid_file.display()
-            );
+            warn!("Corrupt PID file at {}, removing it", pid_file.display());
             if let Err(e) = fs::remove_file(pid_file) {
-                warn!("Could not remove corrupt PID file {}: {}", pid_file.display(), e);
+                warn!(
+                    "Could not remove corrupt PID file {}: {}",
+                    pid_file.display(),
+                    e
+                );
             }
             Ok(None)
         },
@@ -400,10 +401,7 @@ pub async fn handle_start(storage_path: Option<PathBuf>, addr: String) -> Result
         .unwrap_or_else(|| StorageConfig::default_data_dir().display().to_string());
 
     println!("✓ Otelite daemon started with PID {}", pid);
-    println!(
-        "  Logs: {}.* (rotates daily)",
-        log_file.display()
-    );
+    println!("  Logs: {}.* (rotates daily)", log_file.display());
     println!("  Storage: {}", storage_display);
     println!("  Dashboard: http://{}", addr);
     println!("\nUse 'otelite stop' to stop the daemon");
@@ -857,13 +855,11 @@ mod daemon_args_tests {
 
     #[test]
     fn test_daemon_command_args_route_logs_through_rotating_appender() {
-        let args = daemon_command_args(
-            "127.0.0.1:3000",
-            Path::new("/tmp/data/otelite.log"),
-            &None,
-        );
-        let flat: Vec<String> =
-            args.iter().map(|a| a.to_string_lossy().into_owned()).collect();
+        let args = daemon_command_args("127.0.0.1:3000", Path::new("/tmp/data/otelite.log"), &None);
+        let flat: Vec<String> = args
+            .iter()
+            .map(|a| a.to_string_lossy().into_owned())
+            .collect();
         assert_eq!(
             flat,
             vec![
@@ -876,10 +872,15 @@ mod daemon_args_tests {
         );
 
         let storage = PathBuf::from("/tmp/data/otelite.db");
-        let args =
-            daemon_command_args("127.0.0.1:3000", Path::new("/tmp/data/otelite.log"), &Some(storage));
-        let flat: Vec<String> =
-            args.iter().map(|a| a.to_string_lossy().into_owned()).collect();
+        let args = daemon_command_args(
+            "127.0.0.1:3000",
+            Path::new("/tmp/data/otelite.log"),
+            &Some(storage),
+        );
+        let flat: Vec<String> = args
+            .iter()
+            .map(|a| a.to_string_lossy().into_owned())
+            .collect();
         assert_eq!(
             flat,
             vec![
@@ -891,5 +892,6 @@ mod daemon_args_tests {
                 "--storage-path",
                 "/tmp/data/otelite.db"
             ]
-        );    }
+        );
+    }
 }

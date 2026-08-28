@@ -45,8 +45,11 @@ fn log_request(body_size: usize) -> ExportLogsServiceRequest {
                     severity_number: 9,
                     severity_text: "INFO".to_string(),
                     body: Some(AnyValue {
-                        value: Some(opentelemetry_proto::tonic::common::v1::any_value::Value::
-                            StringValue("x".repeat(body_size))),
+                        value: Some(
+                            opentelemetry_proto::tonic::common::v1::any_value::Value::StringValue(
+                                "x".repeat(body_size),
+                            ),
+                        ),
                     }),
                     attributes: vec![],
                     dropped_attributes_count: 0,
@@ -85,7 +88,10 @@ async fn test_http_payload_limit() {
 
     // A small valid export must still be accepted (216 B encoded < 256).
     let small = log_request(100);
-    assert!(encode(&small).len() < SMALL_LIMIT, "test setup: small body must fit");
+    assert!(
+        encode(&small).len() < SMALL_LIMIT,
+        "test setup: small body must fit"
+    );
     let response = client
         .post(format!("http://{}/v1/logs", addr))
         .header("Content-Type", "application/x-protobuf")
@@ -97,7 +103,10 @@ async fn test_http_payload_limit() {
 
     // An oversized export must be rejected with 413, not 200.
     let big = log_request(600);
-    assert!(encode(&big).len() > SMALL_LIMIT, "test setup: big body must exceed cap");
+    assert!(
+        encode(&big).len() > SMALL_LIMIT,
+        "test setup: big body must exceed cap"
+    );
     let response = client
         .post(format!("http://{}/v1/logs", addr))
         .header("Content-Type", "application/x-protobuf")
@@ -144,17 +153,16 @@ async fn test_grpc_payload_limit() {
     let channel = endpoint.connect().await.expect("connect");
     let mut client = TraceServiceClient::new(channel);
 
-    let make_export = |name_size: usize| {
-        ExportTraceServiceRequest {
-            resource_spans: vec![ResourceSpans {
-                resource: None,
-                scope_spans: vec![ScopeSpans {
-                    scope: None,
-                    spans: vec![Span {
-                        trace_id: vec![1; 16],
-                        span_id: vec![1; 8],
-                        name: "y".repeat(name_size),
-                        attributes: vec![KeyValue {
+    let make_export = |name_size: usize| ExportTraceServiceRequest {
+        resource_spans: vec![ResourceSpans {
+            resource: None,
+            scope_spans: vec![ScopeSpans {
+                scope: None,
+                spans: vec![Span {
+                    trace_id: vec![1; 16],
+                    span_id: vec![1; 8],
+                    name: "y".repeat(name_size),
+                    attributes: vec![KeyValue {
                             key: "filler".to_string(),
                             value: Some(AnyValue {
                                 value: Some(
@@ -163,15 +171,14 @@ async fn test_grpc_payload_limit() {
                                 ),
                             }),
                         }],
-                        start_time_unix_nano: 1_700_000_000_000_000_000,
-                        end_time_unix_nano: 1_700_000_000_000_000_000,
-                        ..Default::default()
-                    }],
-                    schema_url: String::new(),
+                    start_time_unix_nano: 1_700_000_000_000_000_000,
+                    end_time_unix_nano: 1_700_000_000_000_000_000,
+                    ..Default::default()
                 }],
                 schema_url: String::new(),
             }],
-        }
+            schema_url: String::new(),
+        }],
     };
 
     // Small export succeeds and is stored.

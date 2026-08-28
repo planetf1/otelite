@@ -26,15 +26,14 @@ fn gzip(data: &[u8]) -> Vec<u8> {
 }
 
 fn deflate(data: &[u8]) -> Vec<u8> {
-    let mut enc = flate2::write::DeflateEncoder::new(
-        Vec::new(),
-        flate2::Compression::default(),
-    );
+    let mut enc = flate2::write::DeflateEncoder::new(Vec::new(), flate2::Compression::default());
     enc.write_all(data).expect("write");
     enc.finish().expect("finish deflate")
 }
 
-async fn start_server(max_message_size: usize) -> (String, HttpServer, TempDir, Arc<dyn StorageBackend>) {
+async fn start_server(
+    max_message_size: usize,
+) -> (String, HttpServer, TempDir, Arc<dyn StorageBackend>) {
     let config = ReceiverConfig::new()
         .with_http_addr("127.0.0.1:0".parse().unwrap())
         .with_max_message_size(max_message_size);
@@ -84,9 +83,7 @@ fn logs_request(body: &str) -> ExportLogsServiceRequest {
 fn encode_protobuf(request: &ExportLogsServiceRequest) -> Vec<u8> {
     use prost::Message;
     let mut buf = Vec::new();
-    request
-        .encode(&mut buf)
-        .expect("encode protobuf");
+    request.encode(&mut buf).expect("encode protobuf");
     buf
 }
 
@@ -161,7 +158,9 @@ async fn test_deflate_protobuf_logs() {
         .post(format!("{base}/v1/logs"))
         .header("Content-Type", "application/x-protobuf")
         .header("Content-Encoding", "deflate")
-        .body(deflate(&encode_protobuf(&logs_request("deflated protobuf body"))))
+        .body(deflate(&encode_protobuf(&logs_request(
+            "deflated protobuf body",
+        ))))
         .send()
         .await
         .expect("send");
@@ -220,7 +219,10 @@ async fn test_gzip_decompression_bomb_rejected() {
     );
 
     let stats = storage.stats().await.expect("stats");
-    assert_eq!(stats.log_count, 0, "nothing from a rejected bomb may be stored");
+    assert_eq!(
+        stats.log_count, 0,
+        "nothing from a rejected bomb may be stored"
+    );
 
     server.shutdown();
     tokio::time::sleep(Duration::from_millis(100)).await;

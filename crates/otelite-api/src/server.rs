@@ -408,7 +408,6 @@ impl DashboardServer {
     }
 }
 
-
 #[cfg(test)]
 mod server_shutdown_tests {
     use super::*;
@@ -424,10 +423,7 @@ mod server_shutdown_tests {
         let temp = TempDir::new().expect("temp dir");
         let config = StorageConfig::default().with_data_dir(temp.path().join("otelite.db"));
         let mut storage = SqliteBackend::new(config);
-        storage
-            .initialize()
-            .await
-            .expect("storage initializes");
+        storage.initialize().await.expect("storage initializes");
         let storage: Arc<dyn StorageBackend> = Arc::new(storage);
 
         let port = {
@@ -437,13 +433,12 @@ mod server_shutdown_tests {
             l.local_addr().expect("local addr").port()
         };
         let dashboard = DashboardServer::new(
-            DashboardConfig::default().with_bind_address(format!("127.0.0.1:{port}").parse().unwrap()),
+            DashboardConfig::default()
+                .with_bind_address(format!("127.0.0.1:{port}").parse().unwrap()),
             storage,
         );
         let handle = dashboard.shutdown_handle();
-        let serve = tokio::spawn(async move {
-            dashboard.start().await.map_err(|e| e.to_string())
-        });
+        let serve = tokio::spawn(async move { dashboard.start().await.map_err(|e| e.to_string()) });
 
         // Give the server a moment to bind, then trigger the shutdown.
         tokio::time::sleep(std::time::Duration::from_millis(100)).await;

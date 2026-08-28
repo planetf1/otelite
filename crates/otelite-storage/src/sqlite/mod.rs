@@ -102,8 +102,9 @@ impl SqliteBackend {
     /// dedicated connection with the standard busy timeout lets the
     /// purge coexist with live ingest and reads under WAL.
     fn open_purge_connection(db_path: &std::path::Path) -> Result<Connection> {
-        let conn = Connection::open(db_path)
-            .map_err(|e| StorageError::WriteError(format!("Failed to open purge connection: {e}")))?;
+        let conn = Connection::open(db_path).map_err(|e| {
+            StorageError::WriteError(format!("Failed to open purge connection: {e}"))
+        })?;
         conn.execute_batch(
             "PRAGMA journal_mode=WAL; PRAGMA synchronous=FULL; PRAGMA busy_timeout=10000;",
         )
@@ -322,7 +323,9 @@ impl StorageBackend for SqliteBackend {
         // SQLite.
         if let Some(conn_guard) = self.conn.try_lock() {
             if conn_guard.is_none() {
-                return Err(StorageError::WriteError("Database not initialized".to_string()));
+                return Err(StorageError::WriteError(
+                    "Database not initialized".to_string(),
+                ));
             }
         }
 
@@ -365,46 +368,46 @@ impl StorageBackend for SqliteBackend {
         // database is initialised.
         if let Some(conn_guard) = self.conn.try_lock() {
             if conn_guard.is_none() {
-                return Err(StorageError::WriteError("Database not initialized".to_string()));
+                return Err(StorageError::WriteError(
+                    "Database not initialized".to_string(),
+                ));
             }
         }
 
         let db_path = self.db_path();
 
-        let result = tokio::task::spawn_blocking(move || {
-            let mut conn = Self::open_purge_connection(&db_path)?;
+        let result =
+            tokio::task::spawn_blocking(move || {
+                let mut conn = Self::open_purge_connection(&db_path)?;
 
-            let tx = conn
-                .transaction()
-                .map_err(|e| StorageError::WriteError(format!("Failed to start transaction: {}", e)))?;
+                let tx = conn.transaction().map_err(|e| {
+                    StorageError::WriteError(format!("Failed to start transaction: {}", e))
+                })?;
 
-            let logs_deleted = tx
-                .execute("DELETE FROM logs", [])
-                .map_err(|e| StorageError::WriteError(format!("Failed to delete logs: {}", e)))?
-                as u64;
-            let spans_deleted = tx
-                .execute("DELETE FROM spans", [])
-                .map_err(|e| StorageError::WriteError(format!("Failed to delete spans: {}", e)))?
-                as u64;
-            let metrics_deleted = tx
-                .execute("DELETE FROM metrics", [])
-                .map_err(|e| StorageError::WriteError(format!("Failed to delete metrics: {}", e)))?
-                as u64;
+                let logs_deleted = tx.execute("DELETE FROM logs", []).map_err(|e| {
+                    StorageError::WriteError(format!("Failed to delete logs: {}", e))
+                })? as u64;
+                let spans_deleted = tx.execute("DELETE FROM spans", []).map_err(|e| {
+                    StorageError::WriteError(format!("Failed to delete spans: {}", e))
+                })? as u64;
+                let metrics_deleted = tx.execute("DELETE FROM metrics", []).map_err(|e| {
+                    StorageError::WriteError(format!("Failed to delete metrics: {}", e))
+                })? as u64;
 
-            tx.commit().map_err(|e| {
-                StorageError::WriteError(format!("Failed to commit transaction: {}", e))
-            })?;
+                tx.commit().map_err(|e| {
+                    StorageError::WriteError(format!("Failed to commit transaction: {}", e))
+                })?;
 
-            purge::checkpoint(&mut conn)?;
+                purge::checkpoint(&mut conn)?;
 
-            Ok::<_, StorageError>(PurgeAllStats {
-                logs_deleted,
-                spans_deleted,
-                metrics_deleted,
+                Ok::<_, StorageError>(PurgeAllStats {
+                    logs_deleted,
+                    spans_deleted,
+                    metrics_deleted,
+                })
             })
-        })
-        .await
-        .map_err(|e| StorageError::WriteError(format!("Purge task failed to join: {e}")))?;
+            .await
+            .map_err(|e| StorageError::WriteError(format!("Purge task failed to join: {e}")))?;
 
         result
     }

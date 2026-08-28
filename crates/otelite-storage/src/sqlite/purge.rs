@@ -142,11 +142,7 @@ fn purge_table(
 ///
 /// A single COUNT(*): a dry run deletes nothing, so a batch-limited
 /// count loop would count the same rows forever and never terminate.
-fn count_all(
-    conn: &Connection,
-    table: &str,
-    cutoff_timestamp: i64,
-) -> Result<i64, StorageError> {
+fn count_all(conn: &Connection, table: &str, cutoff_timestamp: i64) -> Result<i64, StorageError> {
     // Use correct timestamp column for each table
     let timestamp_col = match table {
         "spans" => "start_time",
@@ -155,8 +151,10 @@ fn count_all(
 
     let sql = format!("SELECT COUNT(*) FROM {} WHERE {} < ?", table, timestamp_col);
 
-    conn.query_row(&sql, rusqlite::params![cutoff_timestamp], |row| row.get::<_, i64>(0))
-        .map_err(|e| StorageError::QueryError(format!("Failed to count rows for dry-run purge: {}", e)))
+    conn.query_row(&sql, rusqlite::params![cutoff_timestamp], |row| {
+        row.get::<_, i64>(0)
+    })
+    .map_err(|e| StorageError::QueryError(format!("Failed to count rows for dry-run purge: {}", e)))
 }
 
 /// Delete a batch of records from a table
@@ -237,7 +235,9 @@ pub fn vacuum(conn: &mut Connection) -> Result<(), StorageError> {
 /// unboundedly after a purge.
 pub fn checkpoint(conn: &mut Connection) -> Result<(), StorageError> {
     conn.execute_batch("PRAGMA wal_checkpoint(PASSIVE);")
-        .map_err(|e| StorageError::WriteError(format!("Failed to checkpoint WAL after purge: {}", e)))
+        .map_err(|e| {
+            StorageError::WriteError(format!("Failed to checkpoint WAL after purge: {}", e))
+        })
 }
 
 #[cfg(test)]
@@ -337,7 +337,10 @@ mod tests {
 
         let record = purge_old_data(&mut conn, 10000, 10, &[crate::SignalType::Logs], true)
             .expect("dry run must terminate");
-        assert_eq!(record.logs_deleted, 15, "dry run must count all matching rows");
+        assert_eq!(
+            record.logs_deleted, 15,
+            "dry run must count all matching rows"
+        );
 
         // A dry run deletes nothing.
         let count: i64 = conn
