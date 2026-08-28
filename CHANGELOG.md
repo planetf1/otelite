@@ -75,6 +75,10 @@ have to work around), not implementation detail.
   it stops accepting new telemetry, lets in-flight work finish (with a
   short bounded drain), and exits. Before, the signal was ignored and
   `otelite stop` had to wait out its 10 s timeout and SIGKILL.
+- Daemon logs now rotate: `otelite start`, the launchd service, and the
+  systemd user unit run the server with `--log-file`, so the daemon
+  writes daily-rotated log files (`otelite.log.YYYY-MM-DD`) instead of
+  appending to one file that grows without bound.
 
 ## [0.1.88] - 2026-08-27
 

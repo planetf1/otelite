@@ -342,10 +342,10 @@ pub async fn handle_start(storage_path: Option<PathBuf>, addr: String) -> Result
         .open(&log_file)
         .map_err(|e| Error::ConfigError(format!("Failed to open log file: {}", e)))?;
 
+    let args = daemon_command_args(&addr, &log_file, &storage_path);
     let mut cmd = Command::new(&exe_path);
-    cmd.arg("serve").arg("--addr").arg(&addr);
-    if let Some(path) = &storage_path {
-        cmd.arg("--storage-path").arg(path);
+    for arg in &args {
+        cmd.arg(arg);
     }
     let mut child =
         cmd.stdin(Stdio::null())
@@ -392,13 +392,43 @@ pub async fn handle_start(storage_path: Option<PathBuf>, addr: String) -> Result
         .unwrap_or_else(|| StorageConfig::default_data_dir().display().to_string());
 
     println!("✓ Otelite daemon started with PID {}", pid);
-    println!("  Logs: {}", log_file.display());
+    println!(
+        "  Logs: {}.* (rotates daily)",
+        log_file.display()
+    );
     println!("  Storage: {}", storage_display);
     println!("  Dashboard: http://{}", addr);
     println!("\nUse 'otelite stop' to stop the daemon");
     println!("Use 'otelite status' to check daemon status");
 
     Ok(())
+}
+
+/// Build the argument list for a spawned daemon. Factored out so the
+/// wiring (in particular the daily-rotating `--log-file`) is testable
+/// without spawning anything.
+fn daemon_command_args(
+    addr: &str,
+    log_file: &Path,
+    storage_path: &Option<PathBuf>,
+) -> Vec<std::ffi::OsString> {
+    let mut args: Vec<std::ffi::OsString> = vec![
+        "serve".into(),
+        "--addr".into(),
+        addr.into(),
+        // Route the child's tracing through the daily-rotating appender
+        // instead of an ever-growing appended file. The stderr
+        // redirection in `handle_start` is kept for output that happens
+        // before/around tracing (panics, startup errors); it is
+        // small-volume.
+        "--log-file".into(),
+        log_file.as_os_str().to_os_string(),
+    ];
+    if let Some(path) = storage_path {
+        args.push("--storage-path".into());
+        args.push(path.as_os_str().to_os_string());
+    }
+    args
 }
 
 /// Stop the otelite daemon
@@ -552,7 +582,7 @@ fn display_running_status(pid: u32, supervisor: Option<&str>) -> Result<()> {
     }
 
     let log_file = get_log_file()?;
-    println!("Logs: {}", log_file.display());
+    println!("Logs: {}.* (rotates daily)", log_file.display());
 
     let runtime_dir = get_runtime_dir()?;
     println!("Runtime directory: {}", runtime_dir.display());
@@ -658,6 +688,8 @@ async fn install_launchd_service() -> Result<()> {
     <array>
         <string>{}</string>
         <string>serve</string>
+        <string>--log-file</string>
+        <string>{}</string>
     </array>
     <key>RunAtLoad</key>
     <true/>
@@ -671,6 +703,7 @@ async fn install_launchd_service() -> Result<()> {
 </plist>
 "#,
         exe_path.display(),
+        log_file.display(),
         log_file.display(),
         log_file.display()
     );
@@ -709,6 +742,8 @@ async fn install_systemd_service() -> Result<()> {
     let exe_path = std::env::current_exe()
         .map_err(|e| Error::ConfigError(format!("Failed to get executable path: {}", e)))?;
 
+    let log_file = get_log_file()?;
+
     let unit_content = format!(
         r#"[Unit]
 Description=Otelite OpenTelemetry Collector
@@ -716,14 +751,15 @@ After=network.target
 
 [Service]
 Type=simple
-ExecStart={} serve
+ExecStart={} serve --log-file {}
 Restart=on-failure
 RestartSec=5
 
 [Install]
 WantedBy=default.target
 "#,
-        exe_path.display()
+        exe_path.display(),
+        log_file.display()
     );
 
     fs::write(&unit_path, unit_content)
@@ -805,4 +841,47 @@ gui/501/dev.otelite.daemon = {
         ));
         assert!(!super::is_otelite_command("/usr/bin/python3"));
     }
+}
+
+#[cfg(test)]
+mod daemon_args_tests {
+    use super::*;
+
+    #[test]
+    fn test_daemon_command_args_route_logs_through_rotating_appender() {
+        let args = daemon_command_args(
+            "127.0.0.1:3000",
+            Path::new("/tmp/data/otelite.log"),
+            &None,
+        );
+        let flat: Vec<String> =
+            args.iter().map(|a| a.to_string_lossy().into_owned()).collect();
+        assert_eq!(
+            flat,
+            vec![
+                "serve",
+                "--addr",
+                "127.0.0.1:3000",
+                "--log-file",
+                "/tmp/data/otelite.log"
+            ]
+        );
+
+        let storage = PathBuf::from("/tmp/data/otelite.db");
+        let args =
+            daemon_command_args("127.0.0.1:3000", Path::new("/tmp/data/otelite.log"), &Some(storage));
+        let flat: Vec<String> =
+            args.iter().map(|a| a.to_string_lossy().into_owned()).collect();
+        assert_eq!(
+            flat,
+            vec![
+                "serve",
+                "--addr",
+                "127.0.0.1:3000",
+                "--log-file",
+                "/tmp/data/otelite.log",
+                "--storage-path",
+                "/tmp/data/otelite.db"
+            ]
+        );    }
 }

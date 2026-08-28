@@ -409,3 +409,81 @@ fn test_serve_exits_gracefully_on_sigterm() {
     let _ = TcpListener::bind("127.0.0.1:4317");
     let _ = TcpListener::bind("127.0.0.1:4318");
 }
+
+/// M17 regression: the daemon's log must go through the daily-rotating
+/// appender (`--log-file`), not an ever-growing plain file. A throwaway
+/// `serve` must produce a dated log file in its data dir.
+#[test]
+fn test_serve_writes_rotating_log_file() {
+    // Only meaningful when the OTLP ports are free.
+    if TcpStream::connect((std::net::IpAddr::from([127, 0, 0, 1]), 4317)).is_ok()
+        || TcpStream::connect((std::net::IpAddr::from([127, 0, 0, 1]), 4318)).is_ok()
+    {
+        return;
+    }
+
+    let temp = tempfile::TempDir::new().unwrap();
+    let data_dir = temp.path().join("data");
+    let storage = data_dir.join("otelite.db");
+    let dashboard_port = free_port();
+
+    let mut child = std::process::Command::new(env!("CARGO_BIN_EXE_otelite"))
+        .args([
+            "serve",
+            "--addr",
+            &format!("127.0.0.1:{dashboard_port}"),
+            "--storage-path",
+            &storage.to_string_lossy(),
+            "--log-file",
+            &data_dir.join("otelite.log").to_string_lossy(),
+        ])
+        .env("OTELITE_DATA_DIR", data_dir.as_os_str())
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .spawn()
+        .unwrap();
+
+    wait_for_port(dashboard_port, Instant::now() + Duration::from_secs(15));
+    // Give the non-blocking appender a moment to flush the startup lines.
+    std::thread::sleep(Duration::from_secs(1));
+
+    // The rotating appender names its file otelite.log.YYYY-MM-DD.
+    let rotated = std::fs::read_dir(&data_dir)
+        .expect("data dir exists")
+        .filter_map(|e| e.ok())
+        .map(|e| e.file_name())
+        .find(|name| {
+            name.to_string_lossy()
+                .starts_with("otelite.log.")
+        });
+    assert!(
+        rotated.is_some(),
+        "expected a dated otelite.log.* file; data dir contents: {:?}",
+        std::fs::read_dir(&data_dir)
+            .map(|d| d.map(|e| e.unwrap().file_name()).collect::<Vec<_>>())
+            .unwrap_or_default()
+    );
+    let rotated_path = data_dir.join(rotated.unwrap());
+    assert!(
+        std::fs::metadata(&rotated_path).unwrap().len() > 0,
+        "the startup log lines must have been flushed"
+    );
+
+    nix::sys::signal::kill(
+        Pid::from_raw(child.id() as i32),
+        nix::sys::signal::Signal::SIGTERM,
+    )
+    .unwrap();
+    let deadline = Instant::now() + Duration::from_secs(8);
+    loop {
+        match child.try_wait().unwrap() {
+            Some(_) => break,
+            None => {
+                assert!(Instant::now() < deadline, "serve did not exit");
+                std::thread::sleep(Duration::from_millis(100));
+            },
+        }
+    }
+    let _ = TcpListener::bind("127.0.0.1:4317");
+    let _ = TcpListener::bind("127.0.0.1:4318");
+}
