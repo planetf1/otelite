@@ -15,6 +15,12 @@ have to work around), not implementation detail.
 
 ### Fixed
 
+- The troubleshooting guide no longer recommends configuration and
+  commands that do not exist (an `otelite.toml` file with
+  `[limits]`/`[storage]`/`[pipeline]` sections, `otelite clean`,
+  `otelite repair`, `--data-dir`). It now documents the real levers:
+  `OTELITE_RETENTION_DAYS`, `POST /api/admin/purge`, `--storage-path`,
+  and `RUST_LOG` for debug logging.
 - `otelite stop` no longer reports a spurious "exited or was replaced"
   error after the daemon has stopped normally. The wait loop now
   re-checks the process's identity (not just its PID) on every

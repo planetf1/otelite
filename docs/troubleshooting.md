@@ -112,8 +112,9 @@ while the default (`127.0.0.1:3000`) keeps them local-only.
 mkdir -p ~/.otelite/data
 chmod 755 ~/.otelite/data
 
-# Or specify different directory
-otelite start --data-dir /tmp/otelite-data
+# Or specify a different data directory
+otelite start --storage-path /tmp/otelite-data
+# (OTELITE_DATA_DIR does the same for an already-running setup)
 ```
 
 ### High Memory Usage
@@ -130,12 +131,16 @@ top -p $(pgrep otelite)
 ```
 
 **Solution**:
-```toml
-# otelite.toml - Reduce memory limits
-[limits]
-max_memory_mb = 50
-max_queue_size = 5000
-batch_size = 500
+Otelite has no tunable memory limits — memory scales with the data in
+`~/.otelite/data` and the active purge window. To reduce it:
+
+```bash
+# Shorten the retention window (1-365, default 90), then restart:
+OTELITE_RETENTION_DAYS=7 otelite start
+
+# Purge everything immediately (all signals), then restart:
+curl -X POST http://127.0.0.1:3000/api/admin/purge
+otelite restart
 ```
 
 ### Otelite Crashes on Startup
@@ -152,7 +157,10 @@ tail -f ~/.otelite/data/otelite.log.*
 ```
 
 **Common Causes**:
-1. **Invalid configuration**: Check `otelite.toml` syntax
+1. **Invalid flags or environment**: Otelite takes no config file at
+   runtime (the generated `~/.config/otelite/config.toml` is not read
+   back) — check the `--addr`/`--storage-path` values and the
+   `OTELITE_*` environment variables against `otelite start --help`
 2. **Corrupted data**: Delete `~/.otelite/data` and restart
 3. **Missing permissions**: Check file/directory permissions
 
@@ -332,12 +340,14 @@ cargo flamegraph --bin otelite
 ```
 
 **Solution**:
-```toml
-# otelite.toml - Reduce processing load
-[limits]
-max_events_per_second = 500
-batch_timeout_ms = 2000
-```
+Otelite has no rate-limiting knobs. Usual culprits, in order:
+
+1. **Retention purges** — large databases purge in bursts; shorten
+   `OTELITE_RETENTION_DAYS` so purges are smaller.
+2. **Dashboard polling** — an open dashboard refreshes continuously;
+   close tabs you are not using.
+3. **Log volume** — run the daemon with a quieter log level
+   (`otelite start` inherits `RUST_LOG`; set `RUST_LOG=warn`).
 
 ### Slow Queries
 
@@ -418,14 +428,14 @@ du -sh ~/.otelite/data
 
 **Solution**:
 ```bash
-# Clean old data
-otelite clean --older-than 7d
+# Retention is automatic: data older than OTELITE_RETENTION_DAYS
+# (default 90, range 1-365) is purged by the daemon's scheduler.
+# Set it for the daemon environment (e.g. the launchd/systemd unit
+# or your shell), then restart:
+OTELITE_RETENTION_DAYS=7 otelite restart
 
-# Or configure retention
-# otelite.toml
-[storage]
-retention_days = 7
-max_size_gb = 5
+# Or purge everything immediately (all signals):
+curl -X POST http://127.0.0.1:3000/api/admin/purge
 ```
 
 ### Corrupted Database
@@ -437,10 +447,11 @@ max_size_gb = 5
 # Backup data
 cp -r ~/.otelite/data ~/.otelite/data.backup
 
-# Try repair
-otelite repair
+# Diagnose with sqlite3 (if installed)
+sqlite3 ~/.otelite/data/otelite.db "PRAGMA integrity_check;"
 
-# If repair fails, delete and restart
+# If the database is unrecoverable, delete it and restart
+# (telemetry older than this point is lost)
 rm -rf ~/.otelite/data
 otelite start
 ```
@@ -450,16 +461,15 @@ otelite start
 **Problem**: Data ingestion is slow
 
 **Solution**:
-```toml
-# otelite.toml - Optimize write performance
-[storage]
-batch_size = 2000
-batch_timeout_ms = 500
-compression = "none"  # Disable compression for speed
+Writes are already batched: each export (a batch of logs, spans or
+metrics) is stored in a single transaction, and writes wait for a
+running retention purge instead of failing. There is no write-tuning
+knob to adjust. If ingestion is slow, the usual culprits are:
 
-[pipeline]
-max_queue_size = 20000
-```
+1. **Small, chatty exports** — fewer, larger batches write less.
+2. **Slow disk** — `iotop -p $(pgrep otelite)` while ingesting.
+3. **A purge in progress** — writes pause briefly during a purge;
+   a smaller `OTELITE_RETENTION_DAYS` makes purges shorter.
 
 ## Getting Help
 
@@ -476,8 +486,9 @@ cargo --version
 # Otelite version
 otelite --version
 
-# Configuration
-cat otelite.toml
+# Runtime configuration (flags/environment, there is no config file)
+env | grep -E '^(OTELITE_|RUST_LOG)'
+ps aux | grep -v grep | grep "otelite serve"   # effective flags
 
 # Logs (last 100 lines; daily-rotated)
 tail -n 100 ~/.otelite/data/otelite.log.*
@@ -490,21 +501,26 @@ df -h ~/.otelite/data
 ### Enabling Debug Logging
 
 ```bash
-# Start with debug logging
-otelite start --log-level debug
+# Foreground: RUST_LOG is picked up by the server directly
+RUST_LOG=debug otelite serve
 
-# Or set environment variable
-export RUST_LOG=debug
-otelite start
+# Specific modules
+RUST_LOG=otelite_receiver=debug,otelite_storage=trace otelite serve
 
-# For specific modules
-export RUST_LOG=otelite_receiver=debug,otelite_storage=trace
-otelite start
+# Daemon: the daemon inherits the environment of the process that
+# starts it (note: `otelite start --log-level` only affects the
+# short-lived start command, not the daemon)
+export RUST_LOG=otelite=debug
+otelite restart
 ```
+
+The daemon's tracing goes to the daily-rotated log
+(`~/.otelite/data/otelite.log.YYYY-MM-DD`), so after `otelite
+restart`, tail that file rather than the terminal.
 
 ### Reporting Bugs
 
-1. **Search existing issues**: Check [GitHub Issues](https://github.com/YOUR_USERNAME/otelite/issues)
+1. **Search existing issues**: Check [GitHub Issues](https://github.com/planetf1/otelite/issues)
 2. **Create new issue**: Use bug report template
 3. **Include**:
    - Clear description of problem
@@ -532,11 +548,9 @@ otelite start
 
 **Cause**: Data ingestion rate exceeds processing capacity
 
-**Solution**: Increase queue size or reduce ingestion rate
-```toml
-[pipeline]
-max_queue_size = 20000
-```
+**Solution**: Reduce the ingestion rate — send fewer, larger OTLP
+batches from the exporter, or spread exports over more exporters.
+There is no queue-size knob to tune.
 
 ### "Invalid metric name"
 
@@ -552,43 +566,32 @@ max_queue_size = 20000
 
 ## Performance Tuning
 
-### Optimize for Throughput
+Otelite exposes no pipeline/storage tuning knobs — writes are batched
+per export in a single transaction and the storage engine is SQLite in
+WAL mode. The levers that actually move the needle:
 
-```toml
-[pipeline]
-batch_size = 2000
-batch_timeout_ms = 500
-max_queue_size = 20000
+### Throughput
 
-[storage]
-compression = "none"
-write_buffer_size_mb = 64
-```
+- Send fewer, larger OTLP export batches from the exporter (each
+  batch is one transaction on the otelite side).
+- Keep `~/.otelite/data` on fast storage (SSD); `iotop -p $(pgrep otelite)`
+  while ingesting tells you if the disk is the bottleneck.
 
-### Optimize for Latency
+### Query latency
 
-```toml
-[pipeline]
-batch_size = 100
-batch_timeout_ms = 100
-max_queue_size = 5000
+- Narrow the time range and use filters (session, model, error level)
+  so queries scan less.
+- Shorten `OTELITE_RETENTION_DAYS` (1-365, default 90) so scans cover
+  less history.
 
-[storage]
-compression = "zstd"
-write_buffer_size_mb = 16
-```
+### Memory and disk
 
-### Optimize for Memory
-
-```toml
-[limits]
-max_memory_mb = 50
-max_queue_size = 5000
-
-[pipeline]
-batch_size = 500
-```
+- Retention is the main lever: shorter `OTELITE_RETENTION_DAYS` means
+  less stored data, smaller memory and disk footprint, and shorter
+  purges.
+- `curl -X POST http://127.0.0.1:3000/api/admin/purge` purges all
+  signals immediately.
 
 ---
 
-**Still having issues?** Open a [GitHub Issue](https://github.com/YOUR_USERNAME/otelite/issues) or start a [Discussion](https://github.com/YOUR_USERNAME/otelite/discussions).
+**Still having issues?** Open a [GitHub Issue](https://github.com/planetf1/otelite/issues).
