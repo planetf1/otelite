@@ -6,7 +6,7 @@ use otelite_storage::{sqlite::SqliteBackend, StorageBackend, StorageConfig};
 use std::net::SocketAddr;
 use std::path::PathBuf;
 use std::sync::Arc;
-use tracing::{info, Level};
+use tracing::{info, warn, Level};
 use tracing_subscriber::{fmt, layer::SubscriberExt, util::SubscriberInitExt, EnvFilter};
 
 pub mod commands;
@@ -739,12 +739,82 @@ async fn run_dashboard(addr: SocketAddr, storage_path: Option<PathBuf>) -> Resul
         .with_otlp_ports(grpc_addr.port(), http_addr.port());
 
     let server = DashboardServer::new(config, storage);
-    server
-        .start()
-        .await
-        .map_err(|e| Error::ApiError(format!("Dashboard server error: {}", e)))?;
+    let dashboard_shutdown = server.shutdown_handle();
+    // The serve future's error type is not `Send`, so stringify it before
+    // crossing the spawn boundary.
+    let serve_result = tokio::spawn(async move {
+        server.start().await.map_err(|e| e.to_string())
+    });
 
-    Ok(())
+    // SIGTERM/SIGINT used to be ignored: `axum::serve` blocks forever, so
+    // the daemon only died when `otelite stop` escalated to SIGKILL after
+    // 10 s. On a signal, shut the receivers down first (they finish
+    // in-flight exports), then the dashboard, and give the spawned serve
+    // tasks a bounded drain before the runtime exits.
+    enum ServeOutcome {
+        DashboardError(String),
+        Signal,
+    }
+    let outcome = tokio::select! {
+        res = serve_result => {
+            // The dashboard stopped on its own (listener/serve error):
+            // tear the receivers down and surface the error as before.
+            grpc_server.shutdown();
+            http_server.shutdown();
+            match res {
+                Ok(Ok(())) => unreachable!("dashboard serve returns only on error or shutdown"),
+                Ok(Err(e)) => ServeOutcome::DashboardError(e),
+                Err(e) => ServeOutcome::DashboardError(format!("dashboard task failed: {e}")),
+            }
+        },
+        _ = await_shutdown_signal() => {
+            info!("Shutdown signal received; stopping gRPC, HTTP and dashboard servers");
+            grpc_server.shutdown();
+            http_server.shutdown();
+            dashboard_shutdown.trigger();
+            ServeOutcome::Signal
+        },
+    };
+
+    match outcome {
+        ServeOutcome::Signal => {
+            // Bounded drain for the receivers' spawned serve tasks
+            // (tonic/axum stop accepting immediately on shutdown; in-flight
+            // OTLP exports get a connection error the exporter retries).
+            tokio::time::sleep(std::time::Duration::from_secs(2)).await;
+            Ok(())
+        },
+        ServeOutcome::DashboardError(e) => {
+            Err(Error::ApiError(format!("Dashboard server error: {e}")))
+        },
+    }
+}
+
+/// Wait for SIGTERM or SIGINT (the two signals a service manager or a
+/// user's Ctrl-C deliver).
+async fn await_shutdown_signal() {
+    #[cfg(unix)]
+    {
+        use tokio::signal::unix::{signal, SignalKind};
+
+        let mut sigterm = match signal(SignalKind::terminate()) {
+            Ok(handler) => handler,
+            Err(e) => {
+                warn!("Failed to install SIGTERM handler: {}; waiting on SIGINT only", e);
+                let _ = tokio::signal::ctrl_c().await;
+                return;
+            },
+        };
+
+        tokio::select! {
+            _ = sigterm.recv() => {},
+            _ = tokio::signal::ctrl_c() => {},
+        }
+    }
+    #[cfg(not(unix))]
+    {
+        let _ = tokio::signal::ctrl_c().await;
+    }
 }
 
 async fn handle_logs_command(command: LogsCommands, config: &Config) -> Result<()> {

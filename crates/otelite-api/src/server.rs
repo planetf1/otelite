@@ -240,9 +240,22 @@ impl Default for QueryCache {
 }
 
 /// Dashboard server
+/// A handle that, when triggered, starts the dashboard's graceful
+/// shutdown (stop accepting, finish in-flight requests).
+#[derive(Clone)]
+pub struct DashboardShutdown(Arc<tokio::sync::Notify>);
+
+impl DashboardShutdown {
+    /// Start the graceful shutdown.
+    pub fn trigger(&self) {
+        self.0.notify_waiters();
+    }
+}
+
 pub struct DashboardServer {
     config: Arc<DashboardConfig>,
     state: AppState,
+    shutdown_notify: Arc<tokio::sync::Notify>,
 }
 
 impl DashboardServer {
@@ -262,7 +275,13 @@ impl DashboardServer {
         Self {
             config: Arc::new(config),
             state,
+            shutdown_notify: Arc::new(tokio::sync::Notify::new()),
         }
+    }
+
+    /// Handle for triggering graceful shutdown from a signal handler.
+    pub fn shutdown_handle(&self) -> DashboardShutdown {
+        DashboardShutdown(Arc::clone(&self.shutdown_notify))
     }
 
     /// Build the router with all routes
@@ -368,7 +387,8 @@ impl DashboardServer {
             .layer(TraceLayer::new_for_http())
     }
 
-    /// Start the dashboard server
+    /// Start the dashboard server, serving until an error or a graceful
+    /// shutdown triggered through [`DashboardServer::shutdown_handle`].
     pub async fn start(self) -> Result<(), Box<dyn std::error::Error>> {
         let addr = self.config.bind_address;
         let router = self.build_router();
@@ -376,8 +396,63 @@ impl DashboardServer {
         info!("Starting dashboard server on {}", addr);
 
         let listener = tokio::net::TcpListener::bind(addr).await?;
-        axum::serve(listener, router).await?;
+        let shutdown_notify = Arc::clone(&self.shutdown_notify);
+        axum::serve(listener, router)
+            .with_graceful_shutdown(async move {
+                shutdown_notify.notified().await;
+                info!("Shutting down dashboard server");
+            })
+            .await?;
 
         Ok(())
+    }
+}
+
+
+#[cfg(test)]
+mod server_shutdown_tests {
+    use super::*;
+    use otelite_storage::sqlite::SqliteBackend;
+    use otelite_storage::StorageConfig;
+    use tempfile::TempDir;
+
+    /// M16: `start()` must return promptly once the shutdown handle is
+    /// triggered (the signal path in `otelite serve`), instead of
+    /// blocking on `axum::serve` forever.
+    #[tokio::test]
+    async fn test_start_returns_on_shutdown_trigger() {
+        let temp = TempDir::new().expect("temp dir");
+        let config = StorageConfig::default().with_data_dir(temp.path().join("otelite.db"));
+        let mut storage = SqliteBackend::new(config);
+        storage
+            .initialize()
+            .await
+            .expect("storage initializes");
+        let storage: Arc<dyn StorageBackend> = Arc::new(storage);
+
+        let port = {
+            let l = tokio::net::TcpListener::bind("127.0.0.1:0")
+                .await
+                .expect("bind free port");
+            l.local_addr().expect("local addr").port()
+        };
+        let dashboard = DashboardServer::new(
+            DashboardConfig::default().with_bind_address(format!("127.0.0.1:{port}").parse().unwrap()),
+            storage,
+        );
+        let handle = dashboard.shutdown_handle();
+        let serve = tokio::spawn(async move {
+            dashboard.start().await.map_err(|e| e.to_string())
+        });
+
+        // Give the server a moment to bind, then trigger the shutdown.
+        tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+        handle.trigger();
+
+        let result = tokio::time::timeout(std::time::Duration::from_secs(5), serve)
+            .await
+            .expect("start() must return after the shutdown trigger")
+            .expect("serve task must not panic");
+        result.expect("a clean shutdown is not a server error");
     }
 }

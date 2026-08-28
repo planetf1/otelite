@@ -71,6 +71,10 @@ have to work around), not implementation detail.
   just the database — running a second otelite instance (or pointing
   read-only commands at another database) no longer reads or writes
   the default instance's PID file.
+- `otelite serve` now shuts down gracefully on SIGTERM and Ctrl-C:
+  it stops accepting new telemetry, lets in-flight work finish (with a
+  short bounded drain), and exits. Before, the signal was ignored and
+  `otelite stop` had to wait out its 10 s timeout and SIGKILL.
 
 ## [0.1.88] - 2026-08-27
 

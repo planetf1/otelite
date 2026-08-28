@@ -336,3 +336,76 @@ fn test_pid_file_atomic_roundtrip() {
         None
     );
 }
+
+/// M16 regression: SIGTERM used to be ignored — `axum::serve` blocks
+/// forever, so the daemon only died when `otelite stop` escalated to
+/// SIGKILL after 10 s. It must now exit gracefully and release its
+/// listener.
+#[test]
+fn test_serve_exits_gracefully_on_sigterm() {
+    // Only meaningful when the OTLP ports are free; otherwise a throwaway
+    // serve could not start at all.
+    if TcpStream::connect((std::net::IpAddr::from([127, 0, 0, 1]), 4317)).is_ok()
+        || TcpStream::connect((std::net::IpAddr::from([127, 0, 0, 1]), 4318)).is_ok()
+    {
+        return;
+    }
+
+    let temp = tempfile::TempDir::new().unwrap();
+    let data_dir = temp.path().join("data");
+    let storage = data_dir.join("otelite.db");
+    let dashboard_port = free_port();
+
+    let mut child = std::process::Command::new(env!("CARGO_BIN_EXE_otelite"))
+        .args([
+            "serve",
+            "--addr",
+            &format!("127.0.0.1:{dashboard_port}"),
+            "--storage-path",
+            &storage.to_string_lossy(),
+        ])
+        .env("OTELITE_DATA_DIR", data_dir.as_os_str())
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .spawn()
+        .unwrap();
+
+    wait_for_port(dashboard_port, Instant::now() + Duration::from_secs(15));
+
+    let started = Instant::now();
+    nix::sys::signal::kill(
+        Pid::from_raw(child.id() as i32),
+        nix::sys::signal::Signal::SIGTERM,
+    )
+    .unwrap();
+
+    // Must exit on its own (no SIGKILL escalation) and in bounded time.
+    let deadline = Instant::now() + Duration::from_secs(8);
+    loop {
+        match child.try_wait().unwrap() {
+            Some(status) => {
+                assert!(
+                    started.elapsed() < Duration::from_secs(8),
+                    "graceful shutdown took too long: {:?}",
+                    started.elapsed()
+                );
+                let _ = status;
+                break;
+            },
+            None => {
+                assert!(
+                    Instant::now() < deadline,
+                    "serve did not exit within 8 s of SIGTERM"
+                );
+                std::thread::sleep(Duration::from_millis(100));
+            },
+        }
+    }
+
+    // The dashboard listener must be released.
+    let freed = TcpStream::connect((std::net::IpAddr::from([127, 0, 0, 1]), dashboard_port))
+        .is_err();
+    assert!(freed, "dashboard port must be released after SIGTERM");
+    let _ = TcpListener::bind("127.0.0.1:4317");
+    let _ = TcpListener::bind("127.0.0.1:4318");
+}
