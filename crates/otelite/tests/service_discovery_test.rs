@@ -11,7 +11,6 @@
 use std::net::{TcpListener, TcpStream};
 use std::time::{Duration, Instant};
 
-use nix::sys::signal::{kill, Signal};
 use nix::unistd::Pid;
 
 fn wait_for_port(port: u16, deadline: Instant) {
@@ -82,9 +81,16 @@ fn test_discovery_finds_serve_without_pid_file() {
         .env("OTELITE_DATA_DIR", data_dir.as_os_str())
         .output()
         .unwrap();
-    assert!(status_out.status.success(), "status must succeed: {}", String::from_utf8_lossy(&status_out.stderr));
+    assert!(
+        status_out.status.success(),
+        "status must succeed: {}",
+        String::from_utf8_lossy(&status_out.stderr)
+    );
     let status_text = String::from_utf8_lossy(&status_out.stdout);
-    assert!(status_text.contains("Status: Running"), "status output: {status_text}");
+    assert!(
+        status_text.contains("Status: Running"),
+        "status output: {status_text}"
+    );
     assert!(
         status_text.contains(&format!("PID: {pid}")),
         "status must report the discovered PID; output: {status_text}"
@@ -95,7 +101,11 @@ fn test_discovery_finds_serve_without_pid_file() {
         .env("OTELITE_DATA_DIR", data_dir.as_os_str())
         .output()
         .unwrap();
-    assert!(stop_out.status.success(), "stop must succeed: {}", String::from_utf8_lossy(&stop_out.stderr));
+    assert!(
+        stop_out.status.success(),
+        "stop must succeed: {}",
+        String::from_utf8_lossy(&stop_out.stderr)
+    );
     assert!(
         String::from_utf8_lossy(&stop_out.stdout).contains("Otelite daemon stopped"),
         "stop output: {}",
