@@ -154,6 +154,10 @@ pub fn query_spans_for_trace_list(
                 check_sql.push_str(" AND end_time <= ?");
                 check_params.push(Box::new(end));
             }
+            // The trace only qualifies if a span inside the window also
+            // matches the structured predicates, mirroring the span-list
+            // query's WHERE clause.
+            append_predicates("spans", &params.predicates, &mut check_sql, &mut check_params)?;
             check_sql.push_str(" LIMIT 1");
             let mut stmt = conn
                 .prepare(&check_sql)
@@ -185,6 +189,11 @@ pub fn query_spans_for_trace_list(
                 sql.push_str(" AND end_time <= ?");
                 scan_params.push(Box::new(end));
             }
+            // Structured predicates (session.id / gen_ai.* / attributes)
+            // must constrain trace SELECTION exactly as they constrain
+            // the span list — otherwise a trace filtered out of /spans
+            // would still be picked here and its spans returned.
+            append_predicates("spans", &params.predicates, &mut sql, &mut scan_params)?;
             sql.push_str(" ORDER BY start_time DESC");
 
             let mut stmt = conn
@@ -7825,6 +7834,61 @@ mod tests {
         let got = query_spans_for_trace_list(&conn, &params, 10).unwrap();
         assert_eq!(got.len(), 1);
         assert_eq!(got[0].trace_id, "t1");
+    }
+
+    #[test]
+    fn test_trace_list_predicates_constrain_trace_selection() {
+        let conn = setup_test_db();
+        // ta carries the gen_ai attribute (and is the newest trace), tb
+        // does not. Before the fix the phase-1 scan ignored predicates,
+        // so tb was selected and returned even though /spans filters it
+        // out.
+        conn.execute(
+            "INSERT INTO spans (trace_id, span_id, name, kind, start_time, end_time,
+                                attributes, events, resource, status_code)
+             VALUES ('ta', 'sa', 'n', 0, 200, 210,
+                     '{\"gen_ai.request.model\":\"gpt-4o\"}', '[]', '{}', 0)",
+            [],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO spans (trace_id, span_id, name, kind, start_time, end_time,
+                                attributes, events, resource, status_code)
+             VALUES ('tb', 'sb', 'n', 0, 100, 110, '{}', '[]', '{}', 0)",
+            [],
+        )
+        .unwrap();
+
+        let model_pred = QueryPredicate {
+            field: "gen_ai.request.model".to_string(),
+            operator: Operator::Equal,
+            value: QueryValue::String("gpt-4o".to_string()),
+        };
+
+        // With the predicate: only ta qualifies.
+        let params = QueryParams {
+            predicates: vec![model_pred.clone()],
+            ..Default::default()
+        };
+        let got = query_spans_for_trace_list(&conn, &params, 10).unwrap();
+        let trace_ids: Vec<&str> = got.iter().map(|s| s.trace_id.as_str()).collect();
+        assert_eq!(trace_ids, vec!["ta"]);
+
+        // Without it: both traces come back (sanity — the predicate is
+        // what filters, not anything about ordering or windows).
+        let got = query_spans_for_trace_list(&conn, &QueryParams::default(), 10).unwrap();
+        let trace_ids: Vec<&str> = got.iter().map(|s| s.trace_id.as_str()).collect();
+        assert_eq!(trace_ids, vec!["ta", "tb"]);
+
+        // Explicit trace + predicate the trace does not satisfy → empty,
+        // matching the window-check semantics (a span in the window must
+        // also match the predicates).
+        let params = QueryParams {
+            trace_id: Some("tb".to_string()),
+            predicates: vec![model_pred],
+            ..Default::default()
+        };
+        assert!(query_spans_for_trace_list(&conn, &params, 10).unwrap().is_empty());
     }
 
     #[test]

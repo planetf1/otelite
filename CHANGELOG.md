@@ -53,6 +53,10 @@ have to work around), not implementation detail.
   running), duplicate requests for the same query no longer sit
   waiting on the dead request — they re-run immediately, and a dead
   request can no longer be mistaken for a live one.
+- The trace list now honours the session, conversation, model and
+  attribute filters: before, the filters were applied to the spans
+  but not to the selection of *which traces* were listed, so filtered-out
+  traces could still appear on the traces page.
 
 ## [0.1.88] - 2026-08-27
 
