@@ -850,6 +850,43 @@ gui/501/dev.otelite.daemon = {
 }
 
 #[cfg(test)]
+mod pid_file_tests {
+    use super::*;
+
+    #[test]
+    fn test_read_pid_file_corrupt_is_removed_and_treated_as_missing() {
+        let temp = tempfile::TempDir::new().unwrap();
+        let pid_file = temp.path().join("otelite.pid");
+        std::fs::write(&pid_file, "not-a-pid\n").unwrap();
+
+        assert_eq!(read_pid_file(&pid_file).unwrap(), None);
+        assert!(
+            !pid_file.exists(),
+            "the corrupt file must be removed so it cannot clog later commands"
+        );
+    }
+
+    #[test]
+    fn test_read_pid_file_zero_pid_treated_as_missing() {
+        let temp = tempfile::TempDir::new().unwrap();
+        let pid_file = temp.path().join("otelite.pid");
+        std::fs::write(&pid_file, "0").unwrap();
+
+        assert_eq!(read_pid_file(&pid_file).unwrap(), None);
+        assert!(!pid_file.exists());
+    }
+
+    #[test]
+    fn test_read_pid_file_missing_is_none() {
+        let temp = tempfile::TempDir::new().unwrap();
+        assert_eq!(
+            read_pid_file(&temp.path().join("otelite.pid")).unwrap(),
+            None
+        );
+    }
+}
+
+#[cfg(test)]
 mod daemon_args_tests {
     use super::*;
 
