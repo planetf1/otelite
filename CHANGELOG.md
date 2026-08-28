@@ -11,6 +11,8 @@ have to work around), not implementation detail.
 
 ## [Unreleased]
 
+## [0.1.92] - 2026-08-28
+
 ### Fixed
 
 - The REST API now returns the original OTLP `severity_text` (e.g.
