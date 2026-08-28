@@ -11,6 +11,8 @@ have to work around), not implementation detail.
 
 ## [Unreleased]
 
+## [0.1.89] - 2026-08-28
+
 ### Fixed
 
 - If the OTLP gRPC port (4317) is already in use, `serve` now fails
