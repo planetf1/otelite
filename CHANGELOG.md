@@ -11,6 +11,8 @@ have to work around), not implementation detail.
 
 ## [Unreleased]
 
+## [0.1.93] - 2026-08-28
+
 ### Added
 
 - The `~/.config/otelite/config.toml` file (created on first run) is now
