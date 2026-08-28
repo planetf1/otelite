@@ -78,54 +78,21 @@ pub fn purge_old_data(
 ) -> Result<PurgeRecord, StorageError> {
     let start_time = chrono::Utc::now().timestamp_nanos_opt().unwrap_or(0);
 
-    let mut logs_deleted = 0i64;
-    let mut spans_deleted = 0i64;
-    let mut metrics_deleted = 0i64;
-
-    // Purge logs in batches if requested
-    if signal_types.contains(&crate::SignalType::Logs) {
-        loop {
-            let deleted = if dry_run {
-                count_batch(conn, "logs", cutoff_timestamp, batch_size)?
-            } else {
-                delete_batch(conn, "logs", cutoff_timestamp, batch_size)?
-            };
-            logs_deleted += deleted;
-            if deleted < batch_size as i64 {
-                break;
-            }
-        }
-    }
-
-    // Purge spans in batches if requested
-    if signal_types.contains(&crate::SignalType::Traces) {
-        loop {
-            let deleted = if dry_run {
-                count_batch(conn, "spans", cutoff_timestamp, batch_size)?
-            } else {
-                delete_batch(conn, "spans", cutoff_timestamp, batch_size)?
-            };
-            spans_deleted += deleted;
-            if deleted < batch_size as i64 {
-                break;
-            }
-        }
-    }
-
-    // Purge metrics in batches if requested
-    if signal_types.contains(&crate::SignalType::Metrics) {
-        loop {
-            let deleted = if dry_run {
-                count_batch(conn, "metrics", cutoff_timestamp, batch_size)?
-            } else {
-                delete_batch(conn, "metrics", cutoff_timestamp, batch_size)?
-            };
-            metrics_deleted += deleted;
-            if deleted < batch_size as i64 {
-                break;
-            }
-        }
-    }
+    let logs_deleted = if signal_types.contains(&crate::SignalType::Logs) {
+        purge_table(conn, "logs", cutoff_timestamp, batch_size, dry_run)?
+    } else {
+        0
+    };
+    let spans_deleted = if signal_types.contains(&crate::SignalType::Traces) {
+        purge_table(conn, "spans", cutoff_timestamp, batch_size, dry_run)?
+    } else {
+        0
+    };
+    let metrics_deleted = if signal_types.contains(&crate::SignalType::Metrics) {
+        purge_table(conn, "metrics", cutoff_timestamp, batch_size, dry_run)?
+    } else {
+        0
+    };
 
     let end_time = chrono::Utc::now().timestamp_nanos_opt().unwrap_or(0);
 
@@ -145,12 +112,38 @@ pub fn purge_old_data(
     Ok(record)
 }
 
-/// Count records that would be deleted (for dry-run mode)
-fn count_batch(
-    conn: &Connection,
+/// Purge one table: a single COUNT in dry-run mode, otherwise
+/// repeated batched deletes until fewer than `batch_size` rows match.
+fn purge_table(
+    conn: &mut Connection,
     table: &str,
     cutoff_timestamp: i64,
     batch_size: usize,
+    dry_run: bool,
+) -> Result<i64, StorageError> {
+    if dry_run {
+        return count_all(conn, table, cutoff_timestamp);
+    }
+
+    let mut deleted = 0i64;
+    loop {
+        let n = delete_batch(conn, table, cutoff_timestamp, batch_size)?;
+        deleted += n;
+        if n < batch_size as i64 {
+            break;
+        }
+    }
+    Ok(deleted)
+}
+
+/// Count every record that would be deleted (dry-run mode).
+///
+/// A single COUNT(*): a dry run deletes nothing, so a batch-limited
+/// count loop would count the same rows forever and never terminate.
+fn count_all(
+    conn: &Connection,
+    table: &str,
+    cutoff_timestamp: i64,
 ) -> Result<i64, StorageError> {
     // Use correct timestamp column for each table
     let timestamp_col = match table {
@@ -158,19 +151,10 @@ fn count_batch(
         _ => "timestamp", // logs and metrics use 'timestamp'
     };
 
-    let sql = format!(
-        "SELECT COUNT(*) FROM (
-            SELECT id FROM {} WHERE {} < ? LIMIT ?
-        )",
-        table, timestamp_col
-    );
+    let sql = format!("SELECT COUNT(*) FROM {} WHERE {} < ?", table, timestamp_col);
 
-    conn.query_row(
-        &sql,
-        rusqlite::params![cutoff_timestamp, batch_size],
-        |row| row.get::<_, i64>(0),
-    )
-    .map_err(|e| StorageError::QueryError(format!("Failed to count batch: {}", e)))
+    conn.query_row(&sql, rusqlite::params![cutoff_timestamp], |row| row.get::<_, i64>(0))
+        .map_err(|e| StorageError::QueryError(format!("Failed to count rows for dry-run purge: {}", e)))
 }
 
 /// Delete a batch of records from a table
@@ -239,6 +223,19 @@ fn record_purge_history(conn: &Connection, record: &PurgeRecord) -> Result<(), S
 pub fn vacuum(conn: &mut Connection) -> Result<(), StorageError> {
     conn.execute_batch("VACUUM")
         .map_err(|e| StorageError::WriteError(format!("Failed to vacuum database: {}", e)))
+}
+
+/// Reclaim WAL space after a bulk delete without the exclusive lock
+/// that VACUUM requires.
+///
+/// VACUUM needs exclusive access to the database file and fails with
+/// SQLITE_BUSY while the read pool (or any other connection) is open.
+/// A passive checkpoint moves committed WAL frames back into the main
+/// database file, which is enough to stop the WAL from growing
+/// unboundedly after a purge.
+pub fn checkpoint(conn: &mut Connection) -> Result<(), StorageError> {
+    conn.execute_batch("PRAGMA wal_checkpoint(PASSIVE);")
+        .map_err(|e| StorageError::WriteError(format!("Failed to checkpoint WAL after purge: {}", e)))
 }
 
 #[cfg(test)]
@@ -312,5 +309,51 @@ mod tests {
         let mut conn = Connection::open_in_memory().unwrap();
         let result = vacuum(&mut conn);
         assert!(result.is_ok());
+    }
+
+    /// Regression test: a dry run over more matching rows than the
+    /// batch size must return the full count and terminate. Before the
+    /// fix the dry-run branch reused the batch-limited count, deleted
+    /// nothing, and looped forever.
+    #[test]
+    fn test_dry_run_counts_beyond_batch_size() {
+        let mut conn = Connection::open_in_memory().unwrap();
+        conn.execute(
+            "CREATE TABLE logs (
+                id INTEGER PRIMARY KEY,
+                timestamp INTEGER NOT NULL,
+                data TEXT
+            )",
+            [],
+        )
+        .unwrap();
+
+        // 15 rows, all older than the cutoff — more than one batch of
+        // 10 would cover.
+        for i in 0..15 {
+            conn.execute(
+                "INSERT INTO logs (timestamp, data) VALUES (?, ?)",
+                rusqlite::params![i, format!("log {}{}", i, "pad")],
+            )
+            .unwrap();
+        }
+
+        let record = purge_old_data(&mut conn, 10000, 10, &[crate::SignalType::Logs], true)
+            .expect("dry run must terminate");
+        assert_eq!(record.logs_deleted, 15, "dry run must count all matching rows");
+
+        // A dry run deletes nothing.
+        let count: i64 = conn
+            .query_row("SELECT COUNT(*) FROM logs", [], |row| row.get(0))
+            .unwrap();
+        assert_eq!(count, 15);
+    }
+
+    #[test]
+    fn test_checkpoint() {
+        // In-memory DBs have no WAL; checkpoint is a no-op that must
+        // still succeed (the real path runs it on file-backed DBs).
+        let mut conn = Connection::open_in_memory().unwrap();
+        assert!(checkpoint(&mut conn).is_ok());
     }
 }

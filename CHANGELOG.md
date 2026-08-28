@@ -40,6 +40,13 @@ have to work around), not implementation detail.
   bounded by the configured message size (a compressed "bomb" that
   would inflate past the limit is rejected with 413), and unsupported
   encodings (br, zstd) are rejected with 415.
+- Data purging (the dashboard's purge-all admin action and the
+  storage API's dry-run purges) no longer blocks telemetry ingestion
+  while it runs — the deletion happened on the same connection that
+  stores incoming data — no longer fails with "database is locked"
+  while the API has the database open (the post-purge VACUUM is now a
+  WAL checkpoint), and dry-run purges over databases with more than
+  10,000 matching rows now report the full count instead of hanging.
 
 ## [0.1.88] - 2026-08-27
 

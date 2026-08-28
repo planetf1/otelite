@@ -94,6 +94,25 @@ impl SqliteBackend {
 }
 
 impl SqliteBackend {
+    /// Open a dedicated connection for purge operations.
+    ///
+    /// A purge must never reuse the writer connection: a long purge
+    /// would hold the single writer lock (stalling every ingest write
+    /// behind the parking_lot mutex) while doing batched deletes. A
+    /// dedicated connection with the standard busy timeout lets the
+    /// purge coexist with live ingest and reads under WAL.
+    fn open_purge_connection(db_path: &std::path::Path) -> Result<Connection> {
+        let conn = Connection::open(db_path)
+            .map_err(|e| StorageError::WriteError(format!("Failed to open purge connection: {e}")))?;
+        conn.execute_batch(
+            "PRAGMA journal_mode=WAL; PRAGMA synchronous=FULL; PRAGMA busy_timeout=10000;",
+        )
+        .map_err(|e| {
+            StorageError::WriteError(format!("Failed to configure purge connection: {e}"))
+        })?;
+        Ok(conn)
+    }
+
     /// Run `op` on the writer connection inside a single transaction, on
     /// a blocking thread so a slow batch cannot stall the async runtime.
     /// All-or-nothing: any error rolls the whole transaction back.
@@ -301,11 +320,17 @@ impl StorageBackend for SqliteBackend {
             .await
             .map_err(StorageError::from)?;
 
-        let mut conn_guard = self.conn.lock();
-        let conn = conn_guard
-            .as_mut()
-            .ok_or_else(|| StorageError::WriteError("Database not initialized".to_string()))?;
+        // Non-blocking check: if a write is in flight the database is
+        // initialised by definition. If it is not initialised at all,
+        // the purge will fail with a clear "no such table" error from
+        // SQLite.
+        if let Some(conn_guard) = self.conn.try_lock() {
+            if conn_guard.is_none() {
+                return Err(StorageError::WriteError("Database not initialized".to_string()));
+            }
+        }
 
+        let db_path = self.db_path();
         let cutoff_timestamp = if let Some(older_than) = options.older_than {
             older_than
         } else {
@@ -313,20 +338,26 @@ impl StorageBackend for SqliteBackend {
                 chrono::Utc::now() - chrono::Duration::days(self.config.retention_days as i64);
             cutoff.timestamp_nanos_opt().unwrap_or(0)
         };
+        let signal_types = options.signal_types.clone();
+        let dry_run = options.dry_run;
 
-        let record = purge::purge_old_data(
-            conn,
-            cutoff_timestamp,
-            10000,
-            &options.signal_types,
-            options.dry_run,
-        )
-        .map_err(StorageError::from)?;
+        // Batched deletes and the checkpoint are synchronous SQLite
+        // work: run them on a blocking thread (so a long purge cannot
+        // stall the async runtime) on the dedicated purge connection
+        // (so ingest writes keep flowing during the purge).
+        let result = tokio::task::spawn_blocking(move || {
+            let mut conn = Self::open_purge_connection(&db_path)?;
+            let record =
+                purge::purge_old_data(&mut conn, cutoff_timestamp, 10000, &signal_types, dry_run)?;
+            if !dry_run {
+                purge::checkpoint(&mut conn)?;
+            }
+            Ok::<_, StorageError>(record)
+        })
+        .await
+        .map_err(|e| StorageError::WriteError(format!("Purge task failed to join: {e}")))?;
 
-        if !options.dry_run {
-            purge::vacuum(conn).map_err(StorageError::from)?;
-        }
-
+        let record = result?;
         let total_deleted = record.logs_deleted + record.spans_deleted + record.metrics_deleted;
         Ok(total_deleted as u64)
     }
@@ -338,39 +369,52 @@ impl StorageBackend for SqliteBackend {
             .await
             .map_err(StorageError::from)?;
 
-        let mut conn_guard = self.conn.lock();
-        let conn = conn_guard
-            .as_mut()
-            .ok_or_else(|| StorageError::WriteError("Database not initialized".to_string()))?;
+        // Non-blocking check (see purge()); a busy writer means the
+        // database is initialised.
+        if let Some(conn_guard) = self.conn.try_lock() {
+            if conn_guard.is_none() {
+                return Err(StorageError::WriteError("Database not initialized".to_string()));
+            }
+        }
 
-        let tx = conn
-            .transaction()
-            .map_err(|e| StorageError::WriteError(format!("Failed to start transaction: {}", e)))?;
+        let db_path = self.db_path();
 
-        let logs_deleted = tx
-            .execute("DELETE FROM logs", [])
-            .map_err(|e| StorageError::WriteError(format!("Failed to delete logs: {}", e)))?
-            as u64;
-        let spans_deleted = tx
-            .execute("DELETE FROM spans", [])
-            .map_err(|e| StorageError::WriteError(format!("Failed to delete spans: {}", e)))?
-            as u64;
-        let metrics_deleted = tx
-            .execute("DELETE FROM metrics", [])
-            .map_err(|e| StorageError::WriteError(format!("Failed to delete metrics: {}", e)))?
-            as u64;
+        let result = tokio::task::spawn_blocking(move || {
+            let mut conn = Self::open_purge_connection(&db_path)?;
 
-        tx.commit().map_err(|e| {
-            StorageError::WriteError(format!("Failed to commit transaction: {}", e))
-        })?;
+            let tx = conn
+                .transaction()
+                .map_err(|e| StorageError::WriteError(format!("Failed to start transaction: {}", e)))?;
 
-        purge::vacuum(conn).map_err(StorageError::from)?;
+            let logs_deleted = tx
+                .execute("DELETE FROM logs", [])
+                .map_err(|e| StorageError::WriteError(format!("Failed to delete logs: {}", e)))?
+                as u64;
+            let spans_deleted = tx
+                .execute("DELETE FROM spans", [])
+                .map_err(|e| StorageError::WriteError(format!("Failed to delete spans: {}", e)))?
+                as u64;
+            let metrics_deleted = tx
+                .execute("DELETE FROM metrics", [])
+                .map_err(|e| StorageError::WriteError(format!("Failed to delete metrics: {}", e)))?
+                as u64;
 
-        Ok(PurgeAllStats {
-            logs_deleted,
-            spans_deleted,
-            metrics_deleted,
+            tx.commit().map_err(|e| {
+                StorageError::WriteError(format!("Failed to commit transaction: {}", e))
+            })?;
+
+            purge::checkpoint(&mut conn)?;
+
+            Ok::<_, StorageError>(PurgeAllStats {
+                logs_deleted,
+                spans_deleted,
+                metrics_deleted,
+            })
         })
+        .await
+        .map_err(|e| StorageError::WriteError(format!("Purge task failed to join: {e}")))?;
+
+        result
     }
 
     async fn distinct_resource_keys(&self, signal: &str) -> Result<Vec<String>> {
@@ -1241,5 +1285,107 @@ mod tests {
             count, 0,
             "a failed batch must leave no partial write behind"
         );
+    }
+
+    fn test_log(ts: i64) -> LogRecord {
+        use otelite_core::telemetry::log::SeverityLevel;
+        LogRecord {
+            timestamp: ts,
+            observed_timestamp: Some(ts),
+            severity: SeverityLevel::Info,
+            severity_text: Some("INFO".to_string()),
+            body: "purge test log".to_string(),
+            trace_id: None,
+            span_id: None,
+            attributes: std::collections::HashMap::new(),
+            resource: None,
+        }
+    }
+
+    /// Regression test: a purge must run on its own connection. While
+    /// the writer connection is held by an in-flight write, a dry-run
+    /// purge must still complete immediately — before the fix, purge()
+    /// locked the writer connection for its whole duration, stalling
+    /// every ingest write (and, for a real purge, every read too)
+    /// until it finished.
+    #[tokio::test]
+    async fn test_purge_does_not_hold_writer_lock() {
+        let temp_dir = TempDir::new().unwrap();
+        let config = StorageConfig::default().with_data_dir(temp_dir.path().to_path_buf());
+        let mut backend = SqliteBackend::new(config);
+        backend.initialize().await.unwrap();
+        backend.write_log(&test_log(1000)).await.unwrap();
+
+        // Hold the writer connection for 300 ms, as a long write would.
+        let conn_opt = std::sync::Arc::clone(&backend.conn);
+        let holder = tokio::task::spawn_blocking(move || {
+            let _guard = conn_opt.lock();
+            std::thread::sleep(std::time::Duration::from_millis(300));
+        });
+
+        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+
+        let options = otelite_core::storage::PurgeOptions {
+            older_than: Some(2000),
+            signal_types: vec![crate::SignalType::Logs],
+            dry_run: true,
+        };
+        let started = std::time::Instant::now();
+        let purged = backend
+            .purge(&options)
+            .await
+            .expect("dry-run purge must not need the writer connection");
+        let took = started.elapsed();
+
+        assert_eq!(purged, 1, "dry run must report the matching row");
+        assert!(
+            took < std::time::Duration::from_millis(150),
+            "purge waited {took:?} on the writer lock; it must use its own connection"
+        );
+
+        holder.await.unwrap();
+    }
+
+    /// Regression test: a real purge must succeed while the read pool
+    /// holds open connections. Before the fix the purge finished with
+    /// VACUUM, which needs exclusive file access and failed with
+    /// SQLITE_BUSY whenever a pooled read connection was still open —
+    /// i.e. in every real deployment after the first dashboard query.
+    #[tokio::test]
+    async fn test_purge_succeeds_with_active_read_pool() {
+        let temp_dir = TempDir::new().unwrap();
+        let config = StorageConfig::default().with_data_dir(temp_dir.path().to_path_buf());
+        let mut backend = SqliteBackend::new(config);
+        backend.initialize().await.unwrap();
+
+        backend.write_log(&test_log(1000)).await.unwrap();
+        backend.write_log(&test_log(5_000)).await.unwrap();
+
+        // Keep a pooled read connection open (a dashboard query would).
+        let params = QueryParams {
+            start_time: None,
+            end_time: None,
+            limit: None,
+            trace_id: None,
+            span_id: None,
+            min_severity: None,
+            search_text: None,
+            predicates: Vec::new(),
+        };
+        let _ = backend.query_logs(&params).await.expect("read must work");
+
+        let options = otelite_core::storage::PurgeOptions {
+            older_than: Some(2000),
+            signal_types: vec![crate::SignalType::Logs],
+            dry_run: false,
+        };
+        let purged = backend
+            .purge(&options)
+            .await
+            .expect("purge must succeed while the read pool holds connections");
+        assert_eq!(purged, 1);
+
+        let stats = backend.stats().await.unwrap();
+        assert_eq!(stats.log_count, 1, "only the new log may remain");
     }
 }
