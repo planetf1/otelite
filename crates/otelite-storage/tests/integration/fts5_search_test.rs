@@ -595,3 +595,210 @@ async fn test_fts5_combined_filters() {
 
     backend.close().await.unwrap();
 }
+
+// ---------------------------------------------------------------------------
+// FTS5 external-content sync: delete/update triggers and the upgrade
+// migration from the no-op triggers shipped before the fix.
+// ---------------------------------------------------------------------------
+
+use otelite_core::storage::{PurgeOptions, SignalType};
+use rusqlite::Connection;
+
+/// Count full-text matches for a term directly in the index's content view.
+fn fts_match_count(conn: &Connection, term: &str) -> i64 {
+    conn.query_row(
+        "SELECT COUNT(*) FROM logs_fts WHERE logs_fts MATCH ?1",
+        [term],
+        |r| r.get(0),
+    )
+    .unwrap()
+}
+
+/// Regression test: deleting (purging) a log must remove it from full-text
+/// search. The pre-fix delete trigger was a no-op for the external-content
+/// FTS table, so purged logs kept matching forever.
+#[tokio::test]
+async fn test_fts5_purged_log_stops_matching() {
+    let temp_dir = TempDir::new().unwrap();
+    let config = StorageConfig::default().with_data_dir(temp_dir.path().to_path_buf());
+    let mut backend = SqliteBackend::new(config);
+    backend.initialize().await.unwrap();
+
+    backend
+        .write_log(&create_log_with_body("zebraquantum startup finished", 1000))
+        .await
+        .unwrap();
+
+    let before = backend
+        .query_logs(&QueryParams {
+            search_text: Some("zebraquantum".to_string()),
+            ..Default::default()
+        })
+        .await
+        .unwrap();
+    assert_eq!(before.len(), 1, "log must match before purge");
+
+    // Purge everything older than ts 2000: deletes the only log (ts 1000).
+    let purged = backend
+        .purge(&PurgeOptions {
+            older_than: Some(2000),
+            signal_types: vec![SignalType::Logs],
+            dry_run: false,
+        })
+        .await
+        .unwrap();
+    assert_eq!(purged, 1, "the log must be purged");
+
+    let after = backend
+        .query_logs(&QueryParams {
+            search_text: Some("zebraquantum".to_string()),
+            ..Default::default()
+        })
+        .await
+        .unwrap();
+    assert_eq!(
+        after.len(),
+        0,
+        "purged log must no longer match full-text search"
+    );
+
+    backend.close().await.unwrap();
+
+    // The search path semi-joins against `logs`, which hides index orphans
+    // of deleted rows; assert the index itself was updated.
+    let conn = Connection::open(temp_dir.path().join("otelite.db")).unwrap();
+    assert_eq!(
+        fts_match_count(&conn, "zebraquantum"),
+        0,
+        "purge must remove the index entry, not just the row"
+    );
+}
+
+/// Regression test: updating a log body must re-index the new text and
+/// drop the old text from the index.
+#[tokio::test]
+async fn test_fts5_updated_log_reindexes() {
+    let temp_dir = TempDir::new().unwrap();
+    let config = StorageConfig::default().with_data_dir(temp_dir.path().to_path_buf());
+    let mut backend = SqliteBackend::new(config);
+    backend.initialize().await.unwrap();
+
+    backend
+        .write_log(&create_log_with_body("alphanumerique failure", 1000))
+        .await
+        .unwrap();
+    backend.close().await.unwrap();
+
+    // Update the body out-of-band (the app has no update API; the trigger
+    // must keep the index consistent for any writer).
+    let conn =
+        Connection::open(temp_dir.path().join("otelite.db")).unwrap();
+    conn.execute(
+        "UPDATE logs SET body = 'bravoterm failure' WHERE body LIKE 'alphanumerique%'",
+        [],
+    )
+    .unwrap();
+
+    let old_matches = fts_match_count(&conn, "alphanumerique");
+    let new_matches = fts_match_count(&conn, "bravoterm");
+    assert_eq!(old_matches, 0, "old body text must leave the index on update");
+    assert_eq!(new_matches, 1, "new body text must be indexed on update");
+}
+
+/// Regression test: databases created by pre-fix builds carry no-op FTS
+/// triggers. Re-running schema initialisation (daemon restart after an
+/// upgrade) must replace them and rebuild the index so orphaned entries
+/// from previously purged logs stop matching.
+#[tokio::test]
+async fn test_fts5_migration_repairs_noop_triggers() {
+    use otelite_storage::sqlite::schema;
+
+    let temp_dir = TempDir::new().unwrap();
+    let conn = Connection::open(temp_dir.path().join("otelite.db")).unwrap();
+
+    // Replicate the pre-fix schema: logs table, external-content FTS
+    // index, and the no-op sync triggers exactly as shipped.
+    conn.execute_batch(
+        "CREATE TABLE logs (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            timestamp INTEGER NOT NULL,
+            observed_timestamp INTEGER,
+            trace_id TEXT,
+            span_id TEXT,
+            severity_number INTEGER NOT NULL,
+            severity_text TEXT,
+            body TEXT NOT NULL,
+            attributes TEXT,
+            resource TEXT,
+            scope TEXT,
+            flags INTEGER,
+            created_at INTEGER NOT NULL DEFAULT (strftime('%s', 'now'))
+        );
+        CREATE VIRTUAL TABLE logs_fts USING fts5(
+            body,
+            content='logs',
+            content_rowid='id'
+        );
+        CREATE TRIGGER logs_fts_insert AFTER INSERT ON logs BEGIN
+            INSERT INTO logs_fts(rowid, body) VALUES (new.id, new.body);
+        END;
+        CREATE TRIGGER logs_fts_delete AFTER DELETE ON logs BEGIN
+            DELETE FROM logs_fts WHERE rowid = old.id;
+        END;
+        CREATE TRIGGER logs_fts_update AFTER UPDATE ON logs BEGIN
+            DELETE FROM logs_fts WHERE rowid = old.id;
+            INSERT INTO logs_fts(rowid, body) VALUES (new.id, new.body);
+        END;",
+    )
+    .unwrap();
+
+    // A log is inserted and purged under the broken triggers, leaving an
+    // orphaned FTS entry.
+    conn.execute(
+        "INSERT INTO logs (timestamp, severity_number, body) VALUES (1000, 9, 'orphanterm data')",
+        [],
+    )
+    .unwrap();
+    conn.execute("DELETE FROM logs WHERE body = 'orphanterm data'", [])
+        .unwrap();
+    assert_eq!(
+        fts_match_count(&conn, "orphanterm"),
+        1,
+        "broken triggers must leave an orphaned index entry"
+    );
+
+    // Upgrade: re-run schema initialisation on the same database.
+    schema::initialize_schema(&conn).unwrap();
+
+    // The orphan must be gone and the triggers replaced.
+    assert_eq!(
+        fts_match_count(&conn, "orphanterm"),
+        0,
+        "migration must rebuild the index and drop orphans"
+    );
+    let trigger_sql: String = conn
+        .query_row(
+            "SELECT sql FROM sqlite_master WHERE type = 'trigger' AND name = 'logs_fts_delete'",
+            [],
+            |r| r.get(0),
+        )
+        .unwrap();
+    assert!(
+        trigger_sql.contains("'delete'"),
+        "delete trigger must use the FTS5 'delete' command form"
+    );
+
+    // And the repaired triggers must actually work afterwards.
+    conn.execute(
+        "INSERT INTO logs (timestamp, severity_number, body) VALUES (2000, 9, 'postmigration term')",
+        [],
+    )
+    .unwrap();
+    conn.execute("DELETE FROM logs WHERE body = 'postmigration term'", [])
+        .unwrap();
+    assert_eq!(
+        fts_match_count(&conn, "postmigration"),
+        0,
+        "replaced triggers must keep the index in sync"
+    );
+}

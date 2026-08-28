@@ -280,21 +280,66 @@ pub fn initialize_schema(conn: &Connection) -> Result<()> {
         );",
     )?;
 
-    // Create triggers to keep FTS5 table in sync
+    // Create triggers to keep the FTS5 table in sync.
+    //
+    // `logs_fts` is an external-content table: it stores only the index,
+    // and lookups join back into `logs`. Removing an index entry requires
+    // the special FTS5 command form
+    // `INSERT INTO logs_fts(logs_fts, rowid, body) VALUES ('delete', ...)`
+    // — a plain `DELETE FROM logs_fts WHERE rowid = ...` is valid SQL but
+    // matches nothing (the FTS table has no rows of its own) and silently
+    // leaves orphaned entries behind, which is exactly what the pre-fix
+    // triggers did.
+    //
+    // Migration: pre-fix builds shipped those no-op triggers and left
+    // stale index entries behind. Detect them by the missing `'delete'`
+    // command in the stored trigger SQL, replace the triggers, and rebuild
+    // the index from the content table to drop the orphans. One-time cost,
+    // proportional to log volume.
+    let broken_fts_triggers = conn
+        .query_row(
+            "SELECT sql FROM sqlite_master
+             WHERE type = 'trigger' AND name = 'logs_fts_delete'",
+            [],
+            |row| row.get::<_, String>(0),
+        )
+        .map(|sql| !sql.contains("'delete'"))
+        .unwrap_or(false);
+
+    if broken_fts_triggers {
+        // Pre-fix builds shipped no-op delete/update triggers, so purged or
+        // updated logs kept stale index entries. Replace the triggers (the
+        // IF NOT EXISTS batch below recreates them with the correct SQL)
+        // and rebuild the index from the content table to drop the
+        // orphans. One-time cost, proportional to log volume.
+        conn.execute_batch(
+            "DROP TRIGGER logs_fts_delete; DROP TRIGGER logs_fts_update;",
+        )?;
+    }
+
     conn.execute_batch(
         "CREATE TRIGGER IF NOT EXISTS logs_fts_insert AFTER INSERT ON logs BEGIN
             INSERT INTO logs_fts(rowid, body) VALUES (new.id, new.body);
          END;
 
          CREATE TRIGGER IF NOT EXISTS logs_fts_delete AFTER DELETE ON logs BEGIN
-            DELETE FROM logs_fts WHERE rowid = old.id;
+            INSERT INTO logs_fts(logs_fts, rowid, body) VALUES ('delete', old.id, old.body);
          END;
 
          CREATE TRIGGER IF NOT EXISTS logs_fts_update AFTER UPDATE ON logs BEGIN
-            DELETE FROM logs_fts WHERE rowid = old.id;
+            INSERT INTO logs_fts(logs_fts, rowid, body) VALUES ('delete', old.id, old.body);
             INSERT INTO logs_fts(rowid, body) VALUES (new.id, new.body);
          END;",
     )?;
+
+    if broken_fts_triggers {
+        // Rebuild the index from the content table so the stale entries
+        // left behind by the old triggers are dropped. A failure here
+        // fails initialisation loudly; the triggers are already correct,
+        // so only index hygiene (stale terms from updated logs) is at
+        // stake on a retry.
+        conn.execute("INSERT INTO logs_fts(logs_fts) VALUES ('rebuild')", [])?;
+    }
 
     Ok(())
 }

@@ -20,6 +20,10 @@ have to work around), not implementation detail.
   retention purge is running at the same time; the write waits for the
   purge instead, so exporters no longer retry (and duplicate) batches
   that overlapped a purge.
+- Full-text search no longer returns logs whose text was changed or
+  later purged: the FTS index is now kept in sync on delete and update,
+  and existing databases are repaired automatically on the next daemon
+  start (stale index entries are rebuilt from the stored logs).
 
 ## [0.1.88] - 2026-08-27
 

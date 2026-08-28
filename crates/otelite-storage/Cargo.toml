@@ -45,6 +45,8 @@ dirs = "5.0"
 # Testing utilities
 tempfile = { workspace = true }
 tokio-test = "0.4"
+# Raw-connection access for trigger/migration regression tests
+rusqlite = { version = "0.31", features = ["bundled"] }
 
 [lib]
 name = "otelite_storage"
