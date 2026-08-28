@@ -512,7 +512,6 @@ pub async fn handle_status() -> Result<()> {
         } else {
             println!("Status: Not running");
         }
-        return Ok(());
     }
 
     #[cfg(target_os = "macos")]
@@ -524,7 +523,6 @@ pub async fn handle_status() -> Result<()> {
         println!("Status: Not running");
     }
 
-    #[cfg(target_os = "macos")]
     Ok(())
 }
 

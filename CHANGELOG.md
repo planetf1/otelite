@@ -15,11 +15,11 @@ have to work around), not implementation detail.
 
 ### Internal
 
-- Fixed Linux CI compile failures in the service-management module
-  (macOS-only imports, launchd-state tests, and an unneeded return in
-  the unix status branch were not gated/flattened). No user-visible
-  change. The #107 regression test now also drives `otelite status`
-  and `otelite stop` end-to-end against a no-PID-file daemon.
+- Fixed Linux CI compile and clippy failures in the service-management
+  module (macOS-only imports, launchd-state tests, and unreachable
+  returns in the shared unix status branch). No user-visible change.
+  The #107 regression test now also drives `otelite status` and
+  `otelite stop` end-to-end against a no-PID-file daemon.
 
 ## [0.1.87] - 2026-08-27
 
