@@ -64,13 +64,20 @@ impl HttpServer {
 
         // Create router with all routes
         // Note: Backpressure is handled via semaphore in handlers
-        // and connection limits at the TCP level
+        // and connection limits at the TCP level.
+        //
+        // Cap the request body at the configured maximum message size:
+        // without this, axum's built-in 2 MB limit silently rejects
+        // larger-but-valid exports, and an attacker (or a misconfigured
+        // exporter) could otherwise stream unbounded bodies into the
+        // parser. Oversized requests get a 413 from axum directly.
         let app = create_router(
             metrics_handler,
             logs_handler,
             traces_handler,
             self.health_checker.clone(),
-        );
+        )
+        .layer(axum::extract::DefaultBodyLimit::max(self.config.max_message_size));
 
         // Create TCP listener
         let listener = tokio::net::TcpListener::bind(addr)

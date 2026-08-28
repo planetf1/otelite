@@ -113,15 +113,39 @@ impl GrpcServer {
             // serve_with_incoming ignores the builder-level setting.)
             .max_frame_size(Some((1 << 24) - 1));
 
-        // Add services and start server
+        // Add services and start server.
+        //
+        // Message-size limits are per-service in tonic 0.14 (the Server
+        // builder has no builder-level setting): without these, exports
+        // above tonic's 4 MB decode default are rejected even when the
+        // configured limit is higher, and a misconfigured exporter could
+        // otherwise stream messages the parser was never sized for.
+        // Oversized messages come back as RESOURCE_EXHAUSTED.
+        let max_message_size = self.config.max_message_size;
+
         let shutdown_notify = self.shutdown_notify.clone();
         let health_checker = self.health_checker.clone();
 
         tokio::spawn(async move {
             let result = server
-                .add_service(metrics_service.into_service())
-                .add_service(logs_service.into_service())
-                .add_service(traces_service.into_service())
+                .add_service(
+                    metrics_service
+                        .into_service()
+                        .max_decoding_message_size(max_message_size)
+                        .max_encoding_message_size(max_message_size),
+                )
+                .add_service(
+                    logs_service
+                        .into_service()
+                        .max_decoding_message_size(max_message_size)
+                        .max_encoding_message_size(max_message_size),
+                )
+                .add_service(
+                    traces_service
+                        .into_service()
+                        .max_decoding_message_size(max_message_size)
+                        .max_encoding_message_size(max_message_size),
+                )
                 .serve_with_incoming_shutdown(ConnectionStream(listener), async move {
                     shutdown_notify.notified().await;
                     info!("Shutting down gRPC server");

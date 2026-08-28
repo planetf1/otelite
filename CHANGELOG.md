@@ -28,6 +28,12 @@ have to work around), not implementation detail.
   atomically: if the write fails partway through, nothing from that
   batch is stored and the exporter's retry stores it exactly once,
   instead of duplicating the records that had already been written.
+- The configured maximum message size (default 10 MB) is now actually
+  enforced on both OTLP transports. Previously HTTP bodies were cut off
+  at a hard-coded 2 MB and gRPC messages at 4 MB regardless of
+  configuration; oversized exports are now rejected cleanly (HTTP 413 /
+  gRPC size error) instead of being stored truncated or failing deep in
+  the parser.
 
 ## [0.1.88] - 2026-08-27
 
