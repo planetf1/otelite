@@ -12,11 +12,15 @@ use axum::{
 use std::sync::Arc;
 
 /// Create the main router with all OTLP endpoints
+///
+/// `max_body_size` bounds the decoded (post-decompression) request
+/// body; see [`crate::http::handlers::decode_body`].
 pub fn create_router(
     metrics_handler: Arc<MetricsHandler>,
     logs_handler: Arc<LogsHandler>,
     traces_handler: Arc<TracesHandler>,
     health_checker: Arc<HealthChecker>,
+    max_body_size: usize,
 ) -> Router {
     Router::new()
         // Health check endpoint
@@ -34,6 +38,7 @@ pub fn create_router(
             logs_handler,
             traces_handler,
             health_checker,
+            max_body_size,
         })
 }
 
@@ -44,6 +49,7 @@ pub struct AppState {
     pub logs_handler: Arc<LogsHandler>,
     pub traces_handler: Arc<TracesHandler>,
     pub health_checker: Arc<HealthChecker>,
+    pub max_body_size: usize,
 }
 
 #[cfg(test)]
@@ -73,6 +79,7 @@ mod tests {
             logs_handler,
             traces_handler,
             health_checker,
+            10 * 1024 * 1024,
         );
 
         // Router created successfully - test passes if no panic

@@ -99,7 +99,7 @@ impl ReceiverError {
             Self::InvalidSignalType(_) => tonic::Status::invalid_argument(self.to_string()),
             Self::GrpcError(_) => tonic::Status::internal(self.to_string()),
             Self::HttpError(_) => tonic::Status::internal(self.to_string()),
-            Self::CompressionError(_) => tonic::Status::internal(self.to_string()),
+            Self::CompressionError(_) => tonic::Status::invalid_argument(self.to_string()),
             Self::ConfigError(_) => tonic::Status::failed_precondition(self.to_string()),
             Self::Internal(_) => tonic::Status::internal(self.to_string()),
             Self::StorageError(_) => tonic::Status::internal(self.to_string()),
@@ -118,7 +118,9 @@ impl ReceiverError {
             Self::InvalidSignalType(_) => 400,
             Self::GrpcError(_) => 500,
             Self::HttpError(_) => 500,
-            Self::CompressionError(_) => 500,
+            // A body that fails to decompress is a malformed client
+            // payload, not a server fault.
+            Self::CompressionError(_) => 400,
             Self::ConfigError(_) => 500,
             Self::Internal(_) => 500,
             Self::StorageError(_) => 500,

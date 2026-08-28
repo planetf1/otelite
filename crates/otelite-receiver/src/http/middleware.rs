@@ -5,9 +5,8 @@ use axum::{
     extract::Request,
     http::{header, HeaderValue},
     middleware::Next,
-    response::{IntoResponse, Response},
+    response::Response,
 };
-use tracing::debug;
 
 /// Middleware to validate Content-Type header
 pub async fn validate_content_type(req: Request, next: Next) -> Result<Response, ReceiverError> {
@@ -40,40 +39,9 @@ pub async fn validate_content_type(req: Request, next: Next) -> Result<Response,
     ))
 }
 
-/// Middleware to handle compression (gzip, deflate)
-pub async fn handle_compression(req: Request, next: Next) -> Response {
-    // Check Content-Encoding header
-    let content_encoding = req
-        .headers()
-        .get(header::CONTENT_ENCODING)
-        .and_then(|v| v.to_str().ok());
-
-    match content_encoding {
-        Some("gzip") => {
-            debug!("Request has gzip compression");
-            // In a full implementation, we would decompress here
-            // For now, pass through (axum handles this automatically with tower-http)
-            next.run(req).await
-        },
-        Some("deflate") => {
-            debug!("Request has deflate compression");
-            // In a full implementation, we would decompress here
-            next.run(req).await
-        },
-        Some("identity") | None => {
-            // No compression
-            next.run(req).await
-        },
-        Some(encoding) => {
-            // Unsupported encoding
-            let error = ReceiverError::CompressionError(format!(
-                "Unsupported Content-Encoding: {}",
-                encoding
-            ));
-            error.into_response()
-        },
-    }
-}
+// Note: request-body decompression (Content-Encoding: gzip/deflate) is
+// handled per-endpoint by `handlers::decode_body`, which can apply the
+// configured decompression cap to the buffered body.
 
 /// Middleware to add CORS headers
 pub async fn add_cors_headers(req: Request, next: Next) -> Response {

@@ -37,6 +37,11 @@ pub async fn handle_metrics(
 ) -> Response {
     debug!("Received metrics request: {} bytes", body.len());
 
+    let body = match decode_body(&headers, body, state.max_body_size) {
+        Ok(b) => b,
+        Err(e) => return e.into_response(),
+    };
+
     // Determine content type and parse accordingly
     let content_type = match get_content_type(&headers) {
         Ok(ct) => ct,
@@ -85,6 +90,11 @@ pub async fn handle_logs(
 ) -> Response {
     debug!("Received logs request: {} bytes", body.len());
 
+    let body = match decode_body(&headers, body, state.max_body_size) {
+        Ok(b) => b,
+        Err(e) => return e.into_response(),
+    };
+
     // Determine content type and parse accordingly
     let content_type = match get_content_type(&headers) {
         Ok(ct) => ct,
@@ -132,6 +142,11 @@ pub async fn handle_traces(
     body: Bytes,
 ) -> Response {
     debug!("Received traces request: {} bytes", body.len());
+
+    let body = match decode_body(&headers, body, state.max_body_size) {
+        Ok(b) => b,
+        Err(e) => return e.into_response(),
+    };
 
     // Determine content type and parse accordingly
     let content_type = match get_content_type(&headers) {
@@ -226,6 +241,78 @@ pub async fn handle_unified(
     // Could not parse as any known type
     ReceiverError::InvalidSignalType("Could not parse as any OTLP signal type".to_string())
         .into_response()
+}
+
+/// Decode the request body, honouring the Content-Encoding header.
+///
+/// OTLP/HTTP requires gzip support; deflate is accepted as well. The
+/// decompressed output is bounded by `max_bytes` (the configured
+/// maximum message size) — a "decompression bomb" that would expand
+/// past the limit is rejected with 413, and the decoder stops reading
+/// at the cap so memory stays bounded regardless of the compression
+/// ratio. Unknown encodings are rejected with 415.
+fn decode_body(
+    headers: &HeaderMap,
+    body: Bytes,
+    max_bytes: usize,
+) -> Result<Bytes, ReceiverError> {
+    let encoding = headers
+        .get("content-encoding")
+        .and_then(|v| v.to_str().ok())
+        .map(str::trim)
+        .unwrap_or("identity");
+
+    // A list of encodings (e.g. "gzip, br") would apply each layer; we
+    // only support a single encoding, so anything else is rejected.
+    if encoding.contains(',') {
+        return Err(ReceiverError::InvalidContentType(format!(
+            "Unsupported Content-Encoding: {encoding}. Supported: identity, gzip, deflate"
+        )));
+    }
+
+    match encoding {
+        "identity" => Ok(body),
+        "gzip" => decompress_bounded(
+            &mut flate2::read::GzDecoder::new(&body[..]),
+            "gzip",
+            max_bytes,
+        ),
+        "deflate" => decompress_bounded(
+            &mut flate2::read::DeflateDecoder::new(&body[..]),
+            "deflate",
+            max_bytes,
+        ),
+        other => Err(ReceiverError::InvalidContentType(format!(
+            "Unsupported Content-Encoding: {other}. Supported: identity, gzip, deflate"
+        ))),
+    }
+}
+
+/// Read from `reader` until EOF, stopping (and failing) once the output
+/// exceeds `max_bytes`.
+fn decompress_bounded<R: std::io::Read>(
+    reader: &mut R,
+    name: &str,
+    max_bytes: usize,
+) -> Result<Bytes, ReceiverError> {
+    let mut out = Vec::with_capacity(64 * 1024);
+    let mut buf = [0u8; 64 * 1024];
+    loop {
+        let n = reader
+            .read(&mut buf)
+            .map_err(|e| ReceiverError::CompressionError(format!("Failed to decode {name} body: {e}")))?;
+        if n == 0 {
+            break;
+        }
+        out.extend_from_slice(&buf[..n]);
+        if out.len() > max_bytes {
+            return Err(ReceiverError::MessageTooLarge {
+                size: out.len(),
+                max: max_bytes,
+            });
+        }
+    }
+    Ok(Bytes::from(out))
 }
 
 /// Get and normalize Content-Type header

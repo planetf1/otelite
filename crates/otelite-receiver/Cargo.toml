@@ -53,6 +53,8 @@ async-compression = { version = "0.4", features = ["tokio", "gzip", "deflate"] }
 tokio-test = "0.4"
 pretty_assertions = { workspace = true }
 tempfile = { workspace = true }
+# Body compression for Content-Encoding regression tests
+flate2 = "1.0"
 reqwest = { workspace = true }
 otelite-api = { path = "../otelite-api", version = "0.1.0" }
 otelite-storage = { path = "../otelite-storage", version = "0.1.0" }

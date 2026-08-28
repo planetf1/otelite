@@ -34,6 +34,12 @@ have to work around), not implementation detail.
   configuration; oversized exports are now rejected cleanly (HTTP 413 /
   gRPC size error) instead of being stored truncated or failing deep in
   the parser.
+- OTLP/HTTP exports sent with `Content-Encoding: gzip` (or `deflate`)
+  are now decompressed before parsing. Before, the header was ignored
+  by a stub and every gzip-encoded export failed. Decompression is
+  bounded by the configured message size (a compressed "bomb" that
+  would inflate past the limit is rejected with 413), and unsupported
+  encodings (br, zstd) are rejected with 415.
 
 ## [0.1.88] - 2026-08-27
 

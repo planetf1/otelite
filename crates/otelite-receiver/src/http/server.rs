@@ -76,6 +76,7 @@ impl HttpServer {
             logs_handler,
             traces_handler,
             self.health_checker.clone(),
+            self.config.max_message_size,
         )
         .layer(axum::extract::DefaultBodyLimit::max(self.config.max_message_size));
 
