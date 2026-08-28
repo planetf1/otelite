@@ -677,6 +677,165 @@ pub async fn handle_service_install() -> Result<()> {
     }
 }
 
+/// Environment variables that change daemon behaviour but are not
+/// inherited by launchd/systemd from the user's shell. When set at
+/// install time they are baked into the unit file so the service
+/// reproduces what the user was already running.
+const SERVICE_ENV_VARS: &[&str] = &[
+    "OTELITE_DATA_DIR",
+    "OTELITE_RETENTION_DAYS",
+    "OTELITE_AUTO_PURGE_ENABLED",
+    "OTELITE_PURGE_SCHEDULE",
+    "OTELITE_OTLP_GRPC_PORT",
+    "OTELITE_OTLP_HTTP_PORT",
+];
+
+/// Collect the service-affecting environment variables that are set in
+/// the current environment, in the order listed in SERVICE_ENV_VARS.
+fn collect_service_env() -> Vec<(String, String)> {
+    SERVICE_ENV_VARS
+        .iter()
+        .filter_map(|key| {
+            std::env::var(key)
+                .ok()
+                .map(|value| (key.to_string(), value))
+        })
+        .collect()
+}
+
+/// Minimal XML escaping for plist string content.
+fn xml_escape(value: &str) -> String {
+    value
+        .replace('&', "&amp;")
+        .replace('<', "&lt;")
+        .replace('>', "&gt;")
+        .replace('"', "&quot;")
+}
+
+/// Build the launchd plist content. Pure so it is testable on any OS
+/// without touching launchctl or the filesystem.
+#[cfg(any(target_os = "macos", test))]
+fn build_plist(
+    exe: &std::path::Path,
+    log_file: &std::path::Path,
+    env: &[(String, String)],
+) -> String {
+    let env_block = if env.is_empty() {
+        String::new()
+    } else {
+        let entries: String = env
+            .iter()
+            .map(|(k, v)| {
+                format!(
+                    "    <key>{}</key>\n    <string>{}</string>\n",
+                    xml_escape(k),
+                    xml_escape(v)
+                )
+            })
+            .collect();
+        format!(
+            "    <key>EnvironmentVariables</key>\n    <dict>\n{}    </dict>\n",
+            entries
+        )
+    };
+
+    format!(
+        r#"<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>dev.otelite.daemon</string>
+    <key>ProgramArguments</key>
+    <array>
+        <string>{exe}</string>
+        <string>serve</string>
+        <string>--log-file</string>
+        <string>{log}</string>
+    </array>
+{env_block}    <key>RunAtLoad</key>
+    <true/>
+    <key>KeepAlive</key>
+    <true/>
+    <key>StandardOutPath</key>
+    <string>{log}</string>
+    <key>StandardErrorPath</key>
+    <string>{log}</string>
+</dict>
+</plist>
+"#,
+        exe = xml_escape(&exe.display().to_string()),
+        log = xml_escape(&log_file.display().to_string()),
+        env_block = env_block
+    )
+}
+
+/// Build the systemd user unit content. Pure so it is testable on any
+/// OS without touching systemctl or the filesystem.
+#[cfg(any(target_os = "linux", test))]
+fn build_systemd_unit(
+    exe: &std::path::Path,
+    log_file: &std::path::Path,
+    env: &[(String, String)],
+) -> String {
+    let env_lines: String = env
+        .iter()
+        .map(|(k, v)| {
+            let escaped = v.replace('\\', "\\\\").replace('"', "\\\"");
+            format!(
+                r#"Environment="{}={}"
+"#,
+                k, escaped,
+            )
+        })
+        .collect();
+
+    format!(
+        r#"[Unit]
+Description=Otelite OpenTelemetry Collector
+After=network.target
+
+[Service]
+Type=simple
+ExecStart={exe} serve --log-file {log}
+{env}Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=default.target
+"#,
+        exe = exe.display(),
+        log = log_file.display(),
+        env = env_lines
+    )
+}
+
+/// Print the environment that was baked into the unit file (or a note
+/// that the service will run with built-in defaults), so the user can
+/// see what the service will and will not inherit.
+fn print_env_summary(env: &[(String, String)]) {
+    if env.is_empty() {
+        println!(
+            "
+Note: no OTELITE_* environment variables are set in this"
+        );
+        println!("shell, so the service will run with built-in defaults and will");
+        println!("NOT inherit variables you export later (launchd/systemd do");
+        println!("not read your shell profile). Set them, then re-run");
+        println!("`otelite service install` to carry them over.");
+    } else {
+        println!(
+            "
+Environment carried over from your shell:"
+        );
+        for (k, v) in env {
+            println!("  {}={}", k, v);
+        }
+        println!("(change these variables later, then re-run `otelite service install`");
+        println!(" to carry the new values over)");
+    }
+}
+
 /// Install otelite as a launchd service on macOS
 #[cfg(target_os = "macos")]
 async fn install_launchd_service() -> Result<()> {
@@ -696,45 +855,18 @@ async fn install_launchd_service() -> Result<()> {
         .map_err(|e| Error::ConfigError(format!("Failed to get executable path: {}", e)))?;
 
     let log_file = get_log_file()?;
+    let env = collect_service_env();
 
-    let plist_content = format!(
-        r#"<?xml version="1.0" encoding="UTF-8"?>
-<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-<plist version="1.0">
-<dict>
-    <key>Label</key>
-    <string>dev.otelite.daemon</string>
-    <key>ProgramArguments</key>
-    <array>
-        <string>{}</string>
-        <string>serve</string>
-        <string>--log-file</string>
-        <string>{}</string>
-    </array>
-    <key>RunAtLoad</key>
-    <true/>
-    <key>KeepAlive</key>
-    <true/>
-    <key>StandardOutPath</key>
-    <string>{}</string>
-    <key>StandardErrorPath</key>
-    <string>{}</string>
-</dict>
-</plist>
-"#,
-        exe_path.display(),
-        log_file.display(),
-        log_file.display(),
-        log_file.display()
-    );
+    let plist_content = build_plist(&exe_path, &log_file, &env);
 
-    fs::write(&plist_path, plist_content)
+    fs::write(&plist_path, &plist_content)
         .map_err(|e| Error::ConfigError(format!("Failed to write plist file: {}", e)))?;
 
     println!(
         "✓ Service configuration created at {}",
         plist_path.display()
     );
+    print_env_summary(&env);
     println!("\nTo enable the service, run:");
     println!("  launchctl load {}", plist_path.display());
     println!("\nTo disable the service, run:");
@@ -763,29 +895,15 @@ async fn install_systemd_service() -> Result<()> {
         .map_err(|e| Error::ConfigError(format!("Failed to get executable path: {}", e)))?;
 
     let log_file = get_log_file()?;
+    let env = collect_service_env();
 
-    let unit_content = format!(
-        r#"[Unit]
-Description=Otelite OpenTelemetry Collector
-After=network.target
+    let unit_content = build_systemd_unit(&exe_path, &log_file, &env);
 
-[Service]
-Type=simple
-ExecStart={} serve --log-file {}
-Restart=on-failure
-RestartSec=5
-
-[Install]
-WantedBy=default.target
-"#,
-        exe_path.display(),
-        log_file.display()
-    );
-
-    fs::write(&unit_path, unit_content)
+    fs::write(&unit_path, &unit_content)
         .map_err(|e| Error::ConfigError(format!("Failed to write systemd unit file: {}", e)))?;
 
     println!("✓ Service configuration created at {}", unit_path.display());
+    print_env_summary(&env);
     println!("\nTo enable and start the service, run:");
     println!("  systemctl --user daemon-reload");
     println!("  systemctl --user enable otelite.service");
@@ -799,9 +917,17 @@ WantedBy=default.target
     Ok(())
 }
 
+/// Environment-mutating tests share the process environment across all
+/// test modules in this file, so they must not run concurrently with
+/// each other.
+#[cfg(test)]
+static ENV_MUTEX: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
 #[cfg(test)]
 #[cfg(unix)]
 mod tests {
+    use super::ENV_MUTEX;
+
     #[cfg(target_os = "macos")]
     use super::parse_launchd_service_state;
     use super::{is_process_running, local_otelite_pid, otlp_grpc_port};
@@ -904,10 +1030,6 @@ gui/501/dev.otelite.daemon = {
         let _ = sleep.wait();
     }
 
-    /// Environment-mutating tests share the process environment, so they
-    /// must not run concurrently with each other.
-    static ENV_MUTEX: std::sync::Mutex<()> = std::sync::Mutex::new(());
-
     #[test]
     fn test_otlp_grpc_port_env_override() {
         let _guard = ENV_MUTEX.lock().unwrap_or_else(|e| e.into_inner());
@@ -981,6 +1103,38 @@ gui/501/dev.otelite.daemon = {
             None => std::env::remove_var(key),
         }
     }
+}
+
+#[test]
+fn test_collect_service_env_only_returns_set_vars() {
+    let _guard = ENV_MUTEX.lock().unwrap_or_else(|e| e.into_inner());
+    for key in SERVICE_ENV_VARS {
+        std::env::remove_var(key);
+    }
+    std::env::set_var("OTELITE_DATA_DIR", "/custom/data");
+    std::env::set_var("OTELITE_RETENTION_DAYS", "60");
+
+    let env = collect_service_env();
+    assert_eq!(
+        env,
+        vec![
+            ("OTELITE_DATA_DIR".to_string(), "/custom/data".to_string()),
+            ("OTELITE_RETENTION_DAYS".to_string(), "60".to_string()),
+        ]
+    );
+
+    for key in SERVICE_ENV_VARS {
+        std::env::remove_var(key);
+    }
+}
+
+#[test]
+fn test_collect_service_env_empty_when_unset() {
+    let _guard = ENV_MUTEX.lock().unwrap_or_else(|e| e.into_inner());
+    for key in SERVICE_ENV_VARS {
+        std::env::remove_var(key);
+    }
+    assert!(collect_service_env().is_empty());
 }
 
 #[cfg(test)]
@@ -1064,5 +1218,90 @@ mod daemon_args_tests {
                 "/tmp/data/otelite.db"
             ]
         );
+    }
+
+    #[test]
+    fn test_build_plist_bakes_in_environment_variables() {
+        let env = vec![
+            ("OTELITE_DATA_DIR".to_string(), "/custom/data".to_string()),
+            ("OTELITE_OTLP_GRPC_PORT".to_string(), "4317".to_string()),
+        ];
+        let plist = build_plist(
+            std::path::Path::new("/usr/local/bin/otelite"),
+            std::path::Path::new("/custom/data/otelite.log"),
+            &env,
+        );
+
+        assert!(plist.contains("<key>EnvironmentVariables</key>"));
+        assert!(plist.contains("<key>OTELITE_DATA_DIR</key>"));
+        assert!(plist.contains("<string>/custom/data</string>"));
+        assert!(plist.contains("<key>OTELITE_OTLP_GRPC_PORT</key>"));
+        assert!(plist.contains("<string>4317</string>"));
+        // well-formed-ish: dict open/close balanced
+        assert_eq!(plist.matches("<dict>").count(), 2);
+        assert_eq!(plist.matches("</dict>").count(), 2);
+    }
+
+    #[test]
+    fn test_build_plist_omits_environment_block_when_empty() {
+        let plist = build_plist(
+            std::path::Path::new("/usr/local/bin/otelite"),
+            std::path::Path::new("/tmp/otelite.log"),
+            &[],
+        );
+        assert!(!plist.contains("EnvironmentVariables"));
+        assert_eq!(plist.matches("<dict>").count(), 1);
+    }
+
+    #[test]
+    fn test_build_plist_escapes_xml_special_characters() {
+        let env = vec![("OTELITE_DATA_DIR".to_string(), "/data/a&b<c>".to_string())];
+        let plist = build_plist(
+            std::path::Path::new("/bin/otelite"),
+            std::path::Path::new("/tmp/otelite.log"),
+            &env,
+        );
+        assert!(plist.contains("/data/a&amp;b&lt;c&gt;"));
+        assert!(!plist.contains("/data/a&b<c>"));
+    }
+
+    #[test]
+    fn test_build_systemd_unit_bakes_in_environment_lines() {
+        let env = vec![
+            ("OTELITE_DATA_DIR".to_string(), "/custom/data".to_string()),
+            ("OTELITE_PURGE_SCHEDULE".to_string(), "03:30".to_string()),
+        ];
+        let unit = build_systemd_unit(
+            std::path::Path::new("/usr/local/bin/otelite"),
+            std::path::Path::new("/custom/data/otelite.log"),
+            &env,
+        );
+
+        assert!(unit.contains(r#"Environment="OTELITE_DATA_DIR=/custom/data""#));
+        assert!(unit.contains(r#"Environment="OTELITE_PURGE_SCHEDULE=03:30""#));
+        assert!(unit.contains(
+            "ExecStart=/usr/local/bin/otelite serve --log-file /custom/data/otelite.log"
+        ));
+    }
+
+    #[test]
+    fn test_build_systemd_unit_escapes_quotes_in_values() {
+        let env = vec![("OTELITE_DATA_DIR".to_string(), "/data/we\"ird".to_string())];
+        let unit = build_systemd_unit(
+            std::path::Path::new("/bin/otelite"),
+            std::path::Path::new("/tmp/otelite.log"),
+            &env,
+        );
+        assert!(unit.contains(r#"Environment="OTELITE_DATA_DIR=/data/we\"ird""#));
+    }
+
+    #[test]
+    fn test_build_systemd_unit_no_environment_when_empty() {
+        let unit = build_systemd_unit(
+            std::path::Path::new("/bin/otelite"),
+            std::path::Path::new("/tmp/otelite.log"),
+            &[],
+        );
+        assert!(!unit.contains("Environment="));
     }
 }

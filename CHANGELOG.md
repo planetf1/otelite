@@ -11,6 +11,15 @@ have to work around), not implementation detail.
 
 ## [Unreleased]
 
+### Changed
+
+- `otelite service install` now carries the `OTELITE_*` environment
+  variables you have set (data dir, retention, purge schedule, OTLP
+  ports) into the generated service definition and prints exactly what
+  the service will inherit. Previously a service-managed daemon ran
+  with built-in defaults even when your local instance was configured
+  differently, and the mismatch was silent.
+
 ## [0.1.93] - 2026-08-28
 
 ### Added
