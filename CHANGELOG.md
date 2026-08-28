@@ -11,6 +11,8 @@ have to work around), not implementation detail.
 
 ## [Unreleased]
 
+## [0.1.91] - 2026-08-28
+
 ### Fixed
 
 - The troubleshooting guide no longer recommends configuration and
