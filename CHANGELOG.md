@@ -11,8 +11,6 @@ have to work around), not implementation detail.
 
 ## [Unreleased]
 
-## [0.1.90] - 2026-08-28
-
 ### Fixed
 
 - The troubleshooting guide no longer recommends configuration and
@@ -21,6 +19,11 @@ have to work around), not implementation detail.
   `otelite repair`, `--data-dir`). It now documents the real levers:
   `OTELITE_RETENTION_DAYS`, `POST /api/admin/purge`, `--storage-path`,
   and `RUST_LOG` for debug logging.
+
+## [0.1.90] - 2026-08-28
+
+### Fixed
+
 - `otelite stop` no longer reports a spurious "exited or was replaced"
   error after the daemon has stopped normally. The wait loop now
   re-checks the process's identity (not just its PID) on every
