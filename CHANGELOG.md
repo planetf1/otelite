@@ -11,6 +11,17 @@ have to work around), not implementation detail.
 
 ## [Unreleased]
 
+### Added
+
+- `otelite service uninstall` removes the system service: it stops the
+  service, removes the unit file, and leaves your data untouched.
+
+### Changed
+
+- `otelite service install` now loads and starts the service itself
+  instead of printing manual `launchctl`/`systemctl` instructions; if a
+  service was already loaded it is reloaded with the new definition.
+
 ## [0.1.94] - 2026-08-28
 
 ### Changed

@@ -246,9 +246,15 @@ enum Commands {
 enum ServiceCommands {
     /// Install otelite as a system service (launchd on macOS, systemd on Linux)
     #[command(
-        after_help = "Examples:\n  otelite service install\n\nCreates a service configuration for auto-start on boot."
+        after_help = "Examples:\n  otelite service install\n\nCreates a service configuration for auto-start on boot, then\nloads and starts it immediately. Any OTELITE_* environment\nvariables set in your shell are carried into the service."
     )]
     Install,
+
+    /// Uninstall the system service (stop it and remove its configuration)
+    #[command(
+        after_help = "Examples:\n  otelite service uninstall\n\nStops the service and removes its unit file. Your data is\nnot touched."
+    )]
+    Uninstall,
 }
 
 #[derive(Subcommand, Debug)]
@@ -993,6 +999,7 @@ async fn handle_metrics_command(command: MetricsCommands, config: &Config) -> Re
 async fn handle_service_command(command: ServiceCommands) -> Result<()> {
     match command {
         ServiceCommands::Install => commands::service::handle_service_install().await,
+        ServiceCommands::Uninstall => commands::service::handle_service_uninstall().await,
     }
 }
 

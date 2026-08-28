@@ -677,6 +677,26 @@ pub async fn handle_service_install() -> Result<()> {
     }
 }
 
+/// Uninstall otelite from the system service manager
+pub async fn handle_service_uninstall() -> Result<()> {
+    #[cfg(target_os = "macos")]
+    {
+        uninstall_launchd_service().await
+    }
+
+    #[cfg(target_os = "linux")]
+    {
+        uninstall_systemd_service().await
+    }
+
+    #[cfg(not(any(target_os = "macos", target_os = "linux")))]
+    {
+        Err(Error::ConfigError(
+            "Service installation not supported on this platform".to_string(),
+        ))
+    }
+}
+
 /// Environment variables that change daemon behaviour but are not
 /// inherited by launchd/systemd from the user's shell. When set at
 /// install time they are baked into the unit file so the service
@@ -867,11 +887,105 @@ async fn install_launchd_service() -> Result<()> {
         plist_path.display()
     );
     print_env_summary(&env);
-    println!("\nTo enable the service, run:");
-    println!("  launchctl load {}", plist_path.display());
-    println!("\nTo disable the service, run:");
-    println!("  launchctl unload {}", plist_path.display());
 
+    load_launchd_service(&plist_path).await?;
+    println!("✓ Service loaded — otelite is running under launchd");
+
+    Ok(())
+}
+
+/// Load (or reload) the launchd agent from the given plist.
+///
+/// `launchctl bootstrap` refuses to replace a service that is already
+/// loaded, so when that happens we boot the old instance out first and
+/// load the new definition — reinstalling is how a user applies
+/// changed settings to a running service.
+#[cfg(target_os = "macos")]
+async fn load_launchd_service(plist_path: &Path) -> Result<()> {
+    let target = launchd_service_target();
+
+    let output = Command::new("launchctl")
+        .args(["bootstrap", &target, &plist_path.display().to_string()])
+        .output()
+        .map_err(|e| {
+            Error::ConfigError(format!(
+                "Failed to load launchd service {}: {}",
+                plist_path.display(),
+                e
+            ))
+        })?;
+
+    if output.status.success() {
+        return Ok(());
+    }
+
+    // Already loaded: reload with the fresh definition.
+    if launchd_service_state()?.is_some() {
+        warn!("Service was already loaded — reloading with the new configuration");
+        stop_launchd_service()?;
+        let retry = Command::new("launchctl")
+            .args(["bootstrap", &target, &plist_path.display().to_string()])
+            .output()
+            .map_err(|e| Error::ConfigError(format!("Failed to reload launchd service: {}", e)))?;
+        if retry.status.success() {
+            return Ok(());
+        }
+        return Err(Error::ConfigError(format!(
+            "Failed to reload launchd service {} after booting the old instance out: {}",
+            target,
+            String::from_utf8_lossy(&retry.stderr).trim()
+        )));
+    }
+
+    Err(Error::ConfigError(format!(
+        "Failed to load launchd service {} ({}): {} — check the plist at {} and          `launchctl print {}` for details",
+        target,
+        output.status.code().unwrap_or(-1),
+        String::from_utf8_lossy(&output.stderr).trim(),
+        plist_path.display(),
+        target
+    )))
+}
+
+/// Uninstall otelite from launchd (macOS)
+#[cfg(target_os = "macos")]
+async fn uninstall_launchd_service() -> Result<()> {
+    let home = std::env::var("HOME")
+        .map_err(|_| Error::ConfigError("HOME environment variable not set".to_string()))?;
+
+    let plist_path = PathBuf::from(&home)
+        .join("Library/LaunchAgents")
+        .join(format!("{}.plist", LAUNCHD_SERVICE_LABEL));
+
+    if !plist_path.exists() {
+        return Err(Error::ConfigError(format!(
+            "No service installed (no {} found). Run `otelite service install` first.",
+            plist_path.display()
+        )));
+    }
+
+    let target = launchd_service_target();
+    let output = Command::new("launchctl")
+        .args(["bootout", &target])
+        .output()
+        .map_err(|e| Error::ConfigError(format!("Failed to stop launchd service: {}", e)))?;
+
+    if !output.status.success() {
+        warn!(
+            "Service was not loaded (bootout: {}); removing the configuration file",
+            String::from_utf8_lossy(&output.stderr).trim()
+        );
+    }
+
+    fs::remove_file(&plist_path).map_err(|e| {
+        Error::ConfigError(format!(
+            "Failed to remove plist file {}: {}",
+            plist_path.display(),
+            e
+        ))
+    })?;
+
+    println!("✓ Service uninstalled from launchd ({})", target);
     Ok(())
 }
 
@@ -904,16 +1018,74 @@ async fn install_systemd_service() -> Result<()> {
 
     println!("✓ Service configuration created at {}", unit_path.display());
     print_env_summary(&env);
-    println!("\nTo enable and start the service, run:");
-    println!("  systemctl --user daemon-reload");
-    println!("  systemctl --user enable otelite.service");
-    println!("  systemctl --user start otelite.service");
-    println!("\nTo check service status:");
-    println!("  systemctl --user status otelite.service");
-    println!("\nTo disable the service:");
-    println!("  systemctl --user stop otelite.service");
-    println!("  systemctl --user disable otelite.service");
 
+    for (args, what) in [
+        (["--user", "daemon-reload"], "reloading systemd user units"),
+        (
+            ["--user", "enable", "--now", "otelite.service"],
+            "enabling and starting the service",
+        ),
+    ] {
+        let output = Command::new("systemctl")
+            .args(args)
+            .output()
+            .map_err(|e| Error::ConfigError(format!("Failed to run systemctl: {}", e)))?;
+        if !output.status.success() {
+            return Err(Error::ConfigError(format!(
+                "systemctl {} failed ({}): {} — the unit file was written at {}",
+                what,
+                output.status.code().unwrap_or(-1),
+                String::from_utf8_lossy(&output.stderr).trim(),
+                unit_path.display()
+            )));
+        }
+    }
+    println!("✓ Service enabled and running under systemd user units");
+
+    Ok(())
+}
+
+/// Uninstall otelite from systemd user units (Linux)
+#[cfg(target_os = "linux")]
+async fn uninstall_systemd_service() -> Result<()> {
+    let home = std::env::var("HOME")
+        .map_err(|_| Error::ConfigError("HOME environment variable not set".to_string()))?;
+
+    let unit_path = PathBuf::from(&home)
+        .join(".config/systemd/user")
+        .join("otelite.service");
+
+    if !unit_path.exists() {
+        return Err(Error::ConfigError(format!(
+            "No service installed (no {} found). Run `otelite service install` first.",
+            unit_path.display()
+        )));
+    }
+
+    // Stop and disable; a unit that was stopped manually is not an error.
+    let output = Command::new("systemctl")
+        .args(["--user", "disable", "--now", "otelite.service"])
+        .output()
+        .map_err(|e| Error::ConfigError(format!("Failed to run systemctl: {}", e)))?;
+    if !output.status.success() {
+        warn!(
+            "systemctl disable reported: {}",
+            String::from_utf8_lossy(&output.stderr).trim()
+        );
+    }
+    let _ = Command::new("systemctl")
+        .args(["--user", "daemon-reload"])
+        .output();
+
+    fs::remove_file(&unit_path).map_err(|e| {
+        Error::ConfigError(format!(
+            "Failed to remove unit file {}: {}",
+            unit_path.display(),
+            e
+        ))
+    })?;
+
+    println!("✓ Service uninstalled from systemd user units");
     Ok(())
 }
 
@@ -1303,5 +1475,34 @@ mod daemon_args_tests {
             &[],
         );
         assert!(!unit.contains("Environment="));
+    }
+
+    #[test]
+    fn test_uninstall_without_installed_service_is_clear_error() {
+        let _guard = ENV_MUTEX.lock().unwrap_or_else(|e| e.into_inner());
+        let tmp = tempfile::TempDir::new().expect("temp dir");
+        std::env::set_var("HOME", tmp.path());
+
+        // No unit file in the isolated HOME: the handler must fail with a
+        // clear error BEFORE any service-manager invocation, so this test
+        // is safe on machines with a live service. The handler runs on a
+        // scoped runtime (not #[tokio::test]) so the env mutex guard is
+        // never held across an await.
+        let rt = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .expect("test runtime");
+        let err = rt
+            .block_on(super::handle_service_uninstall())
+            .expect_err("missing unit file must be an error");
+        let msg = format!("{err}");
+        assert!(
+            msg.contains("No service installed"),
+            "error says nothing is installed: {msg}"
+        );
+        assert!(
+            msg.contains("otelite service install"),
+            "error points at the remedy: {msg}"
+        );
     }
 }
