@@ -38,8 +38,11 @@ impl LogsHandler {
         );
 
         let records = conversion::convert_logs(request);
-        for record in records {
-            self.storage.write_log(&record).await?;
+        // One atomic transaction for the whole export: a failure rolls
+        // back every record, so the exporter's retry of the rejected
+        // export cannot duplicate the records that already committed.
+        if !records.is_empty() {
+            self.storage.write_log_batch(&records).await?;
         }
 
         info!("Stored {} logs", log_count);

@@ -38,8 +38,9 @@ impl MetricsHandler {
         );
 
         let metrics = conversion::convert_metrics(request);
-        for metric in metrics {
-            self.storage.write_metric(&metric).await?;
+        // One atomic transaction for the whole export (see LogsHandler).
+        if !metrics.is_empty() {
+            self.storage.write_metric_batch(&metrics).await?;
         }
 
         info!("Stored {} metrics", metric_count);

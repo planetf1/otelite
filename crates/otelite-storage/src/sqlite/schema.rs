@@ -312,9 +312,7 @@ pub fn initialize_schema(conn: &Connection) -> Result<()> {
         // IF NOT EXISTS batch below recreates them with the correct SQL)
         // and rebuild the index from the content table to drop the
         // orphans. One-time cost, proportional to log volume.
-        conn.execute_batch(
-            "DROP TRIGGER logs_fts_delete; DROP TRIGGER logs_fts_update;",
-        )?;
+        conn.execute_batch("DROP TRIGGER logs_fts_delete; DROP TRIGGER logs_fts_update;")?;
     }
 
     conn.execute_batch(

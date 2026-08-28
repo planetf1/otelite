@@ -24,6 +24,10 @@ have to work around), not implementation detail.
   later purged: the FTS index is now kept in sync on delete and update,
   and existing databases are repaired automatically on the next daemon
   start (stale index entries are rebuilt from the stored logs).
+- A telemetry export (batch of logs, spans, or metrics) is now stored
+  atomically: if the write fails partway through, nothing from that
+  batch is stored and the exporter's retry stores it exactly once,
+  instead of duplicating the records that had already been written.
 
 ## [0.1.88] - 2026-08-27
 

@@ -93,6 +93,40 @@ impl SqliteBackend {
     }
 }
 
+impl SqliteBackend {
+    /// Run `op` on the writer connection inside a single transaction, on
+    /// a blocking thread so a slow batch cannot stall the async runtime.
+    /// All-or-nothing: any error rolls the whole transaction back.
+    async fn write_in_transaction(
+        &self,
+        op: impl FnOnce(&Connection) -> Result<()> + Send + 'static,
+    ) -> Result<()> {
+        let conn_opt = std::sync::Arc::clone(&self.conn);
+        tokio::task::spawn_blocking(move || {
+            let mut conn_guard = conn_opt.lock();
+            let conn = conn_guard
+                .as_mut()
+                .ok_or_else(|| StorageError::WriteError("Database not initialized".to_string()))?;
+
+            let tx = conn.transaction().map_err(|e| {
+                StorageError::WriteError(format!("Failed to start write transaction: {}", e))
+            })?;
+            let result = op(&tx);
+            match result {
+                Ok(()) => tx.commit().map_err(|e| {
+                    StorageError::WriteError(format!("Failed to commit write transaction: {}", e))
+                }),
+                Err(e) => {
+                    let _ = tx.rollback();
+                    Err(e)
+                },
+            }
+        })
+        .await
+        .map_err(|e| StorageError::WriteError(format!("Write task failed to join: {}", e)))?
+    }
+}
+
 #[async_trait]
 impl StorageBackend for SqliteBackend {
     async fn initialize(&mut self) -> Result<()> {
@@ -163,6 +197,48 @@ impl StorageBackend for SqliteBackend {
             .ok_or_else(|| StorageError::WriteError("Database not initialized".to_string()))?;
 
         writer::write_metric(conn, metric).map_err(StorageError::from)
+    }
+
+    async fn write_log_batch(&self, logs: &[LogRecord]) -> Result<()> {
+        if logs.is_empty() {
+            return Ok(());
+        }
+        let logs = logs.to_vec();
+        self.write_in_transaction(move |conn| {
+            for log in &logs {
+                writer::write_log(conn, log)?;
+            }
+            Ok(())
+        })
+        .await
+    }
+
+    async fn write_span_batch(&self, spans: &[Span]) -> Result<()> {
+        if spans.is_empty() {
+            return Ok(());
+        }
+        let spans = spans.to_vec();
+        self.write_in_transaction(move |conn| {
+            for span in &spans {
+                writer::write_span(conn, span)?;
+            }
+            Ok(())
+        })
+        .await
+    }
+
+    async fn write_metric_batch(&self, metrics: &[Metric]) -> Result<()> {
+        if metrics.is_empty() {
+            return Ok(());
+        }
+        let metrics = metrics.to_vec();
+        self.write_in_transaction(move |conn| {
+            for metric in &metrics {
+                writer::write_metric(conn, metric)?;
+            }
+            Ok(())
+        })
+        .await
     }
 
     async fn query_logs(&self, params: &QueryParams) -> Result<Vec<LogRecord>> {
@@ -1062,8 +1138,7 @@ mod tests {
         let result = backend.write_log(&log).await;
         let waited = started.elapsed();
 
-        result
-            .expect("write must wait out the concurrent lock, not fail with SQLITE_BUSY");
+        result.expect("write must wait out the concurrent lock, not fail with SQLITE_BUSY");
         assert!(
             waited >= Duration::from_millis(300),
             "write should have blocked on the lock (waited {waited:?})"
@@ -1077,5 +1152,94 @@ mod tests {
                 .unwrap()
         };
         assert_eq!(count, 1, "the log must be stored exactly once");
+    }
+
+    fn test_span(id: u32) -> Span {
+        use otelite_core::telemetry::trace::{SpanKind, SpanStatus, StatusCode};
+        Span {
+            trace_id: format!("trace{id:032x}"),
+            span_id: format!("{id:016x}"),
+            parent_span_id: None,
+            name: format!("batch-span-{id}"),
+            kind: SpanKind::Internal,
+            start_time: 1_000_000 + id as i64,
+            end_time: 2_000_000 + id as i64,
+            attributes: std::collections::HashMap::new(),
+            events: Vec::new(),
+            status: SpanStatus {
+                code: StatusCode::Ok,
+                message: None,
+            },
+            resource: None,
+        }
+    }
+
+    #[tokio::test]
+    async fn test_write_span_batch_stores_all() {
+        let temp_dir = TempDir::new().unwrap();
+        let config = StorageConfig::default().with_data_dir(temp_dir.path().to_path_buf());
+        let mut backend = SqliteBackend::new(config);
+        backend.initialize().await.unwrap();
+
+        let batch: Vec<Span> = (0..5).map(test_span).collect();
+        backend.write_span_batch(&batch).await.unwrap();
+
+        let stats = backend.stats().await.unwrap();
+        assert_eq!(stats.span_count, 5);
+
+        // Empty batch is a no-op, not an error.
+        backend.write_span_batch(&[]).await.unwrap();
+    }
+
+    /// Regression test: a failure partway through a batch must roll back
+    /// the whole batch. Before the fix, each span committed individually,
+    /// so a mid-batch error left a partial write behind and the
+    /// exporter's retry duplicated it.
+    #[tokio::test]
+    async fn test_write_span_batch_is_atomic() {
+        let temp_dir = TempDir::new().unwrap();
+        let config = StorageConfig::default().with_data_dir(temp_dir.path().to_path_buf());
+        let mut backend = SqliteBackend::new(config);
+        backend.initialize().await.unwrap();
+
+        // Force the third insert in the batch to fail, via a trigger on
+        // the writer connection.
+        {
+            let conn_guard = backend.conn.lock();
+            let conn = conn_guard
+                .as_ref()
+                .expect("initialised backend has a connection");
+            conn.execute(
+                "CREATE TRIGGER fail_third_insert BEFORE INSERT ON spans
+                 WHEN (SELECT COUNT(*) FROM spans) = 2
+                 BEGIN SELECT RAISE(ABORT, 'forced mid-batch failure'); END",
+                [],
+            )
+            .unwrap();
+        }
+
+        let batch: Vec<Span> = (0..3).map(test_span).collect();
+        let err = backend
+            .write_span_batch(&batch)
+            .await
+            .expect_err("the forced third insert must fail the batch");
+        assert!(
+            err.to_string().contains("forced mid-batch failure"),
+            "unexpected error: {err}"
+        );
+
+        // All-or-nothing: the two inserts before the failure are gone.
+        let count: i64 = {
+            let conn_guard = backend.conn.lock();
+            let conn = conn_guard
+                .as_ref()
+                .expect("initialised backend has a connection");
+            conn.query_row("SELECT COUNT(*) FROM spans", [], |r| r.get(0))
+                .unwrap()
+        };
+        assert_eq!(
+            count, 0,
+            "a failed batch must leave no partial write behind"
+        );
     }
 }

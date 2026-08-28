@@ -691,8 +691,7 @@ async fn test_fts5_updated_log_reindexes() {
 
     // Update the body out-of-band (the app has no update API; the trigger
     // must keep the index consistent for any writer).
-    let conn =
-        Connection::open(temp_dir.path().join("otelite.db")).unwrap();
+    let conn = Connection::open(temp_dir.path().join("otelite.db")).unwrap();
     conn.execute(
         "UPDATE logs SET body = 'bravoterm failure' WHERE body LIKE 'alphanumerique%'",
         [],
@@ -701,7 +700,10 @@ async fn test_fts5_updated_log_reindexes() {
 
     let old_matches = fts_match_count(&conn, "alphanumerique");
     let new_matches = fts_match_count(&conn, "bravoterm");
-    assert_eq!(old_matches, 0, "old body text must leave the index on update");
+    assert_eq!(
+        old_matches, 0,
+        "old body text must leave the index on update"
+    );
     assert_eq!(new_matches, 1, "new body text must be indexed on update");
 }
 

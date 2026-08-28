@@ -156,6 +156,44 @@ pub trait StorageBackend: Send + Sync {
     async fn write_log(&self, log: &LogRecord) -> Result<()>;
     async fn write_span(&self, span: &Span) -> Result<()>;
     async fn write_metric(&self, metric: &Metric) -> Result<()>;
+
+    /// Write a batch of logs atomically: either all records are stored or
+    /// none are. A failure partway through the batch rolls the whole batch
+    /// back, so an exporter retry of the rejected export cannot store
+    /// duplicates of the records that already committed.
+    ///
+    /// The default implementation falls back to per-record writes;
+    /// backends should override this with a single transaction.
+    async fn write_log_batch(&self, logs: &[LogRecord]) -> Result<()> {
+        for log in logs {
+            self.write_log(log).await?;
+        }
+        Ok(())
+    }
+
+    /// Write a batch of spans atomically (all-or-nothing). See
+    /// [`write_log_batch`](Self::write_log_batch) for the semantics.
+    ///
+    /// The default implementation falls back to per-record writes;
+    /// backends should override this with a single transaction.
+    async fn write_span_batch(&self, spans: &[Span]) -> Result<()> {
+        for span in spans {
+            self.write_span(span).await?;
+        }
+        Ok(())
+    }
+
+    /// Write a batch of metrics atomically (all-or-nothing). See
+    /// [`write_log_batch`](Self::write_log_batch) for the semantics.
+    ///
+    /// The default implementation falls back to per-record writes;
+    /// backends should override this with a single transaction.
+    async fn write_metric_batch(&self, metrics: &[Metric]) -> Result<()> {
+        for metric in metrics {
+            self.write_metric(metric).await?;
+        }
+        Ok(())
+    }
     async fn query_logs(&self, params: &QueryParams) -> Result<Vec<LogRecord>>;
     async fn query_spans(&self, params: &QueryParams) -> Result<Vec<Span>>;
     /// Query all spans for the N most-recent distinct traces matching the filters.

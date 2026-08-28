@@ -43,12 +43,17 @@ impl TracesHandler {
         );
 
         let conversion = conversion::convert_traces_with_rejections(request);
-        let mut accepted_spans = 0;
-        for trace in conversion.traces {
-            for span in trace.spans {
-                self.storage.write_span(&span).await?;
-                accepted_spans += 1;
-            }
+        let spans: Vec<_> = conversion
+            .traces
+            .into_iter()
+            .flat_map(|trace| trace.spans)
+            .collect();
+        let accepted_spans = spans.len();
+        // One atomic transaction for the whole export: a failure rolls
+        // back every span, so the exporter's retry of the rejected
+        // export cannot duplicate the spans that already committed.
+        if !spans.is_empty() {
+            self.storage.write_span_batch(&spans).await?;
         }
 
         info!(
