@@ -662,13 +662,18 @@ async fn run_dashboard(addr: SocketAddr, storage_path: Option<PathBuf>) -> Resul
     let is_first_run = Config::is_first_run();
     if is_first_run {
         println!("\nWelcome to Otelite! Starting OpenTelemetry collector...\n");
+        let banner_grpc = otlp_port_from_env("OTELITE_OTLP_GRPC_PORT", 4317).unwrap_or(4317);
+        let banner_http = otlp_port_from_env("OTELITE_OTLP_HTTP_PORT", 4318).unwrap_or(4318);
         println!("  Dashboard:  http://{}", addr);
-        println!("  OTLP gRPC:  localhost:4317");
-        println!("  OTLP HTTP:  localhost:4318");
+        println!("  OTLP gRPC:  {}:{}", addr.ip(), banner_grpc);
+        println!("  OTLP HTTP:  {}:{}", addr.ip(), banner_http);
         println!("  Storage:    {}\n", storage_config.data_dir.display());
 
         println!("To send test data:");
-        println!("  otel-cli exec --endpoint http://localhost:4318 -- echo \"hello\"\n");
+        println!(
+            "  otel-cli exec --endpoint http://{}:{banner_http} -- echo \"hello\"\n",
+            addr.ip()
+        );
 
         println!("To view data:");
         println!("  otelite logs list");
@@ -703,8 +708,14 @@ async fn run_dashboard(addr: SocketAddr, storage_path: Option<PathBuf>) -> Resul
 
     info!("Storage initialized successfully");
 
-    // Start gRPC receiver on port 4317
-    let grpc_addr = "0.0.0.0:4317".parse().unwrap();
+    // The OTLP receivers follow the dashboard's IP — a localhost-only
+    // dashboard should not publish OTLP on every interface — and the
+    // ports can be re-pointed via OTELITE_OTLP_GRPC_PORT /
+    // OTELITE_OTLP_HTTP_PORT (defaults keep the standard 4317/4318).
+    let grpc_port = otlp_port_from_env("OTELITE_OTLP_GRPC_PORT", 4317)?;
+    let http_port = otlp_port_from_env("OTELITE_OTLP_HTTP_PORT", 4318)?;
+    let grpc_addr = SocketAddr::new(addr.ip(), grpc_port);
+    let http_addr = SocketAddr::new(addr.ip(), http_port);
     let receiver_config = otelite_receiver::ReceiverConfig::new().with_grpc_addr(grpc_addr);
 
     let grpc_server =
@@ -717,8 +728,7 @@ async fn run_dashboard(addr: SocketAddr, storage_path: Option<PathBuf>) -> Resul
 
     info!("gRPC receiver started on {}", grpc_addr);
 
-    // Start HTTP receiver on port 4318
-    let http_addr = "0.0.0.0:4318".parse().unwrap();
+    // Start HTTP receiver
     let http_config = receiver_config.with_http_addr(http_addr);
 
     let http_server = otelite_receiver::http::HttpServer::new(http_config);
@@ -787,6 +797,19 @@ async fn run_dashboard(addr: SocketAddr, storage_path: Option<PathBuf>) -> Resul
         ServeOutcome::DashboardError(e) => {
             Err(Error::ApiError(format!("Dashboard server error: {e}")))
         },
+    }
+}
+
+/// Read an OTLP port override from the environment. A set-but-invalid
+/// value is a user error and fails loudly rather than silently binding
+/// the wrong port.
+fn otlp_port_from_env(var: &str, default: u16) -> Result<u16> {
+    match std::env::var(var) {
+        Ok(v) if !v.trim().is_empty() => v
+            .trim()
+            .parse::<u16>()
+            .map_err(|_| Error::ConfigError(format!("Invalid {var}: {v:?} (expected a TCP port)"))),
+        _ => Ok(default),
     }
 }
 
@@ -994,4 +1017,31 @@ async fn handle_tui_command(
         .map_err(|e| Error::ApiError(format!("TUI error: {}", e)))?;
 
     Ok(())
+}
+
+#[cfg(test)]
+mod otlp_port_tests {
+    use super::*;
+
+    #[test]
+    fn test_otlp_port_from_env_unset_uses_default() {
+        std::env::remove_var("OTELITE_TEST_PORT_UNSET");
+        assert_eq!(
+            otlp_port_from_env("OTELITE_TEST_PORT_UNSET", 4317).unwrap(),
+            4317
+        );
+    }
+
+    #[test]
+    fn test_otlp_port_from_env_valid_and_invalid() {
+        std::env::set_var("OTELITE_TEST_PORT_VALID", "12345");
+        assert_eq!(
+            otlp_port_from_env("OTELITE_TEST_PORT_VALID", 4317).unwrap(),
+            12345
+        );
+        std::env::set_var("OTELITE_TEST_PORT_INVALID", "not-a-port");
+        assert!(otlp_port_from_env("OTELITE_TEST_PORT_INVALID", 4317).is_err());
+        std::env::set_var("OTELITE_TEST_PORT_INVALID", "99999");
+        assert!(otlp_port_from_env("OTELITE_TEST_PORT_INVALID", 4317).is_err());
+    }
 }

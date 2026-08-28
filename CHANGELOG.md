@@ -79,6 +79,15 @@ have to work around), not implementation detail.
   systemd user unit run the server with `--log-file`, so the daemon
   writes daily-rotated log files (`otelite.log.YYYY-MM-DD`) instead of
   appending to one file that grows without bound.
+- **Breaking:** the OTLP receivers now bind to the same IP as the
+  dashboard's `--addr` (a localhost-only dashboard no longer publishes
+  OTLP on every interface). To keep the previous LAN-wide exposure,
+  run with `--addr 0.0.0.0:<port>`.
+- New `OTELITE_OTLP_GRPC_PORT` and `OTELITE_OTLP_HTTP_PORT`
+  environment variables override the standard 4317/4318 OTLP ports
+  (useful for running a second instance, or for tests). `status`,
+  `stop` and the `start` collision check honour the override when
+  discovering the local daemon.
 
 ## [0.1.88] - 2026-08-27
 

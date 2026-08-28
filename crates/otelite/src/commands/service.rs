@@ -39,6 +39,17 @@ fn get_runtime_dir() -> Result<PathBuf> {
     Ok(runtime_dir)
 }
 
+/// The OTLP gRPC port the local daemon is expected to listen on.
+/// Honours `OTELITE_OTLP_GRPC_PORT` (the same override `serve` uses to
+/// bind) so discovery and stop target the right port for non-standard
+/// setups; falls back to the standard 4317.
+pub fn otlp_grpc_port() -> u16 {
+    std::env::var("OTELITE_OTLP_GRPC_PORT")
+        .ok()
+        .and_then(|v| v.trim().parse().ok())
+        .unwrap_or(4317)
+}
+
 /// Get the path to the PID file
 fn get_pid_file() -> Result<PathBuf> {
     Ok(get_runtime_dir()?.join("otelite.pid"))
@@ -317,15 +328,12 @@ pub async fn handle_start(storage_path: Option<PathBuf>, addr: String) -> Result
     // another data dir leaves no PID file here. Discover it the same
     // way `status` does, instead of spawning a second daemon that can
     // only fail to bind the OTLP ports.
-    // The PID file says no (or said so and went stale), but a daemon
-    // started by launchd, a hand-run `serve`, or `otelite start` from
-    // another data dir leaves no PID file here. Discover it the same
-    // way `status` does, instead of spawning a second daemon that can
-    // only fail to bind the OTLP ports.
     #[cfg(unix)]
-    if let Some(pid) = local_otelite_pid(4317)? {
+    let otlp_port = otlp_grpc_port();
+    #[cfg(unix)]
+    if let Some(pid) = local_otelite_pid(otlp_port)? {
         return Err(Error::ConfigError(format!(
-            "Otelite is already running with PID {pid} (discovered via OTLP gRPC port 4317)"
+            "Otelite is already running with PID {pid} (discovered via OTLP gRPC port {otlp_port})"
         )));
     }
 
@@ -442,14 +450,14 @@ pub async fn handle_stop() -> Result<()> {
 
     #[cfg(target_os = "macos")]
     let pid = pid_file_otelite_pid()?
-        .or(local_otelite_pid(4317)?)
+        .or(local_otelite_pid(otlp_grpc_port())?)
         .ok_or_else(|| Error::ConfigError("Otelite daemon is not running".to_string()))?;
 
     #[cfg(not(target_os = "macos"))]
     let pid = {
         let mut pid = pid_file_otelite_pid()?;
         if pid.is_none() {
-            pid = local_otelite_pid(4317)?;
+            pid = local_otelite_pid(otlp_grpc_port())?;
         }
         match pid {
             Some(pid) => {
@@ -535,7 +543,7 @@ pub async fn handle_restart(storage_path: Option<PathBuf>, addr: String) -> Resu
     #[cfg(unix)]
     {
         let running = read_pid().ok().flatten().is_some_and(is_process_running)
-            || local_otelite_pid(4317).ok().flatten().is_some();
+            || local_otelite_pid(otlp_grpc_port()).ok().flatten().is_some();
         if !running {
             return Err(Error::ConfigError(
                 "No otelite daemon is running. Use 'otelite start' to start one.".to_string(),
@@ -603,7 +611,7 @@ pub async fn handle_status() -> Result<()> {
     }
 
     #[cfg(target_os = "macos")]
-    if let Some(pid) = local_otelite_pid(4317)? {
+    if let Some(pid) = local_otelite_pid(otlp_grpc_port())? {
         return display_running_status(pid, Some("local process"));
     }
 
@@ -611,7 +619,7 @@ pub async fn handle_status() -> Result<()> {
     {
         let mut pid = pid_file_otelite_pid()?;
         if pid.is_none() {
-            pid = local_otelite_pid(4317)?;
+            pid = local_otelite_pid(otlp_grpc_port())?;
         }
         if let Some(pid) = pid {
             return display_running_status(pid, None);
@@ -784,7 +792,7 @@ WantedBy=default.target
 mod tests {
     #[cfg(target_os = "macos")]
     use super::parse_launchd_service_state;
-    use super::{is_process_running, local_otelite_pid};
+    use super::{is_process_running, local_otelite_pid, otlp_grpc_port};
 
     /// #107 regression helper: discovery must report `None` (not an error)
     /// when nothing otelite-shaped listens, and report a live PID when the
@@ -793,7 +801,7 @@ mod tests {
     /// running) and CI (no daemon) alike.
     #[test]
     fn test_local_otelite_pid_consistent_with_liveness() {
-        if let Some(pid) = local_otelite_pid(4317).unwrap() {
+        if let Some(pid) = local_otelite_pid(otlp_grpc_port()).unwrap() {
             assert!(is_process_running(pid));
         }
     }

@@ -210,15 +210,11 @@ fn test_start_refuses_when_daemon_has_no_pid_file() {
 /// roll back the PID file — never print "started with PID X".
 #[test]
 fn test_start_reports_immediate_exit_and_cleans_pid_file() {
-    // Only meaningful when nothing otelite-owned is on 4317, otherwise
-    // the (earlier) discovery refusal masks the exit path.
-    if otelite::commands::service::local_otelite_pid(4317).unwrap().is_some() {
-        return;
-    }
-
     let temp = tempfile::TempDir::new().unwrap();
     let data_dir = temp.path().join("data");
     let storage = data_dir.join("otelite.db");
+    let grpc_port = free_port();
+    let http_port = free_port();
 
     // Occupy the dashboard port the child will try to bind.
     let (taken_port, _held) = free_port_held();
@@ -232,6 +228,10 @@ fn test_start_reports_immediate_exit_and_cleans_pid_file() {
             &storage.to_string_lossy(),
         ])
         .env("OTELITE_DATA_DIR", data_dir.as_os_str())
+        // The child inherits these, so it can start on a dev machine
+        // where the standard OTLP ports are already held.
+        .env("OTELITE_OTLP_GRPC_PORT", grpc_port.to_string())
+        .env("OTELITE_OTLP_HTTP_PORT", http_port.to_string())
         .output()
         .unwrap();
 
@@ -343,18 +343,12 @@ fn test_pid_file_atomic_roundtrip() {
 /// listener.
 #[test]
 fn test_serve_exits_gracefully_on_sigterm() {
-    // Only meaningful when the OTLP ports are free; otherwise a throwaway
-    // serve could not start at all.
-    if TcpStream::connect((std::net::IpAddr::from([127, 0, 0, 1]), 4317)).is_ok()
-        || TcpStream::connect((std::net::IpAddr::from([127, 0, 0, 1]), 4318)).is_ok()
-    {
-        return;
-    }
-
     let temp = tempfile::TempDir::new().unwrap();
     let data_dir = temp.path().join("data");
     let storage = data_dir.join("otelite.db");
     let dashboard_port = free_port();
+    let grpc_port = free_port();
+    let http_port = free_port();
 
     let mut child = std::process::Command::new(env!("CARGO_BIN_EXE_otelite"))
         .args([
@@ -365,6 +359,10 @@ fn test_serve_exits_gracefully_on_sigterm() {
             &storage.to_string_lossy(),
         ])
         .env("OTELITE_DATA_DIR", data_dir.as_os_str())
+        // OTLP on free ports: this test must not collide with (or depend
+        // on) any daemon holding the standard 4317/4318.
+        .env("OTELITE_OTLP_GRPC_PORT", grpc_port.to_string())
+        .env("OTELITE_OTLP_HTTP_PORT", http_port.to_string())
         .stdout(std::process::Stdio::null())
         .stderr(std::process::Stdio::null())
         .spawn()
@@ -402,12 +400,16 @@ fn test_serve_exits_gracefully_on_sigterm() {
         }
     }
 
-    // The dashboard listener must be released.
+    // The dashboard and OTLP listeners must be released.
     let freed = TcpStream::connect((std::net::IpAddr::from([127, 0, 0, 1]), dashboard_port))
         .is_err();
     assert!(freed, "dashboard port must be released after SIGTERM");
-    let _ = TcpListener::bind("127.0.0.1:4317");
-    let _ = TcpListener::bind("127.0.0.1:4318");
+    for port in [grpc_port, http_port] {
+        assert!(
+            TcpStream::connect((std::net::IpAddr::from([127, 0, 0, 1]), port)).is_err(),
+            "OTLP port {port} must be released after SIGTERM"
+        );
+    }
 }
 
 /// M17 regression: the daemon's log must go through the daily-rotating
@@ -415,17 +417,12 @@ fn test_serve_exits_gracefully_on_sigterm() {
 /// `serve` must produce a dated log file in its data dir.
 #[test]
 fn test_serve_writes_rotating_log_file() {
-    // Only meaningful when the OTLP ports are free.
-    if TcpStream::connect((std::net::IpAddr::from([127, 0, 0, 1]), 4317)).is_ok()
-        || TcpStream::connect((std::net::IpAddr::from([127, 0, 0, 1]), 4318)).is_ok()
-    {
-        return;
-    }
-
     let temp = tempfile::TempDir::new().unwrap();
     let data_dir = temp.path().join("data");
     let storage = data_dir.join("otelite.db");
     let dashboard_port = free_port();
+    let grpc_port = free_port();
+    let http_port = free_port();
 
     let mut child = std::process::Command::new(env!("CARGO_BIN_EXE_otelite"))
         .args([
@@ -438,6 +435,8 @@ fn test_serve_writes_rotating_log_file() {
             &data_dir.join("otelite.log").to_string_lossy(),
         ])
         .env("OTELITE_DATA_DIR", data_dir.as_os_str())
+        .env("OTELITE_OTLP_GRPC_PORT", grpc_port.to_string())
+        .env("OTELITE_OTLP_HTTP_PORT", http_port.to_string())
         .stdout(std::process::Stdio::null())
         .stderr(std::process::Stdio::null())
         .spawn()
@@ -484,6 +483,4 @@ fn test_serve_writes_rotating_log_file() {
             },
         }
     }
-    let _ = TcpListener::bind("127.0.0.1:4317");
-    let _ = TcpListener::bind("127.0.0.1:4318");
 }
