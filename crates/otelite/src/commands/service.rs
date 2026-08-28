@@ -4,9 +4,7 @@ use crate::error::{Error, Result};
 use otelite_storage::StorageConfig;
 use std::fs;
 use std::io::Write;
-#[cfg(unix)]
-use std::path::Path;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use tracing::{info, warn};
 
@@ -21,9 +19,16 @@ enum LaunchdServiceState {
 }
 
 /// Get the directory for otelite runtime files (PID, logs, database).
-/// Delegates to StorageConfig so the path is always consistent with the server.
+///
+/// `OTELITE_DATA_DIR` isolates the runtime files together with the
+/// database — the same variable the storage layer honours — so a
+/// second otelite instance (or a test) can run without touching the
+/// default instance's PID file or log.
 fn get_runtime_dir() -> Result<PathBuf> {
-    let runtime_dir = StorageConfig::default_data_dir();
+    let runtime_dir = match std::env::var("OTELITE_DATA_DIR") {
+        Ok(dir) if !dir.trim().is_empty() => PathBuf::from(dir),
+        _ => StorageConfig::default_data_dir(),
+    };
 
     if !runtime_dir.exists() {
         fs::create_dir_all(&runtime_dir).map_err(|e| {
@@ -44,36 +49,68 @@ fn get_log_file() -> Result<PathBuf> {
     Ok(get_runtime_dir()?.join("otelite.log"))
 }
 
-/// Read the PID from the PID file
-fn read_pid() -> Result<Option<u32>> {
-    let pid_file = get_pid_file()?;
-
+/// Read the PID from a PID file.
+///
+/// A missing file means "not started via `otelite start`". Corrupt
+/// content (torn write, stale garbage) means the same, except the file
+/// is removed so it cannot trip every subsequent command — port-based
+/// discovery still finds a live daemon.
+pub fn read_pid_file(pid_file: &Path) -> Result<Option<u32>> {
     if !pid_file.exists() {
         return Ok(None);
     }
 
-    let content = fs::read_to_string(&pid_file)
+    let content = fs::read_to_string(pid_file)
         .map_err(|e| Error::ConfigError(format!("Failed to read PID file: {}", e)))?;
 
-    let pid = content
-        .trim()
-        .parse::<u32>()
-        .map_err(|e| Error::ConfigError(format!("Invalid PID in file: {}", e)))?;
+    match content.trim().parse::<u32>() {
+        Ok(pid) if pid != 0 => Ok(Some(pid)),
+        _ => {
+            warn!(
+                "Corrupt PID file at {}, removing it",
+                pid_file.display()
+            );
+            if let Err(e) = fs::remove_file(pid_file) {
+                warn!("Could not remove corrupt PID file {}: {}", pid_file.display(), e);
+            }
+            Ok(None)
+        },
+    }
+}
 
-    Ok(Some(pid))
+/// Read the PID from the PID file
+fn read_pid() -> Result<Option<u32>> {
+    read_pid_file(&get_pid_file()?)
+}
+
+/// Write the PID to a PID file atomically (temp file + fsync + rename).
+///
+/// A crash mid-write must not leave a torn PID file behind: the rename
+/// makes the file appear either with the old or the new content, never
+/// half-written.
+pub fn write_pid_file(pid: u32, pid_file: &Path) -> Result<()> {
+    let tmp_file = pid_file.with_extension("pid.tmp");
+
+    {
+        let mut file = fs::File::create(&tmp_file)
+            .map_err(|e| Error::ConfigError(format!("Failed to create PID file: {}", e)))?;
+
+        file.write_all(pid.to_string().as_bytes())
+            .map_err(|e| Error::ConfigError(format!("Failed to write PID file: {}", e)))?;
+
+        file.sync_all()
+            .map_err(|e| Error::ConfigError(format!("Failed to sync PID file: {}", e)))?;
+    }
+
+    fs::rename(&tmp_file, pid_file).map_err(|e| {
+        let _ = fs::remove_file(&tmp_file);
+        Error::ConfigError(format!("Failed to move PID file into place: {}", e))
+    })
 }
 
 /// Write the PID to the PID file
 fn write_pid(pid: u32) -> Result<()> {
-    let pid_file = get_pid_file()?;
-
-    let mut file = fs::File::create(&pid_file)
-        .map_err(|e| Error::ConfigError(format!("Failed to create PID file: {}", e)))?;
-
-    file.write_all(pid.to_string().as_bytes())
-        .map_err(|e| Error::ConfigError(format!("Failed to write PID file: {}", e)))?;
-
-    Ok(())
+    write_pid_file(pid, &get_pid_file()?)
 }
 
 /// Remove the PID file
@@ -275,6 +312,23 @@ pub async fn handle_start(storage_path: Option<PathBuf>, addr: String) -> Result
         }
     }
 
+    // The PID file says no (or said so and went stale), but a daemon
+    // started by launchd, a hand-run `serve`, or `otelite start` from
+    // another data dir leaves no PID file here. Discover it the same
+    // way `status` does, instead of spawning a second daemon that can
+    // only fail to bind the OTLP ports.
+    // The PID file says no (or said so and went stale), but a daemon
+    // started by launchd, a hand-run `serve`, or `otelite start` from
+    // another data dir leaves no PID file here. Discover it the same
+    // way `status` does, instead of spawning a second daemon that can
+    // only fail to bind the OTLP ports.
+    #[cfg(unix)]
+    if let Some(pid) = local_otelite_pid(4317)? {
+        return Err(Error::ConfigError(format!(
+            "Otelite is already running with PID {pid} (discovered via OTLP gRPC port 4317)"
+        )));
+    }
+
     info!("Starting otelite daemon...");
 
     let exe_path = std::env::current_exe()
@@ -293,7 +347,7 @@ pub async fn handle_start(storage_path: Option<PathBuf>, addr: String) -> Result
     if let Some(path) = &storage_path {
         cmd.arg("--storage-path").arg(path);
     }
-    let child =
+    let mut child =
         cmd.stdin(Stdio::null())
             .stdout(log_file_handle.try_clone().map_err(|e| {
                 Error::ConfigError(format!("Failed to clone log file handle: {}", e))
@@ -304,6 +358,33 @@ pub async fn handle_start(storage_path: Option<PathBuf>, addr: String) -> Result
 
     let pid = child.id();
     write_pid(pid)?;
+
+    // A port collision makes `serve` exit within milliseconds. Confirm
+    // the child is still alive before reporting success, and roll back
+    // the PID file if it died — "started with PID X" must never be
+    // printed for a process that is already gone.
+    // A port collision makes `serve` exit within milliseconds. Confirm
+    // the child is still alive before reporting success, and roll back
+    // the PID file if it died — "started with PID X" must never be
+    // printed for a process that is already gone.
+    let deadline = std::time::Instant::now() + std::time::Duration::from_millis(750);
+    let mut exited = None;
+    while exited.is_none() {
+        exited = child
+            .try_wait()
+            .map_err(|e| Error::ConfigError(format!("Failed to check daemon process: {}", e)))?;
+        if exited.is_none() && std::time::Instant::now() >= deadline {
+            break;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+    }
+    if let Some(status) = exited {
+        remove_pid_file()?;
+        return Err(Error::ConfigError(format!(
+            "Daemon exited immediately after start ({status}); see the log at {}",
+            log_file.display()
+        )));
+    }
 
     let storage_display = storage_path
         .as_deref()

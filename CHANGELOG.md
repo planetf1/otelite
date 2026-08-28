@@ -57,6 +57,20 @@ have to work around), not implementation detail.
   attribute filters: before, the filters were applied to the spans
   but not to the selection of *which traces* were listed, so filtered-out
   traces could still appear on the traces page.
+- `otelite start` no longer reports "started with PID X" when the
+  daemon dies a few milliseconds later (e.g. the port is already in
+  use): it now confirms the process is still alive, fails with a
+  clear error pointing at the log, and removes the PID file. `start`
+  also refuses to spawn a second daemon when one is already listening
+  on the OTLP port but has no PID file (service-managed or hand-run).
+- A corrupt PID file (half-written or stale) no longer makes
+  `otelite status` fail with "Invalid PID" — the file is removed and
+  discovery continues. PID files are now written atomically so a
+  crash mid-write cannot corrupt them.
+- `OTELITE_DATA_DIR` now also isolates the PID and log files, not
+  just the database — running a second otelite instance (or pointing
+  read-only commands at another database) no longer reads or writes
+  the default instance's PID file.
 
 ## [0.1.88] - 2026-08-27
 
