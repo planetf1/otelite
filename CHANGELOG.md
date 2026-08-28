@@ -11,6 +11,8 @@ have to work around), not implementation detail.
 
 ## [Unreleased]
 
+## [0.1.90] - 2026-08-28
+
 ### Fixed
 
 - `otelite stop` no longer reports a spurious "exited or was replaced"
