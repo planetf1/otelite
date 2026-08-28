@@ -336,7 +336,7 @@ pub async fn handle_stop() -> Result<()> {
 
     #[cfg(not(target_os = "macos"))]
     let pid = {
-        let mut pid = read_pid()?.filter(|pid| is_process_running(*pid));
+        let mut pid = pid_file_otelite_pid()?;
         if pid.is_none() {
             pid = local_otelite_pid(4317)?;
         }
@@ -498,7 +498,7 @@ pub async fn handle_status() -> Result<()> {
 
     #[cfg(not(target_os = "macos"))]
     {
-        let mut pid = read_pid()?.filter(|pid| is_process_running(*pid));
+        let mut pid = pid_file_otelite_pid()?;
         if pid.is_none() {
             pid = local_otelite_pid(4317)?;
         }
