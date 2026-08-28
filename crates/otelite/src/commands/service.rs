@@ -502,19 +502,17 @@ pub async fn handle_status() -> Result<()> {
         if pid.is_none() {
             pid = local_otelite_pid(4317)?;
         }
-        match pid {
-            Some(pid) => return display_running_status(pid, None),
-            None => {
-                if read_pid()?.is_some() {
-                    println!("Status: Not running (stale PID file)");
-                    warn!("Cleaning up stale PID file");
-                    remove_pid_file()?;
-                } else {
-                    println!("Status: Not running");
-                }
-                return Ok(());
-            },
+        if let Some(pid) = pid {
+            return display_running_status(pid, None);
         }
+        if read_pid()?.is_some() {
+            println!("Status: Not running (stale PID file)");
+            warn!("Cleaning up stale PID file");
+            remove_pid_file()?;
+        } else {
+            println!("Status: Not running");
+        }
+        return Ok(());
     }
 
     #[cfg(target_os = "macos")]
