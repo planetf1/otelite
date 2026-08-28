@@ -11,6 +11,8 @@ have to work around), not implementation detail.
 
 ## [Unreleased]
 
+## [0.1.94] - 2026-08-28
+
 ### Changed
 
 - `otelite service install` now carries the `OTELITE_*` environment
