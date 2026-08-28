@@ -11,6 +11,12 @@ have to work around), not implementation detail.
 
 ## [Unreleased]
 
+### Fixed
+
+- If the OTLP gRPC port (4317) is already in use, `serve` now fails
+  immediately with a clear error instead of starting up, reporting a
+  healthy status, and silently discarding all gRPC telemetry.
+
 ## [0.1.88] - 2026-08-27
 
 ### Internal

@@ -19,6 +19,8 @@ tokio = { workspace = true }
 # gRPC server
 tonic = "0.14"
 prost = "0.14"
+futures-util = { version = "0.3", default-features = false, features = ["std"] }
+socket2 = "0.6"
 
 # HTTP server
 axum = { workspace = true }
