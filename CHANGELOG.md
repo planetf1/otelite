@@ -15,10 +15,9 @@ have to work around), not implementation detail.
 
 ### Internal
 
-- Fixed a Linux CI compile failure in the service-management module
-  (macOS-only imports were not gated for the shared unix discovery
-  path, and the port-probe call sites were restructured to reuse the
-  validated PID-file helper). No user-visible change.
+- Fixed Linux CI compile failures in the service-management test module
+  (macOS-only imports and the two launchd-state parsing tests were not
+  gated for the shared unix module). No user-visible change.
 
 ## [0.1.87] - 2026-08-27
 

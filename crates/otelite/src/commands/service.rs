@@ -688,6 +688,7 @@ mod tests {
     #[cfg(target_os = "macos")]
     use super::LaunchdServiceState;
 
+    #[cfg(target_os = "macos")]
     #[test]
     fn test_parse_launchd_service_state_detects_running_service() {
         let output = r#"
