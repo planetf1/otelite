@@ -724,6 +724,7 @@ fn collect_service_env() -> Vec<(String, String)> {
 }
 
 /// Minimal XML escaping for plist string content.
+#[cfg(any(target_os = "macos", test))]
 fn xml_escape(value: &str) -> String {
     value
         .replace('&', "&amp;")
@@ -1481,6 +1482,7 @@ mod daemon_args_tests {
     fn test_uninstall_without_installed_service_is_clear_error() {
         let _guard = ENV_MUTEX.lock().unwrap_or_else(|e| e.into_inner());
         let tmp = tempfile::TempDir::new().expect("temp dir");
+        let old_home = std::env::var("HOME").ok();
         std::env::set_var("HOME", tmp.path());
 
         // No unit file in the isolated HOME: the handler must fail with a
@@ -1504,5 +1506,10 @@ mod daemon_args_tests {
             msg.contains("otelite service install"),
             "error points at the remedy: {msg}"
         );
+
+        match old_home {
+            Some(value) => std::env::set_var("HOME", value),
+            None => std::env::remove_var("HOME"),
+        }
     }
 }
