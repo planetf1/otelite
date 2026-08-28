@@ -108,10 +108,18 @@ impl StorageBackend for SqliteBackend {
             StorageError::InitializationError(format!("Failed to open database: {}", e))
         })?;
 
-        conn.execute_batch("PRAGMA journal_mode=WAL; PRAGMA synchronous=FULL;")
-            .map_err(|e| {
-                StorageError::InitializationError(format!("Failed to configure SQLite: {}", e))
-            })?;
+        // busy_timeout: the purge scheduler (below) and manual purges open
+        // their own writer connections, so this connection can meet an
+        // in-flight purge transaction. Without a busy timeout the write
+        // would fail instantly with SQLITE_BUSY and the exporter would
+        // retry the whole batch, storing duplicates. 10 s matches the
+        // read pool's READ_BUSY_TIMEOUT_MS.
+        conn.execute_batch(
+            "PRAGMA journal_mode=WAL; PRAGMA synchronous=FULL; PRAGMA busy_timeout=10000;",
+        )
+        .map_err(|e| {
+            StorageError::InitializationError(format!("Failed to configure SQLite: {}", e))
+        })?;
 
         schema::initialize_schema(&conn).map_err(StorageError::from)?;
 
@@ -874,8 +882,9 @@ impl SqliteBackend {
                     return;
                 },
             };
-            if let Err(e) = conn.execute_batch("PRAGMA journal_mode=WAL; PRAGMA synchronous=FULL;")
-            {
+            if let Err(e) = conn.execute_batch(
+                "PRAGMA journal_mode=WAL; PRAGMA synchronous=FULL; PRAGMA busy_timeout=10000;",
+            ) {
                 tracing::warn!("Purge scheduler: failed to set WAL mode: {}", e);
             }
 
@@ -936,6 +945,8 @@ impl SqliteBackend {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::sync::atomic::{AtomicBool, Ordering};
+    use std::time::{Duration, Instant};
     use tempfile::TempDir;
 
     #[tokio::test]
@@ -988,5 +999,83 @@ mod tests {
         assert_eq!(stats.span_count, 0);
         assert_eq!(stats.metric_count, 0);
         assert!(stats.storage_size_bytes > 0);
+    }
+
+    /// Regression test: a write must wait out a concurrent write lock
+    /// (held by the purge path's own connection) instead of failing
+    /// instantly with SQLITE_BUSY. Before the fix, the writer connection
+    /// had no busy_timeout, so any overlap with a purge made the batch
+    /// fail and the exporter retry it — storing duplicates.
+    #[tokio::test]
+    async fn test_write_waits_for_concurrent_write_lock() {
+        use otelite_core::telemetry::log::SeverityLevel;
+        use std::collections::HashMap;
+
+        let temp_dir = TempDir::new().unwrap();
+        let config = StorageConfig::default().with_data_dir(temp_dir.path().to_path_buf());
+        let mut backend = SqliteBackend::new(config);
+        backend.initialize().await.unwrap();
+
+        let db_path = temp_dir.path().join("otelite.db");
+        let lock_held = Arc::new(AtomicBool::new(false));
+
+        // A second writer (as the purge path opens) grabs the WAL write
+        // lock, holds it for 500 ms, then releases it. Not awaited until
+        // after the write, so the lock is held while the write runs.
+        let holder = {
+            let lock_held = Arc::clone(&lock_held);
+            let db_path = db_path.clone();
+            tokio::task::spawn_blocking(move || {
+                let conn = Connection::open(&db_path).unwrap();
+                // BEGIN IMMEDIATE takes the WAL write lock at start; the
+                // dummy write makes it stick. Commit after 500 ms.
+                conn.execute_batch("BEGIN IMMEDIATE;").unwrap();
+                conn.execute(
+                    "CREATE TABLE IF NOT EXISTS lock_probe (x INTEGER); INSERT INTO lock_probe VALUES (1);",
+                    [],
+                )
+                .unwrap();
+                lock_held.store(true, Ordering::SeqCst);
+                std::thread::sleep(Duration::from_millis(500));
+                conn.execute_batch("COMMIT;").unwrap();
+            })
+        };
+
+        // Wait until the write lock is actually held.
+        while !lock_held.load(Ordering::SeqCst) {
+            tokio::time::sleep(Duration::from_millis(5)).await;
+        }
+
+        let log = LogRecord {
+            timestamp: 2000,
+            observed_timestamp: Some(2000),
+            severity: SeverityLevel::Info,
+            severity_text: Some("INFO".to_string()),
+            body: "written while a purge lock is held".to_string(),
+            trace_id: None,
+            span_id: None,
+            attributes: HashMap::new(),
+            resource: None,
+        };
+
+        let started = Instant::now();
+        let result = backend.write_log(&log).await;
+        let waited = started.elapsed();
+
+        result
+            .expect("write must wait out the concurrent lock, not fail with SQLITE_BUSY");
+        assert!(
+            waited >= Duration::from_millis(300),
+            "write should have blocked on the lock (waited {waited:?})"
+        );
+
+        holder.await.unwrap();
+
+        let count: i64 = {
+            let conn = Connection::open(&db_path).unwrap();
+            conn.query_row("SELECT COUNT(*) FROM logs", [], |r| r.get(0))
+                .unwrap()
+        };
+        assert_eq!(count, 1, "the log must be stored exactly once");
     }
 }

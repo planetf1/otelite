@@ -16,6 +16,10 @@ have to work around), not implementation detail.
 - If the OTLP gRPC port (4317) is already in use, `serve` now fails
   immediately with a clear error instead of starting up, reporting a
   healthy status, and silently discarding all gRPC telemetry.
+- Telemetry writes no longer fail with "database is locked" when a
+  retention purge is running at the same time; the write waits for the
+  purge instead, so exporters no longer retry (and duplicate) batches
+  that overlapped a purge.
 
 ## [0.1.88] - 2026-08-27
 
