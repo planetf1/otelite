@@ -11,6 +11,14 @@ have to work around), not implementation detail.
 
 ## [Unreleased]
 
+### Fixed
+
+- `otelite stop` no longer reports a spurious "exited or was replaced"
+  error after the daemon has stopped normally. The wait loop now
+  re-checks the process's identity (not just its PID) on every
+  iteration, so a recycled PID — common on busy macOS machines — can
+  no longer make a successful stop fail ten seconds later.
+
 ## [0.1.89] - 2026-08-28
 
 ### Fixed

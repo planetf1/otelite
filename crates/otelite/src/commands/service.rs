@@ -495,18 +495,32 @@ pub async fn handle_stop() -> Result<()> {
         kill(Pid::from_raw(pid as i32), Signal::SIGTERM)
             .map_err(|e| Error::ConfigError(format!("Failed to send SIGTERM to process: {}", e)))?;
 
-        // Wait for process to exit (with timeout)
+        // Wait for process to exit (with timeout).
+        //
+        // Every iteration re-checks the process *identity*, not just its
+        // existence: once otelite exits, its PID can be recycled by an
+        // unrelated process. A plain `kill(pid, 0)` liveness check would
+        // report that stranger as "still running", stall the loop until
+        // the timeout, and then report a failed stop for a stop that had
+        // already succeeded. `is_otelite_process` returns false for a
+        // dead PID and for a live non-otelite process alike — both mean
+        // the original daemon is gone.
         let start = std::time::Instant::now();
         let timeout = std::time::Duration::from_secs(10);
 
-        while is_process_running(pid) {
+        loop {
+            if !is_otelite_process(pid)? {
+                break;
+            }
             if start.elapsed() > timeout {
                 warn!("Process did not exit gracefully, sending SIGKILL");
-                #[cfg(unix)]
-                ensure_otelite_process(pid)?;
-                kill(Pid::from_raw(pid as i32), Signal::SIGKILL).map_err(|e| {
-                    Error::ConfigError(format!("Failed to send SIGKILL to process: {}", e))
-                })?;
+                // Re-verify identity immediately before the forceful
+                // kill — never signal a recycled PID.
+                if is_otelite_process(pid)? {
+                    kill(Pid::from_raw(pid as i32), Signal::SIGKILL).map_err(|e| {
+                        Error::ConfigError(format!("Failed to send SIGKILL to process: {}", e))
+                    })?;
+                }
                 break;
             }
             tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
@@ -846,6 +860,126 @@ gui/501/dev.otelite.daemon = {
             "/Users/jonesn/.local/bin/otelite"
         ));
         assert!(!super::is_otelite_command("/usr/bin/python3"));
+    }
+
+    #[test]
+    fn test_is_otelite_command_trims_and_rejects_similar_names() {
+        // `ps` output can carry trailing whitespace; the name match must
+        // be exact (no `otelite-old`, `otelite-cli`, ...).
+        assert!(super::is_otelite_command("otelite"));
+        assert!(super::is_otelite_command("otelite "));
+        assert!(!super::is_otelite_command("otelite-old"));
+        assert!(!super::is_otelite_command("/opt/homebrew/bin/otelite-cli"));
+    }
+
+    #[test]
+    fn test_is_process_running_distinguishes_live_and_dead_pids() {
+        // PID 1 (launchd on macOS, init/systemd on Linux) always exists.
+        assert!(is_process_running(1));
+        // Above both Linux's pid_max (4194304) and macOS's kern.pids_max
+        // (99999), and positive as i32 — `u32::MAX` would cast to -1 and
+        // `kill(-1, 0)` would report the whole process group as alive.
+        assert!(!is_process_running(2_000_000_000));
+    }
+
+    #[test]
+    fn test_is_otelite_process_is_false_for_dead_and_foreign_pids() {
+        // The stop wait loop relies on this returning `Ok(false)` — not
+        // an error — both for a dead PID and for a live process that is
+        // not otelite (i.e. a recycled PID).
+        assert!(
+            !super::is_otelite_process(2_000_000_000).unwrap(),
+            "a dead PID must read as 'not otelite', not as a failure"
+        );
+
+        let mut sleep = std::process::Command::new("sleep")
+            .arg("30")
+            .spawn()
+            .unwrap();
+        assert!(
+            !super::is_otelite_process(sleep.id()).unwrap(),
+            "a live non-otelite process (e.g. a recycled PID) must read as 'not otelite'"
+        );
+        let _ = sleep.kill();
+        let _ = sleep.wait();
+    }
+
+    /// Environment-mutating tests share the process environment, so they
+    /// must not run concurrently with each other.
+    static ENV_MUTEX: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+    #[test]
+    fn test_otlp_grpc_port_env_override() {
+        let _guard = ENV_MUTEX.lock().unwrap_or_else(|e| e.into_inner());
+        let key = "OTELITE_OTLP_GRPC_PORT";
+        let old = std::env::var(key).ok();
+
+        std::env::remove_var(key);
+        assert_eq!(otlp_grpc_port(), 4317);
+
+        std::env::set_var(key, "14317");
+        assert_eq!(otlp_grpc_port(), 14317);
+
+        // Discovery must stay usable on a misconfigured machine: an
+        // invalid value falls back to the standard port rather than
+        // failing.
+        std::env::set_var(key, "not-a-port");
+        assert_eq!(otlp_grpc_port(), 4317);
+
+        match old {
+            Some(value) => std::env::set_var(key, value),
+            None => std::env::remove_var(key),
+        }
+    }
+
+    #[test]
+    fn test_runtime_dir_and_pid_file_wrappers_follow_env() {
+        let _guard = ENV_MUTEX.lock().unwrap_or_else(|e| e.into_inner());
+        let key = "OTELITE_DATA_DIR";
+        let old = std::env::var(key).ok();
+
+        let temp = tempfile::TempDir::new().unwrap();
+        std::env::set_var(key, temp.path());
+
+        // PID file and log file live in the (env-overridden) data dir.
+        assert_eq!(super::get_runtime_dir().unwrap(), temp.path());
+        assert_eq!(
+            super::get_pid_file().unwrap(),
+            temp.path().join("otelite.pid")
+        );
+
+        // Wrapper round-trip, including removal (which is a no-op when
+        // the file is missing).
+        assert_eq!(super::read_pid().unwrap(), None);
+        assert!(super::remove_pid_file().is_ok());
+        super::write_pid(4321).unwrap();
+        assert_eq!(super::read_pid().unwrap(), Some(4321));
+        super::remove_pid_file().unwrap();
+        assert_eq!(super::read_pid().unwrap(), None);
+
+        match old {
+            Some(value) => std::env::set_var(key, value),
+            None => std::env::remove_var(key),
+        }
+    }
+
+    #[test]
+    fn test_get_runtime_dir_defaults_without_env() {
+        let _guard = ENV_MUTEX.lock().unwrap_or_else(|e| e.into_inner());
+        let key = "OTELITE_DATA_DIR";
+        let old = std::env::var(key).ok();
+        std::env::remove_var(key);
+
+        let dir = super::get_runtime_dir().unwrap();
+        assert!(
+            dir.ends_with(".otelite/data"),
+            "default runtime dir must be under ~/.otelite/data, got {dir:?}"
+        );
+
+        match old {
+            Some(value) => std::env::set_var(key, value),
+            None => std::env::remove_var(key),
+        }
     }
 }
 
