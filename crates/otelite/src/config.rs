@@ -214,12 +214,40 @@ mod tests {
     /// at a TempDir so the real user config is never read or written.
     static ENV_MUTEX: Mutex<()> = Mutex::new(());
 
-    fn isolated_home() -> (std::sync::MutexGuard<'static, ()>, tempfile::TempDir) {
+    /// Restores HOME on drop. Declared so it outlives the TempDir (fields
+    /// drop in declaration order): the environment must be restored before
+    /// the isolated home disappears, or later tests inherit a dangling
+    /// HOME.
+    struct RestoreHome {
+        old: Option<String>,
+    }
+
+    impl Drop for RestoreHome {
+        fn drop(&mut self) {
+            match &self.old {
+                Some(value) => std::env::set_var("HOME", value),
+                None => std::env::remove_var("HOME"),
+            }
+        }
+    }
+
+    struct IsolatedHome {
+        _restore: RestoreHome,
+        _tmp: tempfile::TempDir,
+        _guard: std::sync::MutexGuard<'static, ()>,
+    }
+
+    fn isolated_home() -> IsolatedHome {
         let guard = ENV_MUTEX.lock().unwrap_or_else(|e| e.into_inner());
+        let old = std::env::var("HOME").ok();
         let tmp = tempfile::TempDir::new().expect("temp dir");
         std::env::set_var("HOME", tmp.path());
         std::env::remove_var("XDG_CONFIG_HOME");
-        (guard, tmp)
+        IsolatedHome {
+            _restore: RestoreHome { old },
+            _tmp: tmp,
+            _guard: guard,
+        }
     }
 
     fn write_config(tmp: &tempfile::TempDir, contents: &str) -> std::path::PathBuf {
@@ -283,7 +311,7 @@ mod tests {
 
     #[test]
     fn test_load_file_returns_defaults_when_absent() {
-        let (_guard, _tmp) = isolated_home();
+        let _iso = isolated_home();
         let config = Config::load_file().expect("no file means defaults, not an error");
         assert_eq!(config.endpoint, "http://localhost:3000");
         assert_eq!(config.timeout, Duration::from_secs(30));
@@ -293,9 +321,9 @@ mod tests {
 
     #[test]
     fn test_load_file_reads_values() {
-        let (_guard, tmp) = isolated_home();
+        let iso = isolated_home();
         write_config(
-            &tmp,
+            &iso._tmp,
             r#"
 endpoint = "http://127.0.0.1:9999"
 timeout = 5
@@ -316,8 +344,8 @@ no_color = true
 
     #[test]
     fn test_load_file_malformed_is_config_error() {
-        let (_guard, tmp) = isolated_home();
-        let path = write_config(&tmp, "endpoint = ");
+        let iso = isolated_home();
+        let path = write_config(&iso._tmp, "endpoint = ");
 
         let err = Config::load_file().expect_err("broken TOML must be an error");
         let msg = format!("{err}");
@@ -331,8 +359,8 @@ no_color = true
 
     #[test]
     fn test_load_file_invalid_format_is_config_error() {
-        let (_guard, tmp) = isolated_home();
-        write_config(&tmp, "format = \"bogus\"");
+        let iso = isolated_home();
+        write_config(&iso._tmp, "format = \"bogus\"");
 
         let err = Config::load_file().expect_err("unknown format must be an error");
         let msg = format!("{err}");
@@ -344,9 +372,9 @@ no_color = true
 
     #[test]
     fn test_load_file_ignores_unknown_keys() {
-        let (_guard, tmp) = isolated_home();
+        let iso = isolated_home();
         write_config(
-            &tmp,
+            &iso._tmp,
             r#"
 endpoint = "http://127.0.0.1:4000"
 
@@ -361,22 +389,18 @@ addr = "127.0.0.1:3000"
 
     #[test]
     fn test_config_dir_respects_xdg_config_home() {
-        let guard = ENV_MUTEX.lock().unwrap_or_else(|e| e.into_inner());
-        let tmp = tempfile::TempDir::new().expect("temp dir");
-        let xdg = tmp.path().join("xdg-config");
-        std::env::set_var("HOME", tmp.path());
+        let _iso = isolated_home();
+        let xdg = PathBuf::from(std::env::var("HOME").unwrap()).join("xdg-config");
         std::env::set_var("XDG_CONFIG_HOME", &xdg);
 
         assert_eq!(Config::config_dir(), xdg.join("otelite"));
 
         std::env::remove_var("XDG_CONFIG_HOME");
-        drop(guard);
     }
 
     #[test]
     fn test_created_default_config_round_trips_to_defaults() {
-        let (_guard, tmp) = isolated_home();
-        std::env::set_var("HOME", tmp.path());
+        let _iso = isolated_home();
 
         Config::create_default_config().expect("first-run write succeeds");
         let file = Config::config_file();
