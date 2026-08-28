@@ -11,6 +11,8 @@ have to work around), not implementation detail.
 
 ## [Unreleased]
 
+## [0.1.95] - 2026-08-28
+
 ### Added
 
 - `otelite service uninstall` removes the system service: it stops the
