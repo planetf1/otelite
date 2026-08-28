@@ -93,18 +93,14 @@ kill -9 <PID>
 
 **Solution 2**: Use different ports
 ```bash
-# Start with custom ports
-otelite start --grpc-port 14317 --http-port 14318 --dashboard-port 18080
+# Dashboard port via --addr; OTLP ports via environment variables
+OTELITE_OTLP_GRPC_PORT=14317 OTELITE_OTLP_HTTP_PORT=14318 \
+  otelite start --addr 127.0.0.1:18080
 ```
 
-**Solution 3**: Update configuration
-```toml
-# otelite.toml
-[server]
-grpc_port = 14317
-http_port = 14318
-dashboard_port = 18080
-```
+The dashboard IP also controls where the OTLP receivers bind, so
+`otelite start --addr 0.0.0.0:3000` publishes OTLP on all interfaces
+while the default (`127.0.0.1:3000`) keeps them local-only.
 
 ### Permission Denied
 
@@ -151,8 +147,8 @@ batch_size = 500
 # Run with verbose logging
 otelite start --log-level debug
 
-# Check logs
-tail -f ~/.otelite/logs/otelite.log
+# Check logs (daily-rotated: otelite.log.YYYY-MM-DD)
+tail -f ~/.otelite/data/otelite.log.*
 ```
 
 **Common Causes**:
@@ -483,8 +479,8 @@ otelite --version
 # Configuration
 cat otelite.toml
 
-# Logs (last 100 lines)
-tail -n 100 ~/.otelite/logs/otelite.log
+# Logs (last 100 lines; daily-rotated)
+tail -n 100 ~/.otelite/data/otelite.log.*
 
 # Resource usage
 ps aux | grep otelite

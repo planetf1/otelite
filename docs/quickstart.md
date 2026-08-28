@@ -49,15 +49,11 @@ This starts:
 - **REST API** on `http://localhost:3000`
 - **Web Dashboard** on `http://localhost:3000`
 
-You should see output like:
-
-```
-Otelite starting...
-OTLP gRPC receiver listening on 0.0.0.0:4317
-OTLP HTTP receiver listening on 0.0.0.0:4318
-REST API listening on http://0.0.0.0:3000
-Web dashboard available at http://localhost:3000
-```
+You should see the dashboard address in the startup output; the OTLP
+receivers listen on the same IP as `--addr` (default `127.0.0.1`) on
+ports 4317 (gRPC) and 4318 (HTTP). Add `--addr 0.0.0.0:3000` to
+publish beyond localhost, or set `OTELITE_OTLP_GRPC_PORT` /
+`OTELITE_OTLP_HTTP_PORT` to move the OTLP ports.
 
 ## Sending Test Data
 

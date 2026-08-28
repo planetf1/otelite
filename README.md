@@ -44,12 +44,19 @@ That's it. `otelite serve` starts three services:
 - **OTLP HTTP receiver** on `localhost:4318`
 - **Web dashboard and REST API** on `http://localhost:3000`
 
+The OTLP receivers bind to the same IP as `--addr` (default
+`127.0.0.1`, so nothing is exposed beyond localhost unless you ask
+for it with e.g. `--addr 0.0.0.0:3000`), and their ports can be
+re-pointed with `OTELITE_OTLP_GRPC_PORT` / `OTELITE_OTLP_HTTP_PORT`.
+Set `OTELITE_DATA_DIR` to run a second isolated instance (database,
+PID file and logs all follow it).
+
 Open `http://localhost:3000` in your browser to view telemetry.
 
 ## Features
 
 - **Fast**: Starts in <3s, <100MB memory, <5% CPU idle
-- **Full OTLP Support**: Metrics, logs, and traces via gRPC (4317) and HTTP (4318)
+- **Full OTLP Support**: Metrics, logs, and traces via gRPC (4317) and HTTP (4318), gzip/deflate request bodies
 - **Embedded Storage**: SQLite-based, no external database required
 - **Web Dashboard**: View and filter telemetry data at `http://localhost:3000`
 - **Terminal UI**: Full-featured TUI with `otelite tui`

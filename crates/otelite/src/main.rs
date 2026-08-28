@@ -74,8 +74,8 @@ enum Commands {
         #[arg(long, default_value = "127.0.0.1:3000")]
         addr: SocketAddr,
 
-        /// Directory for the SQLite database. Defaults to the OS data directory
-        /// (macOS: ~/Library/Application Support/otelite, Linux: ~/.local/share/otelite)
+        /// Directory for the SQLite database. Defaults to ~/.otelite/data
+        /// (override with OTELITE_DATA_DIR).
         #[arg(long)]
         storage_path: Option<PathBuf>,
     },
@@ -88,8 +88,8 @@ enum Commands {
         #[arg(long, default_value = "127.0.0.1:3000")]
         addr: String,
 
-        /// Directory for the SQLite database. Defaults to the OS data directory
-        /// (macOS: ~/Library/Application Support/otelite, Linux: ~/.local/share/otelite)
+        /// Directory for the SQLite database. Defaults to ~/.otelite/data
+        /// (override with OTELITE_DATA_DIR).
         #[arg(long)]
         storage_path: Option<PathBuf>,
     },
@@ -106,8 +106,8 @@ enum Commands {
         #[arg(long, default_value = "127.0.0.1:3000")]
         addr: String,
 
-        /// Directory for the SQLite database. Defaults to the OS data directory
-        /// (macOS: ~/Library/Application Support/otelite, Linux: ~/.local/share/otelite)
+        /// Directory for the SQLite database. Defaults to ~/.otelite/data
+        /// (override with OTELITE_DATA_DIR).
         #[arg(long)]
         storage_path: Option<PathBuf>,
     },

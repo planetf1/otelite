@@ -72,6 +72,12 @@ otelite     otelite-tui
 | 4318 | HTTP     | OTLP telemetry ingest |
 | 3000 | HTTP     | REST API + web UI |
 
+All three bind to the IP given by `serve --addr` (default
+`127.0.0.1` — localhost-only; use `--addr 0.0.0.0:3000` to publish).
+The OTLP ports are overridable via `OTELITE_OTLP_GRPC_PORT` and
+`OTELITE_OTLP_HTTP_PORT`; `OTELITE_DATA_DIR` moves the database, PID
+file and (daily-rotated) logs.
+
 ---
 
 ## Component Details

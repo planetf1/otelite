@@ -15,6 +15,9 @@ These flags are available on every subcommand:
 --no-header           Omit table header row
 --no-pager            Disable automatic paging of long output
 --timeout <secs>      Request timeout [default: 30]
+--log-level <lvl>     Log level: trace|debug|info|warn|error [default: info]
+--log-file <path>     Log to file (daily-rotated) instead of stderr
+--log-format <fmt>    Log format: text|json [default: text]
 ```
 
 ---
@@ -28,6 +31,39 @@ otelite stop            # Stop the running daemon
 otelite restart         # Stop then start (picks up a freshly built binary)
 otelite status          # Show daemon status
 ```
+
+`serve` and `start` take `--addr <ip:port>` (default `127.0.0.1:3000`)
+and `--storage-path <dir>` (default `~/.otelite/data`). The OTLP
+receivers bind to the same IP as `--addr` on ports 4317 (gRPC) and
+4318 (HTTP); override the ports with `OTELITE_OTLP_GRPC_PORT` and
+`OTELITE_OTLP_HTTP_PORT`.
+
+Useful environment variables:
+
+```text
+OTELITE_DATA_DIR           Data directory (database + PID file + logs)
+OTELITE_OTLP_GRPC_PORT     OTLP gRPC port [default: 4317]
+OTELITE_OTLP_HTTP_PORT     OTLP HTTP port [default: 4318]
+RUST_LOG                   Standard Rust log filter (overrides --log-level)
+```
+
+`OTELITE_DATA_DIR` gives a fully isolated instance — point read-only
+commands at another database, or run a second otelite alongside the
+default one.
+
+Daemon behaviour worth knowing:
+
+- `start` refuses to spawn when a daemon is already listening on the
+  OTLP gRPC port (service-managed or hand-run daemons leave no PID
+  file), and fails loudly — removing the PID file — if the spawned
+  process exits immediately (e.g. a port collision).
+- The daemon shuts down gracefully on SIGTERM/Ctrl-C (in-flight work
+  gets a short bounded drain), so `otelite stop` rarely needs to
+  escalate to SIGKILL.
+- Daemon logs are daily-rotated: `~/.otelite/data/otelite.log.YYYY-MM-DD`
+  (or under `OTELITE_DATA_DIR`).
+- A corrupt or stale PID file is recovered from automatically
+  (removed, then the daemon is discovered via the OTLP port).
 
 ---
 
