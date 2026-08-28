@@ -55,15 +55,19 @@ fn create_help_text(version: &str) -> Text<'static> {
             Span::raw("  Switch to Metrics view"),
         ]),
         Line::from(vec![
+            Span::styled("  u", Style::default().fg(Color::Yellow)),
+            Span::raw("  Switch to Usage view"),
+        ]),
+        Line::from(vec![
             Span::styled("  Tab / Shift+Tab", Style::default().fg(Color::Yellow)),
             Span::raw("  Next / previous view"),
         ]),
         Line::from(vec![
-            Span::styled("  ?", Style::default().fg(Color::Yellow)),
+            Span::styled("  ? / h", Style::default().fg(Color::Yellow)),
             Span::raw("  Show this help screen"),
         ]),
         Line::from(vec![
-            Span::styled("  q", Style::default().fg(Color::Yellow)),
+            Span::styled("  q / Ctrl+C", Style::default().fg(Color::Yellow)),
             Span::raw("  Quit application"),
         ]),
         Line::from(""),
@@ -86,25 +90,28 @@ fn create_help_text(version: &str) -> Text<'static> {
         ]),
         Line::from(vec![
             Span::styled("  Esc", Style::default().fg(Color::Yellow)),
-            Span::raw("  Close detail panel / Go back"),
+            Span::raw("  Close detail / go back (also clears filters)"),
+        ]),
+        Line::from(vec![
+            Span::styled("  PageUp / PageDown", Style::default().fg(Color::Yellow)),
+            Span::raw("  Scroll page up / down"),
         ]),
         Line::from(""),
         Line::from(vec![Span::styled(
-            "SEARCH & FILTER",
+            "SEARCH & FILTER (logs and traces views)",
             Style::default().add_modifier(Modifier::BOLD | Modifier::UNDERLINED),
         )]),
         Line::from(""),
         Line::from(vec![
-            Span::styled("  /", Style::default().fg(Color::Yellow)),
-            Span::raw("  Start search (type to filter results)"),
-        ]),
-        Line::from(vec![
             Span::styled("  f", Style::default().fg(Color::Yellow)),
-            Span::raw("  Add filter (e.g., severity=ERROR)"),
+            Span::raw("  Filter: a bare string searches all fields, or use a"),
         ]),
+        Line::from(vec![Span::raw(
+            "        structured predicate (e.g., severity = \"ERROR\")",
+        )]),
         Line::from(vec![
-            Span::styled("  c", Style::default().fg(Color::Yellow)),
-            Span::raw("  Clear all filters and search"),
+            Span::styled("  Esc", Style::default().fg(Color::Yellow)),
+            Span::raw("  Clear all active filters and search"),
         ]),
         Line::from(""),
         Line::from(vec![Span::styled(
@@ -113,7 +120,7 @@ fn create_help_text(version: &str) -> Text<'static> {
         )]),
         Line::from(""),
         Line::from(vec![
-            Span::styled("  a", Style::default().fg(Color::Yellow)),
+            Span::styled("  s", Style::default().fg(Color::Yellow)),
             Span::raw("  Toggle auto-scroll (automatically scroll to newest logs)"),
         ]),
         Line::from(vec![Span::raw(

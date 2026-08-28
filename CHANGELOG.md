@@ -11,6 +11,15 @@ have to work around), not implementation detail.
 
 ## [Unreleased]
 
+### Added
+
+- The `~/.config/otelite/config.toml` file (created on first run) is now
+  actually read: `endpoint`, `timeout`, `format`, `no_color`, `no_header`
+  and `no_pager` can be set there. Command-line flags still win, then
+  `OTELITE_ENDPOINT`, then the file, then built-in defaults. The
+  generated template now documents only what the CLI reads, and the
+  config directory honours `XDG_CONFIG_HOME`.
+
 ## [0.1.92] - 2026-08-28
 
 ### Fixed

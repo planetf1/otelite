@@ -42,9 +42,9 @@ struct Cli {
     #[arg(long, global = true)]
     no_pager: bool,
 
-    /// Request timeout in seconds
-    #[arg(long, default_value = "30", global = true)]
-    timeout: u64,
+    /// Request timeout in seconds (default: 30, or `timeout` in the config file)
+    #[arg(long, global = true)]
+    timeout: Option<u64>,
 
     /// Log level (trace, debug, info, warn, error)
     #[arg(long, default_value = "info", global = true)]
@@ -538,14 +538,19 @@ async fn run_cli() -> Result<()> {
         }
     }
 
-    // Build config from CLI args
+    // Build config from config file, then apply CLI args on top.
+    // Precedence: CLI flags > OTELITE_ENDPOINT > config file > defaults.
+    let file_config = Config::load_file()?;
     let config = Config {
         endpoint: cli.endpoint.unwrap_or_else(Config::endpoint_from_env),
-        timeout: std::time::Duration::from_secs(cli.timeout),
-        format: cli.format.unwrap_or_default(),
-        no_color: cli.no_color,
-        no_header: cli.no_header,
-        no_pager: cli.no_pager,
+        timeout: cli
+            .timeout
+            .map(std::time::Duration::from_secs)
+            .unwrap_or(file_config.timeout),
+        format: cli.format.unwrap_or(file_config.format),
+        no_color: cli.no_color || file_config.no_color,
+        no_header: cli.no_header || file_config.no_header,
+        no_pager: cli.no_pager || file_config.no_pager,
     };
 
     // Handle commands
