@@ -415,6 +415,41 @@ async fn test_list_logs_with_data() {
 }
 
 #[tokio::test]
+async fn test_list_logs_preserves_original_severity_text() {
+    let (storage, _tmp) = setup_test_storage().await;
+
+    let mut log = create_test_log(1000, SeverityLevel::Info, "severity-reproduction");
+    log.severity_text = Some("Information".to_string());
+    storage.write_log(&log).await.unwrap();
+
+    let app = build_test_router(storage);
+
+    let response = app
+        .oneshot(
+            Request::builder()
+                .uri("/api/logs")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), StatusCode::OK);
+
+    let body = response.into_body().collect().await.unwrap().to_bytes();
+    let logs_response: LogsResponse = serde_json::from_slice(&body).unwrap();
+
+    assert_eq!(logs_response.logs.len(), 1);
+    assert_eq!(logs_response.logs[0].severity, "INFO");
+    // Regression for #110: the original severity_text must survive the
+    // round trip rather than being re-derived from the normalized number.
+    assert_eq!(
+        logs_response.logs[0].severity_text.as_deref(),
+        Some("Information")
+    );
+}
+
+#[tokio::test]
 async fn test_list_logs_with_severity_filter() {
     let (storage, _tmp) = setup_test_storage().await;
 

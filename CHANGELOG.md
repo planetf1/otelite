@@ -11,6 +11,12 @@ have to work around), not implementation detail.
 
 ## [Unreleased]
 
+### Fixed
+
+- The REST API now returns the original OTLP `severity_text` (e.g.
+  `"Information"`) instead of replacing it with the normalised severity
+  level (`"INFO"`), preserving the text exactly as the emitter sent it.
+
 ## [0.1.91] - 2026-08-28
 
 ### Fixed

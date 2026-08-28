@@ -264,7 +264,9 @@ impl From<crate::telemetry::LogRecord> for LogEntry {
         Self {
             timestamp: log.timestamp,
             severity: log.severity.as_str().to_string(),
-            severity_text: Some(log.severity.as_str().to_string()),
+            severity_text: log
+                .severity_text
+                .or_else(|| Some(log.severity.as_str().to_string())),
             body: log.body,
             body_length,
             body_truncated: false,
@@ -2223,5 +2225,34 @@ mod project_rollup_tests {
         assert_eq!(a.cache_read, 3);
         assert_eq!(a.cache_write, 4);
         assert_eq!(a.reasoning, 5);
+    }
+
+    #[test]
+    fn test_log_entry_preserves_original_severity_text() {
+        let mut record = crate::telemetry::LogRecord::new(
+            crate::telemetry::log::SeverityLevel::Info,
+            "severity-reproduction",
+            1,
+        );
+        record.severity_text = Some("Information".to_string());
+
+        let entry: LogEntry = record.into();
+
+        assert_eq!(entry.severity, "INFO");
+        assert_eq!(entry.severity_text.as_deref(), Some("Information"));
+    }
+
+    #[test]
+    fn test_log_entry_derives_severity_text_when_absent() {
+        let record = crate::telemetry::LogRecord::new(
+            crate::telemetry::log::SeverityLevel::Warn,
+            "no text",
+            1,
+        );
+
+        let entry: LogEntry = record.into();
+
+        assert_eq!(entry.severity, "WARN");
+        assert_eq!(entry.severity_text.as_deref(), Some("WARN"));
     }
 }
