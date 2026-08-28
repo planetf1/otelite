@@ -47,6 +47,12 @@ have to work around), not implementation detail.
   while the API has the database open (the post-purge VACUUM is now a
   WAL checkpoint), and dry-run purges over databases with more than
   10,000 matching rows now report the full count instead of hanging.
+- A cancelled or crashed dashboard request no longer wedges that
+  query for two minutes: when an in-flight API request is dropped
+  (e.g. the browser tab is closed while a slow GenAI query is
+  running), duplicate requests for the same query no longer sit
+  waiting on the dead request — they re-run immediately, and a dead
+  request can no longer be mistaken for a live one.
 
 ## [0.1.88] - 2026-08-27
 

@@ -44,6 +44,43 @@ struct InFlight {
     response: Mutex<Option<CachedBody>>,
 }
 
+/// RAII cleanup for an in-flight dedup entry.
+///
+/// The entry is removed when the owner future is dropped — including
+/// on client disconnect (cancellation) and panics — not just at the
+/// end of the happy path. Without this, a cancelled owner leaves a
+/// stale entry behind and every subsequent duplicate waits out the
+/// full [`DEDUP_WAIT_TIMEOUT`] before running its own copy.
+///
+/// Removal is conditional on the map still holding this exact
+/// [`Arc`]: a guard that outlives a re-registration (the stale entry
+/// was already evicted and a fresh owner inserted) must not delete
+/// the newcomer's entry.
+///
+/// The shared state is held by [`Arc`] rather than a reference so the
+/// guard stays `Send`/`'static`-compatible inside the middleware
+/// future (axum requires the handler future to be `Send`).
+struct InFlightGuard {
+    cache: Arc<CacheState>,
+    key: String,
+    entry: Arc<InFlight>,
+}
+
+impl Drop for InFlightGuard {
+    fn drop(&mut self) {
+        let mut map = self.cache.in_flight.lock().expect("in_flight mutex poisoned");
+        match map.get(&self.key) {
+            Some(current) if Arc::ptr_eq(current, &self.entry) => {
+                map.remove(&self.key);
+            },
+            _ => {},
+        }
+        // Wake waiters still parked on this entry so they notice it is
+        // gone and fall through to their own request.
+        self.entry.done.notify_waiters();
+    }
+}
+
 /// Which response cache a whitelisted path belongs to. Each bucket has its
 /// own size/TTL: GenAI analytics are the expensive ones (20s), the stats
 /// totals tolerate 60s staleness (a recompute is a full-table index scan),
@@ -209,19 +246,51 @@ pub async fn cache_handler(
             if tokio::time::Instant::now() >= deadline {
                 break;
             }
+            // The owner's cleanup guard removes the entry when its
+            // request is cancelled or panics. If the entry we are
+            // waiting on is gone, no result is coming — stop waiting
+            // out the full timeout (bounds the delay to ~1 s).
+            let still_present = cache
+                .in_flight
+                .lock()
+                .expect("in_flight mutex poisoned")
+                .get(&key)
+                .is_some_and(|current| Arc::ptr_eq(current, &entry));
+            if !still_present {
+                break;
+            }
             let _ = tokio::time::timeout(Duration::from_secs(1), notified).await;
         }
         // The owner did not finish in time (or was cancelled by a client
-        // disconnect and will never publish). Drop the stale in-flight
-        // entry so later duplicates become fresh owners instead of waiting
-        // out the timeout again, then run this request ourselves.
-        cache
-            .in_flight
-            .lock()
-            .expect("in_flight mutex poisoned")
-            .remove(&key);
+        // disconnect and will never publish). Evict the stale in-flight
+        // entry so later duplicates become fresh owners instead of
+        // waiting out the timeout again, then run this request ourselves.
+        // Only evict if this exact entry is still registered — a fresh
+        // owner may have taken the key in the meantime. Scoped so the
+        // guard does not live across the await below (a held MutexGuard
+        // would make the middleware future !Send).
+        {
+            let mut map = cache.in_flight.lock().expect("in_flight mutex poisoned");
+            match map.get(&key) {
+                Some(current) if Arc::ptr_eq(current, &entry) => {
+                    map.remove(&key);
+                },
+                _ => {},
+            }
+        }
+        entry.done.notify_waiters();
         return next.run(req).await;
     }
+
+    // Owner cleanup: removes the entry (and wakes waiters) whenever
+    // this future ends — normal return, client disconnect, or panic.
+    // Declared after the wait branch so waiters' `return` paths never
+    // hold it; it drops when the function unwinds below.
+    let _guard = InFlightGuard {
+        cache: Arc::clone(&cache),
+        key: key.clone(),
+        entry: Arc::clone(&entry),
+    };
 
     // 3. Owner: run the real handler, capture the body, publish.
     let response = next.run(req).await;
@@ -266,12 +335,8 @@ pub async fn cache_handler(
         response
     };
 
-    cache
-        .in_flight
-        .lock()
-        .expect("in_flight mutex poisoned")
-        .remove(&key);
-    entry.done.notify_waiters();
+    // The guard (installed before the wait branch) removes the
+    // in-flight entry and wakes waiters when this function returns.
     response
 }
 
@@ -499,5 +564,145 @@ mod tests {
         // Not whitelisted: every request reaches the handler, no x-cache.
         assert_eq!(count.load(Ordering::SeqCst), 2);
         assert!(second.headers().get("x-cache").is_none());
+    }
+
+    /// Regression test: when the owner of an in-flight dedup entry is
+    /// cancelled (client disconnect), its RAII guard must remove the
+    /// entry. Before the fix the entry lingered and every duplicate —
+    /// including waiters already parked on it — had to wait out the
+    /// full 120 s DEDUP_WAIT_TIMEOUT before running its own copy.
+    #[tokio::test]
+    async fn test_cancelled_owner_cleans_up_in_flight_entry() {
+        let count = Arc::new(AtomicUsize::new(0));
+        let state = CacheState::new();
+        let c = Arc::clone(&count);
+        let app = Router::new()
+            .route(
+                "/api/genai/usage",
+                get(move |_req: axum::extract::Request| async move {
+                    // Long enough that the owner is cancelled mid-run.
+                    tokio::time::sleep(Duration::from_millis(500)).await;
+                    counting_handler(c).await
+                }),
+            )
+            .layer(axum::middleware::from_fn_with_state(
+                Arc::clone(&state),
+                cache_handler,
+            ));
+
+        let uri = "/api/genai/usage?start=7&end=7";
+
+        // Owner request first, so it is guaranteed to register the
+        // in-flight entry before the duplicate joins it.
+        let owner_app = app.clone();
+        let owner = tokio::spawn(async move {
+            owner_app.oneshot(get_request(uri)).await
+        });
+        tokio::time::sleep(Duration::from_millis(150)).await;
+        eprintln!(
+            "DBG after owner sleep: count={} inflight={}",
+            count.load(Ordering::SeqCst),
+            state.in_flight.lock().expect("poisoned").len()
+        );
+
+        // A concurrent duplicate parks on the owner's entry.
+        let waiter_app = app.clone();
+        let waiter = tokio::spawn(async move {
+            waiter_app.oneshot(get_request(uri)).await
+        });
+        tokio::time::sleep(Duration::from_millis(50)).await;
+        eprintln!(
+            "DBG after waiter sleep: count={} inflight={}",
+            count.load(Ordering::SeqCst),
+            state.in_flight.lock().expect("poisoned").len()
+        );
+
+        // Client disconnect: drop the owner mid-run.
+        owner.abort();
+
+        let started = tokio::time::Instant::now();
+        let waiter_response = waiter
+            .await
+            .expect("waiter task must not abort")
+            .expect("waiter request completes");
+        let waiter_elapsed = started.elapsed();
+
+        // The waiter must get a usable response quickly. Depending on
+        // scheduling, the owner's handler may or may not have started
+        // before the abort, so 1 or 2 handler runs are both correct —
+        // what must NOT happen is the waiter waiting out the 120 s
+        // dedup timeout on the dead entry.
+        let waiter_status = waiter_response.status();
+        let waiter_body = body_text(waiter_response).await;
+        assert_eq!(waiter_status, StatusCode::OK);
+        let runs = count.load(Ordering::SeqCst);
+        assert!(
+            (1..=2).contains(&runs),
+            "expected the owner's and/or waiter's handler run, got {runs}"
+        );
+        let parsed: serde_json::Value = serde_json::from_str(&waiter_body)
+            .expect("waiter got valid JSON");
+        assert!(parsed.get("handler_runs").is_some());
+        assert!(
+            waiter_elapsed < Duration::from_secs(5),
+            "waiter waited {waiter_elapsed:?} after the owner's cancellation; a cleaned-up entry lets it run its own copy within ~1 s"
+        );
+
+        // The key is free again: no in-flight entry lingers, and a
+        // follow-up request is served immediately (cache hit on the
+        // waiter's result).
+        assert!(state.in_flight.lock().expect("poisoned").is_empty());
+        let follower = app
+            .clone()
+            .oneshot(get_request(uri))
+            .await
+            .expect("follower request completes");
+        assert_eq!(follower.status(), StatusCode::OK);
+        assert!(state.in_flight.lock().expect("poisoned").is_empty());
+    }
+
+    /// The guard's removal is conditional on the map still holding the
+    /// guard's exact entry: a stale guard whose entry was already
+    /// evicted and replaced must not delete the newcomer's entry.
+    #[test]
+    fn test_stale_in_flight_guard_keeps_new_owner() {
+        let state = CacheState::new();
+        let key = "/api/stats".to_string();
+
+        let old_entry = Arc::new(InFlight {
+            done: Arc::new(tokio::sync::Notify::new()),
+            response: Mutex::new(None),
+        });
+        state
+            .in_flight
+            .lock()
+            .expect("poisoned")
+            .insert(key.clone(), Arc::clone(&old_entry));
+
+        // A fresh owner re-registers the same key, then the stale guard
+        // drops (as an aborted owner's would, after the re-registration).
+        let new_entry = Arc::new(InFlight {
+            done: Arc::new(tokio::sync::Notify::new()),
+            response: Mutex::new(None),
+        });
+        state
+            .in_flight
+            .lock()
+            .expect("poisoned")
+            .insert(key.clone(), Arc::clone(&new_entry));
+
+        let stale_guard = InFlightGuard {
+            cache: Arc::clone(&state),
+            key,
+            entry: old_entry,
+        };
+        drop(stale_guard);
+
+        let map = state.in_flight.lock().expect("poisoned");
+        assert!(
+            map.get("/api/stats")
+                .is_some_and(|current| Arc::ptr_eq(current, &new_entry)),
+            "the stale guard must not evict the new owner's entry"
+        );
     }
 }
