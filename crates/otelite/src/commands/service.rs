@@ -1021,9 +1021,12 @@ async fn install_systemd_service() -> Result<()> {
     print_env_summary(&env);
 
     for (args, what) in [
-        (["--user", "daemon-reload"], "reloading systemd user units"),
         (
-            ["--user", "enable", "--now", "otelite.service"],
+            ["--user", "daemon-reload"].as_slice(),
+            "reloading systemd user units",
+        ),
+        (
+            ["--user", "enable", "--now", "otelite.service"].as_slice(),
             "enabling and starting the service",
         ),
     ] {
