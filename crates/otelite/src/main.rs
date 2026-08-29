@@ -161,6 +161,12 @@ enum Commands {
         after_help = "Examples:\n  otelite capabilities --since 7d\n  otelite capabilities --since 30d --format json"
     )]
     Capabilities(commands::capabilities::CapabilitiesCommand),
+    /// Diagnose model performance: current interval vs preceding and rolling
+    /// baselines, with deterministic classification and confidence
+    #[command(
+        after_help = "Examples:\n  otelite model-performance --start 2026-08-22 --end 2026-08-29 --rolling 30d\n  otelite model-performance --start 2026-08-22 --end 2026-08-29 --model gpt-4o --format json-compact"
+    )]
+    ModelPerformance(commands::model_performance::ModelPerformanceCommand),
     /// Show cache economics (read/write split, hit rate, estimated savings)
     #[command(
         after_help = "Examples:\n  otelite cache --since 24h\n  otelite cache --since 7d --series --bucket-secs 86400"
@@ -605,6 +611,11 @@ async fn run_cli() -> Result<()> {
             Ok(())
         },
         Some(Commands::Capabilities(cmd)) => {
+            let storage = create_storage(&config).await?;
+            cmd.execute(storage, config.format).await?;
+            Ok(())
+        },
+        Some(Commands::ModelPerformance(cmd)) => {
             let storage = create_storage(&config).await?;
             cmd.execute(storage, config.format).await?;
             Ok(())

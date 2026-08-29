@@ -11,6 +11,18 @@ have to work around), not implementation detail.
 
 ## [Unreleased]
 
+### Added
+
+- New `otelite model-performance` command and
+  `GET /api/genai/model-performance` diagnose how a model's duration,
+  throughput, TTFT and error rate moved in an exact interval against the
+  preceding interval and an optional rolling baseline: typical/tail
+  regressions, workload-correlated and error-associated changes, mixed
+  evidence, and insufficient telemetry are first-class states with sample
+  counts and confidence — percentage-unavailable is shown as unavailable,
+  never as zero, and TTFT conclusions are suppressed when TTFT is not
+  reliable. The CLI's json-compact output deep-equals the API response.
+
 ## [0.1.102] - 2026-08-29
 
 ### Internal

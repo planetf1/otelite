@@ -914,6 +914,137 @@ pub async fn get_genai_capabilities(
     Ok(Json(report))
 }
 
+/// Query parameters for the model-performance diagnosis endpoint
+/// (#121/#153). The current interval is explicit and required; the rolling
+/// baseline is a length, placed immediately before the derived preceding
+/// window so it can never overlap either comparison window.
+#[derive(Debug, Deserialize, Serialize, utoipa::IntoParams, utoipa::ToSchema)]
+pub struct ModelPerformanceQueryParams {
+    /// Start of the current interval (nanoseconds since Unix epoch)
+    pub start_time: i64,
+    /// End of the current interval (nanoseconds since Unix epoch)
+    pub end_time: i64,
+    /// Rolling baseline length in nanoseconds; the baseline sits immediately
+    /// before the derived preceding window. Omit to disable it.
+    pub rolling_ns: Option<i64>,
+    /// Model name filter
+    pub model: Option<String>,
+    /// Provider filter
+    pub provider: Option<String>,
+    /// IANA timezone echoed back for calendar alignment (e.g. Europe/London)
+    pub timezone: Option<String>,
+}
+
+/// Get the model-performance diagnosis: the canonical comparison of a
+/// current interval against its preceding interval and an optional rolling
+/// baseline, with the deterministic classification and confidence for each
+/// identity (#121).
+#[utoipa::path(
+    get,
+    path = "/api/genai/model-performance",
+    params(ModelPerformanceQueryParams),
+    responses(
+        (status = 200, description = "Model-performance diagnosis", body = otelite_core::api::ModelPerformanceDiagnosis),
+        (status = 400, description = "Invalid interval or baseline", body = ErrorResponse),
+        (status = 500, description = "Internal server error", body = ErrorResponse)
+    ),
+    tag = "genai"
+)]
+pub async fn get_model_performance(
+    State(state): State<AppState>,
+    Query(query): Query<ModelPerformanceQueryParams>,
+) -> Result<Json<otelite_core::api::ModelPerformanceDiagnosis>, (StatusCode, Json<ErrorResponse>)> {
+    if query.end_time <= query.start_time {
+        return Err((
+            StatusCode::BAD_REQUEST,
+            Json(ErrorResponse::bad_request(format!(
+                "end_time must be after start_time (got start={} end={})",
+                query.start_time, query.end_time
+            ))),
+        ));
+    }
+    if let Some(len) = query.rolling_ns {
+        if len <= 0 {
+            return Err((
+                StatusCode::BAD_REQUEST,
+                Json(ErrorResponse::bad_request(format!(
+                    "rolling_ns must be a positive length in nanoseconds (got {len})"
+                ))),
+            ));
+        }
+    }
+    if let Some(tz) = query.timezone.as_deref() {
+        let tz = tz.trim();
+        let _parsed: chrono_tz::Tz = std::str::FromStr::from_str(tz).map_err(|e| {
+            (
+                StatusCode::BAD_REQUEST,
+                Json(ErrorResponse::bad_request(format!(
+                    "unknown IANA timezone '{tz}': {e} (e.g. Europe/London, America/New_York, UTC)"
+                ))),
+            )
+        })?;
+    }
+
+    // Preceding window: equal length immediately before the current one.
+    // Rolling baseline: the requested length immediately before the
+    // preceding window — structurally excluding both comparison windows.
+    let current_len = query.end_time - query.start_time;
+    let preceding_start = query.start_time - current_len;
+    let query_core = otelite_core::api::ModelPerformanceQuery {
+        current: otelite_core::api::ModelPerformanceWindow {
+            start_time: query.start_time,
+            end_time: query.end_time,
+        },
+        rolling: query
+            .rolling_ns
+            .map(|len| otelite_core::api::ModelPerformanceWindow {
+                start_time: preceding_start - len,
+                end_time: preceding_start,
+            }),
+        model: query.model.clone(),
+        provider: query.provider.clone(),
+    };
+
+    let response = state
+        .storage
+        .query_model_performance(&query_core)
+        .await
+        .map_err(|e| {
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(ErrorResponse::storage_error(format!(
+                    "query model performance: {e}"
+                ))),
+            )
+        })?;
+    let capability = state
+        .storage
+        .query_genai_capabilities(
+            Some(query_core.current.start_time),
+            Some(query_core.current.end_time),
+            &GenAiFilters {
+                model: query.model.clone(),
+                provider: query.provider.clone(),
+                ..Default::default()
+            },
+        )
+        .await
+        .map_err(|e| {
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(ErrorResponse::storage_error(format!(
+                    "query GenAI capabilities for TTFT trust: {e}"
+                ))),
+            )
+        })?;
+
+    Ok(Json(otelite_core::model_performance::build_diagnosis(
+        &response,
+        &capability,
+        query.timezone.clone(),
+    )))
+}
+
 /// Query parameters for error-rate endpoint
 #[derive(Debug, Deserialize, Serialize, utoipa::IntoParams, utoipa::ToSchema)]
 pub struct ErrorRateQuery {

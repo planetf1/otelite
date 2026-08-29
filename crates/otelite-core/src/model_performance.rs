@@ -56,6 +56,21 @@ pub enum PerformanceChangeClass {
     MixedEvidence,
 }
 
+impl std::fmt::Display for PerformanceChangeClass {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let s = match self {
+            PerformanceChangeClass::TypicalRegression => "typical_regression",
+            PerformanceChangeClass::TailRegression => "tail_regression",
+            PerformanceChangeClass::WorkloadShiftCorrelated => "workload_shift_correlated",
+            PerformanceChangeClass::ErrorAssociated => "error_associated",
+            PerformanceChangeClass::NoMaterialChange => "no_material_change",
+            PerformanceChangeClass::InsufficientTelemetry => "insufficient_telemetry",
+            PerformanceChangeClass::MixedEvidence => "mixed_evidence",
+        };
+        f.write_str(s)
+    }
+}
+
 impl PerformanceChangeClass {
     /// Severity used for the per-identity headline: the most severe metric
     /// assessment wins. Insufficient telemetry ranks last — it is the
@@ -99,6 +114,18 @@ pub enum TtftTrust {
     /// Absent, sparse, invalid, or degenerate TTFT: first-response and
     /// decode-rate attribution is prevented.
     Unreliable,
+}
+
+impl std::fmt::Display for PerformanceConfidence {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let s = match self {
+            PerformanceConfidence::Insufficient => "insufficient",
+            PerformanceConfidence::Low => "low",
+            PerformanceConfidence::Medium => "medium",
+            PerformanceConfidence::High => "high",
+        };
+        f.write_str(s)
+    }
 }
 
 fn confidence_for(eligible: usize) -> PerformanceConfidence {
@@ -657,6 +684,61 @@ where
         .iter()
         .map(|identity| assess_identity(identity, ttft_trust_for(identity), response.truncated))
         .collect()
+}
+
+/// Derive the TTFT trust gate for one identity from the capability report
+/// (#111 quality + #120 derivation). Reliable requires the TTFT metric to
+/// be available, reliable, and natively observed or structurally
+/// correlated. Fails closed: an unknown fingerprint or any
+/// absent/sparse/invalid/degenerate state is `Unreliable`, which prevents
+/// first-response and decode-rate attribution.
+pub fn ttft_trust_from_capabilities(
+    capability: &crate::api::GenAiCapabilityResponse,
+    identity: &ModelPerformanceIdentity,
+) -> TtftTrust {
+    // The fingerprint is not unique across (provider, model) — standard-
+    // otel emitters with no service/scope share one — so match the full
+    // identity.
+    capability
+        .reports
+        .iter()
+        .find(|r| {
+            r.emitter_fingerprint == identity.emitter_fingerprint
+                && r.provider == identity.provider
+                && r.model == identity.model
+        })
+        .map_or(TtftTrust::Unreliable, |report| {
+            let ttft = &report.ttft;
+            if ttft.availability == "available"
+                && ttft.quality == "reliable"
+                && (ttft.derivation == "native" || ttft.derivation == "correlated")
+            {
+                TtftTrust::Reliable
+            } else {
+                TtftTrust::Unreliable
+            }
+        })
+}
+
+/// Assemble the full diagnosis envelope (#153): the raw #151 evidence plus
+/// the deterministic #152 assessments (TTFT trust from the capability
+/// report) plus the echoed timezone. The API handler and the CLI both call
+/// this, so their json-compact output is structurally identical.
+pub fn build_diagnosis(
+    response: &crate::api::ModelPerformanceResponse,
+    capability: &crate::api::GenAiCapabilityResponse,
+    timezone: Option<String>,
+) -> crate::api::ModelPerformanceDiagnosis {
+    let assessments = assess_response(response, |id| ttft_trust_from_capabilities(capability, id));
+    crate::api::ModelPerformanceDiagnosis {
+        current_window: response.current_window,
+        preceding_window: response.preceding_window,
+        rolling_window: response.rolling_window,
+        timezone,
+        truncated: response.truncated,
+        identities: response.identities.clone(),
+        assessments,
+    }
 }
 
 #[cfg(test)]

@@ -8,6 +8,7 @@ pub mod histogram;
 pub mod import;
 pub mod logs;
 pub mod metrics;
+pub mod model_performance;
 pub mod projects;
 pub mod providers;
 pub mod reasoning;

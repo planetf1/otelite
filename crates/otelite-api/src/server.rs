@@ -47,6 +47,7 @@ use utoipa::OpenApi;
         crate::api::genai::get_latency_stats,
         crate::api::genai::get_latency_percentiles,
         crate::api::genai::get_genai_capabilities,
+        crate::api::genai::get_model_performance,
         crate::api::genai::get_error_rate,
         crate::api::genai::get_tool_usage,
         crate::api::genai::get_retry_stats,
@@ -107,6 +108,26 @@ use utoipa::OpenApi;
             otelite_core::api::GenAiCorrelationProvenance,
             otelite_core::api::GenAiCapabilityReport,
             otelite_core::api::GenAiCapabilityResponse,
+            otelite_core::api::ModelPerformanceWindow,
+            otelite_core::api::ModelPerformanceQuery,
+            otelite_core::api::ModelPerformanceResponse,
+            otelite_core::api::ModelPerformanceIdentity,
+            otelite_core::api::ModelPerformanceMetric,
+            otelite_core::api::ModelPerformanceSample,
+            otelite_core::api::ModelPerformancePercentile,
+            otelite_core::api::ModelPerformanceDelta,
+            otelite_core::api::ModelPerformanceCounts,
+            otelite_core::api::ModelPerformanceErrorRate,
+            otelite_core::api::ModelPerformanceErrorValue,
+            otelite_core::api::ModelPerformanceDiagnosis,
+            otelite_core::model_performance::ModelPerformanceAssessment,
+            otelite_core::model_performance::ModelPerformanceMetricAssessment,
+            otelite_core::model_performance::PerformanceMetricKind,
+            otelite_core::model_performance::PerformanceChangeClass,
+            otelite_core::model_performance::PerformanceConfidence,
+            otelite_core::model_performance::TtftTrust,
+            otelite_core::model_performance::WorkloadShiftEvidence,
+            crate::api::genai::ModelPerformanceQueryParams,
             otelite_core::api::ErrorRateByModel,
             otelite_core::api::ToolUsage,
             otelite_core::api::RetryStats,
@@ -326,6 +347,10 @@ impl DashboardServer {
             )
             .route("/api/genai/distributions", get(crate::api::genai::get_distributions))
             .route("/api/genai/capabilities", get(crate::api::genai::get_genai_capabilities))
+            .route(
+                "/api/genai/model-performance",
+                get(crate::api::genai::get_model_performance),
+            )
             .route("/api/genai/error_rate", get(crate::api::genai::get_error_rate))
             .route("/api/genai/tool_usage", get(crate::api::genai::get_tool_usage))
             .route("/api/genai/retry_stats", get(crate::api::genai::get_retry_stats))

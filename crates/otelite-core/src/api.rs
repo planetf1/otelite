@@ -994,6 +994,32 @@ pub struct ModelPerformanceResponse {
     pub truncated: bool,
 }
 
+/// Envelope for the model-performance diagnosis endpoint and CLI
+/// (#121/#153). The raw #151 comparison (`identities`) is the canonical
+/// evidence; the #152 `assessments` classify it deterministically and are
+/// the only source of causal-sounding wording (they are never recomputed by
+/// surfaces). `timezone` is echoed for calendar alignment.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
+pub struct ModelPerformanceDiagnosis {
+    pub current_window: ModelPerformanceWindow,
+    /// Equal-length interval immediately before `current_window`.
+    pub preceding_window: ModelPerformanceWindow,
+    /// Rolling baseline as selected; `None` when the caller disabled it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub rolling_window: Option<ModelPerformanceWindow>,
+    /// IANA timezone echoed back for calendar alignment (when supplied).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub timezone: Option<String>,
+    /// The bounded most-recent sample excluded older spans.
+    pub truncated: bool,
+    /// Canonical per-identity raw comparison evidence (#151).
+    pub identities: Vec<ModelPerformanceIdentity>,
+    /// Deterministic per-identity assessments (#152), in the same order as
+    /// `identities`.
+    pub assessments: Vec<crate::model_performance::ModelPerformanceAssessment>,
+}
+
 /// Minimum eligible current-window requests for any model-performance
 /// assessment; every assessment reports its sample count and fewer samples
 /// classify as `InsufficientTelemetry` (#152).
