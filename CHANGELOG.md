@@ -18,6 +18,13 @@ have to work around), not implementation detail.
   trace; the trace detail now shows a "Related Logs: N" count; and
   `otelite logs show` suggests the matching `otelite traces show` command.
 
+### Changed
+
+- `--query` filters (on `logs list`, `traces list`, `metrics list`) now
+  accept lowercase `and` between predicates and fractional seconds such as
+  `duration > 1.5s`; second values that would overflow milliseconds now
+  fail with a clear error instead of panicking.
+
 ## [0.1.96] - 2026-08-29
 
 ### Fixed
