@@ -11,8 +11,6 @@ have to work around), not implementation detail.
 
 ## [Unreleased]
 
-## [0.1.104] - 2026-08-29
-
 ### Added
 
 - Model performance diagnosis documentation: the LLM observability guide
@@ -23,6 +21,11 @@ have to work around), not implementation detail.
   (no live benchmarks, no decode-speed claims from complete duration,
   correlation not causation). The CLI reference documents
   `otelite model-performance`.
+
+## [0.1.104] - 2026-08-29
+
+### Added
+
 - The TUI Usage view now includes a Model performance panel and the web
   analytics page a Model performance section: for each (provider, model,
   emitter) identity they show the exact current/preceding/rolling
