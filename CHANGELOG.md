@@ -11,6 +11,8 @@ have to work around), not implementation detail.
 
 ## [Unreleased]
 
+## [0.1.105] - 2026-08-29
+
 ### Added
 
 - Model performance diagnosis documentation: the LLM observability guide
