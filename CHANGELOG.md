@@ -11,6 +11,12 @@ have to work around), not implementation detail.
 
 ## [Unreleased]
 
+### Fixed
+
+- v0.1.95 did not compile on Linux (a type error in the systemd
+  service-install path that only exists in Linux builds). Linux users
+  should use v0.1.96 or later; macOS v0.1.95 was unaffected.
+
 ## [0.1.95] - 2026-08-28
 
 ### Added
