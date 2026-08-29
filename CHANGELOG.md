@@ -11,6 +11,13 @@ have to work around), not implementation detail.
 
 ## [Unreleased]
 
+### Internal
+
+- Model-performance comparison query and response types (canonical
+  request population, preceding/rolling baseline windows, per-metric
+  eligibility and deltas with percentage-unavailable state) — the
+  evidence base for the #121 diagnosis; no user-visible change yet.
+
 ## [0.1.100] - 2026-08-29
 
 ### Added
@@ -25,10 +32,6 @@ have to work around), not implementation detail.
 
 ### Internal
 
-- Model-performance comparison query and response types (canonical
-  request population, preceding/rolling baseline windows, per-metric
-  eligibility and deltas with percentage-unavailable state) — the
-  evidence base for the #121 diagnosis; no user-visible change yet.
 - Codex correlation edge-case integration matrix (cancellation-style and
   late-delivery joins, zero-token results, turn-level counters, deep
   nesting, the 64-hop walk cap) and a bounded-sample proof for the
