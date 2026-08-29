@@ -11,6 +11,8 @@ have to work around), not implementation detail.
 
 ## [Unreleased]
 
+## [0.1.96] - 2026-08-29
+
 ### Fixed
 
 - v0.1.95 did not compile on Linux (a type error in the systemd
