@@ -602,10 +602,16 @@ fn parse_finish_reasons(s: &str) -> Vec<String> {
         }
     }
 
-    // Fall back to comma-separated
+    // Fall back to comma-separated, stripping enclosing brackets and
+    // quotes per token so a malformed JSON array still yields clean
+    // reasons.
     trimmed
         .split(',')
-        .map(|s| s.trim().trim_matches('"').to_string())
+        .map(|s| {
+            s.trim()
+                .trim_matches(|c| c == '[' || c == ']' || c == '"')
+                .to_string()
+        })
         .filter(|s| !s.is_empty())
         .collect()
 }
@@ -1069,5 +1075,120 @@ mod tests {
             classify_span_capabilities(&test_span("claude_code.llm_request", 2, attrs));
         assert_eq!(capabilities.emitter, GenAiEmitter::ClaudeCode);
         assert_eq!(capabilities.output_tokens.value, Some(4));
+    }
+
+    // --- Edge cases from issue #9 ---------------------------------------
+
+    #[test]
+    fn test_genai_non_numeric_token_count_is_none() {
+        let mut attrs = HashMap::new();
+        attrs.insert("gen_ai.system".to_string(), "openai".to_string());
+        attrs.insert("gen_ai.usage.input_tokens".to_string(), "abc".to_string());
+
+        let info = GenAiSpanInfo::from_attributes(&attrs);
+
+        // Documented behaviour: unparseable counts are dropped, not
+        // clamped or panicked on.
+        assert_eq!(info.input_tokens, None);
+        assert_eq!(info.total_tokens, None);
+    }
+
+    #[test]
+    fn test_genai_zero_token_count_is_some_zero() {
+        let mut attrs = HashMap::new();
+        attrs.insert("gen_ai.system".to_string(), "openai".to_string());
+        attrs.insert("gen_ai.usage.input_tokens".to_string(), "0".to_string());
+        attrs.insert("gen_ai.usage.output_tokens".to_string(), "0".to_string());
+
+        let info = GenAiSpanInfo::from_attributes(&attrs);
+
+        assert_eq!(info.input_tokens, Some(0));
+        assert_eq!(info.output_tokens, Some(0));
+        assert_eq!(info.total_tokens, Some(0));
+    }
+
+    #[test]
+    fn test_genai_negative_token_count_is_none() {
+        let mut attrs = HashMap::new();
+        attrs.insert("gen_ai.system".to_string(), "openai".to_string());
+        attrs.insert("gen_ai.usage.input_tokens".to_string(), "-5".to_string());
+
+        let info = GenAiSpanInfo::from_attributes(&attrs);
+
+        // Documented behaviour: u64 parsing rejects negatives, so the
+        // value is dropped (None) rather than stored.
+        assert_eq!(info.input_tokens, None);
+    }
+
+    #[test]
+    fn test_genai_empty_finish_reasons_json_array() {
+        let mut attrs = HashMap::new();
+        attrs.insert("gen_ai.system".to_string(), "openai".to_string());
+        attrs.insert(
+            "gen_ai.response.finish_reasons".to_string(),
+            "[]".to_string(),
+        );
+
+        let info = GenAiSpanInfo::from_attributes(&attrs);
+
+        assert!(info.is_genai);
+        assert_eq!(info.finish_reasons, Vec::<String>::new());
+    }
+
+    #[test]
+    fn test_genai_malformed_finish_reasons_falls_back_to_comma_split() {
+        let mut attrs = HashMap::new();
+        attrs.insert("gen_ai.system".to_string(), "openai".to_string());
+        // Unbalanced JSON array: the JSON parse fails and the comma
+        // fallback must still produce clean reasons.
+        attrs.insert(
+            "gen_ai.response.finish_reasons".to_string(),
+            "[\"stop\", \"length\"".to_string(),
+        );
+
+        let info = GenAiSpanInfo::from_attributes(&attrs);
+
+        assert_eq!(
+            info.finish_reasons,
+            vec!["stop".to_string(), "length".to_string()]
+        );
+    }
+
+    #[test]
+    fn test_genai_uppercase_system_uses_generic_display() {
+        let mut attrs = HashMap::new();
+        attrs.insert("gen_ai.system".to_string(), "OPENAI".to_string());
+
+        let info = GenAiSpanInfo::from_attributes(&attrs);
+
+        // Documented behaviour: system names are matched case-sensitively
+        // against the known list; unknown spellings fall through to the
+        // capitalised generic (here: unchanged "OPENAI").
+        assert_eq!(info.system.as_deref(), Some("OPENAI"));
+        assert_eq!(info.system_display_name().as_deref(), Some("OPENAI"));
+    }
+
+    #[test]
+    fn test_genai_unknown_system_capitalised_generic() {
+        let mut attrs = HashMap::new();
+        attrs.insert("gen_ai.system".to_string(), "weirdco".to_string());
+
+        let info = GenAiSpanInfo::from_attributes(&attrs);
+
+        assert_eq!(info.system_display_name().as_deref(), Some("Weirdco"));
+    }
+
+    #[test]
+    fn test_genai_attributes_without_model() {
+        let mut attrs = HashMap::new();
+        attrs.insert("gen_ai.system".to_string(), "openai".to_string());
+        attrs.insert("gen_ai.operation.name".to_string(), "chat".to_string());
+
+        let info = GenAiSpanInfo::from_attributes(&attrs);
+
+        // The span is recognised as GenAI but carries no model name.
+        assert!(info.is_genai);
+        assert_eq!(info.model, None);
+        assert_eq!(info.operation.as_deref(), Some("chat"));
     }
 }

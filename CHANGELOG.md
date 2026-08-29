@@ -30,6 +30,9 @@ have to work around), not implementation detail.
 - The API no longer panics on `GET /api/metrics/{name}/timeseries?step=0`
   or `GET /api/metrics/aggregate?bucket_size=0`: a zero or negative step
   now returns a 400 with a clear error.
+- Malformed `gen_ai.response.finish_reasons` values (e.g. a truncated
+  JSON array) now fall back to clean comma-separated reasons instead of
+  leaking brackets and quotes into the displayed values.
 
 ## [0.1.96] - 2026-08-29
 
