@@ -585,6 +585,203 @@ fn test_genai_capability_report_correlates_codex_usage_one_to_one() {
 }
 
 #[test]
+fn test_genai_capability_report_correlation_edge_cases() {
+    let conn = setup_test_db();
+    let insert_span = |trace: &str,
+                       id: &str,
+                       name: &str,
+                       parent: &str,
+                       start_ms: i64,
+                       attributes: &str| {
+        conn.execute(
+            r#"INSERT INTO spans (trace_id, span_id, parent_span_id, name, kind, start_time, end_time, attributes, status_code)
+               VALUES (?1, ?2, ?3, ?4, 0, ?5, ?6, ?7, 0)"#,
+            rusqlite::params![
+                trace,
+                id,
+                parent,
+                name,
+                start_ms * 1_000_000,
+                start_ms * 1_000_000 + 4_000_000_000,
+                attributes
+            ],
+        )
+        .unwrap();
+    };
+    let codex_req = r#"{"model":"m1","otel.scope.name":"codex_cli_rs"}"#;
+
+    // e1: cancellation-style request — status UNSET (0), not OK and not
+    // ERROR — still joins: only explicit ERROR rejects.
+    insert_span("e1", "e1_req", "run_sampling_request", "", 1_000, codex_req);
+    insert_span(
+        "e1",
+        "e1_usage",
+        "handle_responses",
+        "e1_req",
+        1_001,
+        r#"{"otel.scope.name":"codex_cli_rs","gen_ai.usage.output_tokens":"5"}"#,
+    );
+
+    // e2: late delivery — the usage span was ingested (smaller row id) and
+    // started before its request span was stored. The join is structural,
+    // so it must still match.
+    insert_span(
+        "e2",
+        "e2_usage",
+        "handle_responses",
+        "e2_try",
+        2_005,
+        r#"{"otel.scope.name":"codex_cli_rs","gen_ai.usage.output_tokens":"6"}"#,
+    );
+    insert_span(
+        "e2",
+        "e2_try",
+        "try_run_sampling_request",
+        "e2_req",
+        2_001,
+        "{}",
+    );
+    insert_span("e2", "e2_req", "run_sampling_request", "", 2_000, codex_req);
+
+    // e3: zero-token result — zero is a valid observation, not absent.
+    insert_span("e3", "e3_req", "run_sampling_request", "", 3_000, codex_req);
+    insert_span(
+        "e3",
+        "e3_usage",
+        "handle_responses",
+        "e3_req",
+        3_001,
+        r#"{"otel.scope.name":"codex_cli_rs","gen_ai.usage.output_tokens":"0"}"#,
+    );
+
+    // e4: turn-level counter — a usage span under the turn, not under any
+    // request. It must never be attributed to a request.
+    insert_span("e4", "e4_turn", "run_turn", "", 4_000, "{}");
+    insert_span(
+        "e4",
+        "e4_req",
+        "run_sampling_request",
+        "e4_turn",
+        4_001,
+        codex_req,
+    );
+    insert_span(
+        "e4",
+        "e4_turn_usage",
+        "handle_responses",
+        "e4_turn",
+        4_002,
+        r#"{"otel.scope.name":"codex_cli_rs","gen_ai.usage.output_tokens":"999"}"#,
+    );
+
+    // e5: deep nesting (four hops below the request) still joins.
+    insert_span("e5", "e5_req", "run_sampling_request", "", 5_000, codex_req);
+    insert_span("e5", "e5_a", "mid_a", "e5_req", 5_001, "{}");
+    insert_span("e5", "e5_b", "mid_b", "e5_a", 5_002, "{}");
+    insert_span("e5", "e5_c", "mid_c", "e5_b", 5_003, "{}");
+    insert_span(
+        "e5",
+        "e5_usage",
+        "handle_responses",
+        "e5_c",
+        5_004,
+        r#"{"otel.scope.name":"codex_cli_rs","gen_ai.usage.output_tokens":"7"}"#,
+    );
+
+    // e6: a parent chain longer than the walk cap (64) never reaches a
+    // request span — the candidate is dropped, the walk terminates.
+    let mut parent = String::new();
+    for hop in 0..70 {
+        let id = format!("e6_h{hop}");
+        if hop > 0 {
+            insert_span("e6", &id, "deep", &parent, 6_000 + hop as i64, "{}");
+        } else {
+            insert_span("e6", &id, "deep", "", 6_000, "{}");
+        }
+        parent = id;
+    }
+    insert_span(
+        "e6",
+        "e6_usage",
+        "handle_responses",
+        &parent,
+        7_000,
+        r#"{"otel.scope.name":"codex_cli_rs","gen_ai.usage.output_tokens":"8"}"#,
+    );
+
+    let report =
+        reader::query_genai_capabilities(&conn, None, None, &GenAiFilters::default()).unwrap();
+    let codex = report
+        .reports
+        .iter()
+        .find(|row| row.emitter == "codex")
+        .unwrap();
+
+    // Five requests: e1 (unset), e2 (late), e3 (zero), e4 (no usage),
+    // e5 (deep). e4's request has no usage descendant — a request-level
+    // gap; e6's chain is too deep and e4's turn-level counter is a sibling,
+    // so neither is ever attributed.
+    assert_eq!(codex.request_count, 5);
+    assert_eq!(codex.correlation.matched_count, 4);
+    assert_eq!(codex.correlation.unmatched_count, 1);
+    assert_eq!(codex.correlation.rejected_count, 0);
+    assert_eq!(codex.correlation.ambiguous_count, 0);
+
+    // The zero-token result is a valid correlated observation...
+    assert_eq!(codex.output_tokens.valid_count, 4);
+    assert_eq!(codex.output_tokens.eligible_count, 5);
+    assert_eq!(codex.output_tokens.availability, "sparse");
+    assert_eq!(codex.output_tokens.derivation, "correlated");
+    // ...and the turn-level 999 never leaked into request attribution.
+    assert_eq!(codex.output_tokens.observed_count, 0);
+    assert_eq!(
+        codex
+            .output_tokens
+            .source_attributes
+            .get("gen_ai.usage.output_tokens"),
+        Some(&4)
+    );
+}
+
+#[test]
+fn test_genai_capability_report_join_is_bounded_by_the_sample() {
+    let conn = setup_test_db();
+    // 10_005 filler spans start after the Codex spans, so the bounded
+    // newest-first sample holds only filler and `truncated` is true.
+    conn.execute_batch(
+        r#"
+        CREATE TEMP TABLE filler (i INTEGER PRIMARY KEY);
+        INSERT INTO filler (i) VALUES (1);
+        WITH RECURSIVE seq(i) AS (
+            SELECT i FROM filler
+            UNION ALL SELECT i + 1 FROM seq WHERE i < 10005
+        )
+        INSERT INTO spans (trace_id, span_id, name, kind, start_time, end_time, attributes, status_code)
+        SELECT 'noise-' || i, 'n' || i, 'noise', 0, 2000000000 + i, 3000000000 + i, '{}', 0
+        FROM seq;
+        "#,
+    )
+    .unwrap();
+    conn.execute(
+        r#"INSERT INTO spans (trace_id, span_id, name, kind, start_time, end_time, attributes, status_code)
+           VALUES ('b1', 'req', 'run_sampling_request', 0, 0, 4000000000,
+                   '{"model":"m1","otel.scope.name":"codex_cli_rs"}', 0)"#,
+        [],
+    )
+    .unwrap();
+
+    let report =
+        reader::query_genai_capabilities(&conn, None, None, &GenAiFilters::default()).unwrap();
+    assert!(
+        report.truncated,
+        "sample of 10_001 spans must be flagged truncated"
+    );
+    // The Codex request fell outside the bounded sample: no group, no guess.
+    assert_eq!(report.canonical_span_count, 0);
+    assert!(report.reports.is_empty());
+}
+
+#[test]
 fn test_latency_stats_normalizes_ttft_and_flags_degenerate_groups() {
     let conn = setup_test_db();
 
