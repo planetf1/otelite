@@ -11,6 +11,8 @@ have to work around), not implementation detail.
 
 ## [Unreleased]
 
+## [0.1.100] - 2026-08-29
+
 ### Added
 
 - The capability report now diagnoses LLM-ish spans no verified emitter
