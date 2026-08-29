@@ -579,6 +579,36 @@ Current enforced minimums:
 7. **Mock external dependencies**: Keep tests fast and reliable
 8. **Document test intent**: Add comments explaining complex test logic
 
+## Manual OTLP conformance testing
+
+The automated conformance suite is
+`crates/otelite-receiver/tests/otlp_conformance_test.rs`
+(`cargo test -p otelite-receiver --test otlp_conformance_test`). To sanity-check
+the receiver against a real SDK-adjacent client, use
+[otel-cli](https://github.com/equinix-labs/otel-cli) against a **test**
+instance (not a live daemon, to avoid polluting its storage):
+
+```bash
+# Install otel-cli
+go install github.com/equinix-labs/otel-cli@latest   # unverified (needs a Go toolchain)
+
+# Start a test receiver on scratch storage with non-default OTLP ports
+OTELITE_DATA_DIR="$(mktemp -d)" \
+  OTELITE_OTLP_GRPC_PORT=14317 OTELITE_OTLP_HTTP_PORT=14318 \
+  otelite serve --addr 127.0.0.1:13000
+
+# Emit a test span over HTTP/protobuf and a test trace over gRPC
+otel-cli exec --endpoint http://127.0.0.1:14318 --protocol http/protobuf -- echo "hello"   # unverified
+otel-cli exec --endpoint 127.0.0.1:14317 --protocol grpc/protobuf -- echo "hello"          # unverified
+
+# Verify the data arrived
+otelite --endpoint http://127.0.0.1:14318 traces list   # unverified
+```
+
+The `serve` invocation is verified against `otelite serve --help` (2026-08-29);
+the three `otel-cli` invocations were transcribed from issue #1 and not run in
+an environment with a Go toolchain, so they are marked unverified.
+
 ## Resources
 
 - [Rust Testing Documentation](https://doc.rust-lang.org/book/ch11-00-testing.html)
