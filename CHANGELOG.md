@@ -11,6 +11,16 @@ have to work around), not implementation detail.
 
 ## [Unreleased]
 
+### Internal
+
+- Codex correlation edge-case integration matrix (cancellation-style and
+  late-delivery joins, zero-token results, turn-level counters, deep
+  nesting, the 64-hop walk cap) and a bounded-sample proof for the
+  capability join — no user-visible change.
+- One canonical TTFT normaliser shared by the capability report and all
+  latency queries, so the two views can no longer disagree on unit
+  handling, rejection or quality — no user-visible change.
+
 ## [0.1.98] - 2026-08-29
 
 ### Added
