@@ -964,7 +964,539 @@ fn capability_fingerprint(
     format!("genai-v1-{hash:016x}")
 }
 
-/// Query GenAI telemetry capability coverage.
+/// Bounded most-recent physical-span sample for model-performance
+/// comparisons. The rolling baseline can span long horizons, so the sample
+/// must be capped by construction; statistics are computed over the sample
+/// and `truncated` reports that older spans were not examined.
+const MODEL_PERFORMANCE_QUERY_LIMIT: usize = 100_000;
+
+/// Model-performance comparison of a current interval against an
+/// equal-length preceding interval and an optional rolling historical
+/// baseline (#121/#151).
+///
+/// Canonical population: verified request spans (the capability
+/// classification's `RequestTiming` role), deduplicated across duplicate
+/// OTLP deliveries, tagged by the window their `start_time` falls in.
+/// Response model is kept as a separate observation so routing changes are
+/// never merged into one identity. Per-metric eligibility is independent:
+/// a request lacking output tokens or duration stays in the population but
+/// is ineligible for throughput — duration-only emitters are visible, not
+/// zero.
+///
+/// Windows are half-open `[start, end)` on `start_time`. The rolling
+/// baseline must exclude the current and preceding windows (validated).
+/// Percentiles use the shared rounded-rank estimator (#119). Deltas carry
+/// an explicit percentage-unavailable state (`relative: None`) when the
+/// baseline is zero or has no eligible samples.
+pub fn query_model_performance(
+    conn: &Connection,
+    query: &otelite_core::api::ModelPerformanceQuery,
+) -> Result<otelite_core::api::ModelPerformanceResponse> {
+    use otelite_core::api::{
+        ModelPerformanceCounts, ModelPerformanceDelta, ModelPerformanceErrorRate,
+        ModelPerformanceErrorValue, ModelPerformanceIdentity, ModelPerformanceMetric,
+        ModelPerformancePercentile, ModelPerformanceResponse, ModelPerformanceSample,
+    };
+    use otelite_core::telemetry::{classify_ttft_value, TtftValueQuality};
+
+    let current = query.current;
+    if current.end_time <= current.start_time {
+        return Err(StorageError::QueryError(format!(
+            "model-performance current window is empty or inverted \
+             ([{} ns, {} ns)); pass a non-empty half-open interval",
+            current.start_time, current.end_time
+        )));
+    }
+    let current_len = current.end_time - current.start_time;
+    let preceding = otelite_core::api::ModelPerformanceWindow {
+        start_time: current.start_time - current_len,
+        end_time: current.start_time,
+    };
+    let rolling = query.rolling;
+    if let Some(r) = rolling {
+        if r.end_time <= r.start_time {
+            return Err(StorageError::QueryError(format!(
+                "model-performance rolling baseline window is empty or inverted \
+                 ([{} ns, {} ns)); pass a non-empty half-open interval or omit it",
+                r.start_time, r.end_time
+            )));
+        }
+        if r.end_time > preceding.start_time {
+            return Err(StorageError::QueryError(format!(
+                "model-performance rolling baseline [{} ns, {} ns) overlaps the current or \
+                 preceding comparison window (preceding starts at {} ns); the baseline must \
+                 exclude both — shift it earlier",
+                r.start_time, r.end_time, preceding.start_time
+            )));
+        }
+    }
+
+    let global_start = rolling
+        .map(|r| r.start_time)
+        .unwrap_or(preceding.start_time)
+        .min(preceding.start_time);
+    let global_end = current.end_time;
+
+    let mut where_clause = format!("WHERE {}", semconv::request_span_guard("attributes"));
+    let mut params: Vec<Box<dyn rusqlite::ToSql>> = Vec::new();
+    where_clause.push_str(" AND start_time >= ?");
+    params.push(Box::new(global_start));
+    where_clause.push_str(" AND start_time < ?");
+    params.push(Box::new(global_end));
+    if let Some(model) = &query.model {
+        let model_expr = semconv::coalesce_extract("attributes", semconv::REQUEST_MODEL_KEYS);
+        where_clause.push_str(&format!(" AND {} = ?", model_expr));
+        params.push(Box::new(model.clone()));
+    }
+    if let Some(provider) = &query.provider {
+        let system_expr = semconv::coalesce_extract("attributes", semconv::SYSTEM_KEYS);
+        where_clause.push_str(&format!(" AND {} = ?", system_expr));
+        params.push(Box::new(provider.clone()));
+    }
+
+    let sql = format!(
+        "WITH recent_spans AS (
+            SELECT
+                trace_id, span_id, parent_span_id, name, kind, start_time, end_time,
+                COALESCE(attributes, '{{}}') AS attributes,
+                COALESCE(events, '[]') AS events,
+                COALESCE(status_code, 0) AS status_code,
+                status_message,
+                COALESCE(resource, 'null') AS resource,
+                created_at,
+                id
+            FROM spans {where_clause}
+            ORDER BY start_time DESC, id DESC
+            LIMIT {limit}
+         ),
+         ranked_spans AS (
+            SELECT
+                trace_id, span_id, parent_span_id, name, kind, start_time, end_time,
+                attributes, events, status_code, status_message, resource,
+                ROW_NUMBER() OVER (
+                    PARTITION BY trace_id, span_id
+                    ORDER BY created_at ASC, id ASC
+                ) AS delivery_rank
+            FROM recent_spans
+         )
+         SELECT
+            trace_id, span_id, parent_span_id, name, kind, start_time, end_time,
+            attributes, events, status_code, status_message, resource
+         FROM ranked_spans
+         WHERE delivery_rank = 1
+         ORDER BY start_time ASC, trace_id ASC, span_id ASC",
+        limit = MODEL_PERFORMANCE_QUERY_LIMIT + 1,
+    );
+
+    let mut stmt = conn.prepare(&sql).map_err(|error| {
+        StorageError::QueryError(format!(
+            "Failed to prepare model-performance query: {error}"
+        ))
+    })?;
+    let param_refs: Vec<&dyn rusqlite::ToSql> = params.iter().map(|p| p.as_ref()).collect();
+    let mut spans: Vec<Span> = stmt
+        .query_map(param_refs.as_slice(), parse_span_row)
+        .map_err(|error| {
+            StorageError::QueryError(format!(
+                "Failed to execute model-performance query: {error}"
+            ))
+        })?
+        .collect::<rusqlite::Result<Vec<_>>>()
+        .map_err(|error| {
+            StorageError::QueryError(format!("Failed to parse model-performance rows: {error}"))
+        })?;
+    let truncated = spans.len() > MODEL_PERFORMANCE_QUERY_LIMIT;
+    if truncated {
+        spans.truncate(MODEL_PERFORMANCE_QUERY_LIMIT);
+    }
+
+    // One canonical population per (identity, window): verified request
+    // spans only. Usage spans (e.g. Codex handle_responses) are not requests.
+    #[derive(Default)]
+    struct WindowAgg<'a> {
+        requests: Vec<&'a Span>,
+        errors: usize,
+        durations_ms: Vec<i64>,
+        throughputs: Vec<f64>,
+        ttft_ms: Vec<i64>,
+        input_tokens: Vec<i64>,
+        cache_creation: Vec<i64>,
+        cache_read: Vec<i64>,
+        output_tokens: Vec<i64>,
+        response_models: BTreeSet<String>,
+    }
+    #[derive(Hash, Eq, PartialEq, Clone, PartialOrd, Ord)]
+    struct IdentityKey {
+        provider: Option<String>,
+        model: Option<String>,
+        fingerprint: String,
+    }
+    #[derive(PartialEq, Eq, PartialOrd, Ord, Clone, Copy)]
+    enum WindowSlot {
+        Preceding,
+        Current,
+        Rolling,
+    }
+    let window_of = |start_time: i64| -> Option<WindowSlot> {
+        if start_time >= current.start_time && start_time < current.end_time {
+            Some(WindowSlot::Current)
+        } else if start_time >= preceding.start_time && start_time < preceding.end_time {
+            Some(WindowSlot::Preceding)
+        } else {
+            rolling
+                .filter(|r| start_time >= r.start_time && start_time < r.end_time)
+                .map(|_| WindowSlot::Rolling)
+        }
+    };
+
+    let mut groups: BTreeMap<(IdentityKey, WindowSlot), WindowAgg> = BTreeMap::new();
+    for span in &spans {
+        let Some(window) = window_of(span.start_time) else {
+            continue;
+        };
+        let capabilities = classify_span_capabilities(span);
+        if capabilities.role != GenAiSpanRole::RequestTiming {
+            continue;
+        }
+        let attrs = &span.attributes;
+        let provider = first_semconv_attribute(attrs, semconv::SYSTEM_KEYS).map(str::to_string);
+        let model = first_semconv_attribute(attrs, semconv::REQUEST_MODEL_KEYS).map(str::to_string);
+        let fingerprint = capability_fingerprint(
+            capabilities.fingerprint.adapter_rule,
+            capabilities.fingerprint.service_name.as_deref(),
+            capabilities.fingerprint.scope_name.as_deref(),
+            capabilities.fingerprint.scope_version.as_deref(),
+        );
+        let key = IdentityKey {
+            provider,
+            model,
+            fingerprint,
+        };
+        let agg = groups.entry((key, window)).or_default();
+        agg.requests.push(span);
+        if span.status.code == StatusCode::Error {
+            agg.errors += 1;
+        }
+        let duration_ms = span.end_time.saturating_sub(span.start_time) / 1_000_000;
+        if duration_ms > 0 {
+            agg.durations_ms.push(duration_ms);
+        }
+        if let Some(rate) = throughput_rate_tok_s(
+            span.end_time.saturating_sub(span.start_time),
+            attrs
+                .iter()
+                .find_map(|(k, v)| {
+                    semconv::OUTPUT_TOKEN_KEYS
+                        .iter()
+                        .find(|key| **key == *k)
+                        .and_then(|_| v.parse::<i64>().ok().filter(|t| *t > 0))
+                })
+                .map(|t| t as f64),
+        ) {
+            agg.throughputs.push(rate);
+        }
+        if let Some(Ok(ttft_secs)) = normalized_ttft_secs(
+            attrs
+                .get("gen_ai.server.time_to_first_token")
+                .map(String::as_str),
+            attrs.get("llm.time_to_first_token").map(String::as_str),
+            attrs.get("ttft_ms").map(String::as_str),
+        ) {
+            if classify_ttft_value(Some(ttft_secs), duration_ms as f64 / 1000.0)
+                == TtftValueQuality::Valid
+            {
+                agg.ttft_ms.push((ttft_secs * 1000.0).round() as i64);
+            }
+        }
+        let token_of = |keys: &[&str]| -> Option<i64> {
+            first_semconv_attribute(attrs, keys).and_then(|v| v.parse::<i64>().ok())
+        };
+        if let Some(v) = token_of(semconv::INPUT_TOKEN_KEYS) {
+            agg.input_tokens.push(v);
+        }
+        if let Some(v) = token_of(semconv::CACHE_CREATION_TOKEN_KEYS) {
+            agg.cache_creation.push(v);
+        }
+        if let Some(v) = token_of(semconv::CACHE_READ_TOKEN_KEYS) {
+            agg.cache_read.push(v);
+        }
+        if let Some(v) = token_of(semconv::OUTPUT_TOKEN_KEYS) {
+            agg.output_tokens.push(v);
+        }
+        if window == WindowSlot::Current {
+            if let Some(response_model) =
+                first_semconv_attribute(attrs, semconv::RESPONSE_MODEL_KEYS)
+            {
+                agg.response_models.insert(response_model.to_string());
+            }
+        }
+    }
+
+    // Assemble identities (stable order: BTreeMap over the identity keys).
+    let identity_keys: BTreeSet<IdentityKey> = groups.keys().map(|(key, _)| key.clone()).collect();
+    let identity_of = |key: &IdentityKey, slot: WindowSlot| -> Option<&WindowAgg> {
+        groups.get(&(key.clone(), slot))
+    };
+    let two_percentile = |values: &[i64]| -> Vec<ModelPerformancePercentile> {
+        vec![
+            ModelPerformancePercentile {
+                percentile: 50,
+                value: percentile(values, 0.5) as f64,
+                delta_vs_preceding: None,
+                delta_vs_rolling: None,
+            },
+            ModelPerformancePercentile {
+                percentile: 95,
+                value: percentile(values, 0.95) as f64,
+                delta_vs_preceding: None,
+                delta_vs_rolling: None,
+            },
+        ]
+    };
+
+    let mut identities = Vec::new();
+    for key in &identity_keys {
+        let current_agg = identity_of(key, WindowSlot::Current);
+        let preceding_agg = identity_of(key, WindowSlot::Preceding);
+        let rolling_agg = rolling
+            .is_some()
+            .then(|| identity_of(key, WindowSlot::Rolling))
+            .flatten();
+
+        let delta = |current: f64, baseline: f64| ModelPerformanceDelta {
+            absolute: current - baseline,
+            relative: if baseline != 0.0 {
+                Some((current - baseline) / baseline)
+            } else {
+                None
+            },
+        };
+
+        let build_metric = |current_values: Vec<i64>,
+                            preceding_values: Vec<i64>,
+                            rolling_values: Option<Vec<i64>>,
+                            percentiles: fn(&[i64]) -> Vec<ModelPerformancePercentile>|
+         -> ModelPerformanceMetric {
+            let to_sample = |values: Vec<i64>| -> Option<ModelPerformanceSample> {
+                if values.is_empty() {
+                    return None;
+                }
+                let mut sorted = values;
+                sorted.sort_unstable();
+                Some(ModelPerformanceSample {
+                    eligible_count: sorted.len(),
+                    percentiles: percentiles(&sorted),
+                })
+            };
+            let mut metric = ModelPerformanceMetric {
+                current: to_sample(current_values),
+                preceding: to_sample(preceding_values),
+                rolling: rolling_values.and_then(to_sample),
+            };
+            if let (Some(current), Some(baseline)) =
+                (metric.current.as_mut(), metric.preceding.as_ref())
+            {
+                for (p, b) in current
+                    .percentiles
+                    .iter_mut()
+                    .zip(baseline.percentiles.iter())
+                {
+                    if p.percentile == b.percentile {
+                        p.delta_vs_preceding = Some(delta(p.value, b.value));
+                    }
+                }
+            }
+            if let (Some(current), Some(baseline)) =
+                (metric.current.as_mut(), metric.rolling.as_ref())
+            {
+                for (p, b) in current
+                    .percentiles
+                    .iter_mut()
+                    .zip(baseline.percentiles.iter())
+                {
+                    if p.percentile == b.percentile {
+                        p.delta_vs_rolling = Some(delta(p.value, b.value));
+                    }
+                }
+            }
+            metric
+        };
+
+        let current_durations = current_agg
+            .map(|a| a.durations_ms.clone())
+            .unwrap_or_default();
+        let preceding_durations = preceding_agg
+            .map(|a| a.durations_ms.clone())
+            .unwrap_or_default();
+        let rolling_durations = rolling_agg.map(|a| a.durations_ms.clone());
+        let duration = build_metric(
+            current_durations,
+            preceding_durations,
+            rolling_durations,
+            two_percentile,
+        );
+
+        let p10_p50 = |values: &[f64]| -> Vec<ModelPerformancePercentile> {
+            vec![
+                ModelPerformancePercentile {
+                    percentile: 10,
+                    value: percentile_f64(values, 0.1),
+                    delta_vs_preceding: None,
+                    delta_vs_rolling: None,
+                },
+                ModelPerformancePercentile {
+                    percentile: 50,
+                    value: percentile_f64(values, 0.5),
+                    delta_vs_preceding: None,
+                    delta_vs_rolling: None,
+                },
+            ]
+        };
+        let throughput = {
+            let to_sample_f64 = |values: Vec<f64>| -> Option<ModelPerformanceSample> {
+                if values.is_empty() {
+                    return None;
+                }
+                let mut sorted = values;
+                sorted.sort_unstable_by(f64::total_cmp);
+                Some(ModelPerformanceSample {
+                    eligible_count: sorted.len(),
+                    percentiles: p10_p50(&sorted),
+                })
+            };
+            let current_values = current_agg
+                .map(|a| a.throughputs.clone())
+                .unwrap_or_default();
+            let preceding_values = preceding_agg
+                .map(|a| a.throughputs.clone())
+                .unwrap_or_default();
+            let rolling_values = rolling_agg.map(|a| a.throughputs.clone());
+            let mut metric = ModelPerformanceMetric {
+                current: to_sample_f64(current_values),
+                preceding: to_sample_f64(preceding_values),
+                rolling: rolling_values.and_then(to_sample_f64),
+            };
+            if let (Some(current), Some(baseline)) =
+                (metric.current.as_mut(), metric.preceding.as_ref())
+            {
+                for (p, b) in current
+                    .percentiles
+                    .iter_mut()
+                    .zip(baseline.percentiles.iter())
+                {
+                    if p.percentile == b.percentile {
+                        p.delta_vs_preceding = Some(delta(p.value, b.value));
+                    }
+                }
+            }
+            if let (Some(current), Some(baseline)) =
+                (metric.current.as_mut(), metric.rolling.as_ref())
+            {
+                for (p, b) in current
+                    .percentiles
+                    .iter_mut()
+                    .zip(baseline.percentiles.iter())
+                {
+                    if p.percentile == b.percentile {
+                        p.delta_vs_rolling = Some(delta(p.value, b.value));
+                    }
+                }
+            }
+            metric
+        };
+
+        let p50_i64 = |values: &[i64]| -> Vec<ModelPerformancePercentile> {
+            vec![ModelPerformancePercentile {
+                percentile: 50,
+                value: percentile(values, 0.5) as f64,
+                delta_vs_preceding: None,
+                delta_vs_rolling: None,
+            }]
+        };
+        let token_metric =
+            |pick: &dyn for<'a> Fn(&'a WindowAgg<'a>) -> &'a Vec<i64>| -> ModelPerformanceMetric {
+                build_metric(
+                    current_agg.map(|a| pick(a).clone()).unwrap_or_default(),
+                    preceding_agg.map(|a| pick(a).clone()).unwrap_or_default(),
+                    rolling_agg.map(|a| pick(a).clone()),
+                    p50_i64,
+                )
+            };
+        let ttft = build_metric(
+            current_agg.map(|a| a.ttft_ms.clone()).unwrap_or_default(),
+            preceding_agg.map(|a| a.ttft_ms.clone()).unwrap_or_default(),
+            rolling_agg.map(|a| a.ttft_ms.clone()),
+            p50_i64,
+        );
+        let input_tokens = token_metric(&|a: &WindowAgg| &a.input_tokens);
+        let cache_creation_tokens = token_metric(&|a: &WindowAgg| &a.cache_creation);
+        let cache_read_tokens = token_metric(&|a: &WindowAgg| &a.cache_read);
+        let output_tokens = token_metric(&|a: &WindowAgg| &a.output_tokens);
+
+        let error_value = |agg: Option<&WindowAgg>| -> Option<ModelPerformanceErrorValue> {
+            let agg = agg?;
+            let requests = agg.requests.len();
+            if requests == 0 {
+                return None;
+            }
+            Some(ModelPerformanceErrorValue {
+                requests,
+                errors: agg.errors,
+                rate: agg.errors as f64 / requests as f64,
+                delta_vs_preceding: None,
+                delta_vs_rolling: None,
+            })
+        };
+        let mut error_rate = ModelPerformanceErrorRate {
+            current: error_value(current_agg),
+            preceding: error_value(preceding_agg),
+            rolling: rolling
+                .is_some()
+                .then(|| error_value(rolling_agg))
+                .flatten(),
+        };
+        if let Some(current_value) = error_rate.current.as_mut() {
+            if let Some(baseline) = error_rate.preceding.as_ref() {
+                current_value.delta_vs_preceding = Some(delta(current_value.rate, baseline.rate));
+            }
+            if let Some(baseline) = error_rate.rolling.as_ref() {
+                current_value.delta_vs_rolling = Some(delta(current_value.rate, baseline.rate));
+            }
+        }
+
+        identities.push(ModelPerformanceIdentity {
+            provider: key.provider.clone(),
+            model: key.model.clone(),
+            emitter_fingerprint: key.fingerprint.clone(),
+            response_models: current_agg
+                .map(|a| a.response_models.iter().cloned().collect())
+                .unwrap_or_default(),
+            request_counts: ModelPerformanceCounts {
+                current: current_agg.map(|a| a.requests.len()).unwrap_or_default(),
+                preceding: preceding_agg.map(|a| a.requests.len()).unwrap_or_default(),
+                rolling: rolling_agg.map(|a| a.requests.len()).unwrap_or_default(),
+            },
+            duration,
+            throughput,
+            ttft,
+            input_tokens,
+            cache_creation_tokens,
+            cache_read_tokens,
+            output_tokens,
+            error_rate,
+        });
+    }
+
+    Ok(ModelPerformanceResponse {
+        current_window: current,
+        preceding_window: preceding,
+        rolling_window: rolling,
+        identities,
+        truncated,
+    })
+}
+
+/// Query GenAI capability coverage.
 ///
 /// Native observations come from the verified request spans themselves.
 /// For Codex, token counters that live on separate usage spans are joined to

@@ -1024,3 +1024,389 @@ fn test_latency_stats_normalizes_ttft_and_flags_degenerate_groups() {
     assert_eq!(buffered_context.ttft_degenerate_count, 10);
     assert!(buffered_context.ttft_degenerate);
 }
+
+// ---------------------------------------------------------------------------
+// Model-performance comparison (#121/#151)
+// ---------------------------------------------------------------------------
+
+use otelite_core::api::{ModelPerformanceQuery, ModelPerformanceWindow};
+
+/// One standard-otel request span: model + system + usage + TTFT + duration.
+#[allow(clippy::too_many_arguments)] // one fixture knob per argument
+fn mp_span(
+    conn: &Connection,
+    id: &str,
+    start_ns: i64,
+    duration_ms: i64,
+    output_tokens: Option<&str>,
+    ttft_secs: Option<&str>,
+    input_tokens: &str,
+    status: i32,
+) {
+    let mut attrs = format!(
+        "{{\"gen_ai.system\":\"openai\",\"gen_ai.request.model\":\"mp-1\",\"gen_ai.response.model\":\"mp-1\",\"gen_ai.usage.input_tokens\":\"{input_tokens}\""
+    );
+    if let Some(t) = output_tokens {
+        attrs.push_str(&format!(",\"gen_ai.usage.output_tokens\":\"{t}\""));
+    }
+    if let Some(t) = ttft_secs {
+        attrs.push_str(&format!(",\"gen_ai.server.time_to_first_token\":\"{t}\""));
+    }
+    attrs.push('}');
+    conn.execute(
+        r#"INSERT INTO spans (trace_id, span_id, name, kind, start_time, end_time, attributes, status_code)
+           VALUES (?1, ?1, 'llm.call', 0, ?2, ?3, ?4, ?5)"#,
+        rusqlite::params![id, start_ns, start_ns + duration_ms * 1_000_000, attrs, status],
+    )
+    .unwrap();
+}
+
+#[test]
+fn test_model_performance_windows_identity_and_deltas() {
+    let conn = setup_test_db();
+    // Current window: [100s, 200s); preceding: [0s, 100s); rolling: none.
+    // Preceding: durations 100/200/300 ms (p50=200), output 100 tok @100ms
+    // (throughput 1000 tok/s). Current: durations 100/200/400 ms (p50=200,
+    // p95=400), output 200 tok @100ms (2000 tok/s), one error span.
+    for (i, dur) in [100, 200, 300].into_iter().enumerate() {
+        mp_span(
+            &conn,
+            &format!("p{i}"),
+            i as i64 * 10_000_000_000,
+            dur,
+            Some("100"),
+            Some("0.05"),
+            "10",
+            0,
+        );
+    }
+    for (i, dur) in [100, 200, 400].into_iter().enumerate() {
+        let status = if i == 2 { 2 } else { 0 }; // 2 = Error
+        mp_span(
+            &conn,
+            &format!("c{i}"),
+            100_000_000_000 + i as i64 * 10_000_000_000,
+            dur,
+            Some("200"),
+            Some("0.1"),
+            "20",
+            status,
+        );
+    }
+
+    let resp = reader::query_model_performance(
+        &conn,
+        &ModelPerformanceQuery {
+            current: ModelPerformanceWindow {
+                start_time: 100_000_000_000,
+                end_time: 200_000_000_000,
+            },
+            rolling: None,
+            model: None,
+            provider: None,
+        },
+    )
+    .unwrap();
+
+    assert_eq!(resp.current_window.start_time, 100_000_000_000);
+    assert_eq!(
+        resp.preceding_window,
+        ModelPerformanceWindow {
+            start_time: 0,
+            end_time: 100_000_000_000
+        },
+        "preceding window is the equal-length interval before current"
+    );
+    assert!(resp.rolling_window.is_none());
+    assert!(!resp.truncated);
+
+    let id = resp
+        .identities
+        .iter()
+        .find(|i| i.model.as_deref() == Some("mp-1"))
+        .unwrap();
+    assert_eq!(id.provider.as_deref(), Some("openai"));
+    assert_eq!(id.response_models, vec!["mp-1".to_string()]);
+    assert_eq!(
+        (
+            id.request_counts.current,
+            id.request_counts.preceding,
+            id.request_counts.rolling
+        ),
+        (3, 3, 0)
+    );
+
+    // Duration: p50 unchanged (200ms), p95 worsened (300 -> 400 ms).
+    let cur = id.duration.current.as_ref().unwrap();
+    assert_eq!(cur.eligible_count, 3);
+    let p50 = cur.percentiles.iter().find(|p| p.percentile == 50).unwrap();
+    let p95 = cur.percentiles.iter().find(|p| p.percentile == 95).unwrap();
+    assert_eq!(p50.value, 200.0);
+    assert_eq!(p50.delta_vs_preceding.unwrap().absolute, 0.0);
+    assert_eq!(p50.delta_vs_preceding.unwrap().relative, Some(0.0));
+    assert_eq!(p95.value, 400.0);
+    assert_eq!(p95.delta_vs_preceding.unwrap().absolute, 100.0);
+    assert_eq!(
+        p95.delta_vs_preceding.unwrap().relative,
+        Some(100.0 / 300.0)
+    );
+    assert!(id.duration.rolling.is_none());
+
+    // Throughput is per call (tokens / that call's duration): preceding
+    // {333.3, 500, 1000} tok/s, current {500, 1000, 2000} tok/s.
+    let tcur = id.throughput.current.as_ref().unwrap();
+    let tpre = id.throughput.preceding.as_ref().unwrap();
+    assert_eq!(tpre.eligible_count, 3);
+    let t50 = tcur
+        .percentiles
+        .iter()
+        .find(|p| p.percentile == 50)
+        .unwrap();
+    let t50_base = tpre
+        .percentiles
+        .iter()
+        .find(|p| p.percentile == 50)
+        .unwrap();
+    assert_eq!(t50_base.value, 500.0, "median of 333.3/500/1000");
+    assert_eq!(t50.value, 1000.0, "median of 500/1000/2000");
+    assert_eq!(t50.delta_vs_preceding.unwrap().relative, Some(1.0));
+
+    // Error rate: 0/3 -> 1/3 with an absolute-points delta.
+    let err = id.error_rate.current.as_ref().unwrap();
+    assert_eq!((err.requests, err.errors), (3, 1));
+    assert!((err.rate - 1.0 / 3.0).abs() < 1e-12);
+    let delta = err.delta_vs_preceding.as_ref().unwrap();
+    assert!((delta.absolute - 1.0 / 3.0).abs() < 1e-12);
+    assert_eq!(
+        delta.relative, None,
+        "zero baseline rate: percentage unavailable"
+    );
+}
+
+#[test]
+fn test_model_performance_zero_baseline_reports_percentage_unavailable() {
+    let conn = setup_test_db();
+    // Preceding window: requests exist but no output tokens (ineligible for
+    // throughput). Current: one eligible throughput sample.
+    mp_span(&conn, "p0", 0, 100, None, None, "10", 0);
+    mp_span(&conn, "c0", 100_000_000_000, 100, Some("50"), None, "10", 0);
+
+    let resp = reader::query_model_performance(
+        &conn,
+        &ModelPerformanceQuery {
+            current: ModelPerformanceWindow {
+                start_time: 100_000_000_000,
+                end_time: 200_000_000_000,
+            },
+            rolling: None,
+            model: None,
+            provider: None,
+        },
+    )
+    .unwrap();
+
+    let id = resp.identities.first().unwrap();
+    // Canonical population keeps the token-less request in the preceding
+    // window; throughput eligibility is separate.
+    assert_eq!(id.request_counts.preceding, 1);
+    assert!(
+        id.throughput.preceding.is_none(),
+        "no eligible throughput samples -> absent, never a measured zero"
+    );
+    let cur = id.throughput.current.as_ref().unwrap();
+    let t50 = cur.percentiles.iter().find(|p| p.percentile == 50).unwrap();
+    assert_eq!(t50.value, 500.0, "50 tokens / 100 ms");
+    assert!(
+        t50.delta_vs_preceding.is_none(),
+        "no baseline sample: no delta at all (distinct from zero baseline)"
+    );
+
+    // Duration has a baseline in both windows, so every current percentile
+    // carries a delta.
+    let cur = id.duration.current.as_ref().unwrap();
+    let pre = id.duration.preceding.as_ref().unwrap();
+    assert_eq!(pre.percentiles[0].value, 100.0);
+    assert!(cur
+        .percentiles
+        .iter()
+        .all(|p| p.delta_vs_preceding.is_some()));
+}
+
+#[test]
+fn test_model_performance_rejects_invalid_windows() {
+    let conn = setup_test_db();
+    let bad_current = ModelPerformanceQuery {
+        current: ModelPerformanceWindow {
+            start_time: 100,
+            end_time: 100,
+        },
+        rolling: None,
+        model: None,
+        provider: None,
+    };
+    let err = reader::query_model_performance(&conn, &bad_current).unwrap_err();
+    assert!(
+        err.to_string().contains("empty or inverted"),
+        "empty current window is rejected: {err}"
+    );
+
+    let overlapping = ModelPerformanceQuery {
+        current: ModelPerformanceWindow {
+            start_time: 100_000_000_000,
+            end_time: 200_000_000_000,
+        },
+        rolling: Some(ModelPerformanceWindow {
+            start_time: 50_000_000_000,
+            end_time: 150_000_000_000,
+        }),
+        model: None,
+        provider: None,
+    };
+    let err = reader::query_model_performance(&conn, &overlapping).unwrap_err();
+    assert!(
+        err.to_string().contains("overlaps"),
+        "rolling baseline must exclude the comparison windows: {err}"
+    );
+}
+
+#[test]
+fn test_model_performance_duration_only_emitter_is_invisible_to_throughput() {
+    let conn = setup_test_db();
+    // Codex-style timing-only request spans: one per window (rolling,
+    // preceding, current).
+    let codex = |id: &str, start_ns: i64| {
+        conn.execute(
+            r#"INSERT INTO spans (trace_id, span_id, name, kind, start_time, end_time, attributes, status_code)
+               VALUES (?1, ?1, 'run_sampling_request', 0, ?2, ?3,
+                       '{"model":"codex-1","otel.scope.name":"codex_cli_rs"}', 0)"#,
+            rusqlite::params![id, start_ns, start_ns + 500_000_000],
+        )
+        .unwrap();
+    };
+    codex("rr0", -50_000_000_000);
+    codex("rp0", 10_000_000_000);
+    codex("rc0", 110_000_000_000);
+
+    let resp = reader::query_model_performance(
+        &conn,
+        &ModelPerformanceQuery {
+            current: ModelPerformanceWindow {
+                start_time: 100_000_000_000,
+                end_time: 200_000_000_000,
+            },
+            rolling: Some(ModelPerformanceWindow {
+                start_time: -100_000_000_000,
+                end_time: 0,
+            }),
+            model: None,
+            provider: None,
+        },
+    )
+    .unwrap();
+    let id = resp
+        .identities
+        .iter()
+        .find(|i| i.model.as_deref() == Some("codex-1"))
+        .unwrap();
+    assert_eq!(
+        (
+            id.request_counts.current,
+            id.request_counts.preceding,
+            id.request_counts.rolling
+        ),
+        (1, 1, 1)
+    );
+    // Duration eligible everywhere; throughput never eligible (no output
+    // tokens) — visible, not zero.
+    assert!(id.duration.current.is_some());
+    assert!(id.throughput.current.is_none());
+    assert!(id.throughput.preceding.is_none());
+    assert!(id.throughput.rolling.is_none());
+    assert!(id.ttft.current.is_none());
+    assert!(id.error_rate.current.is_some());
+}
+
+#[test]
+fn test_model_performance_model_and_provider_filters() {
+    let conn = setup_test_db();
+    mp_span(
+        &conn,
+        "a0",
+        100_000_000_000,
+        100,
+        Some("10"),
+        Some("0.01"),
+        "5",
+        0,
+    );
+    // A second model in the same window.
+    conn.execute(
+        r#"INSERT INTO spans (trace_id, span_id, name, kind, start_time, end_time, attributes, status_code)
+           VALUES ('b', 'b', 'llm.call', 0, 100000000001, 100100000001,
+                   '{"gen_ai.system":"anthropic","gen_ai.request.model":"mp-2","gen_ai.usage.input_tokens":"5","gen_ai.usage.output_tokens":"10"}', 0)"#,
+        [],
+    )
+    .unwrap();
+
+    let base = ModelPerformanceQuery {
+        current: ModelPerformanceWindow {
+            start_time: 100_000_000_000,
+            end_time: 200_000_000_000,
+        },
+        rolling: None,
+        model: None,
+        provider: None,
+    };
+    let all = reader::query_model_performance(&conn, &base).unwrap();
+    assert_eq!(all.identities.len(), 2);
+
+    let mut filtered = base.clone();
+    filtered.model = Some("mp-1".to_string());
+    let by_model = reader::query_model_performance(&conn, &filtered).unwrap();
+    assert_eq!(by_model.identities.len(), 1);
+    assert_eq!(by_model.identities[0].model.as_deref(), Some("mp-1"));
+
+    let mut filtered = base.clone();
+    filtered.provider = Some("anthropic".to_string());
+    let by_provider = reader::query_model_performance(&conn, &filtered).unwrap();
+    assert_eq!(by_provider.identities.len(), 1);
+    assert_eq!(
+        by_provider.identities[0].provider.as_deref(),
+        Some("anthropic")
+    );
+}
+
+#[test]
+fn test_model_performance_empty_windows_are_first_class() {
+    let conn = setup_test_db();
+    // Spans exist only outside both windows.
+    mp_span(
+        &conn,
+        "x0",
+        900_000_000_000,
+        100,
+        Some("10"),
+        Some("0.01"),
+        "5",
+        0,
+    );
+
+    let resp = reader::query_model_performance(
+        &conn,
+        &ModelPerformanceQuery {
+            current: ModelPerformanceWindow {
+                start_time: 100_000_000_000,
+                end_time: 200_000_000_000,
+            },
+            rolling: None,
+            model: None,
+            provider: None,
+        },
+    )
+    .unwrap();
+    assert!(
+        resp.identities.is_empty(),
+        "no population -> no identities, not an error"
+    );
+    assert!(!resp.truncated);
+}

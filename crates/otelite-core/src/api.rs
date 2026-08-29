@@ -819,6 +819,181 @@ pub struct GenAiCapabilityResponse {
     pub unidentified: Vec<GenAiUnidentifiedSignature>,
 }
 
+/// One half-open time window `[start_time, end_time)` in nanoseconds.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
+pub struct ModelPerformanceWindow {
+    pub start_time: i64,
+    pub end_time: i64,
+}
+
+/// Selection for the model-performance comparison (#121/#151). The
+/// preceding window is derived as the equal-length interval immediately
+/// before `current`; the rolling baseline is caller-supplied and must
+/// exclude both the current and the derived preceding windows.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
+pub struct ModelPerformanceQuery {
+    /// The interval under diagnosis.
+    pub current: ModelPerformanceWindow,
+    /// Rolling historical baseline; `None` disables the rolling baseline.
+    pub rolling: Option<ModelPerformanceWindow>,
+    /// Optional exact request-model filter.
+    pub model: Option<String>,
+    /// Optional exact provider (system) filter.
+    pub provider: Option<String>,
+}
+
+/// One reported percentile value of a metric for one window.
+///
+/// `delta_vs_preceding` / `delta_vs_rolling` are only populated on the
+/// *current* window's values — baselines are compared against, not
+/// compared. `relative` is `None` (JSON `null`) for the documented
+/// "percentage unavailable" state: the baseline value is zero or the
+/// baseline window had no eligible samples.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
+pub struct ModelPerformancePercentile {
+    /// Percentile rank (e.g. 50, 95).
+    pub percentile: u8,
+    /// Measured value in the metric's native unit (ms for duration/TTFT,
+    /// tokens/s for throughput, counts for token metrics, fraction for
+    /// error rate).
+    pub value: f64,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub delta_vs_preceding: Option<ModelPerformanceDelta>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub delta_vs_rolling: Option<ModelPerformanceDelta>,
+}
+
+/// Absolute and relative change of one percentile vs a baseline.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
+pub struct ModelPerformanceDelta {
+    /// `current - baseline` in the metric's native unit.
+    pub absolute: f64,
+    /// Relative change as a fraction (`(current - baseline) / baseline`),
+    /// or `null` when the baseline is zero/absent (percentage unavailable).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub relative: Option<f64>,
+}
+
+/// One metric's statistics across the three windows for one identity.
+///
+/// `None` sample = the window had no eligible requests for this metric
+/// (never a measured zero — the capability vocabulary applies).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
+pub struct ModelPerformanceMetric {
+    pub current: Option<ModelPerformanceSample>,
+    pub preceding: Option<ModelPerformanceSample>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub rolling: Option<ModelPerformanceSample>,
+}
+
+/// Eligible-sample count and percentiles for one metric in one window.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
+pub struct ModelPerformanceSample {
+    /// Request spans eligible for this metric in the window.
+    pub eligible_count: usize,
+    pub percentiles: Vec<ModelPerformancePercentile>,
+}
+
+/// Canonical request counts per window for one identity.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
+pub struct ModelPerformanceCounts {
+    pub current: usize,
+    pub preceding: usize,
+    pub rolling: usize,
+}
+
+/// Model-performance diagnosis for one
+/// `(provider, request model, emitter fingerprint)` identity (#121/#151).
+///
+/// The response model is a separate observation (`response_models`) so
+/// routing changes are never silently merged into one identity.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
+pub struct ModelPerformanceIdentity {
+    pub provider: Option<String>,
+    /// Request model (the selection dimension; response model is separate).
+    pub model: Option<String>,
+    pub emitter_fingerprint: String,
+    /// Distinct response models observed on current-window requests, sorted.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub response_models: Vec<String>,
+    /// Canonical request population per window (one population per window;
+    /// per-metric eligibility is reported inside each metric).
+    pub request_counts: ModelPerformanceCounts,
+    /// Total request duration, ms; percentiles p50 and p95.
+    pub duration: ModelPerformanceMetric,
+    /// Derived end-to-end throughput, tokens/s (#119 raw per-call series);
+    /// percentiles p10 and p50. Eligible = output tokens present and
+    /// duration > 0 — duration-only emitters are simply ineligible here.
+    pub throughput: ModelPerformanceMetric,
+    /// Time to first token, ms; percentile p50. Eligible = valid
+    /// normalised TTFT (canonical normaliser + classifier).
+    pub ttft: ModelPerformanceMetric,
+    /// Input (context) tokens; percentile p50.
+    pub input_tokens: ModelPerformanceMetric,
+    /// Cache-creation tokens; percentile p50.
+    pub cache_creation_tokens: ModelPerformanceMetric,
+    /// Cache-read tokens; percentile p50.
+    pub cache_read_tokens: ModelPerformanceMetric,
+    /// Output tokens; percentile p50.
+    pub output_tokens: ModelPerformanceMetric,
+    /// Error rate per window: request and error counts, the rate, and
+    /// deltas of the rate vs each baseline (absolute points + relative
+    /// where the baseline rate is non-zero).
+    pub error_rate: ModelPerformanceErrorRate,
+}
+
+/// Error-rate evidence for one window: counts plus the rate with its
+/// deltas. `None` = no requests in the window (not a zero rate).
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
+pub struct ModelPerformanceErrorValue {
+    pub requests: usize,
+    pub errors: usize,
+    /// `errors / requests` in the range 0.0..=1.0.
+    pub rate: f64,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub delta_vs_preceding: Option<ModelPerformanceDelta>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub delta_vs_rolling: Option<ModelPerformanceDelta>,
+}
+
+/// Error-rate statistics across the three windows.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
+pub struct ModelPerformanceErrorRate {
+    pub current: Option<ModelPerformanceErrorValue>,
+    pub preceding: Option<ModelPerformanceErrorValue>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub rolling: Option<ModelPerformanceErrorValue>,
+}
+
+/// Deterministic comparison of a current interval against an equal-length
+/// preceding interval and an optional rolling historical baseline
+/// (#121/#151). Classification and confidence wording are added by #152;
+/// this object is the evidence base and must stay byte-stable across
+/// API and CLI (parity oracle, #155).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
+pub struct ModelPerformanceResponse {
+    pub current_window: ModelPerformanceWindow,
+    /// Equal-length interval immediately before `current_window`.
+    pub preceding_window: ModelPerformanceWindow,
+    /// Rolling baseline as selected; `None` when the caller disabled it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub rolling_window: Option<ModelPerformanceWindow>,
+    pub identities: Vec<ModelPerformanceIdentity>,
+    /// The bounded most-recent sample excluded older spans.
+    pub truncated: bool,
+}
+
 /// Error-rate summary for LLM spans grouped by model.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]

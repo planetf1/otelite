@@ -12,10 +12,10 @@ use crate::api::{
     CallsSeriesPoint, ConversationCostRow, ConversationDepthStats, CostSeriesPoint,
     DistributionResponse, ErrorRateByModel, ErrorTypeBreakdown, FinishReasonCount,
     GenAiCapabilityResponse, LatencyByContextBin, LatencyPercentilesResponse, LatencySeriesPoint,
-    LatencyStats, ModelDriftPair, ModelUsage, ProjectRollupStorage, ProviderMixResponse,
-    ReasoningShareResponse, RequestParamProfile, RetrievalStats, RetryStats,
-    SessionContextResponse, SessionCostRow, SessionCostStorage, SystemUsage, TokenUsageSummary,
-    ToolUsage, TopSpan, TopSpanSort, TruncationRateByModel,
+    LatencyStats, ModelDriftPair, ModelPerformanceQuery, ModelPerformanceResponse, ModelUsage,
+    ProjectRollupStorage, ProviderMixResponse, ReasoningShareResponse, RequestParamProfile,
+    RetrievalStats, RetryStats, SessionContextResponse, SessionCostRow, SessionCostStorage,
+    SystemUsage, TokenUsageSummary, ToolUsage, TopSpan, TopSpanSort, TruncationRateByModel,
 };
 use crate::filters::GenAiFilters;
 // New types referenced via crate::api:: in the trait methods below.
@@ -337,6 +337,20 @@ pub trait StorageBackend: Send + Sync {
     ) -> Result<GenAiCapabilityResponse> {
         Err(StorageError::QueryError(
             "GenAI capability reporting is not supported by this backend".to_string(),
+        ))
+    }
+
+    /// Model-performance comparison against a preceding interval and an
+    /// optional rolling baseline (#121/#151).
+    ///
+    /// Backends without this optional analytic can retain source
+    /// compatibility.
+    async fn query_model_performance(
+        &self,
+        _query: &ModelPerformanceQuery,
+    ) -> Result<ModelPerformanceResponse> {
+        Err(StorageError::QueryError(
+            "Model-performance comparison is not supported by this backend".to_string(),
         ))
     }
 

@@ -629,6 +629,17 @@ impl StorageBackend for SqliteBackend {
         .await
     }
 
+    async fn query_model_performance(
+        &self,
+        query: &otelite_core::api::ModelPerformanceQuery,
+    ) -> Result<otelite_core::api::ModelPerformanceResponse> {
+        let query = query.clone();
+        self.read_query(move |conn| {
+            reader::query_model_performance(conn, &query).map_err(StorageError::from)
+        })
+        .await
+    }
+
     async fn query_tool_usage(
         &self,
         start_time: Option<i64>,
