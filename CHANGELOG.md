@@ -11,6 +11,8 @@ have to work around), not implementation detail.
 
 ## [Unreleased]
 
+## [0.1.104] - 2026-08-29
+
 ### Added
 
 - The TUI Usage view now includes a Model performance panel and the web
