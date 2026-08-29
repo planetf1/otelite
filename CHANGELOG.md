@@ -11,6 +11,8 @@ have to work around), not implementation detail.
 
 ## [Unreleased]
 
+## [0.1.102] - 2026-08-29
+
 ### Internal
 
 - Deterministic model-performance assessment rules (classification classes,
