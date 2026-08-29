@@ -201,6 +201,24 @@ fn format_log_detail(log: &LogEntry) -> Text<'static> {
         Line::from(""),
     ];
 
+    // Trace correlation link (#14): Enter jumps to the Traces view filtered
+    // to this trace
+    if let Some(trace_id) = &log.trace_id {
+        lines.insert(
+            3,
+            Line::from(vec![
+                Span::styled("Trace ID: ", Style::default().add_modifier(Modifier::BOLD)),
+                Span::styled(
+                    trace_id.clone(),
+                    Style::default()
+                        .fg(Color::Cyan)
+                        .add_modifier(Modifier::UNDERLINED),
+                ),
+                Span::styled(" (Enter to open)", Style::default().fg(Color::DarkGray)),
+            ]),
+        );
+    }
+
     // Add attributes
     if !log.attributes.is_empty() {
         lines.push(Line::from(""));
@@ -319,7 +337,7 @@ fn render_status_bar(frame: &mut Frame, area: Rect, state: &LogsState, api_error
     // Help text
     status_parts.push(Span::raw(" | "));
     status_parts.push(Span::styled(
-        "↑↓/jk:Navigate  Enter:Detail  /:Search  f:Filter  a:AutoScroll  r:Refresh",
+        "↑↓/jk:Navigate  Enter:Detail/Trace  f:Filter  s:AutoScroll",
         Style::default().fg(Color::Gray),
     ));
 
@@ -447,6 +465,43 @@ mod tests {
         // YYYY-MM-DD HH:MM:SS +HHMM — at least 24 chars
         assert!(formatted.len() >= 24);
         assert!(formatted.starts_with("20"));
+    }
+
+    fn detail_text_as_string(log: &LogEntry) -> String {
+        format_log_detail(log)
+            .lines
+            .iter()
+            .flat_map(|line| line.spans.iter().map(|s| s.content.as_ref()))
+            .collect::<Vec<_>>()
+            .join("")
+    }
+
+    fn test_log(trace_id: Option<&str>) -> LogEntry {
+        LogEntry {
+            timestamp: 1713360896789 * 1_000_000,
+            severity: "INFO".to_string(),
+            severity_text: None,
+            body: "hello".to_string(),
+            body_length: 5,
+            body_truncated: false,
+            attributes: std::collections::HashMap::new(),
+            resource: None,
+            trace_id: trace_id.map(|s| s.to_string()),
+            span_id: None,
+        }
+    }
+
+    #[test]
+    fn test_log_detail_shows_trace_link_when_trace_id_present() {
+        let text = detail_text_as_string(&test_log(Some("abc123def456")));
+        assert!(text.contains("Trace ID: abc123def456"));
+        assert!(text.contains("(Enter to open)"));
+    }
+
+    #[test]
+    fn test_log_detail_omits_trace_line_when_no_trace_id() {
+        let text = detail_text_as_string(&test_log(None));
+        assert!(!text.contains("Trace ID:"));
     }
 
     #[test]

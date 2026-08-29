@@ -129,6 +129,10 @@ pub async fn handle_show(
     match config.format {
         OutputFormat::Pretty => {
             pretty::print_log_details(&log, config)?;
+            // Trace correlation hint (#14): stderr so stdout stays clean
+            if let Some(hint) = trace_hint(&log) {
+                eprintln!("\n{hint}");
+            }
         },
         OutputFormat::Json => {
             json::print_log_json(&log)?;
@@ -182,6 +186,16 @@ pub async fn handle_export(
     }
 
     Ok(())
+}
+
+/// Build the related-trace hint for `logs show` output (#14).
+///
+/// Returns the hint line when the log carries a trace_id, else None.
+/// Only used in Pretty mode — JSON output is for piping and must stay pure.
+pub fn trace_hint(log: &LogEntry) -> Option<String> {
+    log.trace_id
+        .as_ref()
+        .map(|id| format!("Related trace: otelite traces show {id}"))
 }
 
 /// Filter logs by severity level
@@ -296,6 +310,23 @@ mod tests {
         let filtered = filter_by_severity(logs.clone(), Some("INFO".to_string()));
         // Unknown severity should be included
         assert!(filtered.iter().any(|l| l.severity == "CUSTOM"));
+    }
+
+    #[test]
+    fn test_trace_hint_with_trace_id() {
+        let mut log = create_test_logs().remove(0);
+        log.trace_id = Some("abc123def456".to_string());
+        assert_eq!(
+            trace_hint(&log).as_deref(),
+            Some("Related trace: otelite traces show abc123def456")
+        );
+    }
+
+    #[test]
+    fn test_trace_hint_without_trace_id() {
+        let log = create_test_logs().remove(0);
+        assert_eq!(log.trace_id, None);
+        assert_eq!(trace_hint(&log), None);
     }
 
     fn create_test_logs() -> Vec<LogEntry> {

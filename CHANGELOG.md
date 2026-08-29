@@ -11,6 +11,13 @@ have to work around), not implementation detail.
 
 ## [Unreleased]
 
+### Added
+
+- Cross-signal navigation: the TUI log detail shows the log's trace ID as a
+  link — press Enter to jump straight to the Traces view filtered to that
+  trace; the trace detail now shows a "Related Logs: N" count; and
+  `otelite logs show` suggests the matching `otelite traces show` command.
+
 ## [0.1.96] - 2026-08-29
 
 ### Fixed

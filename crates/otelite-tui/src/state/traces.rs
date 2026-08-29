@@ -23,6 +23,10 @@ pub struct TracesState {
     pub show_detail: bool,
     /// Trace ID that needs full details fetched from API (None when not needed)
     pub pending_detail_load: Option<String>,
+    /// Trace ID whose related log count needs fetching from API (None when done)
+    pub pending_related_logs_load: Option<String>,
+    /// Related log counts per trace ID (populated on demand, keyed by trace)
+    pub related_log_counts: HashMap<String, usize>,
     /// Selected span index within the trace detail view
     pub selected_span_index: usize,
     /// Scroll offset for span list in detail view
@@ -51,6 +55,8 @@ impl Default for TracesState {
             trace_details: HashMap::new(),
             show_detail: false,
             pending_detail_load: None,
+            pending_related_logs_load: None,
+            related_log_counts: HashMap::new(),
             selected_span_index: 0,
             span_scroll_offset: 0,
             show_span_detail: false,
@@ -213,13 +219,18 @@ impl TracesState {
         self.show_detail = !self.show_detail;
     }
 
-    /// Show detail panel and trigger API load if details not cached
+    /// Show detail panel and trigger API loads if data not cached
     pub fn show_detail_panel(&mut self) {
         self.show_detail = true;
         // If we don't have cached details, request a load
         if let Some(summary) = self.selected_trace() {
-            if !self.has_cached_trace(&summary.trace_id) {
-                self.pending_detail_load = Some(summary.trace_id.clone());
+            let trace_id = summary.trace_id.clone();
+            if !self.has_cached_trace(&trace_id) {
+                self.pending_detail_load = Some(trace_id.clone());
+            }
+            // Request the related log count if we don't have one yet
+            if !self.related_log_counts.contains_key(&trace_id) {
+                self.pending_related_logs_load = Some(trace_id);
             }
         }
     }
@@ -257,6 +268,16 @@ impl TracesState {
     pub fn clear_filters(&mut self) {
         self.filters.clear();
         self.selected_index = 0;
+    }
+
+    /// Store the related log count for a trace
+    pub fn store_related_log_count(&mut self, trace_id: &str, count: usize) {
+        self.related_log_counts.insert(trace_id.to_string(), count);
+    }
+
+    /// Get the related log count for a trace (None while loading or on error)
+    pub fn related_log_count(&self, trace_id: &str) -> Option<usize> {
+        self.related_log_counts.get(trace_id).copied()
     }
 
     /// Set error message
@@ -402,6 +423,32 @@ mod tests {
         state.set_search_query("users".to_string());
         let filtered = state.filtered_traces();
         assert_eq!(filtered.len(), 2);
+    }
+
+    #[test]
+    fn test_show_detail_panel_requests_related_log_count_when_unknown() {
+        let mut state = TracesState::new();
+        state.update_traces(vec![create_test_trace("trace1", "GET /api/users", false)]);
+        state.show_detail_panel();
+
+        assert_eq!(state.pending_related_logs_load.as_deref(), Some("trace1"));
+    }
+
+    #[test]
+    fn test_show_detail_panel_skips_related_log_count_when_known() {
+        let mut state = TracesState::new();
+        state.update_traces(vec![create_test_trace("trace1", "GET /api/users", false)]);
+        state.store_related_log_count("trace1", 4);
+        state.show_detail_panel();
+
+        assert_eq!(state.pending_related_logs_load, None);
+        assert_eq!(state.related_log_count("trace1"), Some(4));
+    }
+
+    #[test]
+    fn test_related_log_count_defaults_to_none() {
+        let state = TracesState::new();
+        assert_eq!(state.related_log_count("unknown"), None);
     }
 
     #[test]

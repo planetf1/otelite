@@ -262,6 +262,44 @@ async fn test_logs_show_command() {
 }
 
 #[tokio::test]
+async fn test_logs_show_pretty_with_trace_id_succeeds() {
+    let mut server = Server::new_async().await;
+    let mock = server
+        .mock("GET", "/api/logs/1705315800000000000")
+        .with_status(200)
+        .with_header("content-type", "application/json")
+        .with_body(
+            r#"{
+            "timestamp": 1705315800000000000,
+            "severity": "ERROR",
+            "severity_text": "ERROR",
+            "body": "Detailed error message",
+            "attributes": {},
+            "resource_attributes": {},
+            "scope_name": "test",
+            "trace_id": "abc123def456",
+            "span_id": null
+        }"#,
+        )
+        .create_async()
+        .await;
+
+    let client = create_test_client(server.url()).await;
+    let config = create_test_config(server.url(), otelite::config::OutputFormat::Pretty);
+
+    let result =
+        otelite::commands::logs::handle_show(&client, &config, "1705315800000000000", false).await;
+
+    mock.assert_async().await;
+    let log = result.expect("handle_show should succeed in pretty mode");
+    assert_eq!(log.trace_id.as_deref(), Some("abc123def456"));
+    assert_eq!(
+        otelite::commands::logs::trace_hint(&log).as_deref(),
+        Some("Related trace: otelite traces show abc123def456")
+    );
+}
+
+#[tokio::test]
 async fn test_logs_show_not_found() {
     let mut server = Server::new_async().await;
     let mock = server

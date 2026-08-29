@@ -171,7 +171,20 @@ impl App {
                 self.logs_state.select_next();
             },
             AppEvent::Select if self.current_view == View::Logs => {
-                self.logs_state.show_detail_panel();
+                if self.logs_state.show_detail {
+                    // Detail open: Enter on a log with a trace_id jumps to the
+                    // Traces view filtered to that trace
+                    if let Some(trace_id) = self
+                        .logs_state
+                        .selected_log_detail()
+                        .and_then(|l| l.trace_id.clone())
+                    {
+                        self.traces_state.set_search_query(trace_id);
+                        self.current_view = View::Traces;
+                    }
+                } else {
+                    self.logs_state.show_detail_panel();
+                }
             },
             AppEvent::ToggleAutoScroll if self.current_view == View::Logs => {
                 self.logs_state.toggle_auto_scroll();
@@ -439,6 +452,25 @@ impl App {
                     self.traces_state
                         .set_error(format!("Failed to load trace: {}", msg));
                     self.api_error = Some(msg);
+                },
+            }
+        }
+
+        // Handle a pending related-log-count load (best-effort companion to
+        // the trace detail; a failure just leaves the count blank).
+        if let Some(trace_id) = self.traces_state.pending_related_logs_load.take() {
+            match self
+                .api_client
+                .fetch_logs_for_trace(&trace_id, Some(1000), None)
+                .await
+            {
+                Ok(response) => {
+                    self.traces_state
+                        .store_related_log_count(&trace_id, response.logs.len());
+                },
+                Err(e) => {
+                    self.traces_state
+                        .set_error(format!("Failed to load related log count: {e}"));
                 },
             }
         }
@@ -862,6 +894,62 @@ mod tests {
         app.handle_event(AppEvent::Down);
         app.handle_event(AppEvent::Up);
         app.handle_event(AppEvent::Select);
+    }
+
+    fn create_test_log_entry(trace_id: Option<&str>) -> crate::api::models::LogEntry {
+        crate::api::models::LogEntry {
+            timestamp: 1713360000000000000,
+            severity: "INFO".to_string(),
+            severity_text: None,
+            body: "test log".to_string(),
+            body_length: 8,
+            body_truncated: false,
+            attributes: std::collections::HashMap::new(),
+            resource: None,
+            trace_id: trace_id.map(|s| s.to_string()),
+            span_id: None,
+        }
+    }
+
+    #[test]
+    fn test_enter_in_logs_list_opens_detail() {
+        let config = create_test_config();
+        let mut app = App::new(config);
+
+        app.logs_state
+            .update_logs(vec![create_test_log_entry(Some("abc123"))]);
+        app.handle_event(AppEvent::Select);
+
+        assert_eq!(app.current_view(), &View::Logs);
+        assert!(app.logs_state.show_detail);
+    }
+
+    #[test]
+    fn test_enter_on_log_detail_with_trace_id_jumps_to_traces() {
+        let config = create_test_config();
+        let mut app = App::new(config);
+
+        app.logs_state
+            .update_logs(vec![create_test_log_entry(Some("abc123"))]);
+        app.handle_event(AppEvent::Select); // open detail
+        app.handle_event(AppEvent::Select); // Enter on the trace link
+
+        assert_eq!(app.current_view(), &View::Traces);
+        assert_eq!(app.traces_state.search_query, "abc123");
+    }
+
+    #[test]
+    fn test_enter_on_log_detail_without_trace_id_stays_put() {
+        let config = create_test_config();
+        let mut app = App::new(config);
+
+        app.logs_state
+            .update_logs(vec![create_test_log_entry(None)]);
+        app.handle_event(AppEvent::Select); // open detail
+        app.handle_event(AppEvent::Select); // no trace link: no-op
+
+        assert_eq!(app.current_view(), &View::Logs);
+        assert!(app.logs_state.show_detail);
     }
 
     #[test]

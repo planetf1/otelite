@@ -771,6 +771,21 @@ fn format_trace_detail(trace: &Trace, state: &TracesState) -> Text<'static> {
             TextSpan::styled("Spans: ", Style::default().add_modifier(Modifier::BOLD)),
             TextSpan::raw(trace.span_count.to_string()),
         ]),
+        // Related log count (#14) — fetched on demand; blank dot while loading
+        Line::from(vec![
+            TextSpan::styled(
+                "Related Logs: ",
+                Style::default().add_modifier(Modifier::BOLD),
+            ),
+            match state.related_log_count(&trace.trace_id) {
+                Some(0) => TextSpan::raw("0".to_string()),
+                Some(count) if count >= 1000 => {
+                    TextSpan::styled(format!("{count}+"), Style::default().fg(Color::Gray))
+                },
+                Some(count) => TextSpan::raw(count.to_string()),
+                None => TextSpan::styled("…".to_string(), Style::default().fg(Color::DarkGray)),
+            },
+        ]),
         Line::from(""),
         Line::from(vec![TextSpan::styled(
             "Span Waterfall:",
@@ -1149,6 +1164,61 @@ mod tests {
         assert!(bar.contains('░'));
         // Count actual characters
         assert_eq!(bar.chars().count(), 10);
+    }
+
+    fn detail_text_as_string(trace: &Trace, state: &TracesState) -> String {
+        format_trace_detail(trace, state)
+            .lines
+            .iter()
+            .flat_map(|line| line.spans.iter().map(|s| s.content.as_ref()))
+            .collect::<Vec<_>>()
+            .join("")
+    }
+
+    fn test_trace_with_detail(count: Option<usize>) -> (Trace, TracesState) {
+        let span = create_test_span("span1", "test-span", 1000, 100, None);
+        let trace = Trace {
+            trace_id: "test-trace-123".to_string(),
+            start_time: 1000,
+            end_time: 1100,
+            duration: 100,
+            span_count: 1,
+            service_names: vec!["test-service".to_string()],
+            spans: vec![span],
+        };
+        let mut state = TracesState::new();
+        if let Some(count) = count {
+            state.store_related_log_count("test-trace-123", count);
+        }
+        (trace, state)
+    }
+
+    #[test]
+    fn test_trace_detail_shows_related_log_count() {
+        let (trace, state) = test_trace_with_detail(Some(3));
+        let text = detail_text_as_string(&trace, &state);
+        assert!(text.contains("Related Logs: 3"));
+    }
+
+    #[test]
+    fn test_trace_detail_shows_zero_related_logs() {
+        let (trace, state) = test_trace_with_detail(Some(0));
+        let text = detail_text_as_string(&trace, &state);
+        assert!(text.contains("Related Logs: 0"));
+    }
+
+    #[test]
+    fn test_trace_detail_shows_capped_related_log_count() {
+        let (trace, state) = test_trace_with_detail(Some(1500));
+        let text = detail_text_as_string(&trace, &state);
+        assert!(text.contains("Related Logs: 1500+"));
+    }
+
+    #[test]
+    fn test_trace_detail_shows_loading_related_logs() {
+        let (trace, state) = test_trace_with_detail(None);
+        let text = detail_text_as_string(&trace, &state);
+        assert!(text.contains("Related Logs: …"));
     }
 
     #[test]
