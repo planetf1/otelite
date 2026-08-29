@@ -1512,3 +1512,329 @@ async fn test_logs_trace_id_empty_string_not_filtered() {
     let logs: LogsResponse = serde_json::from_slice(&body).unwrap();
     assert_eq!(logs.total, 1, "empty trace_id should not filter");
 }
+
+// --- Error path and boundary condition tests (#8) ----------------------
+
+/// Assert an error response: expected status, `application/json` content
+/// type, and a well-formed `{code, error}` body. Returns the parsed
+/// error for further assertions.
+async fn assert_error_response(
+    response: axum::response::Response,
+    expected: StatusCode,
+) -> ErrorResponse {
+    assert_eq!(response.status(), expected);
+    let content_type = response
+        .headers()
+        .get(axum::http::header::CONTENT_TYPE)
+        .and_then(|v| v.to_str().ok())
+        .unwrap_or_default()
+        .to_string();
+    assert!(
+        content_type.starts_with("application/json"),
+        "error response content-type is '{}'",
+        content_type
+    );
+    let body = response.into_body().collect().await.unwrap().to_bytes();
+    let error: ErrorResponse = serde_json::from_slice(&body).unwrap();
+    assert!(!error.code.is_empty(), "error code must not be empty");
+    assert!(!error.error.is_empty(), "error message must not be empty");
+    error
+}
+
+#[tokio::test]
+async fn test_get_log_not_found_returns_error_json() {
+    let (storage, _tmp) = setup_test_storage().await;
+    let app = build_test_router(storage);
+
+    let response = app
+        .oneshot(
+            Request::builder()
+                .uri("/api/logs/9999999999")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    let error = assert_error_response(response, StatusCode::NOT_FOUND).await;
+    assert_eq!(error.code, "NOT_FOUND");
+}
+
+#[tokio::test]
+async fn test_get_trace_not_found_returns_error_json() {
+    let (storage, _tmp) = setup_test_storage().await;
+    let app = build_test_router(storage);
+
+    let response = app
+        .oneshot(
+            Request::builder()
+                .uri("/api/traces/does-not-exist")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    let error = assert_error_response(response, StatusCode::NOT_FOUND).await;
+    assert_eq!(error.code, "NOT_FOUND");
+    assert!(error.error.contains("does-not-exist"));
+}
+
+#[tokio::test]
+async fn test_list_logs_non_numeric_limit_is_400() {
+    let (storage, _tmp) = setup_test_storage().await;
+    let app = build_test_router(storage);
+
+    let response = app
+        .oneshot(
+            Request::builder()
+                .uri("/api/logs?limit=abc")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    // Axum's Query extractor rejects the value itself; the body is the
+    // extractor's plain-text rejection, not a handler ErrorResponse.
+    assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+}
+
+#[tokio::test]
+async fn test_list_logs_limit_zero_returns_empty() {
+    let (storage, _tmp) = setup_test_storage().await;
+    storage
+        .write_log(&create_test_log(1000, SeverityLevel::Info, "a"))
+        .await
+        .unwrap();
+    storage
+        .write_log(&create_test_log(2000, SeverityLevel::Info, "b"))
+        .await
+        .unwrap();
+    storage
+        .write_log(&create_test_log(3000, SeverityLevel::Info, "c"))
+        .await
+        .unwrap();
+    let app = build_test_router(storage);
+
+    let response = app
+        .oneshot(
+            Request::builder()
+                .uri("/api/logs?limit=0")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    // Documented behaviour: limit=0 is an empty page, not an error.
+    assert_eq!(response.status(), StatusCode::OK);
+    let body = response.into_body().collect().await.unwrap().to_bytes();
+    let logs: LogsResponse = serde_json::from_slice(&body).unwrap();
+    assert_eq!(logs.logs.len(), 0);
+}
+
+#[tokio::test]
+async fn test_aggregate_invalid_function_is_400() {
+    let (storage, _tmp) = setup_test_storage().await;
+    storage
+        .write_metric(&create_test_metric("requests", 1_000_000_000, 5.0))
+        .await
+        .unwrap();
+    let app = build_test_router(storage);
+
+    let response = app
+        .oneshot(
+            Request::builder()
+                .uri("/api/metrics/aggregate?name=requests&function=invalid")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    let error = assert_error_response(response, StatusCode::BAD_REQUEST).await;
+    assert_eq!(error.code, "BAD_REQUEST");
+    assert!(error.error.contains("invalid"));
+}
+
+#[tokio::test]
+async fn test_list_logs_limit_one_returns_exactly_one() {
+    let (storage, _tmp) = setup_test_storage().await;
+    storage
+        .write_log(&create_test_log(1000, SeverityLevel::Info, "a"))
+        .await
+        .unwrap();
+    storage
+        .write_log(&create_test_log(2000, SeverityLevel::Info, "b"))
+        .await
+        .unwrap();
+    storage
+        .write_log(&create_test_log(3000, SeverityLevel::Info, "c"))
+        .await
+        .unwrap();
+    let app = build_test_router(storage);
+
+    let response = app
+        .oneshot(
+            Request::builder()
+                .uri("/api/logs?limit=1")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), StatusCode::OK);
+    let body = response.into_body().collect().await.unwrap().to_bytes();
+    let logs: LogsResponse = serde_json::from_slice(&body).unwrap();
+    assert_eq!(logs.logs.len(), 1);
+    // Documented behaviour: `total` counts fetched (limit-capped) rows,
+    // not the full match count.
+    assert_eq!(logs.total, 1);
+}
+
+#[tokio::test]
+async fn test_list_logs_offset_past_total_returns_empty() {
+    let (storage, _tmp) = setup_test_storage().await;
+    storage
+        .write_log(&create_test_log(1000, SeverityLevel::Info, "a"))
+        .await
+        .unwrap();
+    storage
+        .write_log(&create_test_log(2000, SeverityLevel::Info, "b"))
+        .await
+        .unwrap();
+    storage
+        .write_log(&create_test_log(3000, SeverityLevel::Info, "c"))
+        .await
+        .unwrap();
+    let app = build_test_router(storage);
+
+    let response = app
+        .oneshot(
+            Request::builder()
+                .uri("/api/logs?offset=5")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    // Documented behaviour: offset beyond the end is an empty page,
+    // not an error.
+    assert_eq!(response.status(), StatusCode::OK);
+    let body = response.into_body().collect().await.unwrap().to_bytes();
+    let logs: LogsResponse = serde_json::from_slice(&body).unwrap();
+    assert_eq!(logs.logs.len(), 0);
+}
+
+#[tokio::test]
+async fn test_list_logs_invalid_severity_is_ignored() {
+    let (storage, _tmp) = setup_test_storage().await;
+    storage
+        .write_log(&create_test_log(1000, SeverityLevel::Info, "a"))
+        .await
+        .unwrap();
+    storage
+        .write_log(&create_test_log(2000, SeverityLevel::Error, "b"))
+        .await
+        .unwrap();
+    let app = build_test_router(storage);
+
+    let response = app
+        .oneshot(
+            Request::builder()
+                .uri("/api/logs?severity=INVALID")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    // Documented behaviour: an unrecognised severity is ignored, not a
+    // 400, so the unfiltered result set is returned.
+    assert_eq!(response.status(), StatusCode::OK);
+    let body = response.into_body().collect().await.unwrap().to_bytes();
+    let logs: LogsResponse = serde_json::from_slice(&body).unwrap();
+    assert_eq!(logs.logs.len(), 2);
+}
+
+#[tokio::test]
+async fn test_list_logs_empty_search_same_as_no_search() {
+    let (storage, _tmp) = setup_test_storage().await;
+    storage
+        .write_log(&create_test_log(1000, SeverityLevel::Info, "hello"))
+        .await
+        .unwrap();
+    storage
+        .write_log(&create_test_log(2000, SeverityLevel::Info, "world"))
+        .await
+        .unwrap();
+
+    let app = build_test_router(storage.clone());
+    let response = app
+        .oneshot(
+            Request::builder()
+                .uri("/api/logs?search=")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), StatusCode::OK);
+    let body = response.into_body().collect().await.unwrap().to_bytes();
+    let logs: LogsResponse = serde_json::from_slice(&body).unwrap();
+    assert_eq!(logs.logs.len(), 2);
+}
+
+#[tokio::test]
+async fn test_timeseries_step_zero_is_400() {
+    let (storage, _tmp) = setup_test_storage().await;
+    storage
+        .write_metric(&create_test_metric("requests", 1_000_000_000, 5.0))
+        .await
+        .unwrap();
+    let app = build_test_router(storage);
+
+    let response = app
+        .oneshot(
+            Request::builder()
+                .uri("/api/metrics/requests/timeseries?step=0")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    // A zero step would divide by zero when bucketing; it must be a
+    // clean 400.
+    let error = assert_error_response(response, StatusCode::BAD_REQUEST).await;
+    assert_eq!(error.code, "BAD_REQUEST");
+    assert!(error.error.contains("step"));
+}
+
+#[tokio::test]
+async fn test_aggregate_bucket_size_zero_is_400() {
+    let (storage, _tmp) = setup_test_storage().await;
+    storage
+        .write_metric(&create_test_metric("requests", 1_000_000_000, 5.0))
+        .await
+        .unwrap();
+    let app = build_test_router(storage);
+
+    let response = app
+        .oneshot(
+            Request::builder()
+                .uri("/api/metrics/aggregate?name=requests&function=sum&bucket_size=0")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    let error = assert_error_response(response, StatusCode::BAD_REQUEST).await;
+    assert_eq!(error.code, "BAD_REQUEST");
+    assert!(error.error.contains("bucket_size"));
+}

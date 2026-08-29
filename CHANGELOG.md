@@ -25,6 +25,12 @@ have to work around), not implementation detail.
   `duration > 1.5s`; second values that would overflow milliseconds now
   fail with a clear error instead of panicking.
 
+### Fixed
+
+- The API no longer panics on `GET /api/metrics/{name}/timeseries?step=0`
+  or `GET /api/metrics/aggregate?bucket_size=0`: a zero or negative step
+  now returns a 400 with a clear error.
+
 ## [0.1.96] - 2026-08-29
 
 ### Fixed

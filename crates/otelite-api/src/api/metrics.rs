@@ -329,6 +329,19 @@ pub async fn aggregate_metrics(
 ) -> Result<Json<AggregateResponse>, (StatusCode, Json<ErrorResponse>)> {
     validate_time_range(query.start_time, query.end_time)?;
 
+    // A zero or negative bucket size would divide by zero when grouping.
+    if let Some(bucket_size) = query.bucket_size {
+        if bucket_size < 1 {
+            return Err((
+                StatusCode::BAD_REQUEST,
+                Json(ErrorResponse::bad_request(format!(
+                    "Invalid bucket_size '{}': must be a positive number of seconds",
+                    bucket_size
+                ))),
+            ));
+        }
+    }
+
     // Check cache first
     let cache_key = QueryCache::make_key(&query);
     if let Some(cached) = state.cache.metrics.get(&cache_key) {
@@ -643,6 +656,20 @@ pub async fn get_metric_timeseries(
     axum::extract::Path(name): axum::extract::Path<String>,
     Query(query): Query<TimeseriesQuery>,
 ) -> Result<Json<Vec<TimeBucket>>, (StatusCode, Json<ErrorResponse>)> {
+    // Reject a non-positive step up front: a zero or negative bucket size
+    // would divide by zero (or invert bucketing) below.
+    if let Some(step) = query.step {
+        if step < 1 {
+            return Err((
+                StatusCode::BAD_REQUEST,
+                Json(ErrorResponse::bad_request(format!(
+                    "Invalid step '{}': must be a positive number of seconds",
+                    step
+                ))),
+            ));
+        }
+    }
+
     // Check cache first
     let cache_key = QueryCache::make_key(&(&name, &query));
     if let Some(cached) = state.cache.metrics.get(&cache_key) {
