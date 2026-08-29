@@ -994,6 +994,17 @@ pub struct ModelPerformanceResponse {
     pub truncated: bool,
 }
 
+/// Minimum eligible current-window requests for any model-performance
+/// assessment; every assessment reports its sample count and fewer samples
+/// classify as `InsufficientTelemetry` (#152).
+pub const MODEL_PERFORMANCE_MIN_ELIGIBLE_SAMPLES: usize = 10;
+/// A relative change of at least this fraction is material for ms/token
+/// metrics (direction-neutral; the regression classes apply the direction).
+pub const MODEL_PERFORMANCE_MATERIAL_RELATIVE_CHANGE: f64 = 0.20;
+/// A change of at least this many percentage points is material for the
+/// error rate.
+pub const MODEL_PERFORMANCE_MATERIAL_ERROR_RATE_POINTS: f64 = 0.05;
+
 /// Error-rate summary for LLM spans grouped by model.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]

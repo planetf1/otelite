@@ -15,6 +15,11 @@ have to work around), not implementation detail.
 
 ### Internal
 
+- Deterministic model-performance assessment rules (classification classes,
+  named materiality thresholds, 10-sample minimum with reported sample
+  counts, mixed-evidence reporting, workload/error correlation labelling,
+  TTFT trust gate) — the assessment layer for the #121 diagnosis; no
+  user-visible change yet.
 - Model-performance comparison query and response types (canonical
   request population, preceding/rolling baseline windows, per-metric
   eligibility and deltas with percentage-unavailable state) — the

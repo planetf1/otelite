@@ -29,6 +29,7 @@ pub mod distribution;
 
 // Agent-framework attribute recognizers (CrewAI, AutoGen, LangGraph, ...)
 pub mod agent_frameworks;
+pub mod model_performance;
 
 /// Cross-cutting GenAI filter dimensions (global filter bar, #135).
 pub mod filters;
