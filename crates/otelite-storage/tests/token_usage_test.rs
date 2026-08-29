@@ -744,6 +744,95 @@ fn test_genai_capability_report_correlation_edge_cases() {
 }
 
 #[test]
+fn test_ttft_normalisation_agrees_across_capability_and_latency_paths() {
+    let conn = setup_test_db();
+    // One model, six requests of 1.0s duration each, exercising every TTFT
+    // edge the two paths used to normalise separately:
+    //   p1 spec seconds (valid), p2 custom ms (valid, mixed units),
+    //   p3 negative (invalid), p4 greater than duration (invalid),
+    //   p5 non-numeric (invalid), p6 both keys present (priority: spec wins;
+    //   the custom key alone would exceed the duration).
+    let insert = |id: &str, start_ms: i64, attrs: &str| {
+        conn.execute(
+            r#"INSERT INTO spans (trace_id, span_id, name, kind, start_time, end_time, attributes, status_code)
+               VALUES (?1, ?1, 'llm.request', 0, ?2, ?3, ?4, 0)"#,
+            rusqlite::params![
+                id,
+                start_ms * 1_000_000,
+                start_ms * 1_000_000 + 1_000_000_000,
+                attrs
+            ],
+        )
+        .unwrap();
+    };
+    let base = r#"{"gen_ai.system":"openai","gen_ai.request.model":"parity-m1","gen_ai.usage.input_tokens":"10","gen_ai.usage.output_tokens":"2""#;
+    insert(
+        "p1",
+        1_000,
+        &format!("{base},\"gen_ai.server.time_to_first_token\":\"0.2\"}}"),
+    );
+    insert("p2", 2_000, &format!("{base},\"ttft_ms\":\"150\"}}"));
+    insert(
+        "p3",
+        3_000,
+        &format!("{base},\"gen_ai.server.time_to_first_token\":\"-1\"}}"),
+    );
+    insert(
+        "p4",
+        4_000,
+        &format!("{base},\"gen_ai.server.time_to_first_token\":\"1.5\"}}"),
+    );
+    insert(
+        "p5",
+        5_000,
+        &format!("{base},\"gen_ai.server.time_to_first_token\":\"not-a-number\"}}"),
+    );
+    insert(
+        "p6",
+        6_000,
+        &format!("{base},\"gen_ai.server.time_to_first_token\":\"0.3\",\"ttft_ms\":\"999\"}}"),
+    );
+
+    // Capability path (core normaliser over the request spans).
+    let report =
+        reader::query_genai_capabilities(&conn, None, None, &GenAiFilters::default()).unwrap();
+    let cap = report
+        .reports
+        .iter()
+        .find(|row| row.model.as_deref() == Some("parity-m1"))
+        .unwrap()
+        .ttft
+        .clone();
+
+    // Latency path (storage normaliser feeding the percentile accumulators).
+    let stats = reader::query_latency_stats(&conn, None, None, &GenAiFilters::default()).unwrap();
+    // The latency path reports the composite provider/model identity.
+    let stat = stats
+        .iter()
+        .find(|row| row.model.as_deref() == Some("openai/parity-m1"))
+        .unwrap();
+
+    // Both paths must split the same six observations identically.
+    assert_eq!(cap.eligible_count, 6);
+    assert_eq!(cap.valid_count, 3, "p1, p2 and p6 are valid");
+    assert_eq!(cap.invalid_count, 3, "p3, p4 and p5 are invalid");
+    assert_eq!(cap.availability, "sparse");
+    assert_eq!(cap.quality, "invalid");
+    assert_eq!(stat.ttft_count, cap.valid_count, "valid counts must agree");
+    assert_eq!(
+        stat.ttft_invalid_count, cap.invalid_count,
+        "invalid counts must agree"
+    );
+    // The priority decision is shared too: the valid set is {150, 200, 300}
+    // ms — p6 contributes 0.3s from the spec key, not 999ms from ttft_ms.
+    assert_eq!(
+        stat.ttft_p50_ms,
+        Some(200),
+        "median of 150/200/300 ms — the 999ms custom key was shadowed"
+    );
+}
+
+#[test]
 fn test_genai_capability_report_join_is_bounded_by_the_sample() {
     let conn = setup_test_db();
     // 10_005 filler spans start after the Codex spans, so the bounded

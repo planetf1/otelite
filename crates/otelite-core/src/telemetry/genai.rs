@@ -237,8 +237,24 @@ pub fn classify_span_capabilities(span: &Span) -> GenAiSpanCapabilities {
 /// - `llm.time_to_first_token` — non-standard, assumed seconds
 /// - `ttft_ms` — Claude Code custom attribute, in **milliseconds**; divided by 1000
 pub fn extract_ttft_secs(attrs: &HashMap<String, String>) -> Option<f64> {
+    normalise_span_ttft_secs(attrs).and_then(Result::ok)
+}
+
+/// Canonical TTFT normaliser for span attributes: picks the first TTFT
+/// attribute by the priority order above, normalises its unit to seconds,
+/// and keeps the rejection reason. Returns `None` when no TTFT attribute is
+/// present, `Some(Ok(secs))` for a finite non-negative value, and
+/// `Some(Err(reason))` for a present but unusable value.
+///
+/// Every consumer (capability report, latency stats, context-size
+/// percentiles) must use this together with `classify_ttft_value` instead
+/// of a local copy — that is what keeps unit handling, rejection and
+/// quality classification identical across API, CLI, TUI and web.
+pub fn normalise_span_ttft_secs(
+    attrs: &HashMap<String, String>,
+) -> Option<Result<f64, MetricRejectionReason>> {
     let (_, raw, unit) = raw_ttft(attrs)?;
-    normalise_ttft_secs(raw, unit).ok()
+    Some(normalise_ttft_secs(raw, unit))
 }
 
 fn first_attribute<'a>(
@@ -269,7 +285,7 @@ fn normalise_ttft_secs(raw: &str, unit: TtftSourceUnit) -> Result<f64, MetricRej
     let value = raw
         .parse::<f64>()
         .map_err(|_| MetricRejectionReason::InvalidSeconds)?;
-    if !value.is_finite() {
+    if !value.is_finite() || value.is_sign_negative() {
         return Err(MetricRejectionReason::InvalidSeconds);
     }
     Ok(match unit {
@@ -1105,6 +1121,55 @@ mod tests {
     fn test_extract_ttft_secs_missing() {
         let attrs = HashMap::new();
         assert!(extract_ttft_secs(&attrs).is_none());
+    }
+
+    #[test]
+    fn test_normalise_span_ttft_secs_keeps_rejection_reasons() {
+        let mut attrs = HashMap::new();
+        attrs.insert(
+            "gen_ai.server.time_to_first_token".to_string(),
+            "0.5".to_string(),
+        );
+        assert_eq!(
+            normalise_span_ttft_secs(&attrs),
+            Some(Ok(0.5)),
+            "finite non-negative value normalises to seconds"
+        );
+
+        attrs.insert(
+            "gen_ai.server.time_to_first_token".to_string(),
+            "-1".to_string(),
+        );
+        assert_eq!(
+            normalise_span_ttft_secs(&attrs),
+            Some(Err(MetricRejectionReason::InvalidSeconds)),
+            "negative values are rejected by the normaliser itself"
+        );
+        assert_eq!(
+            extract_ttft_secs(&attrs),
+            None,
+            "extract maps rejections to absence-of-value"
+        );
+
+        attrs.insert(
+            "gen_ai.server.time_to_first_token".to_string(),
+            "inf".to_string(),
+        );
+        assert_eq!(
+            normalise_span_ttft_secs(&attrs),
+            Some(Err(MetricRejectionReason::InvalidSeconds))
+        );
+
+        attrs.insert(
+            "gen_ai.server.time_to_first_token".to_string(),
+            "1.5".to_string(),
+        );
+        attrs.insert("ttft_ms".to_string(), "300".to_string());
+        assert_eq!(
+            normalise_span_ttft_secs(&attrs),
+            Some(Ok(1.5)),
+            "spec key wins over the custom millisecond key"
+        );
     }
 
     #[test]

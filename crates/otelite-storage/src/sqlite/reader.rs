@@ -2012,26 +2012,31 @@ struct TtftAccum {
 }
 
 impl TtftAccum {
-    fn record(&mut self, duration_ms: i64, ttft_ms: Option<std::result::Result<i64, ()>>) {
-        let Some(ttft_ms) = ttft_ms else {
+    /// Record one normalised TTFT observation (exact seconds from the
+    /// canonical core normaliser) against its span duration. Quality is
+    /// classified on the exact value — rounding to integer milliseconds
+    /// first could flip borderline `ttft > duration` verdicts.
+    fn record(&mut self, duration_ms: i64, ttft_secs: Option<std::result::Result<f64, ()>>) {
+        let Some(ttft_secs) = ttft_secs else {
             return;
         };
-        let Ok(ttft_ms) = ttft_ms else {
+        let Ok(ttft_secs) = ttft_secs else {
             self.invalid_count += 1;
             return;
         };
         let quality = otelite_core::telemetry::classify_ttft_value(
-            Some(ttft_ms as f64 / 1000.0),
+            Some(ttft_secs),
             duration_ms as f64 / 1000.0,
         );
         if quality != otelite_core::telemetry::TtftValueQuality::Valid {
             self.invalid_count += 1;
             return;
         }
-        if duration_ms > 0 && ttft_ms as f64 / duration_ms as f64 >= TTFT_DEGENERATE_RATIO {
+        let duration_secs = duration_ms as f64 / 1000.0;
+        if duration_secs > 0.0 && ttft_secs / duration_secs >= TTFT_DEGENERATE_RATIO {
             self.degenerate_count += 1;
         }
-        self.values_ms.push(ttft_ms);
+        self.values_ms.push((ttft_secs * 1000.0).round() as i64);
     }
 
     fn is_degenerate(&self) -> bool {
@@ -2050,26 +2055,37 @@ struct LatencyAccum {
     output_input_ratios: Vec<f64>,
 }
 
-fn normalized_ttft_ms(
+/// Canonical TTFT normalisation shared by every latency path: the key
+/// priority, unit conversion and rejection rules live in
+/// `otelite_core::telemetry::normalise_span_ttft_secs`; this only adapts
+/// the separately-fetched columns to an attribute map and maps rejection
+/// reasons to `Err(())` for the accumulators.
+fn normalized_ttft_secs(
     otel_ttft_secs: Option<&str>,
     llm_ttft_secs: Option<&str>,
     custom_ttft_ms: Option<&str>,
-) -> Option<std::result::Result<i64, ()>> {
-    let (raw, multiplier) = if let Some(raw) = otel_ttft_secs {
-        (raw, 1000.0)
-    } else if let Some(raw) = llm_ttft_secs {
-        (raw, 1000.0)
-    } else {
-        let raw = custom_ttft_ms?;
-        (raw, 1.0)
-    };
-    Some(
-        raw.parse::<f64>()
-            .ok()
-            .filter(|value| value.is_finite())
-            .and_then(|value| (value * multiplier).round().to_string().parse::<i64>().ok())
-            .ok_or(()),
-    )
+) -> Option<std::result::Result<f64, ()>> {
+    let mut attrs = std::collections::HashMap::new();
+    if let Some(value) = otel_ttft_secs {
+        attrs.insert(
+            "gen_ai.server.time_to_first_token".to_string(),
+            value.to_string(),
+        );
+    }
+    if let Some(value) = llm_ttft_secs {
+        attrs.insert("llm.time_to_first_token".to_string(), value.to_string());
+    }
+    if let Some(value) = custom_ttft_ms {
+        attrs.insert("ttft_ms".to_string(), value.to_string());
+    }
+    if attrs.is_empty() {
+        return None;
+    }
+    match otelite_core::telemetry::normalise_span_ttft_secs(&attrs) {
+        Some(Ok(secs)) => Some(Ok(secs)),
+        Some(Err(_)) => Some(Err(())),
+        None => None,
+    }
 }
 
 ///
@@ -2165,7 +2181,7 @@ pub fn query_latency_stats(
         entry.durations_ms.push(r.duration_ms);
         entry.ttft.record(
             r.duration_ms,
-            normalized_ttft_ms(
+            normalized_ttft_secs(
                 r.otel_ttft_secs.as_deref(),
                 r.llm_ttft_secs.as_deref(),
                 r.custom_ttft_ms.as_deref(),
@@ -2412,13 +2428,13 @@ fn collect_llm_request_values(
     let mut out = Vec::with_capacity(rows.len());
     for (duration_ms, model, start_ns, otel, llm, custom, output_tokens, duration_ns) in rows {
         let mut ttft_ms = None;
-        if let Some(Ok(ttft)) =
-            normalized_ttft_ms(otel.as_deref(), llm.as_deref(), custom.as_deref())
+        if let Some(Ok(ttft_secs)) =
+            normalized_ttft_secs(otel.as_deref(), llm.as_deref(), custom.as_deref())
         {
-            if classify_ttft_value(Some(ttft as f64 / 1000.0), duration_ms as f64 / 1000.0)
+            if classify_ttft_value(Some(ttft_secs), duration_ms as f64 / 1000.0)
                 == TtftValueQuality::Valid
             {
-                ttft_ms = Some(ttft as f64);
+                ttft_ms = Some(ttft_secs * 1000.0);
             }
         }
         out.push(LlmRequestValue {
@@ -6714,7 +6730,7 @@ pub fn query_latency_series(
         entry.0.push(r.duration_ms);
         entry.1.record(
             r.duration_ms,
-            normalized_ttft_ms(
+            normalized_ttft_secs(
                 r.otel_ttft_secs.as_deref(),
                 r.llm_ttft_secs.as_deref(),
                 r.custom_ttft_ms.as_deref(),
@@ -6980,7 +6996,7 @@ pub fn query_latency_by_context(
         entry.0.push(r.duration_ms);
         entry.1.record(
             r.duration_ms,
-            normalized_ttft_ms(
+            normalized_ttft_secs(
                 r.otel_ttft_secs.as_deref(),
                 r.llm_ttft_secs.as_deref(),
                 r.custom_ttft_ms.as_deref(),
