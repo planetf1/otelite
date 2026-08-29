@@ -11,6 +11,8 @@ have to work around), not implementation detail.
 
 ## [Unreleased]
 
+## [0.1.101] - 2026-08-29
+
 ### Internal
 
 - Model-performance comparison query and response types (canonical
