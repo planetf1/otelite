@@ -230,6 +230,58 @@ pub fn classify_span_capabilities(span: &Span) -> GenAiSpanCapabilities {
     }
 }
 
+/// Attribute names a verified emitter signature would still require for an
+/// LLM-ish span that matched none (#149). Feeds the capability report's
+/// diagnostic block; returns **names only** — never attribute values, span
+/// or trace identifiers, or service names (the #120 privacy invariant).
+///
+/// Rules, per emitter shape:
+/// - `claude_code.llm_request*` spans need a model attribute.
+/// - Codex request spans need a model attribute and the verified Codex
+///   scope.
+/// - anything else reports what the most permissive verified signature
+///   (`standard-otel-request-v1`) still asks for: a model attribute, a
+///   system attribute, and a standard usage/TTFT attribute.
+pub fn unidentified_required_attributes(span: &Span) -> Vec<String> {
+    let attrs = &span.attributes;
+    let has_model = first_attribute(attrs, semconv::MODEL_KEYS).is_some();
+    let mut missing: Vec<String> = Vec::new();
+    if span.name.starts_with("claude_code.llm_request") {
+        if !has_model {
+            missing.push(semconv::MODEL_KEYS[0].to_string());
+        }
+        return missing;
+    }
+    if span.name == semconv::CODEX_LLM_REQUEST_SPAN_NAME {
+        if !has_model {
+            missing.push(semconv::MODEL_KEYS[0].to_string());
+        }
+        let has_verified_scope = attrs
+            .get("otel.scope.name")
+            .is_some_and(|scope| scope == semconv::CODEX_OTEL_SCOPE_NAME);
+        if !has_verified_scope {
+            missing.push("otel.scope.name".to_string());
+        }
+        return missing;
+    }
+    if !has_model {
+        missing.push(semconv::MODEL_KEYS[0].to_string());
+    }
+    if first_attribute(attrs, semconv::SYSTEM_KEYS).is_none() {
+        missing.push(semconv::SYSTEM_KEYS[0].to_string());
+    }
+    let has_standard_metric = first_attribute(attrs, semconv::INPUT_TOKEN_KEYS).is_some()
+        || first_attribute(attrs, semconv::OUTPUT_TOKEN_KEYS).is_some()
+        || first_attribute(attrs, semconv::CACHE_CREATION_TOKEN_KEYS).is_some()
+        || first_attribute(attrs, semconv::CACHE_READ_TOKEN_KEYS).is_some()
+        || raw_ttft(attrs).is_some();
+    if !has_standard_metric {
+        missing.push(semconv::INPUT_TOKEN_KEYS[0].to_string());
+    }
+    missing.sort();
+    missing
+}
+
 /// Extract TTFT from span attributes, normalising to **seconds**.
 ///
 /// Attribute priority:
@@ -1121,6 +1173,60 @@ mod tests {
     fn test_extract_ttft_secs_missing() {
         let attrs = HashMap::new();
         assert!(extract_ttft_secs(&attrs).is_none());
+    }
+
+    #[test]
+    fn test_unidentified_required_attributes_names_only() {
+        // Generic LLM-ish span: model present, no system, no usage/TTFT.
+        let mut attrs = HashMap::new();
+        attrs.insert("gen_ai.request.model".to_string(), "mystery".to_string());
+        let required = unidentified_required_attributes(&test_span("llm.call", 1, attrs));
+        assert_eq!(
+            required,
+            vec!["gen_ai.provider.name", "gen_ai.usage.input_tokens"],
+            "names of the missing standard-signature attributes, sorted"
+        );
+
+        // Generic span missing everything a verified signature accepts.
+        let attrs = HashMap::new();
+        let required = unidentified_required_attributes(&test_span("llm.call", 1, attrs));
+        assert_eq!(
+            required,
+            vec![
+                "gen_ai.provider.name",
+                "gen_ai.request.model",
+                "gen_ai.usage.input_tokens"
+            ]
+        );
+
+        // A TTFT attribute counts as a standard metric: only the system
+        // attribute is still missing.
+        let mut attrs = HashMap::new();
+        attrs.insert("gen_ai.system".to_string(), "openai".to_string());
+        attrs.insert("gen_ai.request.model".to_string(), "mystery".to_string());
+        attrs.insert(
+            "gen_ai.server.time_to_first_token".to_string(),
+            "0.5".to_string(),
+        );
+        let required = unidentified_required_attributes(&test_span("llm.call", 1, attrs));
+        assert_eq!(
+            required,
+            Vec::<String>::new(),
+            "fully verified — nothing required"
+        );
+
+        // Codex-named span without the verified scope.
+        let mut attrs = HashMap::new();
+        attrs.insert("model".to_string(), "mystery".to_string());
+        let required =
+            unidentified_required_attributes(&test_span("run_sampling_request", 1, attrs));
+        assert_eq!(required, vec!["otel.scope.name"]);
+
+        // Claude-named span without a model.
+        let attrs = HashMap::new();
+        let required =
+            unidentified_required_attributes(&test_span("claude_code.llm_request", 1, attrs));
+        assert_eq!(required, vec!["gen_ai.request.model"]);
     }
 
     #[test]

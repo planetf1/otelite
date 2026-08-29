@@ -1,0 +1,1505 @@
+{
+ "api": {
+  "canonical_span_count": 31,
+  "duplicate_span_count": 1,
+  "filters_applied": [],
+  "reports": [
+   {
+    "adapter_rule": "claude-code-request-v1",
+    "cache_creation_tokens": {
+     "availability": "absent",
+     "derivation": "unavailable",
+     "eligible_count": 3,
+     "invalid_count": 0,
+     "observed_count": 0,
+     "quality": "not_assessed",
+     "source_attributes": {},
+     "valid_count": 0
+    },
+    "cache_read_tokens": {
+     "availability": "absent",
+     "derivation": "unavailable",
+     "eligible_count": 3,
+     "invalid_count": 0,
+     "observed_count": 0,
+     "quality": "not_assessed",
+     "source_attributes": {},
+     "valid_count": 0
+    },
+    "correlation": {
+     "ambiguous_count": 0,
+     "matched_count": 0,
+     "rejected_count": 0,
+     "rule": "none",
+     "unmatched_count": 0
+    },
+    "emitter": "claude_code",
+    "emitter_fingerprint": "genai-v1-b44074595f82606b",
+    "input_tokens": {
+     "availability": "available",
+     "derivation": "native",
+     "eligible_count": 3,
+     "invalid_count": 0,
+     "observed_count": 3,
+     "quality": "reliable",
+     "source_attributes": {
+      "prompt_tokens": 3
+     },
+     "valid_count": 3
+    },
+    "model": "claude-opus-4-6",
+    "output_tokens": {
+     "availability": "available",
+     "derivation": "native",
+     "eligible_count": 3,
+     "invalid_count": 0,
+     "observed_count": 3,
+     "quality": "reliable",
+     "source_attributes": {
+      "completion_tokens": 3
+     },
+     "valid_count": 3
+    },
+    "provider": null,
+    "request_count": 3,
+    "ttft": {
+     "availability": "absent",
+     "derivation": "unavailable",
+     "eligible_count": 3,
+     "invalid_count": 0,
+     "observed_count": 0,
+     "quality": "not_assessed",
+     "source_attributes": {},
+     "valid_count": 0
+    }
+   },
+   {
+    "adapter_rule": "codex-request-v1",
+    "cache_creation_tokens": {
+     "availability": "sparse",
+     "derivation": "correlated",
+     "eligible_count": 5,
+     "invalid_count": 0,
+     "observed_count": 0,
+     "quality": "reliable",
+     "source_attributes": {
+      "gen_ai.usage.cache_write.input_tokens": 1
+     },
+     "valid_count": 1
+    },
+    "cache_read_tokens": {
+     "availability": "sparse",
+     "derivation": "correlated",
+     "eligible_count": 5,
+     "invalid_count": 0,
+     "observed_count": 0,
+     "quality": "reliable",
+     "source_attributes": {
+      "gen_ai.usage.cache_read.input_tokens": 1
+     },
+     "valid_count": 1
+    },
+    "correlation": {
+     "ambiguous_count": 2,
+     "matched_count": 1,
+     "rejected_count": 1,
+     "rule": "codex-one-to-one-v1",
+     "unmatched_count": 2
+    },
+    "emitter": "codex",
+    "emitter_fingerprint": "genai-v1-2410e776447381d2",
+    "input_tokens": {
+     "availability": "sparse",
+     "derivation": "correlated",
+     "eligible_count": 5,
+     "invalid_count": 0,
+     "observed_count": 0,
+     "quality": "reliable",
+     "source_attributes": {
+      "gen_ai.usage.input_tokens": 1
+     },
+     "valid_count": 1
+    },
+    "model": "gpt-5",
+    "output_tokens": {
+     "availability": "sparse",
+     "derivation": "correlated",
+     "eligible_count": 5,
+     "invalid_count": 0,
+     "observed_count": 0,
+     "quality": "reliable",
+     "source_attributes": {
+      "gen_ai.usage.output_tokens": 1
+     },
+     "valid_count": 1
+    },
+    "provider": null,
+    "request_count": 5,
+    "ttft": {
+     "availability": "absent",
+     "derivation": "unavailable",
+     "eligible_count": 5,
+     "invalid_count": 0,
+     "observed_count": 0,
+     "quality": "not_assessed",
+     "source_attributes": {},
+     "valid_count": 0
+    }
+   },
+   {
+    "adapter_rule": "standard-otel-request-v1",
+    "cache_creation_tokens": {
+     "availability": "absent",
+     "derivation": "unavailable",
+     "eligible_count": 12,
+     "invalid_count": 0,
+     "observed_count": 0,
+     "quality": "not_assessed",
+     "source_attributes": {},
+     "valid_count": 0
+    },
+    "cache_read_tokens": {
+     "availability": "absent",
+     "derivation": "unavailable",
+     "eligible_count": 12,
+     "invalid_count": 0,
+     "observed_count": 0,
+     "quality": "not_assessed",
+     "source_attributes": {},
+     "valid_count": 0
+    },
+    "correlation": {
+     "ambiguous_count": 0,
+     "matched_count": 0,
+     "rejected_count": 0,
+     "rule": "none",
+     "unmatched_count": 0
+    },
+    "emitter": "standard_otel",
+    "emitter_fingerprint": "genai-v1-97b79fe0e7e5295d",
+    "input_tokens": {
+     "availability": "available",
+     "derivation": "native",
+     "eligible_count": 12,
+     "invalid_count": 0,
+     "observed_count": 12,
+     "quality": "reliable",
+     "source_attributes": {
+      "gen_ai.usage.input_tokens": 12
+     },
+     "valid_count": 12
+    },
+    "model": "claude-sonnet-4-5",
+    "output_tokens": {
+     "availability": "available",
+     "derivation": "native",
+     "eligible_count": 12,
+     "invalid_count": 0,
+     "observed_count": 12,
+     "quality": "reliable",
+     "source_attributes": {
+      "gen_ai.usage.output_tokens": 12
+     },
+     "valid_count": 12
+    },
+    "provider": "anthropic",
+    "request_count": 12,
+    "ttft": {
+     "availability": "available",
+     "derivation": "native",
+     "eligible_count": 12,
+     "invalid_count": 0,
+     "observed_count": 12,
+     "quality": "degenerate",
+     "source_attributes": {
+      "ttft_ms": 12
+     },
+     "valid_count": 12
+    }
+   },
+   {
+    "adapter_rule": "standard-otel-request-v1",
+    "cache_creation_tokens": {
+     "availability": "absent",
+     "derivation": "unavailable",
+     "eligible_count": 5,
+     "invalid_count": 0,
+     "observed_count": 0,
+     "quality": "not_assessed",
+     "source_attributes": {},
+     "valid_count": 0
+    },
+    "cache_read_tokens": {
+     "availability": "absent",
+     "derivation": "unavailable",
+     "eligible_count": 5,
+     "invalid_count": 0,
+     "observed_count": 0,
+     "quality": "not_assessed",
+     "source_attributes": {},
+     "valid_count": 0
+    },
+    "correlation": {
+     "ambiguous_count": 0,
+     "matched_count": 0,
+     "rejected_count": 0,
+     "rule": "none",
+     "unmatched_count": 0
+    },
+    "emitter": "standard_otel",
+    "emitter_fingerprint": "genai-v1-97b79fe0e7e5295d",
+    "input_tokens": {
+     "availability": "available",
+     "derivation": "native",
+     "eligible_count": 5,
+     "invalid_count": 0,
+     "observed_count": 5,
+     "quality": "reliable",
+     "source_attributes": {
+      "gen_ai.usage.input_tokens": 5
+     },
+     "valid_count": 5
+    },
+    "model": "gpt-4o",
+    "output_tokens": {
+     "availability": "available",
+     "derivation": "native",
+     "eligible_count": 5,
+     "invalid_count": 0,
+     "observed_count": 5,
+     "quality": "reliable",
+     "source_attributes": {
+      "gen_ai.usage.output_tokens": 5
+     },
+     "valid_count": 5
+    },
+    "provider": "openai",
+    "request_count": 5,
+    "ttft": {
+     "availability": "available",
+     "derivation": "native",
+     "eligible_count": 5,
+     "invalid_count": 0,
+     "observed_count": 5,
+     "quality": "reliable",
+     "source_attributes": {
+      "ttft_ms": 5
+     },
+     "valid_count": 5
+    }
+   },
+   {
+    "adapter_rule": "standard-otel-request-v1",
+    "cache_creation_tokens": {
+     "availability": "absent",
+     "derivation": "unavailable",
+     "eligible_count": 4,
+     "invalid_count": 0,
+     "observed_count": 0,
+     "quality": "not_assessed",
+     "source_attributes": {},
+     "valid_count": 0
+    },
+    "cache_read_tokens": {
+     "availability": "absent",
+     "derivation": "unavailable",
+     "eligible_count": 4,
+     "invalid_count": 0,
+     "observed_count": 0,
+     "quality": "not_assessed",
+     "source_attributes": {},
+     "valid_count": 0
+    },
+    "correlation": {
+     "ambiguous_count": 0,
+     "matched_count": 0,
+     "rejected_count": 0,
+     "rule": "none",
+     "unmatched_count": 0
+    },
+    "emitter": "standard_otel",
+    "emitter_fingerprint": "genai-v1-97b79fe0e7e5295d",
+    "input_tokens": {
+     "availability": "available",
+     "derivation": "native",
+     "eligible_count": 4,
+     "invalid_count": 0,
+     "observed_count": 4,
+     "quality": "reliable",
+     "source_attributes": {
+      "gen_ai.usage.input_tokens": 4
+     },
+     "valid_count": 4
+    },
+    "model": "gpt-4o-mini",
+    "output_tokens": {
+     "availability": "sparse",
+     "derivation": "native",
+     "eligible_count": 4,
+     "invalid_count": 0,
+     "observed_count": 2,
+     "quality": "reliable",
+     "source_attributes": {
+      "gen_ai.usage.output_tokens": 2
+     },
+     "valid_count": 2
+    },
+    "provider": "openai",
+    "request_count": 4,
+    "ttft": {
+     "availability": "sparse",
+     "derivation": "native",
+     "eligible_count": 4,
+     "invalid_count": 2,
+     "observed_count": 3,
+     "quality": "invalid",
+     "source_attributes": {
+      "ttft_ms": 3
+     },
+     "valid_count": 1
+    }
+   },
+   {
+    "adapter_rule": "opencode-request-v1",
+    "cache_creation_tokens": {
+     "availability": "absent",
+     "derivation": "unavailable",
+     "eligible_count": 2,
+     "invalid_count": 0,
+     "observed_count": 0,
+     "quality": "not_assessed",
+     "source_attributes": {},
+     "valid_count": 0
+    },
+    "cache_read_tokens": {
+     "availability": "absent",
+     "derivation": "unavailable",
+     "eligible_count": 2,
+     "invalid_count": 0,
+     "observed_count": 0,
+     "quality": "not_assessed",
+     "source_attributes": {},
+     "valid_count": 0
+    },
+    "correlation": {
+     "ambiguous_count": 0,
+     "matched_count": 0,
+     "rejected_count": 0,
+     "rule": "none",
+     "unmatched_count": 0
+    },
+    "emitter": "opencode",
+    "emitter_fingerprint": "genai-v1-aae6c64d6e46f22e",
+    "input_tokens": {
+     "availability": "available",
+     "derivation": "native",
+     "eligible_count": 2,
+     "invalid_count": 0,
+     "observed_count": 2,
+     "quality": "reliable",
+     "source_attributes": {
+      "gen_ai.usage.input_tokens": 2
+     },
+     "valid_count": 2
+    },
+    "model": "gpt-5",
+    "output_tokens": {
+     "availability": "available",
+     "derivation": "native",
+     "eligible_count": 2,
+     "invalid_count": 0,
+     "observed_count": 2,
+     "quality": "reliable",
+     "source_attributes": {
+      "gen_ai.usage.output_tokens": 2
+     },
+     "valid_count": 2
+    },
+    "provider": "opencode-go",
+    "request_count": 2,
+    "ttft": {
+     "availability": "absent",
+     "derivation": "unavailable",
+     "eligible_count": 2,
+     "invalid_count": 0,
+     "observed_count": 0,
+     "quality": "not_assessed",
+     "source_attributes": {},
+     "valid_count": 0
+    }
+   }
+  ],
+  "truncated": false,
+  "unidentified": [
+   {
+    "required_attributes": [
+     "gen_ai.provider.name"
+    ],
+    "span_count": 1
+   },
+   {
+    "required_attributes": [
+     "gen_ai.provider.name",
+     "gen_ai.request.model"
+    ],
+    "span_count": 4
+   },
+   {
+    "required_attributes": [
+     "gen_ai.provider.name",
+     "gen_ai.request.model",
+     "gen_ai.usage.input_tokens"
+    ],
+    "span_count": 4
+   },
+   {
+    "required_attributes": [
+     "gen_ai.usage.input_tokens"
+    ],
+    "span_count": 1
+   }
+  ]
+ },
+ "api_empty": {
+  "canonical_span_count": 0,
+  "duplicate_span_count": 0,
+  "filters_applied": [],
+  "reports": [],
+  "truncated": false
+ },
+ "cli": {
+  "canonical_span_count": 31,
+  "duplicate_span_count": 1,
+  "filters_applied": [],
+  "reports": [
+   {
+    "adapter_rule": "claude-code-request-v1",
+    "cache_creation_tokens": {
+     "availability": "absent",
+     "derivation": "unavailable",
+     "eligible_count": 3,
+     "invalid_count": 0,
+     "observed_count": 0,
+     "quality": "not_assessed",
+     "source_attributes": {},
+     "valid_count": 0
+    },
+    "cache_read_tokens": {
+     "availability": "absent",
+     "derivation": "unavailable",
+     "eligible_count": 3,
+     "invalid_count": 0,
+     "observed_count": 0,
+     "quality": "not_assessed",
+     "source_attributes": {},
+     "valid_count": 0
+    },
+    "correlation": {
+     "ambiguous_count": 0,
+     "matched_count": 0,
+     "rejected_count": 0,
+     "rule": "none",
+     "unmatched_count": 0
+    },
+    "emitter": "claude_code",
+    "emitter_fingerprint": "genai-v1-b44074595f82606b",
+    "input_tokens": {
+     "availability": "available",
+     "derivation": "native",
+     "eligible_count": 3,
+     "invalid_count": 0,
+     "observed_count": 3,
+     "quality": "reliable",
+     "source_attributes": {
+      "prompt_tokens": 3
+     },
+     "valid_count": 3
+    },
+    "model": "claude-opus-4-6",
+    "output_tokens": {
+     "availability": "available",
+     "derivation": "native",
+     "eligible_count": 3,
+     "invalid_count": 0,
+     "observed_count": 3,
+     "quality": "reliable",
+     "source_attributes": {
+      "completion_tokens": 3
+     },
+     "valid_count": 3
+    },
+    "provider": null,
+    "request_count": 3,
+    "ttft": {
+     "availability": "absent",
+     "derivation": "unavailable",
+     "eligible_count": 3,
+     "invalid_count": 0,
+     "observed_count": 0,
+     "quality": "not_assessed",
+     "source_attributes": {},
+     "valid_count": 0
+    }
+   },
+   {
+    "adapter_rule": "codex-request-v1",
+    "cache_creation_tokens": {
+     "availability": "sparse",
+     "derivation": "correlated",
+     "eligible_count": 5,
+     "invalid_count": 0,
+     "observed_count": 0,
+     "quality": "reliable",
+     "source_attributes": {
+      "gen_ai.usage.cache_write.input_tokens": 1
+     },
+     "valid_count": 1
+    },
+    "cache_read_tokens": {
+     "availability": "sparse",
+     "derivation": "correlated",
+     "eligible_count": 5,
+     "invalid_count": 0,
+     "observed_count": 0,
+     "quality": "reliable",
+     "source_attributes": {
+      "gen_ai.usage.cache_read.input_tokens": 1
+     },
+     "valid_count": 1
+    },
+    "correlation": {
+     "ambiguous_count": 2,
+     "matched_count": 1,
+     "rejected_count": 1,
+     "rule": "codex-one-to-one-v1",
+     "unmatched_count": 2
+    },
+    "emitter": "codex",
+    "emitter_fingerprint": "genai-v1-2410e776447381d2",
+    "input_tokens": {
+     "availability": "sparse",
+     "derivation": "correlated",
+     "eligible_count": 5,
+     "invalid_count": 0,
+     "observed_count": 0,
+     "quality": "reliable",
+     "source_attributes": {
+      "gen_ai.usage.input_tokens": 1
+     },
+     "valid_count": 1
+    },
+    "model": "gpt-5",
+    "output_tokens": {
+     "availability": "sparse",
+     "derivation": "correlated",
+     "eligible_count": 5,
+     "invalid_count": 0,
+     "observed_count": 0,
+     "quality": "reliable",
+     "source_attributes": {
+      "gen_ai.usage.output_tokens": 1
+     },
+     "valid_count": 1
+    },
+    "provider": null,
+    "request_count": 5,
+    "ttft": {
+     "availability": "absent",
+     "derivation": "unavailable",
+     "eligible_count": 5,
+     "invalid_count": 0,
+     "observed_count": 0,
+     "quality": "not_assessed",
+     "source_attributes": {},
+     "valid_count": 0
+    }
+   },
+   {
+    "adapter_rule": "standard-otel-request-v1",
+    "cache_creation_tokens": {
+     "availability": "absent",
+     "derivation": "unavailable",
+     "eligible_count": 12,
+     "invalid_count": 0,
+     "observed_count": 0,
+     "quality": "not_assessed",
+     "source_attributes": {},
+     "valid_count": 0
+    },
+    "cache_read_tokens": {
+     "availability": "absent",
+     "derivation": "unavailable",
+     "eligible_count": 12,
+     "invalid_count": 0,
+     "observed_count": 0,
+     "quality": "not_assessed",
+     "source_attributes": {},
+     "valid_count": 0
+    },
+    "correlation": {
+     "ambiguous_count": 0,
+     "matched_count": 0,
+     "rejected_count": 0,
+     "rule": "none",
+     "unmatched_count": 0
+    },
+    "emitter": "standard_otel",
+    "emitter_fingerprint": "genai-v1-97b79fe0e7e5295d",
+    "input_tokens": {
+     "availability": "available",
+     "derivation": "native",
+     "eligible_count": 12,
+     "invalid_count": 0,
+     "observed_count": 12,
+     "quality": "reliable",
+     "source_attributes": {
+      "gen_ai.usage.input_tokens": 12
+     },
+     "valid_count": 12
+    },
+    "model": "claude-sonnet-4-5",
+    "output_tokens": {
+     "availability": "available",
+     "derivation": "native",
+     "eligible_count": 12,
+     "invalid_count": 0,
+     "observed_count": 12,
+     "quality": "reliable",
+     "source_attributes": {
+      "gen_ai.usage.output_tokens": 12
+     },
+     "valid_count": 12
+    },
+    "provider": "anthropic",
+    "request_count": 12,
+    "ttft": {
+     "availability": "available",
+     "derivation": "native",
+     "eligible_count": 12,
+     "invalid_count": 0,
+     "observed_count": 12,
+     "quality": "degenerate",
+     "source_attributes": {
+      "ttft_ms": 12
+     },
+     "valid_count": 12
+    }
+   },
+   {
+    "adapter_rule": "standard-otel-request-v1",
+    "cache_creation_tokens": {
+     "availability": "absent",
+     "derivation": "unavailable",
+     "eligible_count": 5,
+     "invalid_count": 0,
+     "observed_count": 0,
+     "quality": "not_assessed",
+     "source_attributes": {},
+     "valid_count": 0
+    },
+    "cache_read_tokens": {
+     "availability": "absent",
+     "derivation": "unavailable",
+     "eligible_count": 5,
+     "invalid_count": 0,
+     "observed_count": 0,
+     "quality": "not_assessed",
+     "source_attributes": {},
+     "valid_count": 0
+    },
+    "correlation": {
+     "ambiguous_count": 0,
+     "matched_count": 0,
+     "rejected_count": 0,
+     "rule": "none",
+     "unmatched_count": 0
+    },
+    "emitter": "standard_otel",
+    "emitter_fingerprint": "genai-v1-97b79fe0e7e5295d",
+    "input_tokens": {
+     "availability": "available",
+     "derivation": "native",
+     "eligible_count": 5,
+     "invalid_count": 0,
+     "observed_count": 5,
+     "quality": "reliable",
+     "source_attributes": {
+      "gen_ai.usage.input_tokens": 5
+     },
+     "valid_count": 5
+    },
+    "model": "gpt-4o",
+    "output_tokens": {
+     "availability": "available",
+     "derivation": "native",
+     "eligible_count": 5,
+     "invalid_count": 0,
+     "observed_count": 5,
+     "quality": "reliable",
+     "source_attributes": {
+      "gen_ai.usage.output_tokens": 5
+     },
+     "valid_count": 5
+    },
+    "provider": "openai",
+    "request_count": 5,
+    "ttft": {
+     "availability": "available",
+     "derivation": "native",
+     "eligible_count": 5,
+     "invalid_count": 0,
+     "observed_count": 5,
+     "quality": "reliable",
+     "source_attributes": {
+      "ttft_ms": 5
+     },
+     "valid_count": 5
+    }
+   },
+   {
+    "adapter_rule": "standard-otel-request-v1",
+    "cache_creation_tokens": {
+     "availability": "absent",
+     "derivation": "unavailable",
+     "eligible_count": 4,
+     "invalid_count": 0,
+     "observed_count": 0,
+     "quality": "not_assessed",
+     "source_attributes": {},
+     "valid_count": 0
+    },
+    "cache_read_tokens": {
+     "availability": "absent",
+     "derivation": "unavailable",
+     "eligible_count": 4,
+     "invalid_count": 0,
+     "observed_count": 0,
+     "quality": "not_assessed",
+     "source_attributes": {},
+     "valid_count": 0
+    },
+    "correlation": {
+     "ambiguous_count": 0,
+     "matched_count": 0,
+     "rejected_count": 0,
+     "rule": "none",
+     "unmatched_count": 0
+    },
+    "emitter": "standard_otel",
+    "emitter_fingerprint": "genai-v1-97b79fe0e7e5295d",
+    "input_tokens": {
+     "availability": "available",
+     "derivation": "native",
+     "eligible_count": 4,
+     "invalid_count": 0,
+     "observed_count": 4,
+     "quality": "reliable",
+     "source_attributes": {
+      "gen_ai.usage.input_tokens": 4
+     },
+     "valid_count": 4
+    },
+    "model": "gpt-4o-mini",
+    "output_tokens": {
+     "availability": "sparse",
+     "derivation": "native",
+     "eligible_count": 4,
+     "invalid_count": 0,
+     "observed_count": 2,
+     "quality": "reliable",
+     "source_attributes": {
+      "gen_ai.usage.output_tokens": 2
+     },
+     "valid_count": 2
+    },
+    "provider": "openai",
+    "request_count": 4,
+    "ttft": {
+     "availability": "sparse",
+     "derivation": "native",
+     "eligible_count": 4,
+     "invalid_count": 2,
+     "observed_count": 3,
+     "quality": "invalid",
+     "source_attributes": {
+      "ttft_ms": 3
+     },
+     "valid_count": 1
+    }
+   },
+   {
+    "adapter_rule": "opencode-request-v1",
+    "cache_creation_tokens": {
+     "availability": "absent",
+     "derivation": "unavailable",
+     "eligible_count": 2,
+     "invalid_count": 0,
+     "observed_count": 0,
+     "quality": "not_assessed",
+     "source_attributes": {},
+     "valid_count": 0
+    },
+    "cache_read_tokens": {
+     "availability": "absent",
+     "derivation": "unavailable",
+     "eligible_count": 2,
+     "invalid_count": 0,
+     "observed_count": 0,
+     "quality": "not_assessed",
+     "source_attributes": {},
+     "valid_count": 0
+    },
+    "correlation": {
+     "ambiguous_count": 0,
+     "matched_count": 0,
+     "rejected_count": 0,
+     "rule": "none",
+     "unmatched_count": 0
+    },
+    "emitter": "opencode",
+    "emitter_fingerprint": "genai-v1-aae6c64d6e46f22e",
+    "input_tokens": {
+     "availability": "available",
+     "derivation": "native",
+     "eligible_count": 2,
+     "invalid_count": 0,
+     "observed_count": 2,
+     "quality": "reliable",
+     "source_attributes": {
+      "gen_ai.usage.input_tokens": 2
+     },
+     "valid_count": 2
+    },
+    "model": "gpt-5",
+    "output_tokens": {
+     "availability": "available",
+     "derivation": "native",
+     "eligible_count": 2,
+     "invalid_count": 0,
+     "observed_count": 2,
+     "quality": "reliable",
+     "source_attributes": {
+      "gen_ai.usage.output_tokens": 2
+     },
+     "valid_count": 2
+    },
+    "provider": "opencode-go",
+    "request_count": 2,
+    "ttft": {
+     "availability": "absent",
+     "derivation": "unavailable",
+     "eligible_count": 2,
+     "invalid_count": 0,
+     "observed_count": 0,
+     "quality": "not_assessed",
+     "source_attributes": {},
+     "valid_count": 0
+    }
+   }
+  ],
+  "truncated": false,
+  "unidentified": [
+   {
+    "required_attributes": [
+     "gen_ai.provider.name"
+    ],
+    "span_count": 1
+   },
+   {
+    "required_attributes": [
+     "gen_ai.provider.name",
+     "gen_ai.request.model"
+    ],
+    "span_count": 4
+   },
+   {
+    "required_attributes": [
+     "gen_ai.provider.name",
+     "gen_ai.request.model",
+     "gen_ai.usage.input_tokens"
+    ],
+    "span_count": 4
+   },
+   {
+    "required_attributes": [
+     "gen_ai.usage.input_tokens"
+    ],
+    "span_count": 1
+   }
+  ]
+ },
+ "cli_args": [
+  "--format",
+  "json-compact",
+  "--start",
+  "2026-08-24",
+  "--end",
+  "2026-08-26"
+ ],
+ "cli_args_empty": [
+  "--format",
+  "json-compact",
+  "--start",
+  "100",
+  "--end",
+  "200"
+ ],
+ "cli_empty": {
+  "canonical_span_count": 0,
+  "duplicate_span_count": 0,
+  "filters_applied": [],
+  "reports": [],
+  "truncated": false
+ },
+ "description": "Frozen capability-parity fixture (#120/#149). Spans cover: full native telemetry (standard-otel), sparse output + invalid TTFT, a degenerate TTFT group (n=12, 95% buffered), claude-code flat token keys with one duplicate OTLP delivery, opencode zero-input tokens, codex timing-only (no token signature), and one unidentified LLM-ish span (un1: model + system, no usage attribute) feeding the unidentified-emitter diagnostics. Regenerate only with a version bump and a changelog note; tests deep-equal the CLI json-compact output against the API response.",
+ "spans": [
+  {
+   "attrs": {
+    "gen_ai.request.model": "gpt-4o",
+    "gen_ai.system": "openai",
+    "gen_ai.usage.input_tokens": "100",
+    "gen_ai.usage.output_tokens": "10",
+    "ttft_ms": "200"
+   },
+   "dur_ms": 1000,
+   "hour": 0,
+   "id": "a0",
+   "name": "llm.request",
+   "trace": "a0"
+  },
+  {
+   "attrs": {
+    "gen_ai.request.model": "gpt-4o",
+    "gen_ai.system": "openai",
+    "gen_ai.usage.input_tokens": "100",
+    "gen_ai.usage.output_tokens": "10",
+    "ttft_ms": "200"
+   },
+   "dur_ms": 1000,
+   "hour": 1,
+   "id": "a1",
+   "name": "llm.request",
+   "trace": "a1"
+  },
+  {
+   "attrs": {
+    "gen_ai.request.model": "gpt-4o",
+    "gen_ai.system": "openai",
+    "gen_ai.usage.input_tokens": "100",
+    "gen_ai.usage.output_tokens": "10",
+    "ttft_ms": "200"
+   },
+   "dur_ms": 1000,
+   "hour": 2,
+   "id": "a2",
+   "name": "llm.request",
+   "trace": "a2"
+  },
+  {
+   "attrs": {
+    "gen_ai.request.model": "gpt-4o",
+    "gen_ai.system": "openai",
+    "gen_ai.usage.input_tokens": "100",
+    "gen_ai.usage.output_tokens": "10",
+    "ttft_ms": "200"
+   },
+   "dur_ms": 1000,
+   "hour": 3,
+   "id": "a3",
+   "name": "llm.request",
+   "trace": "a3"
+  },
+  {
+   "attrs": {
+    "gen_ai.request.model": "gpt-4o",
+    "gen_ai.system": "openai",
+    "gen_ai.usage.input_tokens": "100",
+    "gen_ai.usage.output_tokens": "10",
+    "ttft_ms": "200"
+   },
+   "dur_ms": 1000,
+   "hour": 4,
+   "id": "a4",
+   "name": "llm.request",
+   "trace": "a4"
+  },
+  {
+   "attrs": {
+    "gen_ai.request.model": "gpt-4o-mini",
+    "gen_ai.system": "openai",
+    "gen_ai.usage.input_tokens": "50",
+    "gen_ai.usage.output_tokens": "5",
+    "ttft_ms": "200"
+   },
+   "dur_ms": 1000,
+   "hour": 6,
+   "id": "b0",
+   "name": "llm.request",
+   "trace": "b0"
+  },
+  {
+   "attrs": {
+    "gen_ai.request.model": "gpt-4o-mini",
+    "gen_ai.system": "openai",
+    "gen_ai.usage.input_tokens": "50",
+    "gen_ai.usage.output_tokens": "5",
+    "ttft_ms": "not-a-number"
+   },
+   "dur_ms": 1000,
+   "hour": 7,
+   "id": "b1",
+   "name": "llm.request",
+   "trace": "b1"
+  },
+  {
+   "attrs": {
+    "gen_ai.request.model": "gpt-4o-mini",
+    "gen_ai.system": "openai",
+    "gen_ai.usage.input_tokens": "50",
+    "ttft_ms": "1500"
+   },
+   "dur_ms": 1000,
+   "hour": 8,
+   "id": "b2",
+   "name": "llm.request",
+   "trace": "b2"
+  },
+  {
+   "attrs": {
+    "gen_ai.request.model": "gpt-4o-mini",
+    "gen_ai.system": "openai",
+    "gen_ai.usage.input_tokens": "50"
+   },
+   "dur_ms": 1000,
+   "hour": 9,
+   "id": "b3",
+   "name": "llm.request",
+   "trace": "b3"
+  },
+  {
+   "attrs": {
+    "gen_ai.request.model": "claude-sonnet-4-5",
+    "gen_ai.system": "anthropic",
+    "gen_ai.usage.input_tokens": "10",
+    "gen_ai.usage.output_tokens": "1",
+    "ttft_ms": "950"
+   },
+   "dur_ms": 1000,
+   "id": "c0",
+   "min": 0,
+   "name": "llm.request",
+   "trace": "c0"
+  },
+  {
+   "attrs": {
+    "gen_ai.request.model": "claude-sonnet-4-5",
+    "gen_ai.system": "anthropic",
+    "gen_ai.usage.input_tokens": "10",
+    "gen_ai.usage.output_tokens": "1",
+    "ttft_ms": "950"
+   },
+   "dur_ms": 1000,
+   "id": "c1",
+   "min": 1,
+   "name": "llm.request",
+   "trace": "c1"
+  },
+  {
+   "attrs": {
+    "gen_ai.request.model": "claude-sonnet-4-5",
+    "gen_ai.system": "anthropic",
+    "gen_ai.usage.input_tokens": "10",
+    "gen_ai.usage.output_tokens": "1",
+    "ttft_ms": "950"
+   },
+   "dur_ms": 1000,
+   "id": "c2",
+   "min": 2,
+   "name": "llm.request",
+   "trace": "c2"
+  },
+  {
+   "attrs": {
+    "gen_ai.request.model": "claude-sonnet-4-5",
+    "gen_ai.system": "anthropic",
+    "gen_ai.usage.input_tokens": "10",
+    "gen_ai.usage.output_tokens": "1",
+    "ttft_ms": "950"
+   },
+   "dur_ms": 1000,
+   "id": "c3",
+   "min": 3,
+   "name": "llm.request",
+   "trace": "c3"
+  },
+  {
+   "attrs": {
+    "gen_ai.request.model": "claude-sonnet-4-5",
+    "gen_ai.system": "anthropic",
+    "gen_ai.usage.input_tokens": "10",
+    "gen_ai.usage.output_tokens": "1",
+    "ttft_ms": "950"
+   },
+   "dur_ms": 1000,
+   "id": "c4",
+   "min": 4,
+   "name": "llm.request",
+   "trace": "c4"
+  },
+  {
+   "attrs": {
+    "gen_ai.request.model": "claude-sonnet-4-5",
+    "gen_ai.system": "anthropic",
+    "gen_ai.usage.input_tokens": "10",
+    "gen_ai.usage.output_tokens": "1",
+    "ttft_ms": "950"
+   },
+   "dur_ms": 1000,
+   "id": "c5",
+   "min": 5,
+   "name": "llm.request",
+   "trace": "c5"
+  },
+  {
+   "attrs": {
+    "gen_ai.request.model": "claude-sonnet-4-5",
+    "gen_ai.system": "anthropic",
+    "gen_ai.usage.input_tokens": "10",
+    "gen_ai.usage.output_tokens": "1",
+    "ttft_ms": "950"
+   },
+   "dur_ms": 1000,
+   "id": "c6",
+   "min": 6,
+   "name": "llm.request",
+   "trace": "c6"
+  },
+  {
+   "attrs": {
+    "gen_ai.request.model": "claude-sonnet-4-5",
+    "gen_ai.system": "anthropic",
+    "gen_ai.usage.input_tokens": "10",
+    "gen_ai.usage.output_tokens": "1",
+    "ttft_ms": "950"
+   },
+   "dur_ms": 1000,
+   "id": "c7",
+   "min": 7,
+   "name": "llm.request",
+   "trace": "c7"
+  },
+  {
+   "attrs": {
+    "gen_ai.request.model": "claude-sonnet-4-5",
+    "gen_ai.system": "anthropic",
+    "gen_ai.usage.input_tokens": "10",
+    "gen_ai.usage.output_tokens": "1",
+    "ttft_ms": "950"
+   },
+   "dur_ms": 1000,
+   "id": "c8",
+   "min": 8,
+   "name": "llm.request",
+   "trace": "c8"
+  },
+  {
+   "attrs": {
+    "gen_ai.request.model": "claude-sonnet-4-5",
+    "gen_ai.system": "anthropic",
+    "gen_ai.usage.input_tokens": "10",
+    "gen_ai.usage.output_tokens": "1",
+    "ttft_ms": "950"
+   },
+   "dur_ms": 1000,
+   "id": "c9",
+   "min": 9,
+   "name": "llm.request",
+   "trace": "c9"
+  },
+  {
+   "attrs": {
+    "gen_ai.request.model": "claude-sonnet-4-5",
+    "gen_ai.system": "anthropic",
+    "gen_ai.usage.input_tokens": "10",
+    "gen_ai.usage.output_tokens": "1",
+    "ttft_ms": "950"
+   },
+   "dur_ms": 1000,
+   "id": "c10",
+   "min": 10,
+   "name": "llm.request",
+   "trace": "c10"
+  },
+  {
+   "attrs": {
+    "gen_ai.request.model": "claude-sonnet-4-5",
+    "gen_ai.system": "anthropic",
+    "gen_ai.usage.input_tokens": "10",
+    "gen_ai.usage.output_tokens": "1",
+    "ttft_ms": "950"
+   },
+   "dur_ms": 1000,
+   "id": "c11",
+   "min": 11,
+   "name": "llm.request",
+   "trace": "c11"
+  },
+  {
+   "attrs": {
+    "completion_tokens": "5",
+    "model": "claude-opus-4-6",
+    "prompt_tokens": "10"
+   },
+   "dur_ms": 500,
+   "id": "s0",
+   "name": "claude_code.llm_request",
+   "sec": 0,
+   "trace": "d0"
+  },
+  {
+   "attrs": {
+    "completion_tokens": "5",
+    "model": "claude-opus-4-6",
+    "prompt_tokens": "10"
+   },
+   "dur_ms": 500,
+   "id": "s1",
+   "name": "claude_code.llm_request",
+   "sec": 1,
+   "trace": "d1"
+  },
+  {
+   "attrs": {
+    "completion_tokens": "5",
+    "model": "claude-opus-4-6",
+    "prompt_tokens": "10"
+   },
+   "dur_ms": 500,
+   "id": "s2",
+   "name": "claude_code.llm_request",
+   "sec": 2,
+   "trace": "d2"
+  },
+  {
+   "attrs": {
+    "completion_tokens": "5",
+    "model": "claude-opus-4-6",
+    "prompt_tokens": "10"
+   },
+   "dur_ms": 500,
+   "id": "s0",
+   "name": "claude_code.llm_request",
+   "sec": 0,
+   "trace": "d0"
+  },
+  {
+   "attrs": {
+    "gen_ai.request.model": "gpt-5",
+    "gen_ai.usage.input_tokens": "0",
+    "gen_ai.usage.output_tokens": "7",
+    "llm.system": "opencode-go",
+    "openinference.span.kind": "LLM"
+   },
+   "dur_ms": 300,
+   "id": "e0",
+   "name": "opencode.llm",
+   "sec": 1,
+   "trace": "e0"
+  },
+  {
+   "attrs": {
+    "gen_ai.request.model": "gpt-5",
+    "gen_ai.usage.input_tokens": "0",
+    "gen_ai.usage.output_tokens": "7",
+    "llm.system": "opencode-go",
+    "openinference.span.kind": "LLM"
+   },
+   "dur_ms": 300,
+   "id": "e1",
+   "name": "opencode.llm",
+   "sec": 2,
+   "trace": "e1"
+  },
+  {
+   "attrs": {
+    "model": "gpt-5",
+    "otel.scope.name": "codex_cli_rs"
+   },
+   "dur_ms": 2000,
+   "id": "f0",
+   "name": "run_sampling_request",
+   "sec": 3,
+   "trace": "f0"
+  },
+  {
+   "attrs": {
+    "model": "gpt-5",
+    "otel.scope.name": "codex_cli_rs"
+   },
+   "dur_ms": 2000,
+   "id": "f1",
+   "name": "run_sampling_request",
+   "sec": 4,
+   "trace": "f1"
+  },
+  {
+   "attrs": {},
+   "dur_ms": 100,
+   "id": "g0",
+   "name": "background.work",
+   "sec": 5,
+   "trace": "g0"
+  },
+  {
+   "trace": "cx1",
+   "id": "cx1_turn",
+   "name": "run_turn",
+   "parent": null,
+   "sec": 10,
+   "dur_ms": 1000,
+   "attrs": {
+    "otel.scope.name": "codex_cli_rs"
+   }
+  },
+  {
+   "trace": "cx1",
+   "id": "cx1_req",
+   "name": "run_sampling_request",
+   "parent": "cx1_turn",
+   "sec": 10,
+   "dur_ms": 2000,
+   "attrs": {
+    "otel.scope.name": "codex_cli_rs",
+    "model": "gpt-5"
+   }
+  },
+  {
+   "trace": "cx1",
+   "id": "cx1_try",
+   "name": "try_run_sampling_request",
+   "parent": "cx1_req",
+   "sec": 10,
+   "dur_ms": 1900,
+   "attrs": {
+    "otel.scope.name": "codex_cli_rs"
+   }
+  },
+  {
+   "trace": "cx1",
+   "id": "cx1_usage",
+   "name": "handle_responses",
+   "parent": "cx1_try",
+   "sec": 11,
+   "dur_ms": 50,
+   "attrs": {
+    "otel.scope.name": "codex_cli_rs",
+    "gen_ai.usage.input_tokens": "1200",
+    "gen_ai.usage.output_tokens": "80",
+    "gen_ai.usage.cache_read.input_tokens": "1100",
+    "gen_ai.usage.cache_write.input_tokens": "5"
+   }
+  },
+  {
+   "trace": "cx2",
+   "id": "cx2_req",
+   "name": "run_sampling_request",
+   "parent": null,
+   "sec": 11,
+   "dur_ms": 2000,
+   "attrs": {
+    "otel.scope.name": "codex_cli_rs",
+    "model": "gpt-5"
+   }
+  },
+  {
+   "trace": "cx2",
+   "id": "cx2_usage_a",
+   "name": "handle_responses",
+   "parent": "cx2_req",
+   "sec": 11,
+   "dur_ms": 40,
+   "attrs": {
+    "otel.scope.name": "codex_cli_rs",
+    "gen_ai.usage.output_tokens": "7"
+   }
+  },
+  {
+   "trace": "cx2",
+   "id": "cx2_usage_b",
+   "name": "handle_responses",
+   "parent": "cx2_req",
+   "sec": 12,
+   "dur_ms": 40,
+   "attrs": {
+    "otel.scope.name": "codex_cli_rs",
+    "gen_ai.usage.output_tokens": "9"
+   }
+  },
+  {
+   "trace": "cx3",
+   "id": "cx3_orphan",
+   "name": "turn_context.make",
+   "parent": null,
+   "sec": 12,
+   "dur_ms": 100,
+   "attrs": {
+    "otel.scope.name": "codex_cli_rs"
+   }
+  },
+  {
+   "trace": "cx3",
+   "id": "cx3_usage",
+   "name": "handle_responses",
+   "parent": "cx3_orphan",
+   "sec": 12,
+   "dur_ms": 30,
+   "attrs": {
+    "otel.scope.name": "codex_cli_rs",
+    "gen_ai.usage.output_tokens": "4"
+   }
+  },
+  {
+   "trace": "cx4",
+   "id": "cx4_req",
+   "name": "run_sampling_request",
+   "parent": null,
+   "sec": 13,
+   "dur_ms": 2000,
+   "attrs": {
+    "otel.scope.name": "codex_cli_rs",
+    "model": "gpt-5"
+   }
+  },
+  {
+   "trace": "cx4",
+   "id": "cx4_usage",
+   "name": "handle_responses",
+   "parent": "cx4_req",
+   "sec": 13,
+   "dur_ms": 40,
+   "attrs": {
+    "otel.scope.name": "codex_cli_rs",
+    "model": "gpt-6",
+    "gen_ai.usage.output_tokens": "11"
+   }
+  },
+  {
+   "trace": "un1",
+   "id": "un1",
+   "name": "llm.call",
+   "parent": null,
+   "hour": 1,
+   "dur_ms": 50,
+   "attrs": {
+    "gen_ai.system": "openai",
+    "gen_ai.request.model": "mystery-model"
+   }
+  }
+ ],
+ "version": 3,
+ "window": {
+  "description": "2026-08-24T00:00:00Z .. 2026-08-26T00:00:00Z",
+  "end_time_ns": 1787702400000000000,
+  "start_time_ns": 1787529600000000000
+ }
+}

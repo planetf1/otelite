@@ -787,6 +787,19 @@ pub struct GenAiCapabilityReport {
     pub correlation: GenAiCorrelationProvenance,
 }
 
+/// One class of LLM-ish spans that no verified emitter signature matched,
+/// with the attribute names a verified signature would still require
+/// (#149). Attribute *names* and counts only — never values, span or trace
+/// identifiers, or service names (the #120 privacy invariant).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
+pub struct GenAiUnidentifiedSignature {
+    /// Sorted attribute names still required for a verified signature.
+    pub required_attributes: Vec<String>,
+    /// Spans in the bounded sample with exactly this missing set.
+    pub span_count: usize,
+}
+
 /// Result metadata for a bounded GenAI capability query.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
@@ -799,6 +812,11 @@ pub struct GenAiCapabilityResponse {
     /// Filter dimensions the endpoint actually applied (global filter bar,
     /// #135). Empty when the endpoint accepts but does not apply filters.
     pub filters_applied: Vec<String>,
+    /// LLM-ish spans with no verified emitter signature, and the attribute
+    /// names that would identify them (#149). Empty when every LLM-ish span
+    /// in the sample matched a verified signature.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub unidentified: Vec<GenAiUnidentifiedSignature>,
 }
 
 /// Error-rate summary for LLM spans grouped by model.

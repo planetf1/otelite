@@ -120,6 +120,15 @@ pub fn capability_rows(resp: &GenAiCapabilityResponse) -> Vec<CapabilityRow> {
         .collect()
 }
 
+/// Unidentified-emitter diagnostics (#149) as (joined required attribute
+/// names, span count). Names and counts only — no values or identifiers.
+pub fn unidentified_rows(resp: &GenAiCapabilityResponse) -> Vec<(String, usize)> {
+    resp.unidentified
+        .iter()
+        .map(|u| (u.required_attributes.join(" + "), u.span_count))
+        .collect()
+}
+
 fn day_label_local(ts_ns: i64, tz: &chrono_tz::Tz) -> String {
     let dt: DateTime<Utc> = DateTime::from_timestamp_nanos(ts_ns);
     // The offset at this instant shifts the instant into local wall time.
@@ -678,7 +687,31 @@ fn render_capability_table(frame: &mut Frame, area: Rect, state: &UsageState) {
     .header(header)
     .block(block);
 
-    frame.render_widget(table, area);
+    if state.unidentified.is_empty() {
+        frame.render_widget(table, area);
+        return;
+    }
+    // Unidentified-emitter diagnostics below the table (#149): one line per
+    // missing-attribute group. Attribute names and counts only.
+    let diag_lines = state.unidentified.len() as u16 + 1;
+    let chunks = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([Constraint::Min(4), Constraint::Length(diag_lines)])
+        .split(area);
+    frame.render_widget(table, chunks[0]);
+    let mut lines: Vec<Line> = vec![Line::from(Span::styled(
+        "Unidentified emitters (attribute names only):",
+        Style::default()
+            .fg(Color::Yellow)
+            .add_modifier(Modifier::BOLD),
+    ))];
+    lines.extend(
+        state
+            .unidentified
+            .iter()
+            .map(|(attrs, count)| Line::from(format!("  {count} span(s) need {attrs}"))),
+    );
+    frame.render_widget(Paragraph::new(lines).block(Block::default()), chunks[1]);
 }
 
 fn render_trunc_cache_row(
@@ -1715,6 +1748,7 @@ mod tests {
             duplicate_span_count: 0,
             truncated: false,
             filters_applied: vec![],
+            unidentified: vec![],
         }
     }
 
@@ -1825,5 +1859,32 @@ mod tests {
     #[test]
     fn test_capability_rows_empty() {
         assert!(capability_rows(&cap_resp(vec![])).is_empty());
+        assert!(unidentified_rows(&cap_resp(vec![])).is_empty());
+    }
+
+    #[test]
+    fn test_unidentified_rows_join_names_and_keep_counts() {
+        let mut resp = cap_resp(vec![]);
+        resp.unidentified = vec![
+            otelite_core::api::GenAiUnidentifiedSignature {
+                required_attributes: vec![
+                    "gen_ai.provider.name".to_string(),
+                    "gen_ai.usage.input_tokens".to_string(),
+                ],
+                span_count: 3,
+            },
+            otelite_core::api::GenAiUnidentifiedSignature {
+                required_attributes: vec!["otel.scope.name".to_string()],
+                span_count: 1,
+            },
+        ];
+        let rows = unidentified_rows(&resp);
+        assert_eq!(rows.len(), 2);
+        assert_eq!(
+            rows[0].0,
+            "gen_ai.provider.name + gen_ai.usage.input_tokens"
+        );
+        assert_eq!(rows[0].1, 3);
+        assert_eq!(rows[1], ("otel.scope.name".to_string(), 1));
     }
 }

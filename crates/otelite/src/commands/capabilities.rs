@@ -203,6 +203,24 @@ fn render_capabilities(response: &GenAiCapabilityResponse) -> String {
         out,
         "Correlation: matched/unmatched/rejected/ambiguous candidates under the group's rule (see JSON for the rule name)."
     );
+    if !response.unidentified.is_empty() {
+        let _ = writeln!(
+            out,
+            "\nUnidentified emitters — LLM-ish spans no verified signature matched:"
+        );
+        for u in &response.unidentified {
+            let _ = writeln!(
+                out,
+                "  {} span(s) need: {}",
+                u.span_count,
+                u.required_attributes.join(" + ")
+            );
+        }
+        let _ = writeln!(
+            out,
+            "Attribute names only — no values or identifiers are exposed."
+        );
+    }
     out
 }
 
@@ -274,6 +292,7 @@ mod tests {
             duplicate_span_count: 0,
             truncated: false,
             filters_applied: vec![],
+            unidentified: vec![],
         };
         let out = render_capabilities(&response);
         assert!(out.contains("No LLM request spans in this range"));
@@ -307,6 +326,7 @@ mod tests {
             duplicate_span_count: 2,
             truncated: false,
             filters_applied: vec![],
+            unidentified: vec![],
         };
         let out = render_capabilities(&response);
         assert!(out.contains("openai/gpt-4o"));
@@ -346,10 +366,58 @@ mod tests {
             duplicate_span_count: 0,
             truncated: false,
             filters_applied: vec![],
+            unidentified: vec![],
         };
         let out = render_capabilities(&response);
         assert!(out.contains("5/3/1/2"));
         assert!(out.contains("sparse/reliable/correlated"));
         assert!(out.contains("matched/unmatched/rejected/ambiguous"));
+    }
+
+    #[test]
+    fn display_renders_unidentified_emitter_diagnostics() {
+        let report = otelite_core::api::GenAiCapabilityReport {
+            provider: Some("openai".into()),
+            model: Some("gpt-4o".into()),
+            emitter_fingerprint: "fp-3".into(),
+            emitter: "generic-otel".into(),
+            adapter_rule: "conventions".into(),
+            request_count: 2,
+            input_tokens: cap((2, 2, 2, "available", "reliable", "native")),
+            output_tokens: cap((2, 2, 2, "available", "reliable", "native")),
+            cache_creation_tokens: cap((2, 0, 0, "absent", "not_assessed", "unavailable")),
+            cache_read_tokens: cap((2, 0, 0, "absent", "not_assessed", "unavailable")),
+            ttft: cap((2, 2, 2, "available", "reliable", "native")),
+            correlation: GenAiCorrelationProvenance {
+                rule: "none".into(),
+                matched_count: 0,
+                unmatched_count: 0,
+                rejected_count: 0,
+                ambiguous_count: 0,
+            },
+        };
+        let mut response = GenAiCapabilityResponse {
+            reports: vec![report],
+            canonical_span_count: 2,
+            duplicate_span_count: 0,
+            truncated: false,
+            filters_applied: vec![],
+            unidentified: vec![],
+        };
+        let plain = render_capabilities(&response);
+        assert!(!plain.contains("Unidentified emitters"));
+
+        response.unidentified = vec![otelite_core::api::GenAiUnidentifiedSignature {
+            required_attributes: vec![
+                "gen_ai.provider.name".to_string(),
+                "gen_ai.usage.input_tokens".to_string(),
+            ],
+            span_count: 4,
+        }];
+        let out = render_capabilities(&response);
+        assert!(out.contains("Unidentified emitters"));
+        assert!(out.contains("4 span(s) need"));
+        assert!(out.contains("gen_ai.provider.name + gen_ai.usage.input_tokens"));
+        assert!(out.contains("Attribute names only"));
     }
 }

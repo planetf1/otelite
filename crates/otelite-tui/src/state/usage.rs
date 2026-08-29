@@ -56,6 +56,9 @@ pub struct UsageState {
     pub daily_throughput_tz: Option<String>,
     /// Capability rows; empty until fetched.
     pub capabilities: Vec<CapabilityRow>,
+    /// Unidentified-emitter diagnostics (#149): joined required attribute
+    /// names and span count; empty until fetched.
+    pub unidentified: Vec<(String, usize)>,
     pub error: Option<String>,
     pub is_loading: bool,
 }

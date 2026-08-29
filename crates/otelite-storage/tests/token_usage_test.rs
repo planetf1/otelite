@@ -744,6 +744,79 @@ fn test_genai_capability_report_correlation_edge_cases() {
 }
 
 #[test]
+fn test_genai_capability_report_diagnoses_unidentified_emitters() {
+    let conn = setup_test_db();
+    // Three LLM-ish spans no verified signature matches, in three different
+    // missing-attribute classes:
+    //   u1: model + system, no usage/TTFT -> missing a usage attribute
+    //   u2: model only                   -> missing system + usage
+    //   u3: model, TTFT present          -> fully standard-eligible would
+    //       match, so use a Codex span name without the verified scope
+    //       instead -> missing otel.scope.name (x2 for the count)
+    let insert = |id: &str, name: &str, attrs: &str| {
+        conn.execute(
+            r#"INSERT INTO spans (trace_id, span_id, name, kind, start_time, end_time, attributes, status_code)
+               VALUES (?1, ?1, ?2, 0, 0, 1000000000, ?3, 0)"#,
+            rusqlite::params![id, name, attrs],
+        )
+        .unwrap();
+    };
+    insert(
+        "u1",
+        "llm.call",
+        "{\"gen_ai.system\":\"openai\",\"gen_ai.request.model\":\"mystery\"}",
+    );
+    insert("u2", "llm.call", "{\"gen_ai.request.model\":\"mystery\"}");
+    insert(
+        "u3",
+        "run_sampling_request",
+        "{\"model\":\"mystery\",\"gen_ai.system\":\"openai\"}",
+    );
+    insert(
+        "u4",
+        "run_sampling_request",
+        "{\"model\":\"mystery\",\"gen_ai.system\":\"openai\"}",
+    );
+
+    let report =
+        reader::query_genai_capabilities(&conn, None, None, &GenAiFilters::default()).unwrap();
+
+    // Unidentifiable spans never become groups.
+    assert!(report.reports.is_empty());
+    assert_eq!(report.canonical_span_count, 0);
+
+    let by_names = |names: &[&str]| {
+        report
+            .unidentified
+            .iter()
+            .find(|u| u.required_attributes == names)
+    };
+    assert_eq!(
+        by_names(&["gen_ai.usage.input_tokens"]).unwrap().span_count,
+        1,
+        "u1 lacks only a standard usage attribute"
+    );
+    assert_eq!(
+        by_names(&["gen_ai.provider.name", "gen_ai.usage.input_tokens"])
+            .unwrap()
+            .span_count,
+        1,
+        "u2 lacks a system attribute and a usage attribute"
+    );
+    assert_eq!(
+        by_names(&["otel.scope.name"]).unwrap().span_count,
+        2,
+        "the two Codex-named spans share the scope gap"
+    );
+    assert_eq!(report.unidentified.len(), 3);
+
+    // Privacy invariant: names and counts only.
+    let json = serde_json::to_string(&report).unwrap();
+    assert!(!json.contains("mystery"), "attribute values must not leak");
+    assert!(!json.contains("u1"), "span identifiers must not leak");
+}
+
+#[test]
 fn test_ttft_normalisation_agrees_across_capability_and_latency_paths() {
     let conn = setup_test_db();
     // One model, six requests of 1.0s duration each, exercising every TTFT

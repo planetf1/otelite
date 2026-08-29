@@ -667,9 +667,12 @@ impl App {
                         Ok(resp) => {
                             self.usage_state.capabilities =
                                 crate::ui::usage::capability_rows(&resp);
+                            self.usage_state.unidentified =
+                                crate::ui::usage::unidentified_rows(&resp);
                         },
                         Err(_) => {
                             self.usage_state.capabilities = Vec::new();
+                            self.usage_state.unidentified = Vec::new();
                         },
                     }
                 }

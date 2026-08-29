@@ -1,10 +1,12 @@
 //! Capability parity test (#120): the API capability report must match the
-//! frozen fixture `capability_parity_v2.json` exactly, and the CLI's
+//! frozen fixture `capability_parity_v3.json` exactly, and the CLI's
 //! json-compact output must deep-equal it (asserted in the CLI test).
 //!
 //! v2 adds parent-linked Codex usage spans so the `codex-one-to-one-v1`
 //! correlation rule is exercised end to end (matched, ambiguous, unmatched,
-//! rejected and orphan candidates).
+//! rejected and orphan candidates). v3 adds the unidentified-emitter
+//! diagnostics (#149): LLM-ish spans with no verified signature are grouped
+//! by the attribute names a signature would still require — names only.
 
 use axum::body::Body;
 use axum::http::Request;
@@ -12,6 +14,7 @@ use otelite_api::{DashboardConfig, DashboardServer};
 use otelite_core::telemetry::trace::{Span, SpanKind, SpanStatus, StatusCode as SpanStatusCode};
 use otelite_storage::sqlite::SqliteBackend;
 use otelite_storage::{StorageBackend, StorageConfig};
+use serde_json::json;
 use std::sync::Arc;
 use tower::ServiceExt;
 
@@ -37,7 +40,7 @@ struct FixtureSpan {
 fn fixture() -> serde_json::Value {
     let raw = std::fs::read_to_string(concat!(
         env!("CARGO_MANIFEST_DIR"),
-        "/tests/fixtures/capability_parity_v2.json"
+        "/tests/fixtures/capability_parity_v3.json"
     ))
     .unwrap();
     serde_json::from_str(&raw).unwrap()
@@ -108,7 +111,7 @@ async fn capability_report_matches_frozen_fixture() {
     let expected = fixture()["api"].clone();
     assert_eq!(
         got, expected,
-        "capability report drifted from frozen fixture v2"
+        "capability report drifted from frozen fixture v3"
     );
 }
 
@@ -221,12 +224,31 @@ async fn capability_fixture_semantic_guards() {
     );
     assert_eq!(codex["ttft"]["derivation"], "unavailable");
 
-    // Unidentified span contributes nothing.
+    // Unidentified spans contribute no report rows...
     assert!(
         !reports
             .iter()
             .any(|r| r["emitter"] == "unknown" || r["adapter_rule"] == "unidentified-v1"),
         "unidentified span must not be reported"
+    );
+    // ...but they are diagnosable: grouped by the sorted attribute names a
+    // verified signature would still require. Names and counts only.
+    let unidentified = api["unidentified"].as_array().unwrap();
+    assert_eq!(unidentified.len(), 4);
+    let un1 = unidentified
+        .iter()
+        .find(|u| {
+            u["span_count"] == 1 && u["required_attributes"] == json!(["gen_ai.usage.input_tokens"])
+        })
+        .unwrap();
+    assert_eq!(
+        un1["span_count"], 1,
+        "v3 span un1 lacks only a usage attribute"
+    );
+    let raw = serde_json::to_string(&api).unwrap();
+    assert!(
+        !raw.contains("mystery-model"),
+        "diagnostics must not leak attribute values"
     );
 
     // Only the Codex group carries a correlation rule; every other group's

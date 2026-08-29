@@ -28,7 +28,7 @@ struct FixtureSpan {
 fn fixture() -> serde_json::Value {
     let raw = std::fs::read_to_string(concat!(
         env!("CARGO_MANIFEST_DIR"),
-        "/../otelite-api/tests/fixtures/capability_parity_v2.json"
+        "/../otelite-api/tests/fixtures/capability_parity_v3.json"
     ))
     .unwrap();
     serde_json::from_str(&raw).unwrap()
@@ -157,4 +157,8 @@ async fn cli_capabilities_pretty_prints_vocabulary() {
     // Codex correlation provenance renders as candidate counts (v2).
     assert!(stdout.contains("1/2/1/2"));
     assert!(stdout.contains("sparse/reliable/correlated"));
+    // Unidentified-emitter diagnostics render attribute names only (v3, #149).
+    assert!(stdout.contains("Unidentified emitters"));
+    assert!(stdout.contains("Attribute names only"));
+    assert!(!stdout.contains("mystery-model"));
 }

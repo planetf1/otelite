@@ -11,6 +11,14 @@ have to work around), not implementation detail.
 
 ## [Unreleased]
 
+### Added
+
+- The capability report now diagnoses LLM-ish spans no verified emitter
+  signature matched: CLI, TUI and the analytics page show how many spans
+  are missing which required attributes (names only — no values or
+  identifiers), so an unrecognised client can be fixed by adding the listed
+  attributes.
+
 ## [0.1.99] - 2026-08-29
 
 ### Internal

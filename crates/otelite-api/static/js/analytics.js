@@ -1294,7 +1294,25 @@ class AnalyticsView {
                 </tr></thead>
                 <tbody>${body}</tbody>
             </table>
-            <p class="table-hint">availability: available · sparse · absent — quality: reliable · invalid · degenerate · not_assessed — derivation (shown when not native): correlated · unavailable. Correlation: matched/unmatched/rejected/ambiguous candidates under the group's join rule (— when no rule applies).</p>`;
+            <p class="table-hint">availability: available · sparse · absent — quality: reliable · invalid · degenerate · not_assessed — derivation (shown when not native): correlated · unavailable. Correlation: matched/unmatched/rejected/ambiguous candidates under the group's join rule (— when no rule applies).</p>`
+            + this._unidentifiedSection(resp);
+    }
+
+    _unidentifiedSection(resp) {
+        const unidentified = (resp && resp.unidentified) || [];
+        if (!unidentified.length) return '';
+        const rows = unidentified.map(u => `
+            <tr>
+                <td class="num">${u.span_count}</td>
+                <td>${u.required_attributes.map(a => `<code>${this._esc(a)}</code>`).join(' + ')}</td>
+            </tr>`).join('');
+        return `
+            <h4>Unidentified emitters</h4>
+            <p class="table-hint">LLM-ish spans no verified emitter signature matched, grouped by the attribute names a signature would still require. Attribute names only — no values or identifiers are exposed.</p>
+            <table class="data-table">
+                <thead><tr><th>Spans</th><th>Required attributes</th></tr></thead>
+                <tbody>${rows}</tbody>
+            </table>`;
     }
 
     _buildDailyThroughputTable(resp, tz) {

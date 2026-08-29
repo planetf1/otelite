@@ -1059,6 +1059,10 @@ pub fn query_genai_capabilities(
 
     let mut canonical_request_span_count = 0;
     let mut duplicate_span_count = 0;
+    // LLM-ish spans no verified signature matched, bucketed by the sorted
+    // list of attribute names a verified signature would still require
+    // (#149). Names and counts only — no values, span or trace identifiers.
+    let mut unidentified: BTreeMap<Vec<String>, usize> = BTreeMap::new();
     let mut groups: BTreeMap<CapabilityGroupKey, CapabilityAccum> = BTreeMap::new();
     // Codex request spans seen in the sample: row index, their group key,
     // whether the span completed, its request model, and which metrics had a
@@ -1074,6 +1078,16 @@ pub fn query_genai_capabilities(
 
     for (row_index, (span, duplicate_deliveries)) in rows.iter().enumerate() {
         let capabilities = classify_span_capabilities(span);
+        if capabilities.emitter == GenAiEmitter::Unknown {
+            // LLM-ish per the query guard but unidentifiable: record what a
+            // verified signature would still require (names only, #149).
+            *unidentified
+                .entry(otelite_core::telemetry::unidentified_required_attributes(
+                    span,
+                ))
+                .or_default() += 1;
+            continue;
+        }
         if capabilities.role != GenAiSpanRole::RequestTiming {
             continue;
         }
@@ -1314,6 +1328,15 @@ pub fn query_genai_capabilities(
         duplicate_span_count,
         truncated,
         filters_applied: Vec::new(),
+        unidentified: unidentified
+            .into_iter()
+            .map(|(required_attributes, span_count)| {
+                otelite_core::api::GenAiUnidentifiedSignature {
+                    required_attributes,
+                    span_count,
+                }
+            })
+            .collect(),
     })
 }
 
