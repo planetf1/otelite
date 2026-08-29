@@ -15,6 +15,14 @@ have to work around), not implementation detail.
 
 ### Added
 
+- Model performance diagnosis documentation: the LLM observability guide
+  now covers the canonical request population, the identity key
+  (provider, requested model, emitter fingerprint), the comparison
+  windows and baseline exclusion, percentile direction, materiality
+  thresholds, the class vocabulary, and what the diagnosis will not claim
+  (no live benchmarks, no decode-speed claims from complete duration,
+  correlation not causation). The CLI reference documents
+  `otelite model-performance`.
 - The TUI Usage view now includes a Model performance panel and the web
   analytics page a Model performance section: for each (provider, model,
   emitter) identity they show the exact current/preceding/rolling

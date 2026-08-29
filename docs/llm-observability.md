@@ -202,6 +202,118 @@ context trimming would have a measurable effect.
 
 ---
 
+## Model performance diagnosis: `otelite model-performance`
+
+`otelite usage` shows what is happening. `otelite model-performance` answers
+*whether a model's behaviour changed* in an exact interval — and says what
+evidence it cannot speak to.
+
+```bash
+# Did gpt-4o get slower this week than the week before?
+otelite model-performance --start 2026-08-18 --end 2026-08-25 --rolling 7d
+
+# One model, machine-readable (deep-equal to the API response)
+otelite model-performance --start 2026-08-18 --end 2026-08-25 --rolling 7d \
+    --model gpt-4o --format json-compact
+```
+
+### What it compares
+
+For every **identity** — the triple *(provider, requested model, emitter
+fingerprint)* — it compares the selected interval (the **current** window)
+against two baselines:
+
+- **Preceding** — the equal-length interval immediately before the current
+  one. Derived; you cannot select it independently.
+- **Rolling** — an optional baseline you size (`--rolling 7d`); it sits
+  entirely before the preceding window (the three windows never overlap).
+  When a baseline has no eligible samples,
+  the other is used; when neither does, no comparison is made and that is
+  reported, never implied away.
+
+The same diagnosis is served by `GET /api/genai/model-performance`, the TUI
+Usage view and the web analytics page — all four render the same frozen
+object, and the CLI's `json-compact` output deep-equals the API response.
+
+### The canonical request population
+
+Only GenAI spans that carry request-timing semantics are counted: either a
+known emitter signature (Claude Code, Codex, OpenCode) or standard OTel
+GenAI attributes on the span itself (`gen_ai.system` + model + token
+metrics). Delivery duplicates are deduplicated (only the first delivery of
+each span counts), and the most-recent 100,000 spans are the sample bound;
+when the bound is hit the diagnosis carries a `truncated` flag rather than
+silently dropping history.
+
+### The identity key
+
+- **Provider** — `gen_ai.system` (e.g. `openai`, `anthropic`).
+- **Requested model** — `gen_ai.request.model`. The *served* model
+  (`gen_ai.response.model`) is reported separately: a provider that reroutes
+  you to another model is a finding, not a silent merge.
+- **Emitter fingerprint** — a hash over the emitter's rule, service name and
+  instrumentation scope. Two different instrumentation stacks calling the
+  same provider and model are separate identities, because their latency
+  measurements are not interchangeable.
+
+### Percentile direction
+
+- **Duration** and **throughput** are assessed on the **median (p50)** —
+  the typical call — with the **p95 tail** as a second check. A change that
+  only shows up in the tail is classified as a *tail regression*, not a
+  typical one.
+- **Throughput** is the per-call rate (output tokens ÷ span duration, in
+  tokens/s) — the derived throughput of issue #119. Span duration is **not**
+  generation time: it includes queueing, transport and streaming gaps, so
+  the diagnosis never makes decode-speed claims from it.
+- **TTFT** is assessed only where issue #111's quality gate says TTFT is
+  reliable (native, or structurally correlated). Where it is absent, sparse,
+  invalid or degenerate (e.g. equal to total duration), TTFT conclusions are
+  *prevented* — the diagnosis says so explicitly instead of attributing
+  first-response or decode-rate behaviour to noise.
+- **Error rate** is errors ÷ requests per identity, compared in percentage
+  points.
+
+### Materiality thresholds
+
+A change is material when:
+
+| Metric | Material when | Constant |
+|---|---|---|
+| Duration / throughput / TTFT | relative change ≥ 20% | `MODEL_PERFORMANCE_MATERIAL_RELATIVE_CHANGE` |
+| Error rate | absolute change ≥ 5 percentage points | `MODEL_PERFORMANCE_MATERIAL_ERROR_RATE_POINTS` |
+| Any metric | eligible current-window samples ≥ 10 | `MODEL_PERFORMANCE_MIN_ELIGIBLE_SAMPLES` |
+
+Below 10 eligible samples the metric is `insufficient_telemetry` — a
+first-class state with the count reported, not a suppressed number.
+Confidence (`insufficient` / `low` / `medium` / `high`) is derived from the
+eligible sample counts and travels with every assessment.
+
+### What the classes mean
+
+| Class | Meaning |
+|---|---|
+| `no_material_change` | No material worsening (a material *improvement* is reported with a note, without regression wording) |
+| `typical_regression` | The median worsened materially |
+| `tail_regression` | The median held; the p95 tail worsened materially |
+| `workload_shift_correlated` | Duration/throughput worsened **and** workload (tokens) moved materially — co-movement is correlation, not causation |
+| `error_associated` | Worsening accompanied by a rising error rate — correlation, not causation |
+| `mixed_evidence` | The preceding and rolling baselines disagree on materiality — both deltas are reported, neither is silently dropped |
+| `insufficient_telemetry` | Below the sample minimum; the count is reported |
+
+### What it will not tell you
+
+- **It is not a benchmark.** It measures your recorded traffic, not a
+  controlled experiment; it cannot say whether a change is "real" at the
+  provider — only what your spans show and how much evidence stands behind it.
+- **No decode-speed claims.** Span duration is end-to-end wall time; only
+  TTFT (when #111-trusted) and the derived per-call throughput speak to
+  generation behaviour.
+- **No causal language.** Workload and error co-movement is always labelled
+  correlation.
+
+---
+
 ## Session-level investigation
 
 ### Find slow or failing sessions

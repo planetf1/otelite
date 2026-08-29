@@ -1,0 +1,4193 @@
+{
+  "api": {
+    "assessments": [
+      {
+        "emitter_fingerprint": "genai-v1-57c058ee2c9dcd06",
+        "metrics": [
+          {
+            "class": "no_material_change",
+            "confidence": "low",
+            "current_median": 1000.0,
+            "current_tail": 1000.0,
+            "eligible_current": 12,
+            "eligible_preceding": 12,
+            "median_delta_vs_preceding": {
+              "absolute": 0.0,
+              "relative": 0.0
+            },
+            "metric": "duration",
+            "notes": [],
+            "preceding_median": 1000.0,
+            "preceding_tail": 1000.0,
+            "tail_delta_vs_preceding": {
+              "absolute": 0.0,
+              "relative": 0.0
+            }
+          },
+          {
+            "class": "no_material_change",
+            "confidence": "low",
+            "current_median": 100.0,
+            "eligible_current": 12,
+            "eligible_preceding": 12,
+            "median_delta_vs_preceding": {
+              "absolute": 0.0,
+              "relative": 0.0
+            },
+            "metric": "throughput",
+            "notes": [],
+            "preceding_median": 100.0
+          },
+          {
+            "class": "insufficient_telemetry",
+            "confidence": "insufficient",
+            "eligible_current": 0,
+            "eligible_preceding": 0,
+            "metric": "ttft",
+            "notes": [
+              "ttft: 0 of the 0 eligible current-window requests are below the 10 minimum — no assessment",
+              "TTFT values are absent, sparse, invalid, or degenerate: first-response and decode-rate attribution is prevented"
+            ]
+          },
+          {
+            "class": "no_material_change",
+            "confidence": "low",
+            "current_median": 0.0,
+            "eligible_current": 12,
+            "eligible_preceding": 12,
+            "median_delta_vs_preceding": {
+              "absolute": 0.0
+            },
+            "metric": "error_rate",
+            "notes": [],
+            "preceding_median": 0.0
+          }
+        ],
+        "model": "shared-model",
+        "notes": [],
+        "overall_class": "no_material_change",
+        "overall_confidence": "insufficient",
+        "provider": "anthropic",
+        "request_counts": {
+          "current": 12,
+          "preceding": 12,
+          "rolling": 0
+        },
+        "truncated": false
+      },
+      {
+        "emitter_fingerprint": "genai-v1-4f16ddee27b5ce5b",
+        "metrics": [
+          {
+            "class": "no_material_change",
+            "confidence": "low",
+            "current_median": 1000.0,
+            "current_tail": 1000.0,
+            "eligible_current": 12,
+            "eligible_preceding": 12,
+            "median_delta_vs_preceding": {
+              "absolute": 0.0,
+              "relative": 0.0
+            },
+            "metric": "duration",
+            "notes": [],
+            "preceding_median": 1000.0,
+            "preceding_tail": 1000.0,
+            "tail_delta_vs_preceding": {
+              "absolute": 0.0,
+              "relative": 0.0
+            }
+          },
+          {
+            "class": "no_material_change",
+            "confidence": "low",
+            "current_median": 100.0,
+            "eligible_current": 12,
+            "eligible_preceding": 12,
+            "median_delta_vs_preceding": {
+              "absolute": 0.0,
+              "relative": 0.0
+            },
+            "metric": "throughput",
+            "notes": [],
+            "preceding_median": 100.0
+          },
+          {
+            "class": "insufficient_telemetry",
+            "confidence": "insufficient",
+            "eligible_current": 0,
+            "eligible_preceding": 0,
+            "metric": "ttft",
+            "notes": [
+              "ttft: 0 of the 0 eligible current-window requests are below the 10 minimum — no assessment",
+              "TTFT values are absent, sparse, invalid, or degenerate: first-response and decode-rate attribution is prevented"
+            ]
+          },
+          {
+            "class": "no_material_change",
+            "confidence": "low",
+            "current_median": 0.0,
+            "eligible_current": 12,
+            "eligible_preceding": 12,
+            "median_delta_vs_preceding": {
+              "absolute": 0.0
+            },
+            "metric": "error_rate",
+            "notes": [],
+            "preceding_median": 0.0
+          }
+        ],
+        "model": "shared-model",
+        "notes": [],
+        "overall_class": "no_material_change",
+        "overall_confidence": "insufficient",
+        "provider": "openai",
+        "request_counts": {
+          "current": 12,
+          "preceding": 12,
+          "rolling": 0
+        },
+        "truncated": false
+      },
+      {
+        "emitter_fingerprint": "genai-v1-01218aedfb8dda58",
+        "metrics": [
+          {
+            "class": "no_material_change",
+            "confidence": "low",
+            "current_median": 1000.0,
+            "current_tail": 1000.0,
+            "eligible_current": 12,
+            "eligible_preceding": 12,
+            "median_delta_vs_preceding": {
+              "absolute": 0.0,
+              "relative": 0.0
+            },
+            "metric": "duration",
+            "notes": [],
+            "preceding_median": 1000.0,
+            "preceding_tail": 1000.0,
+            "tail_delta_vs_preceding": {
+              "absolute": 0.0,
+              "relative": 0.0
+            }
+          },
+          {
+            "class": "no_material_change",
+            "confidence": "low",
+            "current_median": 100.0,
+            "eligible_current": 12,
+            "eligible_preceding": 12,
+            "median_delta_vs_preceding": {
+              "absolute": 0.0,
+              "relative": 0.0
+            },
+            "metric": "throughput",
+            "notes": [],
+            "preceding_median": 100.0
+          },
+          {
+            "class": "insufficient_telemetry",
+            "confidence": "insufficient",
+            "eligible_current": 0,
+            "eligible_preceding": 0,
+            "metric": "ttft",
+            "notes": [
+              "ttft: 0 of the 0 eligible current-window requests are below the 10 minimum — no assessment",
+              "TTFT values are absent, sparse, invalid, or degenerate: first-response and decode-rate attribution is prevented"
+            ]
+          },
+          {
+            "class": "no_material_change",
+            "confidence": "low",
+            "current_median": 0.0,
+            "eligible_current": 12,
+            "eligible_preceding": 12,
+            "median_delta_vs_preceding": {
+              "absolute": 0.0
+            },
+            "metric": "error_rate",
+            "notes": [],
+            "preceding_median": 0.0
+          }
+        ],
+        "model": "split-emit",
+        "notes": [],
+        "overall_class": "no_material_change",
+        "overall_confidence": "insufficient",
+        "provider": "openai",
+        "request_counts": {
+          "current": 12,
+          "preceding": 12,
+          "rolling": 0
+        },
+        "truncated": false
+      },
+      {
+        "emitter_fingerprint": "genai-v1-09cb05ee0075d903",
+        "metrics": [
+          {
+            "class": "no_material_change",
+            "confidence": "low",
+            "current_median": 1000.0,
+            "current_tail": 1000.0,
+            "eligible_current": 12,
+            "eligible_preceding": 12,
+            "median_delta_vs_preceding": {
+              "absolute": 0.0,
+              "relative": 0.0
+            },
+            "metric": "duration",
+            "notes": [],
+            "preceding_median": 1000.0,
+            "preceding_tail": 1000.0,
+            "tail_delta_vs_preceding": {
+              "absolute": 0.0,
+              "relative": 0.0
+            }
+          },
+          {
+            "class": "no_material_change",
+            "confidence": "low",
+            "current_median": 100.0,
+            "eligible_current": 12,
+            "eligible_preceding": 12,
+            "median_delta_vs_preceding": {
+              "absolute": 0.0,
+              "relative": 0.0
+            },
+            "metric": "throughput",
+            "notes": [],
+            "preceding_median": 100.0
+          },
+          {
+            "class": "insufficient_telemetry",
+            "confidence": "insufficient",
+            "eligible_current": 0,
+            "eligible_preceding": 0,
+            "metric": "ttft",
+            "notes": [
+              "ttft: 0 of the 0 eligible current-window requests are below the 10 minimum — no assessment",
+              "TTFT values are absent, sparse, invalid, or degenerate: first-response and decode-rate attribution is prevented"
+            ]
+          },
+          {
+            "class": "no_material_change",
+            "confidence": "low",
+            "current_median": 0.0,
+            "eligible_current": 12,
+            "eligible_preceding": 12,
+            "median_delta_vs_preceding": {
+              "absolute": 0.0
+            },
+            "metric": "error_rate",
+            "notes": [],
+            "preceding_median": 0.0
+          }
+        ],
+        "model": "split-emit",
+        "notes": [],
+        "overall_class": "no_material_change",
+        "overall_confidence": "insufficient",
+        "provider": "openai",
+        "request_counts": {
+          "current": 12,
+          "preceding": 12,
+          "rolling": 0
+        },
+        "truncated": false
+      },
+      {
+        "emitter_fingerprint": "genai-v1-97b79fe0e7e5295d",
+        "metrics": [
+          {
+            "class": "tail_regression",
+            "confidence": "low",
+            "current_median": 1000.0,
+            "current_tail": 2500.0,
+            "eligible_current": 12,
+            "eligible_preceding": 12,
+            "median_delta_vs_preceding": {
+              "absolute": 0.0,
+              "relative": 0.0
+            },
+            "metric": "duration",
+            "notes": [],
+            "preceding_median": 1000.0,
+            "preceding_tail": 1000.0,
+            "tail_delta_vs_preceding": {
+              "absolute": 1500.0,
+              "relative": 1.5
+            }
+          },
+          {
+            "class": "no_material_change",
+            "confidence": "low",
+            "current_median": 100.0,
+            "eligible_current": 12,
+            "eligible_preceding": 12,
+            "median_delta_vs_preceding": {
+              "absolute": 0.0,
+              "relative": 0.0
+            },
+            "metric": "throughput",
+            "notes": [],
+            "preceding_median": 100.0
+          },
+          {
+            "class": "insufficient_telemetry",
+            "confidence": "insufficient",
+            "eligible_current": 0,
+            "eligible_preceding": 0,
+            "metric": "ttft",
+            "notes": [
+              "ttft: 0 of the 0 eligible current-window requests are below the 10 minimum — no assessment",
+              "TTFT values are absent, sparse, invalid, or degenerate: first-response and decode-rate attribution is prevented"
+            ]
+          },
+          {
+            "class": "no_material_change",
+            "confidence": "low",
+            "current_median": 0.0,
+            "eligible_current": 12,
+            "eligible_preceding": 12,
+            "median_delta_vs_preceding": {
+              "absolute": 0.0
+            },
+            "metric": "error_rate",
+            "notes": [],
+            "preceding_median": 0.0
+          }
+        ],
+        "model": "tail-x",
+        "notes": [],
+        "overall_class": "tail_regression",
+        "overall_confidence": "insufficient",
+        "provider": "openai",
+        "request_counts": {
+          "current": 12,
+          "preceding": 12,
+          "rolling": 0
+        },
+        "truncated": false
+      }
+    ],
+    "current_window": {
+      "end_time": 1774828800000000000,
+      "start_time": 1774656000000000000
+    },
+    "identities": [
+      {
+        "cache_creation_tokens": {
+          "current": null,
+          "preceding": null
+        },
+        "cache_read_tokens": {
+          "current": null,
+          "preceding": null
+        },
+        "duration": {
+          "current": {
+            "eligible_count": 12,
+            "percentiles": [
+              {
+                "delta_vs_preceding": {
+                  "absolute": 0.0,
+                  "relative": 0.0
+                },
+                "percentile": 50,
+                "value": 1000.0
+              },
+              {
+                "delta_vs_preceding": {
+                  "absolute": 0.0,
+                  "relative": 0.0
+                },
+                "percentile": 95,
+                "value": 1000.0
+              }
+            ]
+          },
+          "preceding": {
+            "eligible_count": 12,
+            "percentiles": [
+              {
+                "percentile": 50,
+                "value": 1000.0
+              },
+              {
+                "percentile": 95,
+                "value": 1000.0
+              }
+            ]
+          }
+        },
+        "emitter_fingerprint": "genai-v1-57c058ee2c9dcd06",
+        "error_rate": {
+          "current": {
+            "delta_vs_preceding": {
+              "absolute": 0.0
+            },
+            "errors": 0,
+            "rate": 0.0,
+            "requests": 12
+          },
+          "preceding": {
+            "errors": 0,
+            "rate": 0.0,
+            "requests": 12
+          }
+        },
+        "input_tokens": {
+          "current": {
+            "eligible_count": 12,
+            "percentiles": [
+              {
+                "delta_vs_preceding": {
+                  "absolute": 0.0,
+                  "relative": 0.0
+                },
+                "percentile": 50,
+                "value": 100.0
+              }
+            ]
+          },
+          "preceding": {
+            "eligible_count": 12,
+            "percentiles": [
+              {
+                "percentile": 50,
+                "value": 100.0
+              }
+            ]
+          }
+        },
+        "model": "shared-model",
+        "output_tokens": {
+          "current": {
+            "eligible_count": 12,
+            "percentiles": [
+              {
+                "delta_vs_preceding": {
+                  "absolute": 0.0,
+                  "relative": 0.0
+                },
+                "percentile": 50,
+                "value": 100.0
+              }
+            ]
+          },
+          "preceding": {
+            "eligible_count": 12,
+            "percentiles": [
+              {
+                "percentile": 50,
+                "value": 100.0
+              }
+            ]
+          }
+        },
+        "provider": "anthropic",
+        "request_counts": {
+          "current": 12,
+          "preceding": 12,
+          "rolling": 0
+        },
+        "throughput": {
+          "current": {
+            "eligible_count": 12,
+            "percentiles": [
+              {
+                "delta_vs_preceding": {
+                  "absolute": 0.0,
+                  "relative": 0.0
+                },
+                "percentile": 10,
+                "value": 100.0
+              },
+              {
+                "delta_vs_preceding": {
+                  "absolute": 0.0,
+                  "relative": 0.0
+                },
+                "percentile": 50,
+                "value": 100.0
+              }
+            ]
+          },
+          "preceding": {
+            "eligible_count": 12,
+            "percentiles": [
+              {
+                "percentile": 10,
+                "value": 100.0
+              },
+              {
+                "percentile": 50,
+                "value": 100.0
+              }
+            ]
+          }
+        },
+        "ttft": {
+          "current": null,
+          "preceding": null
+        }
+      },
+      {
+        "cache_creation_tokens": {
+          "current": null,
+          "preceding": null
+        },
+        "cache_read_tokens": {
+          "current": null,
+          "preceding": null
+        },
+        "duration": {
+          "current": {
+            "eligible_count": 12,
+            "percentiles": [
+              {
+                "delta_vs_preceding": {
+                  "absolute": 0.0,
+                  "relative": 0.0
+                },
+                "percentile": 50,
+                "value": 1000.0
+              },
+              {
+                "delta_vs_preceding": {
+                  "absolute": 0.0,
+                  "relative": 0.0
+                },
+                "percentile": 95,
+                "value": 1000.0
+              }
+            ]
+          },
+          "preceding": {
+            "eligible_count": 12,
+            "percentiles": [
+              {
+                "percentile": 50,
+                "value": 1000.0
+              },
+              {
+                "percentile": 95,
+                "value": 1000.0
+              }
+            ]
+          }
+        },
+        "emitter_fingerprint": "genai-v1-4f16ddee27b5ce5b",
+        "error_rate": {
+          "current": {
+            "delta_vs_preceding": {
+              "absolute": 0.0
+            },
+            "errors": 0,
+            "rate": 0.0,
+            "requests": 12
+          },
+          "preceding": {
+            "errors": 0,
+            "rate": 0.0,
+            "requests": 12
+          }
+        },
+        "input_tokens": {
+          "current": {
+            "eligible_count": 12,
+            "percentiles": [
+              {
+                "delta_vs_preceding": {
+                  "absolute": 0.0,
+                  "relative": 0.0
+                },
+                "percentile": 50,
+                "value": 100.0
+              }
+            ]
+          },
+          "preceding": {
+            "eligible_count": 12,
+            "percentiles": [
+              {
+                "percentile": 50,
+                "value": 100.0
+              }
+            ]
+          }
+        },
+        "model": "shared-model",
+        "output_tokens": {
+          "current": {
+            "eligible_count": 12,
+            "percentiles": [
+              {
+                "delta_vs_preceding": {
+                  "absolute": 0.0,
+                  "relative": 0.0
+                },
+                "percentile": 50,
+                "value": 100.0
+              }
+            ]
+          },
+          "preceding": {
+            "eligible_count": 12,
+            "percentiles": [
+              {
+                "percentile": 50,
+                "value": 100.0
+              }
+            ]
+          }
+        },
+        "provider": "openai",
+        "request_counts": {
+          "current": 12,
+          "preceding": 12,
+          "rolling": 0
+        },
+        "throughput": {
+          "current": {
+            "eligible_count": 12,
+            "percentiles": [
+              {
+                "delta_vs_preceding": {
+                  "absolute": 0.0,
+                  "relative": 0.0
+                },
+                "percentile": 10,
+                "value": 100.0
+              },
+              {
+                "delta_vs_preceding": {
+                  "absolute": 0.0,
+                  "relative": 0.0
+                },
+                "percentile": 50,
+                "value": 100.0
+              }
+            ]
+          },
+          "preceding": {
+            "eligible_count": 12,
+            "percentiles": [
+              {
+                "percentile": 10,
+                "value": 100.0
+              },
+              {
+                "percentile": 50,
+                "value": 100.0
+              }
+            ]
+          }
+        },
+        "ttft": {
+          "current": null,
+          "preceding": null
+        }
+      },
+      {
+        "cache_creation_tokens": {
+          "current": null,
+          "preceding": null
+        },
+        "cache_read_tokens": {
+          "current": null,
+          "preceding": null
+        },
+        "duration": {
+          "current": {
+            "eligible_count": 12,
+            "percentiles": [
+              {
+                "delta_vs_preceding": {
+                  "absolute": 0.0,
+                  "relative": 0.0
+                },
+                "percentile": 50,
+                "value": 1000.0
+              },
+              {
+                "delta_vs_preceding": {
+                  "absolute": 0.0,
+                  "relative": 0.0
+                },
+                "percentile": 95,
+                "value": 1000.0
+              }
+            ]
+          },
+          "preceding": {
+            "eligible_count": 12,
+            "percentiles": [
+              {
+                "percentile": 50,
+                "value": 1000.0
+              },
+              {
+                "percentile": 95,
+                "value": 1000.0
+              }
+            ]
+          }
+        },
+        "emitter_fingerprint": "genai-v1-01218aedfb8dda58",
+        "error_rate": {
+          "current": {
+            "delta_vs_preceding": {
+              "absolute": 0.0
+            },
+            "errors": 0,
+            "rate": 0.0,
+            "requests": 12
+          },
+          "preceding": {
+            "errors": 0,
+            "rate": 0.0,
+            "requests": 12
+          }
+        },
+        "input_tokens": {
+          "current": {
+            "eligible_count": 12,
+            "percentiles": [
+              {
+                "delta_vs_preceding": {
+                  "absolute": 0.0,
+                  "relative": 0.0
+                },
+                "percentile": 50,
+                "value": 100.0
+              }
+            ]
+          },
+          "preceding": {
+            "eligible_count": 12,
+            "percentiles": [
+              {
+                "percentile": 50,
+                "value": 100.0
+              }
+            ]
+          }
+        },
+        "model": "split-emit",
+        "output_tokens": {
+          "current": {
+            "eligible_count": 12,
+            "percentiles": [
+              {
+                "delta_vs_preceding": {
+                  "absolute": 0.0,
+                  "relative": 0.0
+                },
+                "percentile": 50,
+                "value": 100.0
+              }
+            ]
+          },
+          "preceding": {
+            "eligible_count": 12,
+            "percentiles": [
+              {
+                "percentile": 50,
+                "value": 100.0
+              }
+            ]
+          }
+        },
+        "provider": "openai",
+        "request_counts": {
+          "current": 12,
+          "preceding": 12,
+          "rolling": 0
+        },
+        "throughput": {
+          "current": {
+            "eligible_count": 12,
+            "percentiles": [
+              {
+                "delta_vs_preceding": {
+                  "absolute": 0.0,
+                  "relative": 0.0
+                },
+                "percentile": 10,
+                "value": 100.0
+              },
+              {
+                "delta_vs_preceding": {
+                  "absolute": 0.0,
+                  "relative": 0.0
+                },
+                "percentile": 50,
+                "value": 100.0
+              }
+            ]
+          },
+          "preceding": {
+            "eligible_count": 12,
+            "percentiles": [
+              {
+                "percentile": 10,
+                "value": 100.0
+              },
+              {
+                "percentile": 50,
+                "value": 100.0
+              }
+            ]
+          }
+        },
+        "ttft": {
+          "current": null,
+          "preceding": null
+        }
+      },
+      {
+        "cache_creation_tokens": {
+          "current": null,
+          "preceding": null
+        },
+        "cache_read_tokens": {
+          "current": null,
+          "preceding": null
+        },
+        "duration": {
+          "current": {
+            "eligible_count": 12,
+            "percentiles": [
+              {
+                "delta_vs_preceding": {
+                  "absolute": 0.0,
+                  "relative": 0.0
+                },
+                "percentile": 50,
+                "value": 1000.0
+              },
+              {
+                "delta_vs_preceding": {
+                  "absolute": 0.0,
+                  "relative": 0.0
+                },
+                "percentile": 95,
+                "value": 1000.0
+              }
+            ]
+          },
+          "preceding": {
+            "eligible_count": 12,
+            "percentiles": [
+              {
+                "percentile": 50,
+                "value": 1000.0
+              },
+              {
+                "percentile": 95,
+                "value": 1000.0
+              }
+            ]
+          }
+        },
+        "emitter_fingerprint": "genai-v1-09cb05ee0075d903",
+        "error_rate": {
+          "current": {
+            "delta_vs_preceding": {
+              "absolute": 0.0
+            },
+            "errors": 0,
+            "rate": 0.0,
+            "requests": 12
+          },
+          "preceding": {
+            "errors": 0,
+            "rate": 0.0,
+            "requests": 12
+          }
+        },
+        "input_tokens": {
+          "current": {
+            "eligible_count": 12,
+            "percentiles": [
+              {
+                "delta_vs_preceding": {
+                  "absolute": 0.0,
+                  "relative": 0.0
+                },
+                "percentile": 50,
+                "value": 100.0
+              }
+            ]
+          },
+          "preceding": {
+            "eligible_count": 12,
+            "percentiles": [
+              {
+                "percentile": 50,
+                "value": 100.0
+              }
+            ]
+          }
+        },
+        "model": "split-emit",
+        "output_tokens": {
+          "current": {
+            "eligible_count": 12,
+            "percentiles": [
+              {
+                "delta_vs_preceding": {
+                  "absolute": 0.0,
+                  "relative": 0.0
+                },
+                "percentile": 50,
+                "value": 100.0
+              }
+            ]
+          },
+          "preceding": {
+            "eligible_count": 12,
+            "percentiles": [
+              {
+                "percentile": 50,
+                "value": 100.0
+              }
+            ]
+          }
+        },
+        "provider": "openai",
+        "request_counts": {
+          "current": 12,
+          "preceding": 12,
+          "rolling": 0
+        },
+        "throughput": {
+          "current": {
+            "eligible_count": 12,
+            "percentiles": [
+              {
+                "delta_vs_preceding": {
+                  "absolute": 0.0,
+                  "relative": 0.0
+                },
+                "percentile": 10,
+                "value": 100.0
+              },
+              {
+                "delta_vs_preceding": {
+                  "absolute": 0.0,
+                  "relative": 0.0
+                },
+                "percentile": 50,
+                "value": 100.0
+              }
+            ]
+          },
+          "preceding": {
+            "eligible_count": 12,
+            "percentiles": [
+              {
+                "percentile": 10,
+                "value": 100.0
+              },
+              {
+                "percentile": 50,
+                "value": 100.0
+              }
+            ]
+          }
+        },
+        "ttft": {
+          "current": null,
+          "preceding": null
+        }
+      },
+      {
+        "cache_creation_tokens": {
+          "current": null,
+          "preceding": null
+        },
+        "cache_read_tokens": {
+          "current": null,
+          "preceding": null
+        },
+        "duration": {
+          "current": {
+            "eligible_count": 12,
+            "percentiles": [
+              {
+                "delta_vs_preceding": {
+                  "absolute": 0.0,
+                  "relative": 0.0
+                },
+                "percentile": 50,
+                "value": 1000.0
+              },
+              {
+                "delta_vs_preceding": {
+                  "absolute": 1500.0,
+                  "relative": 1.5
+                },
+                "percentile": 95,
+                "value": 2500.0
+              }
+            ]
+          },
+          "preceding": {
+            "eligible_count": 12,
+            "percentiles": [
+              {
+                "percentile": 50,
+                "value": 1000.0
+              },
+              {
+                "percentile": 95,
+                "value": 1000.0
+              }
+            ]
+          }
+        },
+        "emitter_fingerprint": "genai-v1-97b79fe0e7e5295d",
+        "error_rate": {
+          "current": {
+            "delta_vs_preceding": {
+              "absolute": 0.0
+            },
+            "errors": 0,
+            "rate": 0.0,
+            "requests": 12
+          },
+          "preceding": {
+            "errors": 0,
+            "rate": 0.0,
+            "requests": 12
+          }
+        },
+        "input_tokens": {
+          "current": {
+            "eligible_count": 12,
+            "percentiles": [
+              {
+                "delta_vs_preceding": {
+                  "absolute": 0.0,
+                  "relative": 0.0
+                },
+                "percentile": 50,
+                "value": 100.0
+              }
+            ]
+          },
+          "preceding": {
+            "eligible_count": 12,
+            "percentiles": [
+              {
+                "percentile": 50,
+                "value": 100.0
+              }
+            ]
+          }
+        },
+        "model": "tail-x",
+        "output_tokens": {
+          "current": {
+            "eligible_count": 12,
+            "percentiles": [
+              {
+                "delta_vs_preceding": {
+                  "absolute": 0.0,
+                  "relative": 0.0
+                },
+                "percentile": 50,
+                "value": 100.0
+              }
+            ]
+          },
+          "preceding": {
+            "eligible_count": 12,
+            "percentiles": [
+              {
+                "percentile": 50,
+                "value": 100.0
+              }
+            ]
+          }
+        },
+        "provider": "openai",
+        "request_counts": {
+          "current": 12,
+          "preceding": 12,
+          "rolling": 0
+        },
+        "throughput": {
+          "current": {
+            "eligible_count": 12,
+            "percentiles": [
+              {
+                "delta_vs_preceding": {
+                  "absolute": -60.0,
+                  "relative": -0.6
+                },
+                "percentile": 10,
+                "value": 40.0
+              },
+              {
+                "delta_vs_preceding": {
+                  "absolute": 0.0,
+                  "relative": 0.0
+                },
+                "percentile": 50,
+                "value": 100.0
+              }
+            ]
+          },
+          "preceding": {
+            "eligible_count": 12,
+            "percentiles": [
+              {
+                "percentile": 10,
+                "value": 100.0
+              },
+              {
+                "percentile": 50,
+                "value": 100.0
+              }
+            ]
+          }
+        },
+        "ttft": {
+          "current": null,
+          "preceding": null
+        }
+      }
+    ],
+    "preceding_window": {
+      "end_time": 1774656000000000000,
+      "start_time": 1774483200000000000
+    },
+    "rolling_window": {
+      "end_time": 1774483200000000000,
+      "start_time": 1773964800000000000
+    },
+    "timezone": "Europe/London",
+    "truncated": false
+  },
+  "api_args": {
+    "end_time": 1774828800000000000,
+    "rolling_ns": 518400000000000,
+    "start_time": 1774656000000000000,
+    "timezone": "Europe/London"
+  },
+  "api_empty": {
+    "assessments": [],
+    "current_window": {
+      "end_time": 1775001600000000000,
+      "start_time": 1774915200000000000
+    },
+    "identities": [],
+    "preceding_window": {
+      "end_time": 1774915200000000000,
+      "start_time": 1774828800000000000
+    },
+    "truncated": false
+  },
+  "api_empty_args": {
+    "end_time": 1775001600000000000,
+    "start_time": 1774915200000000000
+  },
+  "cli": {
+    "assessments": [
+      {
+        "emitter_fingerprint": "genai-v1-57c058ee2c9dcd06",
+        "metrics": [
+          {
+            "class": "no_material_change",
+            "confidence": "low",
+            "current_median": 1000.0,
+            "current_tail": 1000.0,
+            "eligible_current": 12,
+            "eligible_preceding": 12,
+            "median_delta_vs_preceding": {
+              "absolute": 0.0,
+              "relative": 0.0
+            },
+            "metric": "duration",
+            "notes": [],
+            "preceding_median": 1000.0,
+            "preceding_tail": 1000.0,
+            "tail_delta_vs_preceding": {
+              "absolute": 0.0,
+              "relative": 0.0
+            }
+          },
+          {
+            "class": "no_material_change",
+            "confidence": "low",
+            "current_median": 100.0,
+            "eligible_current": 12,
+            "eligible_preceding": 12,
+            "median_delta_vs_preceding": {
+              "absolute": 0.0,
+              "relative": 0.0
+            },
+            "metric": "throughput",
+            "notes": [],
+            "preceding_median": 100.0
+          },
+          {
+            "class": "insufficient_telemetry",
+            "confidence": "insufficient",
+            "eligible_current": 0,
+            "eligible_preceding": 0,
+            "metric": "ttft",
+            "notes": [
+              "ttft: 0 of the 0 eligible current-window requests are below the 10 minimum — no assessment",
+              "TTFT values are absent, sparse, invalid, or degenerate: first-response and decode-rate attribution is prevented"
+            ]
+          },
+          {
+            "class": "no_material_change",
+            "confidence": "low",
+            "current_median": 0.0,
+            "eligible_current": 12,
+            "eligible_preceding": 12,
+            "median_delta_vs_preceding": {
+              "absolute": 0.0
+            },
+            "metric": "error_rate",
+            "notes": [],
+            "preceding_median": 0.0
+          }
+        ],
+        "model": "shared-model",
+        "notes": [],
+        "overall_class": "no_material_change",
+        "overall_confidence": "insufficient",
+        "provider": "anthropic",
+        "request_counts": {
+          "current": 12,
+          "preceding": 12,
+          "rolling": 0
+        },
+        "truncated": false
+      },
+      {
+        "emitter_fingerprint": "genai-v1-4f16ddee27b5ce5b",
+        "metrics": [
+          {
+            "class": "no_material_change",
+            "confidence": "low",
+            "current_median": 1000.0,
+            "current_tail": 1000.0,
+            "eligible_current": 12,
+            "eligible_preceding": 12,
+            "median_delta_vs_preceding": {
+              "absolute": 0.0,
+              "relative": 0.0
+            },
+            "metric": "duration",
+            "notes": [],
+            "preceding_median": 1000.0,
+            "preceding_tail": 1000.0,
+            "tail_delta_vs_preceding": {
+              "absolute": 0.0,
+              "relative": 0.0
+            }
+          },
+          {
+            "class": "no_material_change",
+            "confidence": "low",
+            "current_median": 100.0,
+            "eligible_current": 12,
+            "eligible_preceding": 12,
+            "median_delta_vs_preceding": {
+              "absolute": 0.0,
+              "relative": 0.0
+            },
+            "metric": "throughput",
+            "notes": [],
+            "preceding_median": 100.0
+          },
+          {
+            "class": "insufficient_telemetry",
+            "confidence": "insufficient",
+            "eligible_current": 0,
+            "eligible_preceding": 0,
+            "metric": "ttft",
+            "notes": [
+              "ttft: 0 of the 0 eligible current-window requests are below the 10 minimum — no assessment",
+              "TTFT values are absent, sparse, invalid, or degenerate: first-response and decode-rate attribution is prevented"
+            ]
+          },
+          {
+            "class": "no_material_change",
+            "confidence": "low",
+            "current_median": 0.0,
+            "eligible_current": 12,
+            "eligible_preceding": 12,
+            "median_delta_vs_preceding": {
+              "absolute": 0.0
+            },
+            "metric": "error_rate",
+            "notes": [],
+            "preceding_median": 0.0
+          }
+        ],
+        "model": "shared-model",
+        "notes": [],
+        "overall_class": "no_material_change",
+        "overall_confidence": "insufficient",
+        "provider": "openai",
+        "request_counts": {
+          "current": 12,
+          "preceding": 12,
+          "rolling": 0
+        },
+        "truncated": false
+      },
+      {
+        "emitter_fingerprint": "genai-v1-01218aedfb8dda58",
+        "metrics": [
+          {
+            "class": "no_material_change",
+            "confidence": "low",
+            "current_median": 1000.0,
+            "current_tail": 1000.0,
+            "eligible_current": 12,
+            "eligible_preceding": 12,
+            "median_delta_vs_preceding": {
+              "absolute": 0.0,
+              "relative": 0.0
+            },
+            "metric": "duration",
+            "notes": [],
+            "preceding_median": 1000.0,
+            "preceding_tail": 1000.0,
+            "tail_delta_vs_preceding": {
+              "absolute": 0.0,
+              "relative": 0.0
+            }
+          },
+          {
+            "class": "no_material_change",
+            "confidence": "low",
+            "current_median": 100.0,
+            "eligible_current": 12,
+            "eligible_preceding": 12,
+            "median_delta_vs_preceding": {
+              "absolute": 0.0,
+              "relative": 0.0
+            },
+            "metric": "throughput",
+            "notes": [],
+            "preceding_median": 100.0
+          },
+          {
+            "class": "insufficient_telemetry",
+            "confidence": "insufficient",
+            "eligible_current": 0,
+            "eligible_preceding": 0,
+            "metric": "ttft",
+            "notes": [
+              "ttft: 0 of the 0 eligible current-window requests are below the 10 minimum — no assessment",
+              "TTFT values are absent, sparse, invalid, or degenerate: first-response and decode-rate attribution is prevented"
+            ]
+          },
+          {
+            "class": "no_material_change",
+            "confidence": "low",
+            "current_median": 0.0,
+            "eligible_current": 12,
+            "eligible_preceding": 12,
+            "median_delta_vs_preceding": {
+              "absolute": 0.0
+            },
+            "metric": "error_rate",
+            "notes": [],
+            "preceding_median": 0.0
+          }
+        ],
+        "model": "split-emit",
+        "notes": [],
+        "overall_class": "no_material_change",
+        "overall_confidence": "insufficient",
+        "provider": "openai",
+        "request_counts": {
+          "current": 12,
+          "preceding": 12,
+          "rolling": 0
+        },
+        "truncated": false
+      },
+      {
+        "emitter_fingerprint": "genai-v1-09cb05ee0075d903",
+        "metrics": [
+          {
+            "class": "no_material_change",
+            "confidence": "low",
+            "current_median": 1000.0,
+            "current_tail": 1000.0,
+            "eligible_current": 12,
+            "eligible_preceding": 12,
+            "median_delta_vs_preceding": {
+              "absolute": 0.0,
+              "relative": 0.0
+            },
+            "metric": "duration",
+            "notes": [],
+            "preceding_median": 1000.0,
+            "preceding_tail": 1000.0,
+            "tail_delta_vs_preceding": {
+              "absolute": 0.0,
+              "relative": 0.0
+            }
+          },
+          {
+            "class": "no_material_change",
+            "confidence": "low",
+            "current_median": 100.0,
+            "eligible_current": 12,
+            "eligible_preceding": 12,
+            "median_delta_vs_preceding": {
+              "absolute": 0.0,
+              "relative": 0.0
+            },
+            "metric": "throughput",
+            "notes": [],
+            "preceding_median": 100.0
+          },
+          {
+            "class": "insufficient_telemetry",
+            "confidence": "insufficient",
+            "eligible_current": 0,
+            "eligible_preceding": 0,
+            "metric": "ttft",
+            "notes": [
+              "ttft: 0 of the 0 eligible current-window requests are below the 10 minimum — no assessment",
+              "TTFT values are absent, sparse, invalid, or degenerate: first-response and decode-rate attribution is prevented"
+            ]
+          },
+          {
+            "class": "no_material_change",
+            "confidence": "low",
+            "current_median": 0.0,
+            "eligible_current": 12,
+            "eligible_preceding": 12,
+            "median_delta_vs_preceding": {
+              "absolute": 0.0
+            },
+            "metric": "error_rate",
+            "notes": [],
+            "preceding_median": 0.0
+          }
+        ],
+        "model": "split-emit",
+        "notes": [],
+        "overall_class": "no_material_change",
+        "overall_confidence": "insufficient",
+        "provider": "openai",
+        "request_counts": {
+          "current": 12,
+          "preceding": 12,
+          "rolling": 0
+        },
+        "truncated": false
+      },
+      {
+        "emitter_fingerprint": "genai-v1-97b79fe0e7e5295d",
+        "metrics": [
+          {
+            "class": "tail_regression",
+            "confidence": "low",
+            "current_median": 1000.0,
+            "current_tail": 2500.0,
+            "eligible_current": 12,
+            "eligible_preceding": 12,
+            "median_delta_vs_preceding": {
+              "absolute": 0.0,
+              "relative": 0.0
+            },
+            "metric": "duration",
+            "notes": [],
+            "preceding_median": 1000.0,
+            "preceding_tail": 1000.0,
+            "tail_delta_vs_preceding": {
+              "absolute": 1500.0,
+              "relative": 1.5
+            }
+          },
+          {
+            "class": "no_material_change",
+            "confidence": "low",
+            "current_median": 100.0,
+            "eligible_current": 12,
+            "eligible_preceding": 12,
+            "median_delta_vs_preceding": {
+              "absolute": 0.0,
+              "relative": 0.0
+            },
+            "metric": "throughput",
+            "notes": [],
+            "preceding_median": 100.0
+          },
+          {
+            "class": "insufficient_telemetry",
+            "confidence": "insufficient",
+            "eligible_current": 0,
+            "eligible_preceding": 0,
+            "metric": "ttft",
+            "notes": [
+              "ttft: 0 of the 0 eligible current-window requests are below the 10 minimum — no assessment",
+              "TTFT values are absent, sparse, invalid, or degenerate: first-response and decode-rate attribution is prevented"
+            ]
+          },
+          {
+            "class": "no_material_change",
+            "confidence": "low",
+            "current_median": 0.0,
+            "eligible_current": 12,
+            "eligible_preceding": 12,
+            "median_delta_vs_preceding": {
+              "absolute": 0.0
+            },
+            "metric": "error_rate",
+            "notes": [],
+            "preceding_median": 0.0
+          }
+        ],
+        "model": "tail-x",
+        "notes": [],
+        "overall_class": "tail_regression",
+        "overall_confidence": "insufficient",
+        "provider": "openai",
+        "request_counts": {
+          "current": 12,
+          "preceding": 12,
+          "rolling": 0
+        },
+        "truncated": false
+      }
+    ],
+    "current_window": {
+      "end_time": 1774828800000000000,
+      "start_time": 1774656000000000000
+    },
+    "identities": [
+      {
+        "cache_creation_tokens": {
+          "current": null,
+          "preceding": null
+        },
+        "cache_read_tokens": {
+          "current": null,
+          "preceding": null
+        },
+        "duration": {
+          "current": {
+            "eligible_count": 12,
+            "percentiles": [
+              {
+                "delta_vs_preceding": {
+                  "absolute": 0.0,
+                  "relative": 0.0
+                },
+                "percentile": 50,
+                "value": 1000.0
+              },
+              {
+                "delta_vs_preceding": {
+                  "absolute": 0.0,
+                  "relative": 0.0
+                },
+                "percentile": 95,
+                "value": 1000.0
+              }
+            ]
+          },
+          "preceding": {
+            "eligible_count": 12,
+            "percentiles": [
+              {
+                "percentile": 50,
+                "value": 1000.0
+              },
+              {
+                "percentile": 95,
+                "value": 1000.0
+              }
+            ]
+          }
+        },
+        "emitter_fingerprint": "genai-v1-57c058ee2c9dcd06",
+        "error_rate": {
+          "current": {
+            "delta_vs_preceding": {
+              "absolute": 0.0
+            },
+            "errors": 0,
+            "rate": 0.0,
+            "requests": 12
+          },
+          "preceding": {
+            "errors": 0,
+            "rate": 0.0,
+            "requests": 12
+          }
+        },
+        "input_tokens": {
+          "current": {
+            "eligible_count": 12,
+            "percentiles": [
+              {
+                "delta_vs_preceding": {
+                  "absolute": 0.0,
+                  "relative": 0.0
+                },
+                "percentile": 50,
+                "value": 100.0
+              }
+            ]
+          },
+          "preceding": {
+            "eligible_count": 12,
+            "percentiles": [
+              {
+                "percentile": 50,
+                "value": 100.0
+              }
+            ]
+          }
+        },
+        "model": "shared-model",
+        "output_tokens": {
+          "current": {
+            "eligible_count": 12,
+            "percentiles": [
+              {
+                "delta_vs_preceding": {
+                  "absolute": 0.0,
+                  "relative": 0.0
+                },
+                "percentile": 50,
+                "value": 100.0
+              }
+            ]
+          },
+          "preceding": {
+            "eligible_count": 12,
+            "percentiles": [
+              {
+                "percentile": 50,
+                "value": 100.0
+              }
+            ]
+          }
+        },
+        "provider": "anthropic",
+        "request_counts": {
+          "current": 12,
+          "preceding": 12,
+          "rolling": 0
+        },
+        "throughput": {
+          "current": {
+            "eligible_count": 12,
+            "percentiles": [
+              {
+                "delta_vs_preceding": {
+                  "absolute": 0.0,
+                  "relative": 0.0
+                },
+                "percentile": 10,
+                "value": 100.0
+              },
+              {
+                "delta_vs_preceding": {
+                  "absolute": 0.0,
+                  "relative": 0.0
+                },
+                "percentile": 50,
+                "value": 100.0
+              }
+            ]
+          },
+          "preceding": {
+            "eligible_count": 12,
+            "percentiles": [
+              {
+                "percentile": 10,
+                "value": 100.0
+              },
+              {
+                "percentile": 50,
+                "value": 100.0
+              }
+            ]
+          }
+        },
+        "ttft": {
+          "current": null,
+          "preceding": null
+        }
+      },
+      {
+        "cache_creation_tokens": {
+          "current": null,
+          "preceding": null
+        },
+        "cache_read_tokens": {
+          "current": null,
+          "preceding": null
+        },
+        "duration": {
+          "current": {
+            "eligible_count": 12,
+            "percentiles": [
+              {
+                "delta_vs_preceding": {
+                  "absolute": 0.0,
+                  "relative": 0.0
+                },
+                "percentile": 50,
+                "value": 1000.0
+              },
+              {
+                "delta_vs_preceding": {
+                  "absolute": 0.0,
+                  "relative": 0.0
+                },
+                "percentile": 95,
+                "value": 1000.0
+              }
+            ]
+          },
+          "preceding": {
+            "eligible_count": 12,
+            "percentiles": [
+              {
+                "percentile": 50,
+                "value": 1000.0
+              },
+              {
+                "percentile": 95,
+                "value": 1000.0
+              }
+            ]
+          }
+        },
+        "emitter_fingerprint": "genai-v1-4f16ddee27b5ce5b",
+        "error_rate": {
+          "current": {
+            "delta_vs_preceding": {
+              "absolute": 0.0
+            },
+            "errors": 0,
+            "rate": 0.0,
+            "requests": 12
+          },
+          "preceding": {
+            "errors": 0,
+            "rate": 0.0,
+            "requests": 12
+          }
+        },
+        "input_tokens": {
+          "current": {
+            "eligible_count": 12,
+            "percentiles": [
+              {
+                "delta_vs_preceding": {
+                  "absolute": 0.0,
+                  "relative": 0.0
+                },
+                "percentile": 50,
+                "value": 100.0
+              }
+            ]
+          },
+          "preceding": {
+            "eligible_count": 12,
+            "percentiles": [
+              {
+                "percentile": 50,
+                "value": 100.0
+              }
+            ]
+          }
+        },
+        "model": "shared-model",
+        "output_tokens": {
+          "current": {
+            "eligible_count": 12,
+            "percentiles": [
+              {
+                "delta_vs_preceding": {
+                  "absolute": 0.0,
+                  "relative": 0.0
+                },
+                "percentile": 50,
+                "value": 100.0
+              }
+            ]
+          },
+          "preceding": {
+            "eligible_count": 12,
+            "percentiles": [
+              {
+                "percentile": 50,
+                "value": 100.0
+              }
+            ]
+          }
+        },
+        "provider": "openai",
+        "request_counts": {
+          "current": 12,
+          "preceding": 12,
+          "rolling": 0
+        },
+        "throughput": {
+          "current": {
+            "eligible_count": 12,
+            "percentiles": [
+              {
+                "delta_vs_preceding": {
+                  "absolute": 0.0,
+                  "relative": 0.0
+                },
+                "percentile": 10,
+                "value": 100.0
+              },
+              {
+                "delta_vs_preceding": {
+                  "absolute": 0.0,
+                  "relative": 0.0
+                },
+                "percentile": 50,
+                "value": 100.0
+              }
+            ]
+          },
+          "preceding": {
+            "eligible_count": 12,
+            "percentiles": [
+              {
+                "percentile": 10,
+                "value": 100.0
+              },
+              {
+                "percentile": 50,
+                "value": 100.0
+              }
+            ]
+          }
+        },
+        "ttft": {
+          "current": null,
+          "preceding": null
+        }
+      },
+      {
+        "cache_creation_tokens": {
+          "current": null,
+          "preceding": null
+        },
+        "cache_read_tokens": {
+          "current": null,
+          "preceding": null
+        },
+        "duration": {
+          "current": {
+            "eligible_count": 12,
+            "percentiles": [
+              {
+                "delta_vs_preceding": {
+                  "absolute": 0.0,
+                  "relative": 0.0
+                },
+                "percentile": 50,
+                "value": 1000.0
+              },
+              {
+                "delta_vs_preceding": {
+                  "absolute": 0.0,
+                  "relative": 0.0
+                },
+                "percentile": 95,
+                "value": 1000.0
+              }
+            ]
+          },
+          "preceding": {
+            "eligible_count": 12,
+            "percentiles": [
+              {
+                "percentile": 50,
+                "value": 1000.0
+              },
+              {
+                "percentile": 95,
+                "value": 1000.0
+              }
+            ]
+          }
+        },
+        "emitter_fingerprint": "genai-v1-01218aedfb8dda58",
+        "error_rate": {
+          "current": {
+            "delta_vs_preceding": {
+              "absolute": 0.0
+            },
+            "errors": 0,
+            "rate": 0.0,
+            "requests": 12
+          },
+          "preceding": {
+            "errors": 0,
+            "rate": 0.0,
+            "requests": 12
+          }
+        },
+        "input_tokens": {
+          "current": {
+            "eligible_count": 12,
+            "percentiles": [
+              {
+                "delta_vs_preceding": {
+                  "absolute": 0.0,
+                  "relative": 0.0
+                },
+                "percentile": 50,
+                "value": 100.0
+              }
+            ]
+          },
+          "preceding": {
+            "eligible_count": 12,
+            "percentiles": [
+              {
+                "percentile": 50,
+                "value": 100.0
+              }
+            ]
+          }
+        },
+        "model": "split-emit",
+        "output_tokens": {
+          "current": {
+            "eligible_count": 12,
+            "percentiles": [
+              {
+                "delta_vs_preceding": {
+                  "absolute": 0.0,
+                  "relative": 0.0
+                },
+                "percentile": 50,
+                "value": 100.0
+              }
+            ]
+          },
+          "preceding": {
+            "eligible_count": 12,
+            "percentiles": [
+              {
+                "percentile": 50,
+                "value": 100.0
+              }
+            ]
+          }
+        },
+        "provider": "openai",
+        "request_counts": {
+          "current": 12,
+          "preceding": 12,
+          "rolling": 0
+        },
+        "throughput": {
+          "current": {
+            "eligible_count": 12,
+            "percentiles": [
+              {
+                "delta_vs_preceding": {
+                  "absolute": 0.0,
+                  "relative": 0.0
+                },
+                "percentile": 10,
+                "value": 100.0
+              },
+              {
+                "delta_vs_preceding": {
+                  "absolute": 0.0,
+                  "relative": 0.0
+                },
+                "percentile": 50,
+                "value": 100.0
+              }
+            ]
+          },
+          "preceding": {
+            "eligible_count": 12,
+            "percentiles": [
+              {
+                "percentile": 10,
+                "value": 100.0
+              },
+              {
+                "percentile": 50,
+                "value": 100.0
+              }
+            ]
+          }
+        },
+        "ttft": {
+          "current": null,
+          "preceding": null
+        }
+      },
+      {
+        "cache_creation_tokens": {
+          "current": null,
+          "preceding": null
+        },
+        "cache_read_tokens": {
+          "current": null,
+          "preceding": null
+        },
+        "duration": {
+          "current": {
+            "eligible_count": 12,
+            "percentiles": [
+              {
+                "delta_vs_preceding": {
+                  "absolute": 0.0,
+                  "relative": 0.0
+                },
+                "percentile": 50,
+                "value": 1000.0
+              },
+              {
+                "delta_vs_preceding": {
+                  "absolute": 0.0,
+                  "relative": 0.0
+                },
+                "percentile": 95,
+                "value": 1000.0
+              }
+            ]
+          },
+          "preceding": {
+            "eligible_count": 12,
+            "percentiles": [
+              {
+                "percentile": 50,
+                "value": 1000.0
+              },
+              {
+                "percentile": 95,
+                "value": 1000.0
+              }
+            ]
+          }
+        },
+        "emitter_fingerprint": "genai-v1-09cb05ee0075d903",
+        "error_rate": {
+          "current": {
+            "delta_vs_preceding": {
+              "absolute": 0.0
+            },
+            "errors": 0,
+            "rate": 0.0,
+            "requests": 12
+          },
+          "preceding": {
+            "errors": 0,
+            "rate": 0.0,
+            "requests": 12
+          }
+        },
+        "input_tokens": {
+          "current": {
+            "eligible_count": 12,
+            "percentiles": [
+              {
+                "delta_vs_preceding": {
+                  "absolute": 0.0,
+                  "relative": 0.0
+                },
+                "percentile": 50,
+                "value": 100.0
+              }
+            ]
+          },
+          "preceding": {
+            "eligible_count": 12,
+            "percentiles": [
+              {
+                "percentile": 50,
+                "value": 100.0
+              }
+            ]
+          }
+        },
+        "model": "split-emit",
+        "output_tokens": {
+          "current": {
+            "eligible_count": 12,
+            "percentiles": [
+              {
+                "delta_vs_preceding": {
+                  "absolute": 0.0,
+                  "relative": 0.0
+                },
+                "percentile": 50,
+                "value": 100.0
+              }
+            ]
+          },
+          "preceding": {
+            "eligible_count": 12,
+            "percentiles": [
+              {
+                "percentile": 50,
+                "value": 100.0
+              }
+            ]
+          }
+        },
+        "provider": "openai",
+        "request_counts": {
+          "current": 12,
+          "preceding": 12,
+          "rolling": 0
+        },
+        "throughput": {
+          "current": {
+            "eligible_count": 12,
+            "percentiles": [
+              {
+                "delta_vs_preceding": {
+                  "absolute": 0.0,
+                  "relative": 0.0
+                },
+                "percentile": 10,
+                "value": 100.0
+              },
+              {
+                "delta_vs_preceding": {
+                  "absolute": 0.0,
+                  "relative": 0.0
+                },
+                "percentile": 50,
+                "value": 100.0
+              }
+            ]
+          },
+          "preceding": {
+            "eligible_count": 12,
+            "percentiles": [
+              {
+                "percentile": 10,
+                "value": 100.0
+              },
+              {
+                "percentile": 50,
+                "value": 100.0
+              }
+            ]
+          }
+        },
+        "ttft": {
+          "current": null,
+          "preceding": null
+        }
+      },
+      {
+        "cache_creation_tokens": {
+          "current": null,
+          "preceding": null
+        },
+        "cache_read_tokens": {
+          "current": null,
+          "preceding": null
+        },
+        "duration": {
+          "current": {
+            "eligible_count": 12,
+            "percentiles": [
+              {
+                "delta_vs_preceding": {
+                  "absolute": 0.0,
+                  "relative": 0.0
+                },
+                "percentile": 50,
+                "value": 1000.0
+              },
+              {
+                "delta_vs_preceding": {
+                  "absolute": 1500.0,
+                  "relative": 1.5
+                },
+                "percentile": 95,
+                "value": 2500.0
+              }
+            ]
+          },
+          "preceding": {
+            "eligible_count": 12,
+            "percentiles": [
+              {
+                "percentile": 50,
+                "value": 1000.0
+              },
+              {
+                "percentile": 95,
+                "value": 1000.0
+              }
+            ]
+          }
+        },
+        "emitter_fingerprint": "genai-v1-97b79fe0e7e5295d",
+        "error_rate": {
+          "current": {
+            "delta_vs_preceding": {
+              "absolute": 0.0
+            },
+            "errors": 0,
+            "rate": 0.0,
+            "requests": 12
+          },
+          "preceding": {
+            "errors": 0,
+            "rate": 0.0,
+            "requests": 12
+          }
+        },
+        "input_tokens": {
+          "current": {
+            "eligible_count": 12,
+            "percentiles": [
+              {
+                "delta_vs_preceding": {
+                  "absolute": 0.0,
+                  "relative": 0.0
+                },
+                "percentile": 50,
+                "value": 100.0
+              }
+            ]
+          },
+          "preceding": {
+            "eligible_count": 12,
+            "percentiles": [
+              {
+                "percentile": 50,
+                "value": 100.0
+              }
+            ]
+          }
+        },
+        "model": "tail-x",
+        "output_tokens": {
+          "current": {
+            "eligible_count": 12,
+            "percentiles": [
+              {
+                "delta_vs_preceding": {
+                  "absolute": 0.0,
+                  "relative": 0.0
+                },
+                "percentile": 50,
+                "value": 100.0
+              }
+            ]
+          },
+          "preceding": {
+            "eligible_count": 12,
+            "percentiles": [
+              {
+                "percentile": 50,
+                "value": 100.0
+              }
+            ]
+          }
+        },
+        "provider": "openai",
+        "request_counts": {
+          "current": 12,
+          "preceding": 12,
+          "rolling": 0
+        },
+        "throughput": {
+          "current": {
+            "eligible_count": 12,
+            "percentiles": [
+              {
+                "delta_vs_preceding": {
+                  "absolute": -60.0,
+                  "relative": -0.6
+                },
+                "percentile": 10,
+                "value": 40.0
+              },
+              {
+                "delta_vs_preceding": {
+                  "absolute": 0.0,
+                  "relative": 0.0
+                },
+                "percentile": 50,
+                "value": 100.0
+              }
+            ]
+          },
+          "preceding": {
+            "eligible_count": 12,
+            "percentiles": [
+              {
+                "percentile": 10,
+                "value": 100.0
+              },
+              {
+                "percentile": 50,
+                "value": 100.0
+              }
+            ]
+          }
+        },
+        "ttft": {
+          "current": null,
+          "preceding": null
+        }
+      }
+    ],
+    "preceding_window": {
+      "end_time": 1774656000000000000,
+      "start_time": 1774483200000000000
+    },
+    "rolling_window": {
+      "end_time": 1774483200000000000,
+      "start_time": 1773964800000000000
+    },
+    "timezone": "Europe/London",
+    "truncated": false
+  },
+  "cli_args": [
+    "--format",
+    "json-compact",
+    "--start",
+    "2026-03-28",
+    "--end",
+    "2026-03-30",
+    "--rolling",
+    "6d",
+    "--timezone",
+    "Europe/London"
+  ],
+  "cli_args_empty": [
+    "--format",
+    "json-compact",
+    "--start",
+    "2026-03-31",
+    "--end",
+    "2026-04-01"
+  ],
+  "cli_empty": {
+    "assessments": [],
+    "current_window": {
+      "end_time": 1775001600000000000,
+      "start_time": 1774915200000000000
+    },
+    "identities": [],
+    "preceding_window": {
+      "end_time": 1774915200000000000,
+      "start_time": 1774828800000000000
+    },
+    "truncated": false
+  },
+  "description": "Edge matrix for #121/#155: tail-only regression, overlapping model names across providers, the same provider+model split by emitter fingerprint, and a daylight-saving range boundary (Europe/London spring-forward 2026-03-29T01:00Z falls inside the current window; windows are exact UTC intervals and the timezone is echoed, never used to shift the boundaries).",
+  "spans": [
+    {
+      "attrs": {
+        "gen_ai.request.model": "tail-x",
+        "gen_ai.system": "openai",
+        "gen_ai.usage.input_tokens": "100",
+        "gen_ai.usage.output_tokens": "100"
+      },
+      "dur_ms": 1000,
+      "hour": -24,
+      "id": "t0",
+      "name": "llm.request",
+      "status": 0,
+      "trace": "t0"
+    },
+    {
+      "attrs": {
+        "gen_ai.request.model": "tail-x",
+        "gen_ai.system": "openai",
+        "gen_ai.usage.input_tokens": "100",
+        "gen_ai.usage.output_tokens": "100"
+      },
+      "dur_ms": 1000,
+      "hour": -24,
+      "id": "t1",
+      "name": "llm.request",
+      "status": 0,
+      "trace": "t0"
+    },
+    {
+      "attrs": {
+        "gen_ai.request.model": "tail-x",
+        "gen_ai.system": "openai",
+        "gen_ai.usage.input_tokens": "100",
+        "gen_ai.usage.output_tokens": "100"
+      },
+      "dur_ms": 1000,
+      "hour": -24,
+      "id": "t2",
+      "name": "llm.request",
+      "status": 0,
+      "trace": "t0"
+    },
+    {
+      "attrs": {
+        "gen_ai.request.model": "tail-x",
+        "gen_ai.system": "openai",
+        "gen_ai.usage.input_tokens": "100",
+        "gen_ai.usage.output_tokens": "100"
+      },
+      "dur_ms": 1000,
+      "hour": -24,
+      "id": "t3",
+      "name": "llm.request",
+      "status": 0,
+      "trace": "t0"
+    },
+    {
+      "attrs": {
+        "gen_ai.request.model": "tail-x",
+        "gen_ai.system": "openai",
+        "gen_ai.usage.input_tokens": "100",
+        "gen_ai.usage.output_tokens": "100"
+      },
+      "dur_ms": 1000,
+      "hour": -24,
+      "id": "t4",
+      "name": "llm.request",
+      "status": 0,
+      "trace": "t0"
+    },
+    {
+      "attrs": {
+        "gen_ai.request.model": "tail-x",
+        "gen_ai.system": "openai",
+        "gen_ai.usage.input_tokens": "100",
+        "gen_ai.usage.output_tokens": "100"
+      },
+      "dur_ms": 1000,
+      "hour": -24,
+      "id": "t5",
+      "name": "llm.request",
+      "status": 0,
+      "trace": "t0"
+    },
+    {
+      "attrs": {
+        "gen_ai.request.model": "tail-x",
+        "gen_ai.system": "openai",
+        "gen_ai.usage.input_tokens": "100",
+        "gen_ai.usage.output_tokens": "100"
+      },
+      "dur_ms": 1000,
+      "hour": -24,
+      "id": "t6",
+      "name": "llm.request",
+      "status": 0,
+      "trace": "t0"
+    },
+    {
+      "attrs": {
+        "gen_ai.request.model": "tail-x",
+        "gen_ai.system": "openai",
+        "gen_ai.usage.input_tokens": "100",
+        "gen_ai.usage.output_tokens": "100"
+      },
+      "dur_ms": 1000,
+      "hour": -24,
+      "id": "t7",
+      "name": "llm.request",
+      "status": 0,
+      "trace": "t0"
+    },
+    {
+      "attrs": {
+        "gen_ai.request.model": "tail-x",
+        "gen_ai.system": "openai",
+        "gen_ai.usage.input_tokens": "100",
+        "gen_ai.usage.output_tokens": "100"
+      },
+      "dur_ms": 1000,
+      "hour": -24,
+      "id": "t8",
+      "name": "llm.request",
+      "status": 0,
+      "trace": "t0"
+    },
+    {
+      "attrs": {
+        "gen_ai.request.model": "tail-x",
+        "gen_ai.system": "openai",
+        "gen_ai.usage.input_tokens": "100",
+        "gen_ai.usage.output_tokens": "100"
+      },
+      "dur_ms": 1000,
+      "hour": -24,
+      "id": "t9",
+      "name": "llm.request",
+      "status": 0,
+      "trace": "t0"
+    },
+    {
+      "attrs": {
+        "gen_ai.request.model": "tail-x",
+        "gen_ai.system": "openai",
+        "gen_ai.usage.input_tokens": "100",
+        "gen_ai.usage.output_tokens": "100"
+      },
+      "dur_ms": 1000,
+      "hour": -24,
+      "id": "t10",
+      "name": "llm.request",
+      "status": 0,
+      "trace": "t0"
+    },
+    {
+      "attrs": {
+        "gen_ai.request.model": "tail-x",
+        "gen_ai.system": "openai",
+        "gen_ai.usage.input_tokens": "100",
+        "gen_ai.usage.output_tokens": "100"
+      },
+      "dur_ms": 1000,
+      "hour": -24,
+      "id": "t11",
+      "name": "llm.request",
+      "status": 0,
+      "trace": "t0"
+    },
+    {
+      "attrs": {
+        "gen_ai.request.model": "tail-x",
+        "gen_ai.system": "openai",
+        "gen_ai.usage.input_tokens": "100",
+        "gen_ai.usage.output_tokens": "100"
+      },
+      "dur_ms": 1000,
+      "hour": 24,
+      "id": "t12",
+      "name": "llm.request",
+      "status": 0,
+      "trace": "t1"
+    },
+    {
+      "attrs": {
+        "gen_ai.request.model": "tail-x",
+        "gen_ai.system": "openai",
+        "gen_ai.usage.input_tokens": "100",
+        "gen_ai.usage.output_tokens": "100"
+      },
+      "dur_ms": 1000,
+      "hour": 24,
+      "id": "t13",
+      "name": "llm.request",
+      "status": 0,
+      "trace": "t1"
+    },
+    {
+      "attrs": {
+        "gen_ai.request.model": "tail-x",
+        "gen_ai.system": "openai",
+        "gen_ai.usage.input_tokens": "100",
+        "gen_ai.usage.output_tokens": "100"
+      },
+      "dur_ms": 1000,
+      "hour": 24,
+      "id": "t14",
+      "name": "llm.request",
+      "status": 0,
+      "trace": "t1"
+    },
+    {
+      "attrs": {
+        "gen_ai.request.model": "tail-x",
+        "gen_ai.system": "openai",
+        "gen_ai.usage.input_tokens": "100",
+        "gen_ai.usage.output_tokens": "100"
+      },
+      "dur_ms": 1000,
+      "hour": 24,
+      "id": "t15",
+      "name": "llm.request",
+      "status": 0,
+      "trace": "t1"
+    },
+    {
+      "attrs": {
+        "gen_ai.request.model": "tail-x",
+        "gen_ai.system": "openai",
+        "gen_ai.usage.input_tokens": "100",
+        "gen_ai.usage.output_tokens": "100"
+      },
+      "dur_ms": 1000,
+      "hour": 24,
+      "id": "t16",
+      "name": "llm.request",
+      "status": 0,
+      "trace": "t1"
+    },
+    {
+      "attrs": {
+        "gen_ai.request.model": "tail-x",
+        "gen_ai.system": "openai",
+        "gen_ai.usage.input_tokens": "100",
+        "gen_ai.usage.output_tokens": "100"
+      },
+      "dur_ms": 1000,
+      "hour": 24,
+      "id": "t17",
+      "name": "llm.request",
+      "status": 0,
+      "trace": "t1"
+    },
+    {
+      "attrs": {
+        "gen_ai.request.model": "tail-x",
+        "gen_ai.system": "openai",
+        "gen_ai.usage.input_tokens": "100",
+        "gen_ai.usage.output_tokens": "100"
+      },
+      "dur_ms": 1000,
+      "hour": 24,
+      "id": "t18",
+      "name": "llm.request",
+      "status": 0,
+      "trace": "t1"
+    },
+    {
+      "attrs": {
+        "gen_ai.request.model": "tail-x",
+        "gen_ai.system": "openai",
+        "gen_ai.usage.input_tokens": "100",
+        "gen_ai.usage.output_tokens": "100"
+      },
+      "dur_ms": 1000,
+      "hour": 24,
+      "id": "t19",
+      "name": "llm.request",
+      "status": 0,
+      "trace": "t1"
+    },
+    {
+      "attrs": {
+        "gen_ai.request.model": "tail-x",
+        "gen_ai.system": "openai",
+        "gen_ai.usage.input_tokens": "100",
+        "gen_ai.usage.output_tokens": "100"
+      },
+      "dur_ms": 1000,
+      "hour": 24,
+      "id": "t20",
+      "name": "llm.request",
+      "status": 0,
+      "trace": "t1"
+    },
+    {
+      "attrs": {
+        "gen_ai.request.model": "tail-x",
+        "gen_ai.system": "openai",
+        "gen_ai.usage.input_tokens": "100",
+        "gen_ai.usage.output_tokens": "100"
+      },
+      "dur_ms": 1000,
+      "hour": 24,
+      "id": "t21",
+      "name": "llm.request",
+      "status": 0,
+      "trace": "t1"
+    },
+    {
+      "attrs": {
+        "gen_ai.request.model": "tail-x",
+        "gen_ai.system": "openai",
+        "gen_ai.usage.input_tokens": "100",
+        "gen_ai.usage.output_tokens": "100"
+      },
+      "dur_ms": 2500,
+      "hour": 24,
+      "id": "t22",
+      "name": "llm.request",
+      "status": 0,
+      "trace": "t1"
+    },
+    {
+      "attrs": {
+        "gen_ai.request.model": "tail-x",
+        "gen_ai.system": "openai",
+        "gen_ai.usage.input_tokens": "100",
+        "gen_ai.usage.output_tokens": "100"
+      },
+      "dur_ms": 2500,
+      "hour": 24,
+      "id": "t23",
+      "name": "llm.request",
+      "status": 0,
+      "trace": "t1"
+    },
+    {
+      "attrs": {
+        "gen_ai.request.model": "shared-model",
+        "gen_ai.system": "openai",
+        "gen_ai.usage.input_tokens": "100",
+        "gen_ai.usage.output_tokens": "100",
+        "otel.scope.name": "emitter-a"
+      },
+      "dur_ms": 1000,
+      "hour": -24,
+      "id": "s0",
+      "name": "llm.request",
+      "status": 0,
+      "trace": "s0"
+    },
+    {
+      "attrs": {
+        "gen_ai.request.model": "shared-model",
+        "gen_ai.system": "openai",
+        "gen_ai.usage.input_tokens": "100",
+        "gen_ai.usage.output_tokens": "100",
+        "otel.scope.name": "emitter-a"
+      },
+      "dur_ms": 1000,
+      "hour": -24,
+      "id": "s1",
+      "name": "llm.request",
+      "status": 0,
+      "trace": "s0"
+    },
+    {
+      "attrs": {
+        "gen_ai.request.model": "shared-model",
+        "gen_ai.system": "openai",
+        "gen_ai.usage.input_tokens": "100",
+        "gen_ai.usage.output_tokens": "100",
+        "otel.scope.name": "emitter-a"
+      },
+      "dur_ms": 1000,
+      "hour": -24,
+      "id": "s2",
+      "name": "llm.request",
+      "status": 0,
+      "trace": "s0"
+    },
+    {
+      "attrs": {
+        "gen_ai.request.model": "shared-model",
+        "gen_ai.system": "openai",
+        "gen_ai.usage.input_tokens": "100",
+        "gen_ai.usage.output_tokens": "100",
+        "otel.scope.name": "emitter-a"
+      },
+      "dur_ms": 1000,
+      "hour": -24,
+      "id": "s3",
+      "name": "llm.request",
+      "status": 0,
+      "trace": "s0"
+    },
+    {
+      "attrs": {
+        "gen_ai.request.model": "shared-model",
+        "gen_ai.system": "openai",
+        "gen_ai.usage.input_tokens": "100",
+        "gen_ai.usage.output_tokens": "100",
+        "otel.scope.name": "emitter-a"
+      },
+      "dur_ms": 1000,
+      "hour": -24,
+      "id": "s4",
+      "name": "llm.request",
+      "status": 0,
+      "trace": "s0"
+    },
+    {
+      "attrs": {
+        "gen_ai.request.model": "shared-model",
+        "gen_ai.system": "openai",
+        "gen_ai.usage.input_tokens": "100",
+        "gen_ai.usage.output_tokens": "100",
+        "otel.scope.name": "emitter-a"
+      },
+      "dur_ms": 1000,
+      "hour": -24,
+      "id": "s5",
+      "name": "llm.request",
+      "status": 0,
+      "trace": "s0"
+    },
+    {
+      "attrs": {
+        "gen_ai.request.model": "shared-model",
+        "gen_ai.system": "openai",
+        "gen_ai.usage.input_tokens": "100",
+        "gen_ai.usage.output_tokens": "100",
+        "otel.scope.name": "emitter-a"
+      },
+      "dur_ms": 1000,
+      "hour": -24,
+      "id": "s6",
+      "name": "llm.request",
+      "status": 0,
+      "trace": "s0"
+    },
+    {
+      "attrs": {
+        "gen_ai.request.model": "shared-model",
+        "gen_ai.system": "openai",
+        "gen_ai.usage.input_tokens": "100",
+        "gen_ai.usage.output_tokens": "100",
+        "otel.scope.name": "emitter-a"
+      },
+      "dur_ms": 1000,
+      "hour": -24,
+      "id": "s7",
+      "name": "llm.request",
+      "status": 0,
+      "trace": "s0"
+    },
+    {
+      "attrs": {
+        "gen_ai.request.model": "shared-model",
+        "gen_ai.system": "openai",
+        "gen_ai.usage.input_tokens": "100",
+        "gen_ai.usage.output_tokens": "100",
+        "otel.scope.name": "emitter-a"
+      },
+      "dur_ms": 1000,
+      "hour": -24,
+      "id": "s8",
+      "name": "llm.request",
+      "status": 0,
+      "trace": "s0"
+    },
+    {
+      "attrs": {
+        "gen_ai.request.model": "shared-model",
+        "gen_ai.system": "openai",
+        "gen_ai.usage.input_tokens": "100",
+        "gen_ai.usage.output_tokens": "100",
+        "otel.scope.name": "emitter-a"
+      },
+      "dur_ms": 1000,
+      "hour": -24,
+      "id": "s9",
+      "name": "llm.request",
+      "status": 0,
+      "trace": "s0"
+    },
+    {
+      "attrs": {
+        "gen_ai.request.model": "shared-model",
+        "gen_ai.system": "openai",
+        "gen_ai.usage.input_tokens": "100",
+        "gen_ai.usage.output_tokens": "100",
+        "otel.scope.name": "emitter-a"
+      },
+      "dur_ms": 1000,
+      "hour": -24,
+      "id": "s10",
+      "name": "llm.request",
+      "status": 0,
+      "trace": "s0"
+    },
+    {
+      "attrs": {
+        "gen_ai.request.model": "shared-model",
+        "gen_ai.system": "openai",
+        "gen_ai.usage.input_tokens": "100",
+        "gen_ai.usage.output_tokens": "100",
+        "otel.scope.name": "emitter-a"
+      },
+      "dur_ms": 1000,
+      "hour": -24,
+      "id": "s11",
+      "name": "llm.request",
+      "status": 0,
+      "trace": "s0"
+    },
+    {
+      "attrs": {
+        "gen_ai.request.model": "shared-model",
+        "gen_ai.system": "openai",
+        "gen_ai.usage.input_tokens": "100",
+        "gen_ai.usage.output_tokens": "100",
+        "otel.scope.name": "emitter-a"
+      },
+      "dur_ms": 1000,
+      "hour": 24,
+      "id": "s12",
+      "name": "llm.request",
+      "status": 0,
+      "trace": "s1"
+    },
+    {
+      "attrs": {
+        "gen_ai.request.model": "shared-model",
+        "gen_ai.system": "openai",
+        "gen_ai.usage.input_tokens": "100",
+        "gen_ai.usage.output_tokens": "100",
+        "otel.scope.name": "emitter-a"
+      },
+      "dur_ms": 1000,
+      "hour": 24,
+      "id": "s13",
+      "name": "llm.request",
+      "status": 0,
+      "trace": "s1"
+    },
+    {
+      "attrs": {
+        "gen_ai.request.model": "shared-model",
+        "gen_ai.system": "openai",
+        "gen_ai.usage.input_tokens": "100",
+        "gen_ai.usage.output_tokens": "100",
+        "otel.scope.name": "emitter-a"
+      },
+      "dur_ms": 1000,
+      "hour": 24,
+      "id": "s14",
+      "name": "llm.request",
+      "status": 0,
+      "trace": "s1"
+    },
+    {
+      "attrs": {
+        "gen_ai.request.model": "shared-model",
+        "gen_ai.system": "openai",
+        "gen_ai.usage.input_tokens": "100",
+        "gen_ai.usage.output_tokens": "100",
+        "otel.scope.name": "emitter-a"
+      },
+      "dur_ms": 1000,
+      "hour": 24,
+      "id": "s15",
+      "name": "llm.request",
+      "status": 0,
+      "trace": "s1"
+    },
+    {
+      "attrs": {
+        "gen_ai.request.model": "shared-model",
+        "gen_ai.system": "openai",
+        "gen_ai.usage.input_tokens": "100",
+        "gen_ai.usage.output_tokens": "100",
+        "otel.scope.name": "emitter-a"
+      },
+      "dur_ms": 1000,
+      "hour": 24,
+      "id": "s16",
+      "name": "llm.request",
+      "status": 0,
+      "trace": "s1"
+    },
+    {
+      "attrs": {
+        "gen_ai.request.model": "shared-model",
+        "gen_ai.system": "openai",
+        "gen_ai.usage.input_tokens": "100",
+        "gen_ai.usage.output_tokens": "100",
+        "otel.scope.name": "emitter-a"
+      },
+      "dur_ms": 1000,
+      "hour": 24,
+      "id": "s17",
+      "name": "llm.request",
+      "status": 0,
+      "trace": "s1"
+    },
+    {
+      "attrs": {
+        "gen_ai.request.model": "shared-model",
+        "gen_ai.system": "openai",
+        "gen_ai.usage.input_tokens": "100",
+        "gen_ai.usage.output_tokens": "100",
+        "otel.scope.name": "emitter-a"
+      },
+      "dur_ms": 1000,
+      "hour": 24,
+      "id": "s18",
+      "name": "llm.request",
+      "status": 0,
+      "trace": "s1"
+    },
+    {
+      "attrs": {
+        "gen_ai.request.model": "shared-model",
+        "gen_ai.system": "openai",
+        "gen_ai.usage.input_tokens": "100",
+        "gen_ai.usage.output_tokens": "100",
+        "otel.scope.name": "emitter-a"
+      },
+      "dur_ms": 1000,
+      "hour": 24,
+      "id": "s19",
+      "name": "llm.request",
+      "status": 0,
+      "trace": "s1"
+    },
+    {
+      "attrs": {
+        "gen_ai.request.model": "shared-model",
+        "gen_ai.system": "openai",
+        "gen_ai.usage.input_tokens": "100",
+        "gen_ai.usage.output_tokens": "100",
+        "otel.scope.name": "emitter-a"
+      },
+      "dur_ms": 1000,
+      "hour": 24,
+      "id": "s20",
+      "name": "llm.request",
+      "status": 0,
+      "trace": "s1"
+    },
+    {
+      "attrs": {
+        "gen_ai.request.model": "shared-model",
+        "gen_ai.system": "openai",
+        "gen_ai.usage.input_tokens": "100",
+        "gen_ai.usage.output_tokens": "100",
+        "otel.scope.name": "emitter-a"
+      },
+      "dur_ms": 1000,
+      "hour": 24,
+      "id": "s21",
+      "name": "llm.request",
+      "status": 0,
+      "trace": "s1"
+    },
+    {
+      "attrs": {
+        "gen_ai.request.model": "shared-model",
+        "gen_ai.system": "openai",
+        "gen_ai.usage.input_tokens": "100",
+        "gen_ai.usage.output_tokens": "100",
+        "otel.scope.name": "emitter-a"
+      },
+      "dur_ms": 1000,
+      "hour": 24,
+      "id": "s22",
+      "name": "llm.request",
+      "status": 0,
+      "trace": "s1"
+    },
+    {
+      "attrs": {
+        "gen_ai.request.model": "shared-model",
+        "gen_ai.system": "openai",
+        "gen_ai.usage.input_tokens": "100",
+        "gen_ai.usage.output_tokens": "100",
+        "otel.scope.name": "emitter-a"
+      },
+      "dur_ms": 1000,
+      "hour": 24,
+      "id": "s23",
+      "name": "llm.request",
+      "status": 0,
+      "trace": "s1"
+    },
+    {
+      "attrs": {
+        "gen_ai.request.model": "shared-model",
+        "gen_ai.system": "anthropic",
+        "gen_ai.usage.input_tokens": "100",
+        "gen_ai.usage.output_tokens": "100",
+        "otel.scope.name": "emitter-b"
+      },
+      "dur_ms": 1000,
+      "hour": -24,
+      "id": "u0",
+      "name": "llm.request",
+      "status": 0,
+      "trace": "u0"
+    },
+    {
+      "attrs": {
+        "gen_ai.request.model": "shared-model",
+        "gen_ai.system": "anthropic",
+        "gen_ai.usage.input_tokens": "100",
+        "gen_ai.usage.output_tokens": "100",
+        "otel.scope.name": "emitter-b"
+      },
+      "dur_ms": 1000,
+      "hour": -24,
+      "id": "u1",
+      "name": "llm.request",
+      "status": 0,
+      "trace": "u0"
+    },
+    {
+      "attrs": {
+        "gen_ai.request.model": "shared-model",
+        "gen_ai.system": "anthropic",
+        "gen_ai.usage.input_tokens": "100",
+        "gen_ai.usage.output_tokens": "100",
+        "otel.scope.name": "emitter-b"
+      },
+      "dur_ms": 1000,
+      "hour": -24,
+      "id": "u2",
+      "name": "llm.request",
+      "status": 0,
+      "trace": "u0"
+    },
+    {
+      "attrs": {
+        "gen_ai.request.model": "shared-model",
+        "gen_ai.system": "anthropic",
+        "gen_ai.usage.input_tokens": "100",
+        "gen_ai.usage.output_tokens": "100",
+        "otel.scope.name": "emitter-b"
+      },
+      "dur_ms": 1000,
+      "hour": -24,
+      "id": "u3",
+      "name": "llm.request",
+      "status": 0,
+      "trace": "u0"
+    },
+    {
+      "attrs": {
+        "gen_ai.request.model": "shared-model",
+        "gen_ai.system": "anthropic",
+        "gen_ai.usage.input_tokens": "100",
+        "gen_ai.usage.output_tokens": "100",
+        "otel.scope.name": "emitter-b"
+      },
+      "dur_ms": 1000,
+      "hour": -24,
+      "id": "u4",
+      "name": "llm.request",
+      "status": 0,
+      "trace": "u0"
+    },
+    {
+      "attrs": {
+        "gen_ai.request.model": "shared-model",
+        "gen_ai.system": "anthropic",
+        "gen_ai.usage.input_tokens": "100",
+        "gen_ai.usage.output_tokens": "100",
+        "otel.scope.name": "emitter-b"
+      },
+      "dur_ms": 1000,
+      "hour": -24,
+      "id": "u5",
+      "name": "llm.request",
+      "status": 0,
+      "trace": "u0"
+    },
+    {
+      "attrs": {
+        "gen_ai.request.model": "shared-model",
+        "gen_ai.system": "anthropic",
+        "gen_ai.usage.input_tokens": "100",
+        "gen_ai.usage.output_tokens": "100",
+        "otel.scope.name": "emitter-b"
+      },
+      "dur_ms": 1000,
+      "hour": -24,
+      "id": "u6",
+      "name": "llm.request",
+      "status": 0,
+      "trace": "u0"
+    },
+    {
+      "attrs": {
+        "gen_ai.request.model": "shared-model",
+        "gen_ai.system": "anthropic",
+        "gen_ai.usage.input_tokens": "100",
+        "gen_ai.usage.output_tokens": "100",
+        "otel.scope.name": "emitter-b"
+      },
+      "dur_ms": 1000,
+      "hour": -24,
+      "id": "u7",
+      "name": "llm.request",
+      "status": 0,
+      "trace": "u0"
+    },
+    {
+      "attrs": {
+        "gen_ai.request.model": "shared-model",
+        "gen_ai.system": "anthropic",
+        "gen_ai.usage.input_tokens": "100",
+        "gen_ai.usage.output_tokens": "100",
+        "otel.scope.name": "emitter-b"
+      },
+      "dur_ms": 1000,
+      "hour": -24,
+      "id": "u8",
+      "name": "llm.request",
+      "status": 0,
+      "trace": "u0"
+    },
+    {
+      "attrs": {
+        "gen_ai.request.model": "shared-model",
+        "gen_ai.system": "anthropic",
+        "gen_ai.usage.input_tokens": "100",
+        "gen_ai.usage.output_tokens": "100",
+        "otel.scope.name": "emitter-b"
+      },
+      "dur_ms": 1000,
+      "hour": -24,
+      "id": "u9",
+      "name": "llm.request",
+      "status": 0,
+      "trace": "u0"
+    },
+    {
+      "attrs": {
+        "gen_ai.request.model": "shared-model",
+        "gen_ai.system": "anthropic",
+        "gen_ai.usage.input_tokens": "100",
+        "gen_ai.usage.output_tokens": "100",
+        "otel.scope.name": "emitter-b"
+      },
+      "dur_ms": 1000,
+      "hour": -24,
+      "id": "u10",
+      "name": "llm.request",
+      "status": 0,
+      "trace": "u0"
+    },
+    {
+      "attrs": {
+        "gen_ai.request.model": "shared-model",
+        "gen_ai.system": "anthropic",
+        "gen_ai.usage.input_tokens": "100",
+        "gen_ai.usage.output_tokens": "100",
+        "otel.scope.name": "emitter-b"
+      },
+      "dur_ms": 1000,
+      "hour": -24,
+      "id": "u11",
+      "name": "llm.request",
+      "status": 0,
+      "trace": "u0"
+    },
+    {
+      "attrs": {
+        "gen_ai.request.model": "shared-model",
+        "gen_ai.system": "anthropic",
+        "gen_ai.usage.input_tokens": "100",
+        "gen_ai.usage.output_tokens": "100",
+        "otel.scope.name": "emitter-b"
+      },
+      "dur_ms": 1000,
+      "hour": 24,
+      "id": "u12",
+      "name": "llm.request",
+      "status": 0,
+      "trace": "u1"
+    },
+    {
+      "attrs": {
+        "gen_ai.request.model": "shared-model",
+        "gen_ai.system": "anthropic",
+        "gen_ai.usage.input_tokens": "100",
+        "gen_ai.usage.output_tokens": "100",
+        "otel.scope.name": "emitter-b"
+      },
+      "dur_ms": 1000,
+      "hour": 24,
+      "id": "u13",
+      "name": "llm.request",
+      "status": 0,
+      "trace": "u1"
+    },
+    {
+      "attrs": {
+        "gen_ai.request.model": "shared-model",
+        "gen_ai.system": "anthropic",
+        "gen_ai.usage.input_tokens": "100",
+        "gen_ai.usage.output_tokens": "100",
+        "otel.scope.name": "emitter-b"
+      },
+      "dur_ms": 1000,
+      "hour": 24,
+      "id": "u14",
+      "name": "llm.request",
+      "status": 0,
+      "trace": "u1"
+    },
+    {
+      "attrs": {
+        "gen_ai.request.model": "shared-model",
+        "gen_ai.system": "anthropic",
+        "gen_ai.usage.input_tokens": "100",
+        "gen_ai.usage.output_tokens": "100",
+        "otel.scope.name": "emitter-b"
+      },
+      "dur_ms": 1000,
+      "hour": 24,
+      "id": "u15",
+      "name": "llm.request",
+      "status": 0,
+      "trace": "u1"
+    },
+    {
+      "attrs": {
+        "gen_ai.request.model": "shared-model",
+        "gen_ai.system": "anthropic",
+        "gen_ai.usage.input_tokens": "100",
+        "gen_ai.usage.output_tokens": "100",
+        "otel.scope.name": "emitter-b"
+      },
+      "dur_ms": 1000,
+      "hour": 24,
+      "id": "u16",
+      "name": "llm.request",
+      "status": 0,
+      "trace": "u1"
+    },
+    {
+      "attrs": {
+        "gen_ai.request.model": "shared-model",
+        "gen_ai.system": "anthropic",
+        "gen_ai.usage.input_tokens": "100",
+        "gen_ai.usage.output_tokens": "100",
+        "otel.scope.name": "emitter-b"
+      },
+      "dur_ms": 1000,
+      "hour": 24,
+      "id": "u17",
+      "name": "llm.request",
+      "status": 0,
+      "trace": "u1"
+    },
+    {
+      "attrs": {
+        "gen_ai.request.model": "shared-model",
+        "gen_ai.system": "anthropic",
+        "gen_ai.usage.input_tokens": "100",
+        "gen_ai.usage.output_tokens": "100",
+        "otel.scope.name": "emitter-b"
+      },
+      "dur_ms": 1000,
+      "hour": 24,
+      "id": "u18",
+      "name": "llm.request",
+      "status": 0,
+      "trace": "u1"
+    },
+    {
+      "attrs": {
+        "gen_ai.request.model": "shared-model",
+        "gen_ai.system": "anthropic",
+        "gen_ai.usage.input_tokens": "100",
+        "gen_ai.usage.output_tokens": "100",
+        "otel.scope.name": "emitter-b"
+      },
+      "dur_ms": 1000,
+      "hour": 24,
+      "id": "u19",
+      "name": "llm.request",
+      "status": 0,
+      "trace": "u1"
+    },
+    {
+      "attrs": {
+        "gen_ai.request.model": "shared-model",
+        "gen_ai.system": "anthropic",
+        "gen_ai.usage.input_tokens": "100",
+        "gen_ai.usage.output_tokens": "100",
+        "otel.scope.name": "emitter-b"
+      },
+      "dur_ms": 1000,
+      "hour": 24,
+      "id": "u20",
+      "name": "llm.request",
+      "status": 0,
+      "trace": "u1"
+    },
+    {
+      "attrs": {
+        "gen_ai.request.model": "shared-model",
+        "gen_ai.system": "anthropic",
+        "gen_ai.usage.input_tokens": "100",
+        "gen_ai.usage.output_tokens": "100",
+        "otel.scope.name": "emitter-b"
+      },
+      "dur_ms": 1000,
+      "hour": 24,
+      "id": "u21",
+      "name": "llm.request",
+      "status": 0,
+      "trace": "u1"
+    },
+    {
+      "attrs": {
+        "gen_ai.request.model": "shared-model",
+        "gen_ai.system": "anthropic",
+        "gen_ai.usage.input_tokens": "100",
+        "gen_ai.usage.output_tokens": "100",
+        "otel.scope.name": "emitter-b"
+      },
+      "dur_ms": 1000,
+      "hour": 24,
+      "id": "u22",
+      "name": "llm.request",
+      "status": 0,
+      "trace": "u1"
+    },
+    {
+      "attrs": {
+        "gen_ai.request.model": "shared-model",
+        "gen_ai.system": "anthropic",
+        "gen_ai.usage.input_tokens": "100",
+        "gen_ai.usage.output_tokens": "100",
+        "otel.scope.name": "emitter-b"
+      },
+      "dur_ms": 1000,
+      "hour": 24,
+      "id": "u23",
+      "name": "llm.request",
+      "status": 0,
+      "trace": "u1"
+    },
+    {
+      "attrs": {
+        "gen_ai.request.model": "split-emit",
+        "gen_ai.system": "openai",
+        "gen_ai.usage.input_tokens": "100",
+        "gen_ai.usage.output_tokens": "100",
+        "otel.scope.name": "emitter-x"
+      },
+      "dur_ms": 1000,
+      "hour": -24,
+      "id": "v0",
+      "name": "llm.request",
+      "status": 0,
+      "trace": "v0"
+    },
+    {
+      "attrs": {
+        "gen_ai.request.model": "split-emit",
+        "gen_ai.system": "openai",
+        "gen_ai.usage.input_tokens": "100",
+        "gen_ai.usage.output_tokens": "100",
+        "otel.scope.name": "emitter-x"
+      },
+      "dur_ms": 1000,
+      "hour": -24,
+      "id": "v1",
+      "name": "llm.request",
+      "status": 0,
+      "trace": "v0"
+    },
+    {
+      "attrs": {
+        "gen_ai.request.model": "split-emit",
+        "gen_ai.system": "openai",
+        "gen_ai.usage.input_tokens": "100",
+        "gen_ai.usage.output_tokens": "100",
+        "otel.scope.name": "emitter-x"
+      },
+      "dur_ms": 1000,
+      "hour": -24,
+      "id": "v2",
+      "name": "llm.request",
+      "status": 0,
+      "trace": "v0"
+    },
+    {
+      "attrs": {
+        "gen_ai.request.model": "split-emit",
+        "gen_ai.system": "openai",
+        "gen_ai.usage.input_tokens": "100",
+        "gen_ai.usage.output_tokens": "100",
+        "otel.scope.name": "emitter-x"
+      },
+      "dur_ms": 1000,
+      "hour": -24,
+      "id": "v3",
+      "name": "llm.request",
+      "status": 0,
+      "trace": "v0"
+    },
+    {
+      "attrs": {
+        "gen_ai.request.model": "split-emit",
+        "gen_ai.system": "openai",
+        "gen_ai.usage.input_tokens": "100",
+        "gen_ai.usage.output_tokens": "100",
+        "otel.scope.name": "emitter-x"
+      },
+      "dur_ms": 1000,
+      "hour": -24,
+      "id": "v4",
+      "name": "llm.request",
+      "status": 0,
+      "trace": "v0"
+    },
+    {
+      "attrs": {
+        "gen_ai.request.model": "split-emit",
+        "gen_ai.system": "openai",
+        "gen_ai.usage.input_tokens": "100",
+        "gen_ai.usage.output_tokens": "100",
+        "otel.scope.name": "emitter-x"
+      },
+      "dur_ms": 1000,
+      "hour": -24,
+      "id": "v5",
+      "name": "llm.request",
+      "status": 0,
+      "trace": "v0"
+    },
+    {
+      "attrs": {
+        "gen_ai.request.model": "split-emit",
+        "gen_ai.system": "openai",
+        "gen_ai.usage.input_tokens": "100",
+        "gen_ai.usage.output_tokens": "100",
+        "otel.scope.name": "emitter-x"
+      },
+      "dur_ms": 1000,
+      "hour": -24,
+      "id": "v6",
+      "name": "llm.request",
+      "status": 0,
+      "trace": "v0"
+    },
+    {
+      "attrs": {
+        "gen_ai.request.model": "split-emit",
+        "gen_ai.system": "openai",
+        "gen_ai.usage.input_tokens": "100",
+        "gen_ai.usage.output_tokens": "100",
+        "otel.scope.name": "emitter-x"
+      },
+      "dur_ms": 1000,
+      "hour": -24,
+      "id": "v7",
+      "name": "llm.request",
+      "status": 0,
+      "trace": "v0"
+    },
+    {
+      "attrs": {
+        "gen_ai.request.model": "split-emit",
+        "gen_ai.system": "openai",
+        "gen_ai.usage.input_tokens": "100",
+        "gen_ai.usage.output_tokens": "100",
+        "otel.scope.name": "emitter-x"
+      },
+      "dur_ms": 1000,
+      "hour": -24,
+      "id": "v8",
+      "name": "llm.request",
+      "status": 0,
+      "trace": "v0"
+    },
+    {
+      "attrs": {
+        "gen_ai.request.model": "split-emit",
+        "gen_ai.system": "openai",
+        "gen_ai.usage.input_tokens": "100",
+        "gen_ai.usage.output_tokens": "100",
+        "otel.scope.name": "emitter-x"
+      },
+      "dur_ms": 1000,
+      "hour": -24,
+      "id": "v9",
+      "name": "llm.request",
+      "status": 0,
+      "trace": "v0"
+    },
+    {
+      "attrs": {
+        "gen_ai.request.model": "split-emit",
+        "gen_ai.system": "openai",
+        "gen_ai.usage.input_tokens": "100",
+        "gen_ai.usage.output_tokens": "100",
+        "otel.scope.name": "emitter-x"
+      },
+      "dur_ms": 1000,
+      "hour": -24,
+      "id": "v10",
+      "name": "llm.request",
+      "status": 0,
+      "trace": "v0"
+    },
+    {
+      "attrs": {
+        "gen_ai.request.model": "split-emit",
+        "gen_ai.system": "openai",
+        "gen_ai.usage.input_tokens": "100",
+        "gen_ai.usage.output_tokens": "100",
+        "otel.scope.name": "emitter-x"
+      },
+      "dur_ms": 1000,
+      "hour": -24,
+      "id": "v11",
+      "name": "llm.request",
+      "status": 0,
+      "trace": "v0"
+    },
+    {
+      "attrs": {
+        "gen_ai.request.model": "split-emit",
+        "gen_ai.system": "openai",
+        "gen_ai.usage.input_tokens": "100",
+        "gen_ai.usage.output_tokens": "100",
+        "otel.scope.name": "emitter-x"
+      },
+      "dur_ms": 1000,
+      "hour": 24,
+      "id": "v12",
+      "name": "llm.request",
+      "status": 0,
+      "trace": "v1"
+    },
+    {
+      "attrs": {
+        "gen_ai.request.model": "split-emit",
+        "gen_ai.system": "openai",
+        "gen_ai.usage.input_tokens": "100",
+        "gen_ai.usage.output_tokens": "100",
+        "otel.scope.name": "emitter-x"
+      },
+      "dur_ms": 1000,
+      "hour": 24,
+      "id": "v13",
+      "name": "llm.request",
+      "status": 0,
+      "trace": "v1"
+    },
+    {
+      "attrs": {
+        "gen_ai.request.model": "split-emit",
+        "gen_ai.system": "openai",
+        "gen_ai.usage.input_tokens": "100",
+        "gen_ai.usage.output_tokens": "100",
+        "otel.scope.name": "emitter-x"
+      },
+      "dur_ms": 1000,
+      "hour": 24,
+      "id": "v14",
+      "name": "llm.request",
+      "status": 0,
+      "trace": "v1"
+    },
+    {
+      "attrs": {
+        "gen_ai.request.model": "split-emit",
+        "gen_ai.system": "openai",
+        "gen_ai.usage.input_tokens": "100",
+        "gen_ai.usage.output_tokens": "100",
+        "otel.scope.name": "emitter-x"
+      },
+      "dur_ms": 1000,
+      "hour": 24,
+      "id": "v15",
+      "name": "llm.request",
+      "status": 0,
+      "trace": "v1"
+    },
+    {
+      "attrs": {
+        "gen_ai.request.model": "split-emit",
+        "gen_ai.system": "openai",
+        "gen_ai.usage.input_tokens": "100",
+        "gen_ai.usage.output_tokens": "100",
+        "otel.scope.name": "emitter-x"
+      },
+      "dur_ms": 1000,
+      "hour": 24,
+      "id": "v16",
+      "name": "llm.request",
+      "status": 0,
+      "trace": "v1"
+    },
+    {
+      "attrs": {
+        "gen_ai.request.model": "split-emit",
+        "gen_ai.system": "openai",
+        "gen_ai.usage.input_tokens": "100",
+        "gen_ai.usage.output_tokens": "100",
+        "otel.scope.name": "emitter-x"
+      },
+      "dur_ms": 1000,
+      "hour": 24,
+      "id": "v17",
+      "name": "llm.request",
+      "status": 0,
+      "trace": "v1"
+    },
+    {
+      "attrs": {
+        "gen_ai.request.model": "split-emit",
+        "gen_ai.system": "openai",
+        "gen_ai.usage.input_tokens": "100",
+        "gen_ai.usage.output_tokens": "100",
+        "otel.scope.name": "emitter-x"
+      },
+      "dur_ms": 1000,
+      "hour": 24,
+      "id": "v18",
+      "name": "llm.request",
+      "status": 0,
+      "trace": "v1"
+    },
+    {
+      "attrs": {
+        "gen_ai.request.model": "split-emit",
+        "gen_ai.system": "openai",
+        "gen_ai.usage.input_tokens": "100",
+        "gen_ai.usage.output_tokens": "100",
+        "otel.scope.name": "emitter-x"
+      },
+      "dur_ms": 1000,
+      "hour": 24,
+      "id": "v19",
+      "name": "llm.request",
+      "status": 0,
+      "trace": "v1"
+    },
+    {
+      "attrs": {
+        "gen_ai.request.model": "split-emit",
+        "gen_ai.system": "openai",
+        "gen_ai.usage.input_tokens": "100",
+        "gen_ai.usage.output_tokens": "100",
+        "otel.scope.name": "emitter-x"
+      },
+      "dur_ms": 1000,
+      "hour": 24,
+      "id": "v20",
+      "name": "llm.request",
+      "status": 0,
+      "trace": "v1"
+    },
+    {
+      "attrs": {
+        "gen_ai.request.model": "split-emit",
+        "gen_ai.system": "openai",
+        "gen_ai.usage.input_tokens": "100",
+        "gen_ai.usage.output_tokens": "100",
+        "otel.scope.name": "emitter-x"
+      },
+      "dur_ms": 1000,
+      "hour": 24,
+      "id": "v21",
+      "name": "llm.request",
+      "status": 0,
+      "trace": "v1"
+    },
+    {
+      "attrs": {
+        "gen_ai.request.model": "split-emit",
+        "gen_ai.system": "openai",
+        "gen_ai.usage.input_tokens": "100",
+        "gen_ai.usage.output_tokens": "100",
+        "otel.scope.name": "emitter-x"
+      },
+      "dur_ms": 1000,
+      "hour": 24,
+      "id": "v22",
+      "name": "llm.request",
+      "status": 0,
+      "trace": "v1"
+    },
+    {
+      "attrs": {
+        "gen_ai.request.model": "split-emit",
+        "gen_ai.system": "openai",
+        "gen_ai.usage.input_tokens": "100",
+        "gen_ai.usage.output_tokens": "100",
+        "otel.scope.name": "emitter-x"
+      },
+      "dur_ms": 1000,
+      "hour": 24,
+      "id": "v23",
+      "name": "llm.request",
+      "status": 0,
+      "trace": "v1"
+    },
+    {
+      "attrs": {
+        "gen_ai.request.model": "split-emit",
+        "gen_ai.system": "openai",
+        "gen_ai.usage.input_tokens": "100",
+        "gen_ai.usage.output_tokens": "100",
+        "otel.scope.name": "emitter-y"
+      },
+      "dur_ms": 1000,
+      "hour": -24,
+      "id": "w0",
+      "name": "llm.request",
+      "status": 0,
+      "trace": "w0"
+    },
+    {
+      "attrs": {
+        "gen_ai.request.model": "split-emit",
+        "gen_ai.system": "openai",
+        "gen_ai.usage.input_tokens": "100",
+        "gen_ai.usage.output_tokens": "100",
+        "otel.scope.name": "emitter-y"
+      },
+      "dur_ms": 1000,
+      "hour": -24,
+      "id": "w1",
+      "name": "llm.request",
+      "status": 0,
+      "trace": "w0"
+    },
+    {
+      "attrs": {
+        "gen_ai.request.model": "split-emit",
+        "gen_ai.system": "openai",
+        "gen_ai.usage.input_tokens": "100",
+        "gen_ai.usage.output_tokens": "100",
+        "otel.scope.name": "emitter-y"
+      },
+      "dur_ms": 1000,
+      "hour": -24,
+      "id": "w2",
+      "name": "llm.request",
+      "status": 0,
+      "trace": "w0"
+    },
+    {
+      "attrs": {
+        "gen_ai.request.model": "split-emit",
+        "gen_ai.system": "openai",
+        "gen_ai.usage.input_tokens": "100",
+        "gen_ai.usage.output_tokens": "100",
+        "otel.scope.name": "emitter-y"
+      },
+      "dur_ms": 1000,
+      "hour": -24,
+      "id": "w3",
+      "name": "llm.request",
+      "status": 0,
+      "trace": "w0"
+    },
+    {
+      "attrs": {
+        "gen_ai.request.model": "split-emit",
+        "gen_ai.system": "openai",
+        "gen_ai.usage.input_tokens": "100",
+        "gen_ai.usage.output_tokens": "100",
+        "otel.scope.name": "emitter-y"
+      },
+      "dur_ms": 1000,
+      "hour": -24,
+      "id": "w4",
+      "name": "llm.request",
+      "status": 0,
+      "trace": "w0"
+    },
+    {
+      "attrs": {
+        "gen_ai.request.model": "split-emit",
+        "gen_ai.system": "openai",
+        "gen_ai.usage.input_tokens": "100",
+        "gen_ai.usage.output_tokens": "100",
+        "otel.scope.name": "emitter-y"
+      },
+      "dur_ms": 1000,
+      "hour": -24,
+      "id": "w5",
+      "name": "llm.request",
+      "status": 0,
+      "trace": "w0"
+    },
+    {
+      "attrs": {
+        "gen_ai.request.model": "split-emit",
+        "gen_ai.system": "openai",
+        "gen_ai.usage.input_tokens": "100",
+        "gen_ai.usage.output_tokens": "100",
+        "otel.scope.name": "emitter-y"
+      },
+      "dur_ms": 1000,
+      "hour": -24,
+      "id": "w6",
+      "name": "llm.request",
+      "status": 0,
+      "trace": "w0"
+    },
+    {
+      "attrs": {
+        "gen_ai.request.model": "split-emit",
+        "gen_ai.system": "openai",
+        "gen_ai.usage.input_tokens": "100",
+        "gen_ai.usage.output_tokens": "100",
+        "otel.scope.name": "emitter-y"
+      },
+      "dur_ms": 1000,
+      "hour": -24,
+      "id": "w7",
+      "name": "llm.request",
+      "status": 0,
+      "trace": "w0"
+    },
+    {
+      "attrs": {
+        "gen_ai.request.model": "split-emit",
+        "gen_ai.system": "openai",
+        "gen_ai.usage.input_tokens": "100",
+        "gen_ai.usage.output_tokens": "100",
+        "otel.scope.name": "emitter-y"
+      },
+      "dur_ms": 1000,
+      "hour": -24,
+      "id": "w8",
+      "name": "llm.request",
+      "status": 0,
+      "trace": "w0"
+    },
+    {
+      "attrs": {
+        "gen_ai.request.model": "split-emit",
+        "gen_ai.system": "openai",
+        "gen_ai.usage.input_tokens": "100",
+        "gen_ai.usage.output_tokens": "100",
+        "otel.scope.name": "emitter-y"
+      },
+      "dur_ms": 1000,
+      "hour": -24,
+      "id": "w9",
+      "name": "llm.request",
+      "status": 0,
+      "trace": "w0"
+    },
+    {
+      "attrs": {
+        "gen_ai.request.model": "split-emit",
+        "gen_ai.system": "openai",
+        "gen_ai.usage.input_tokens": "100",
+        "gen_ai.usage.output_tokens": "100",
+        "otel.scope.name": "emitter-y"
+      },
+      "dur_ms": 1000,
+      "hour": -24,
+      "id": "w10",
+      "name": "llm.request",
+      "status": 0,
+      "trace": "w0"
+    },
+    {
+      "attrs": {
+        "gen_ai.request.model": "split-emit",
+        "gen_ai.system": "openai",
+        "gen_ai.usage.input_tokens": "100",
+        "gen_ai.usage.output_tokens": "100",
+        "otel.scope.name": "emitter-y"
+      },
+      "dur_ms": 1000,
+      "hour": -24,
+      "id": "w11",
+      "name": "llm.request",
+      "status": 0,
+      "trace": "w0"
+    },
+    {
+      "attrs": {
+        "gen_ai.request.model": "split-emit",
+        "gen_ai.system": "openai",
+        "gen_ai.usage.input_tokens": "100",
+        "gen_ai.usage.output_tokens": "100",
+        "otel.scope.name": "emitter-y"
+      },
+      "dur_ms": 1000,
+      "hour": 24,
+      "id": "w12",
+      "name": "llm.request",
+      "status": 0,
+      "trace": "w1"
+    },
+    {
+      "attrs": {
+        "gen_ai.request.model": "split-emit",
+        "gen_ai.system": "openai",
+        "gen_ai.usage.input_tokens": "100",
+        "gen_ai.usage.output_tokens": "100",
+        "otel.scope.name": "emitter-y"
+      },
+      "dur_ms": 1000,
+      "hour": 24,
+      "id": "w13",
+      "name": "llm.request",
+      "status": 0,
+      "trace": "w1"
+    },
+    {
+      "attrs": {
+        "gen_ai.request.model": "split-emit",
+        "gen_ai.system": "openai",
+        "gen_ai.usage.input_tokens": "100",
+        "gen_ai.usage.output_tokens": "100",
+        "otel.scope.name": "emitter-y"
+      },
+      "dur_ms": 1000,
+      "hour": 24,
+      "id": "w14",
+      "name": "llm.request",
+      "status": 0,
+      "trace": "w1"
+    },
+    {
+      "attrs": {
+        "gen_ai.request.model": "split-emit",
+        "gen_ai.system": "openai",
+        "gen_ai.usage.input_tokens": "100",
+        "gen_ai.usage.output_tokens": "100",
+        "otel.scope.name": "emitter-y"
+      },
+      "dur_ms": 1000,
+      "hour": 24,
+      "id": "w15",
+      "name": "llm.request",
+      "status": 0,
+      "trace": "w1"
+    },
+    {
+      "attrs": {
+        "gen_ai.request.model": "split-emit",
+        "gen_ai.system": "openai",
+        "gen_ai.usage.input_tokens": "100",
+        "gen_ai.usage.output_tokens": "100",
+        "otel.scope.name": "emitter-y"
+      },
+      "dur_ms": 1000,
+      "hour": 24,
+      "id": "w16",
+      "name": "llm.request",
+      "status": 0,
+      "trace": "w1"
+    },
+    {
+      "attrs": {
+        "gen_ai.request.model": "split-emit",
+        "gen_ai.system": "openai",
+        "gen_ai.usage.input_tokens": "100",
+        "gen_ai.usage.output_tokens": "100",
+        "otel.scope.name": "emitter-y"
+      },
+      "dur_ms": 1000,
+      "hour": 24,
+      "id": "w17",
+      "name": "llm.request",
+      "status": 0,
+      "trace": "w1"
+    },
+    {
+      "attrs": {
+        "gen_ai.request.model": "split-emit",
+        "gen_ai.system": "openai",
+        "gen_ai.usage.input_tokens": "100",
+        "gen_ai.usage.output_tokens": "100",
+        "otel.scope.name": "emitter-y"
+      },
+      "dur_ms": 1000,
+      "hour": 24,
+      "id": "w18",
+      "name": "llm.request",
+      "status": 0,
+      "trace": "w1"
+    },
+    {
+      "attrs": {
+        "gen_ai.request.model": "split-emit",
+        "gen_ai.system": "openai",
+        "gen_ai.usage.input_tokens": "100",
+        "gen_ai.usage.output_tokens": "100",
+        "otel.scope.name": "emitter-y"
+      },
+      "dur_ms": 1000,
+      "hour": 24,
+      "id": "w19",
+      "name": "llm.request",
+      "status": 0,
+      "trace": "w1"
+    },
+    {
+      "attrs": {
+        "gen_ai.request.model": "split-emit",
+        "gen_ai.system": "openai",
+        "gen_ai.usage.input_tokens": "100",
+        "gen_ai.usage.output_tokens": "100",
+        "otel.scope.name": "emitter-y"
+      },
+      "dur_ms": 1000,
+      "hour": 24,
+      "id": "w20",
+      "name": "llm.request",
+      "status": 0,
+      "trace": "w1"
+    },
+    {
+      "attrs": {
+        "gen_ai.request.model": "split-emit",
+        "gen_ai.system": "openai",
+        "gen_ai.usage.input_tokens": "100",
+        "gen_ai.usage.output_tokens": "100",
+        "otel.scope.name": "emitter-y"
+      },
+      "dur_ms": 1000,
+      "hour": 24,
+      "id": "w21",
+      "name": "llm.request",
+      "status": 0,
+      "trace": "w1"
+    },
+    {
+      "attrs": {
+        "gen_ai.request.model": "split-emit",
+        "gen_ai.system": "openai",
+        "gen_ai.usage.input_tokens": "100",
+        "gen_ai.usage.output_tokens": "100",
+        "otel.scope.name": "emitter-y"
+      },
+      "dur_ms": 1000,
+      "hour": 24,
+      "id": "w22",
+      "name": "llm.request",
+      "status": 0,
+      "trace": "w1"
+    },
+    {
+      "attrs": {
+        "gen_ai.request.model": "split-emit",
+        "gen_ai.system": "openai",
+        "gen_ai.usage.input_tokens": "100",
+        "gen_ai.usage.output_tokens": "100",
+        "otel.scope.name": "emitter-y"
+      },
+      "dur_ms": 1000,
+      "hour": 24,
+      "id": "w23",
+      "name": "llm.request",
+      "status": 0,
+      "trace": "w1"
+    }
+  ],
+  "version": "model-performance-parity-edges-v1",
+  "window": {
+    "dst_transition_ns": 1774746000000000000,
+    "end_time_ns": 1774828800000000000,
+    "start_time_ns": 1774656000000000000
+  }
+}

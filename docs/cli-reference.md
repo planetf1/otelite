@@ -313,6 +313,37 @@ otelite capabilities --since 30d
 otelite capabilities --since 7d --format json | jq
 ```
 
+### Model performance diagnosis
+
+Compare a model's duration, throughput, TTFT and error rate in an exact
+interval against the preceding interval and an optional rolling baseline.
+The intervals are required; `--start`/`--end` accept dates (UTC midnight)
+or RFC 3339 timestamps, and `--rolling` a duration (`24h`, `7d`).
+
+```bash
+# Did gpt-4o regress this week versus the week before, with a 7-day rolling baseline?
+otelite model-performance --start 2026-08-18 --end 2026-08-25 --rolling 7d
+
+# One provider, one model, JSON (deep-equal to GET /api/genai/model-performance)
+otelite model-performance --start 2026-08-18 --end 2026-08-25 --rolling 7d \
+    --provider openai --model gpt-4o --format json-compact
+
+# Align calendar-day reasoning to a timezone (intervals stay exact UTC ns)
+otelite model-performance --start 2026-08-18 --end 2026-08-25 --timezone Europe/London
+```
+
+The output reports, per (provider, model, emitter fingerprint) identity:
+the exact current/preceding/rolling intervals, per-median and per-tail
+(p95) baselines and deltas, eligible sample counts, a deterministic class
+(`typical_regression`, `tail_regression`, `workload_shift_correlated`,
+`error_associated`, `mixed_evidence`, `insufficient_telemetry`,
+`no_material_change`) and a confidence level. Workload and error
+co-movement is always labelled *correlation, not causation*; TTFT
+conclusions are suppressed when TTFT is not reliable; a zero baseline keeps
+the relative change percentage-unavailable rather than printing a fake 0%.
+See the LLM observability guide for the thresholds and what the diagnosis
+will not claim.
+
 ---
 
 ## Importing from files
