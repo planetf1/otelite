@@ -11,6 +11,8 @@ have to work around), not implementation detail.
 
 ## [Unreleased]
 
+## [0.1.103] - 2026-08-29
+
 ### Added
 
 - New `otelite model-performance` command and
