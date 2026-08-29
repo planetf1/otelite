@@ -2243,6 +2243,7 @@ version = "0.1.96"
 dependencies = [
  "anyhow",
  "async-compression",
+ "async-trait",
  "axum 0.8.9",
  "flate2",
  "futures-util",

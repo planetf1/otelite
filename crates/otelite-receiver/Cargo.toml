@@ -51,6 +51,7 @@ async-compression = { version = "0.4", features = ["tokio", "gzip", "deflate"] }
 
 [dev-dependencies]
 tokio-test = "0.4"
+async-trait = "0.1"
 pretty_assertions = { workspace = true }
 tempfile = { workspace = true }
 # Body compression for Content-Encoding regression tests
