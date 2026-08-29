@@ -676,6 +676,45 @@ impl App {
                         },
                     }
                 }
+                // Model-performance diagnosis (#154): current = the last
+                // 24h, preceding derived by the API, rolling = the six
+                // windows before preceding. Optional panel — a failure only
+                // blanks this panel.
+                {
+                    let now_ns = std::time::SystemTime::now()
+                        .duration_since(std::time::UNIX_EPOCH)
+                        .map(|d| d.as_nanos() as i64)
+                        .unwrap_or(0);
+                    let day_ns = 86_400_000_000_000i64;
+                    let cur_start = now_ns - day_ns;
+                    let rolling_end = now_ns - 2 * day_ns;
+                    let rolling_start = now_ns - 8 * day_ns;
+                    let tz = std::env::var("TZ")
+                        .ok()
+                        .filter(|t| !t.is_empty() && t.parse::<chrono_tz::Tz>().is_ok())
+                        .unwrap_or_else(|| "UTC".to_string());
+                    let params = vec![
+                        ("start_time", cur_start.to_string()),
+                        ("end_time", now_ns.to_string()),
+                        ("rolling_ns", (rolling_end - rolling_start).to_string()),
+                        ("timezone", tz),
+                    ];
+                    match self.api_client.fetch_model_performance(params).await {
+                        Ok(diag) => {
+                            self.usage_state.model_perf_windows =
+                                crate::ui::usage::model_perf_windows(&diag);
+                            self.usage_state.model_perf = crate::ui::usage::model_perf_rows(&diag);
+                            self.usage_state.model_perf_error = None;
+                        },
+                        Err(e) => {
+                            self.usage_state.model_perf = Vec::new();
+                            self.usage_state.model_perf_windows =
+                                crate::state::usage::ModelPerfWindows::default();
+                            self.usage_state.model_perf_error = Some(e.to_string());
+                        },
+                    }
+                    self.usage_state.model_perf_fetched = true;
+                }
                 // best-effort — Claude Code only; ignore errors silently
                 if let Ok(resp) = self.api_client.fetch_tool_approvals(vec![]).await {
                     self.usage_state.tool_approvals = Some(resp);

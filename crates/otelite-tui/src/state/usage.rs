@@ -33,6 +33,37 @@ pub struct CapabilityRow {
     pub correlation: String,
 }
 
+/// One (identity, metric) row of the model-performance diagnosis panel
+/// (issue #121/#154). Cell text is pre-formatted so the render path stays
+/// trivially testable and the assessment vocabulary (class, confidence,
+/// "pct unavailable") comes verbatim from the API object — the panel never
+/// recomputes a percentage or reclassifies.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ModelPerfRow {
+    /// `(provider, request model)` composite; fingerprint kept separate.
+    pub identity: String,
+    /// Duration / throughput / ttft / error_rate (the four monitored metrics).
+    pub metric: String,
+    /// Preceding-baseline median (or rate); "—" when no eligible sample.
+    pub baseline: String,
+    /// Current-window median (or rate); "—" when no eligible sample.
+    pub current: String,
+    /// Preceding delta: "+300 (+30.00%)", "+30.0000 (pct unavailable)",
+    /// "n/a" when there is no baseline sample at all.
+    pub delta: String,
+    /// Eligible sample counts: `current/preceding` (`/rolling` when present).
+    pub samples: String,
+    pub class: String,
+    pub confidence: String,
+}
+
+/// Window header lines for the model-performance panel: the exact selected
+/// current, preceding and rolling intervals plus the echoed timezone.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct ModelPerfWindows {
+    pub lines: Vec<String>,
+}
+
 /// State for the Usage analytics view.
 #[derive(Debug, Default)]
 pub struct UsageState {
@@ -59,6 +90,16 @@ pub struct UsageState {
     /// Unidentified-emitter diagnostics (#149): joined required attribute
     /// names and span count; empty until fetched.
     pub unidentified: Vec<(String, usize)>,
+    /// Model-performance diagnosis rows (#154); empty until fetched.
+    pub model_perf: Vec<ModelPerfRow>,
+    /// Model-performance window header lines (#154).
+    pub model_perf_windows: ModelPerfWindows,
+    /// True once the first model-performance fetch has completed (success or
+    /// failure) so the panel renders its no-data state instead of hiding.
+    pub model_perf_fetched: bool,
+    /// Model-performance fetch failure text; the panel is optional, so a
+    /// failure blanks it rather than erroring the view.
+    pub model_perf_error: Option<String>,
     pub error: Option<String>,
     pub is_loading: bool,
 }

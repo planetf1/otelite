@@ -1,9 +1,10 @@
-use crate::state::usage::{CapabilityRow, DailyThroughputRow};
+use crate::state::usage::{CapabilityRow, DailyThroughputRow, ModelPerfRow, ModelPerfWindows};
 use crate::state::UsageState;
 use crate::ui::render_tab_bar;
 use chrono::{DateTime, Datelike, TimeZone, Timelike, Utc};
 use otelite_core::api::{
     GenAiCapabilityResponse, GenAiMetricCapability, LatencyPercentilesResponse,
+    ModelPerformanceDelta, ModelPerformanceDiagnosis, ModelPerformanceWindow,
 };
 use ratatui::{
     layout::{Constraint, Direction, Layout, Rect},
@@ -126,6 +127,93 @@ pub fn unidentified_rows(resp: &GenAiCapabilityResponse) -> Vec<(String, usize)>
     resp.unidentified
         .iter()
         .map(|u| (u.required_attributes.join(" + "), u.span_count))
+        .collect()
+}
+
+/// Window header lines for the model-performance panel (#154): the exact
+/// selected current interval, the derived preceding interval, the rolling
+/// baseline (or its absence) and the echoed timezone. Intervals are
+/// half-open and rendered in UTC, matching the CLI and web.
+pub fn model_perf_windows(diag: &ModelPerformanceDiagnosis) -> ModelPerfWindows {
+    let fmt = |w: &ModelPerformanceWindow| -> String {
+        let label = |ts: i64| -> String {
+            chrono::DateTime::<chrono::Utc>::from_timestamp_nanos(ts)
+                .format("%Y-%m-%dT%H:%M:%SZ")
+                .to_string()
+        };
+        format!("[{} → {})", label(w.start_time), label(w.end_time))
+    };
+    let mut lines = vec![
+        format!("Current:   {}", fmt(&diag.current_window)),
+        format!("Preceding: {}", fmt(&diag.preceding_window)),
+    ];
+    match &diag.rolling_window {
+        Some(w) => lines.push(format!("Rolling:   {}", fmt(w))),
+        None => lines.push("Rolling:   — (disabled)".to_string()),
+    }
+    match &diag.timezone {
+        Some(tz) => lines.push(format!("Timezone:  {tz}")),
+        None => lines.push("Timezone:  —".to_string()),
+    }
+    if diag.truncated {
+        lines.push("bounded sample — older spans excluded".to_string());
+    }
+    ModelPerfWindows { lines }
+}
+
+/// Project the diagnosis assessments into compact panel rows (#154): one
+/// row per identity × monitored metric. All wording (class, confidence,
+/// "pct unavailable") comes verbatim from the API object — this function
+/// formats values, it never recomputes a percentage or reclassifies.
+pub fn model_perf_rows(diag: &ModelPerformanceDiagnosis) -> Vec<ModelPerfRow> {
+    let identity_label = |provider: &Option<String>, model: &Option<String>| -> String {
+        match (provider, model) {
+            (Some(p), Some(m)) => format!("{p}/{m}"),
+            (Some(p), None) => p.clone(),
+            (None, Some(m)) => m.clone(),
+            (None, None) => "(unknown)".to_string(),
+        }
+    };
+    let value = |v: Option<f64>| -> String {
+        v.map(|v| format!("{v:.1}"))
+            .unwrap_or_else(|| "—".to_string())
+    };
+    let delta_cell = |d: Option<&ModelPerformanceDelta>| -> String {
+        match d {
+            None => "n/a".to_string(),
+            Some(d) => match d.relative {
+                Some(rel) => format!("{:+.1} ({:+.2}%)", d.absolute, rel * 100.0),
+                None => format!("{:+.1} (pct unavailable)", d.absolute),
+            },
+        }
+    };
+    diag.assessments
+        .iter()
+        .flat_map(|a| {
+            let identity = identity_label(&a.provider, &a.model);
+            let rolling = a.metrics.iter().any(|m| m.eligible_rolling.is_some());
+            a.metrics
+                .iter()
+                .map(move |m| {
+                    let samples = match m.eligible_rolling {
+                        Some(r) if rolling => {
+                            format!("{}/{}/{}", m.eligible_current, m.eligible_preceding, r)
+                        },
+                        _ => format!("{}/{}", m.eligible_current, m.eligible_preceding),
+                    };
+                    ModelPerfRow {
+                        identity: identity.clone(),
+                        metric: m.metric.to_string(),
+                        baseline: value(m.preceding_median),
+                        current: value(m.current_median),
+                        delta: delta_cell(m.median_delta_vs_preceding.as_ref()),
+                        samples,
+                        class: m.class.to_string(),
+                        confidence: m.confidence.to_string(),
+                    }
+                })
+                .collect::<Vec<ModelPerfRow>>()
+        })
         .collect()
 }
 
@@ -276,6 +364,9 @@ fn render_tables(frame: &mut Frame, area: Rect, state: &UsageState) {
     let show_calls = !state.calls_series.is_empty();
     let show_daily = !state.daily_throughput.is_empty();
     let show_caps = !state.capabilities.is_empty();
+    // Model performance (#154): shown once its first fetch has completed
+    // (rows or an explicit no-data state) so the empty window stays visible.
+    let show_perf = !state.model_perf.is_empty() || state.model_perf_fetched;
 
     let mut constraints = vec![Constraint::Min(5)]; // latency always shown
     if show_daily {
@@ -283,6 +374,9 @@ fn render_tables(frame: &mut Frame, area: Rect, state: &UsageState) {
     }
     if show_caps {
         constraints.push(Constraint::Length(9));
+    }
+    if show_perf {
+        constraints.push(Constraint::Length(14));
     }
     if show_tools {
         constraints.push(Constraint::Length(6));
@@ -323,6 +417,10 @@ fn render_tables(frame: &mut Frame, area: Rect, state: &UsageState) {
     }
     if show_caps {
         render_capability_table(frame, sections[idx], state);
+        idx += 1;
+    }
+    if show_perf {
+        render_model_perf_table(frame, sections[idx], state);
         idx += 1;
     }
     if show_tools {
@@ -712,6 +810,112 @@ fn render_capability_table(frame: &mut Frame, area: Rect, state: &UsageState) {
             .map(|(attrs, count)| Line::from(format!("  {count} span(s) need {attrs}"))),
     );
     frame.render_widget(Paragraph::new(lines).block(Block::default()), chunks[1]);
+}
+
+/// Model-performance diagnosis panel (#154): the exact comparison windows on
+/// top, then one row per identity × monitored metric. All wording (class,
+/// confidence, "pct unavailable") is verbatim from the API assessments — the
+/// panel renders, it does not recompute or reclassify.
+fn render_model_perf_table(frame: &mut Frame, area: Rect, state: &UsageState) {
+    let block = Block::default()
+        .borders(Borders::ALL)
+        .title(" Model performance (preceding baseline; classes are deterministic, not opinions) ");
+
+    if state.model_perf.is_empty() {
+        let msg = match &state.model_perf_error {
+            Some(e) => format!("Model performance unavailable: {e}"),
+            None if state.model_perf_fetched => {
+                "No model-performance data in this window.".to_string()
+            },
+            None => "Loading…".to_string(),
+        };
+        frame.render_widget(Paragraph::new(msg).block(block), area);
+        return;
+    }
+
+    let header_style = Style::default()
+        .fg(Color::Cyan)
+        .add_modifier(Modifier::BOLD);
+    let header = Row::new(vec![
+        Cell::from("Identity").style(header_style),
+        Cell::from("Metric").style(header_style),
+        Cell::from("Base p50").style(header_style),
+        Cell::from("Now p50").style(header_style),
+        Cell::from("Δ vs preceding").style(header_style),
+        Cell::from("N cur/prev").style(header_style),
+        Cell::from("Class").style(header_style),
+        Cell::from("Conf").style(header_style),
+    ]);
+
+    let class_style = |class: &str| match class {
+        "typical_regression" | "tail_regression" => {
+            Style::default().fg(Color::Red).add_modifier(Modifier::BOLD)
+        },
+        "workload_shift_correlated" | "error_associated" | "mixed_evidence" => {
+            Style::default().fg(Color::Yellow)
+        },
+        "insufficient_telemetry" => Style::default().fg(Color::DarkGray),
+        _ => Style::default(),
+    };
+    let conf_style = |conf: &str| {
+        if conf == "insufficient" || conf == "low" {
+            Style::default().fg(Color::Yellow)
+        } else {
+            Style::default()
+        }
+    };
+
+    let rows: Vec<Row> = state
+        .model_perf
+        .iter()
+        .map(|r| {
+            Row::new(vec![
+                Cell::from(truncate(&r.identity, 22)),
+                Cell::from(r.metric.clone()),
+                Cell::from(r.baseline.clone()),
+                Cell::from(r.current.clone()),
+                Cell::from(r.delta.clone()),
+                Cell::from(r.samples.clone()),
+                Cell::from(r.class.clone()).style(class_style(&r.class)),
+                Cell::from(r.confidence.clone()).style(conf_style(&r.confidence)),
+            ])
+        })
+        .collect();
+
+    let table = Table::new(
+        rows,
+        [
+            Constraint::Min(20),   // Identity
+            Constraint::Length(9), // Metric
+            Constraint::Length(9), // Base p50
+            Constraint::Length(9), // Now p50
+            Constraint::Min(18),   // Δ vs preceding
+            Constraint::Length(9), // N cur/prev
+            Constraint::Min(18),   // Class
+            Constraint::Length(8), // Conf
+        ],
+    )
+    .header(header)
+    .block(block);
+
+    if state.model_perf_windows.lines.is_empty() {
+        frame.render_widget(table, area);
+        return;
+    }
+    // Exact windows above the table: current / preceding / rolling / timezone.
+    let win_lines: Vec<Line> = state
+        .model_perf_windows
+        .lines
+        .iter()
+        .map(|l| Line::from(l.clone()))
+        .collect();
+    let win_len = win_lines.len() as u16;
+    let chunks = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([Constraint::Length(win_len), Constraint::Min(4)])
+        .split(area);
+    frame.render_widget(Paragraph::new(win_lines).block(Block::default()), chunks[0]);
+    frame.render_widget(table, chunks[1]);
 }
 
 fn render_trunc_cache_row(
@@ -1886,5 +2090,199 @@ mod tests {
         );
         assert_eq!(rows[0].1, 3);
         assert_eq!(rows[1], ("otel.scope.name".to_string(), 1));
+    }
+
+    // --- model-performance panel projection tests (#154) ---------------
+
+    use otelite_core::api::{
+        ModelPerformanceCounts, ModelPerformanceDiagnosis, ModelPerformanceWindow,
+    };
+    use otelite_core::model_performance::{
+        ModelPerformanceAssessment, ModelPerformanceMetricAssessment, PerformanceChangeClass,
+        PerformanceConfidence, PerformanceMetricKind,
+    };
+
+    fn mp_assessment(
+        model: &str,
+        metrics: Vec<ModelPerformanceMetricAssessment>,
+    ) -> ModelPerformanceAssessment {
+        ModelPerformanceAssessment {
+            provider: Some("openai".to_string()),
+            model: Some(model.to_string()),
+            emitter_fingerprint: "genai-v1-test".to_string(),
+            response_models: vec![],
+            request_counts: ModelPerformanceCounts {
+                current: 12,
+                preceding: 12,
+                rolling: 12,
+            },
+            metrics,
+            overall_class: PerformanceChangeClass::NoMaterialChange,
+            overall_confidence: PerformanceConfidence::High,
+            truncated: false,
+            notes: vec![],
+        }
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn mp_metric(
+        metric: PerformanceMetricKind,
+        class: PerformanceChangeClass,
+        confidence: PerformanceConfidence,
+        cur: Option<f64>,
+        prev: Option<f64>,
+        delta: Option<crate::ui::usage::ModelPerformanceDelta>,
+        rolling: Option<usize>,
+    ) -> ModelPerformanceMetricAssessment {
+        ModelPerformanceMetricAssessment {
+            metric,
+            class,
+            confidence,
+            eligible_current: 12,
+            eligible_preceding: 12,
+            eligible_rolling: rolling,
+            current_median: cur,
+            current_tail: None,
+            preceding_median: prev,
+            preceding_tail: None,
+            rolling_median: None,
+            rolling_tail: None,
+            median_delta_vs_preceding: delta,
+            median_delta_vs_rolling: None,
+            tail_delta_vs_preceding: None,
+            tail_delta_vs_rolling: None,
+            workload_shift: None,
+            error_association: None,
+            notes: vec![],
+        }
+    }
+
+    fn mp_diag(assessments: Vec<ModelPerformanceAssessment>) -> ModelPerformanceDiagnosis {
+        ModelPerformanceDiagnosis {
+            current_window: ModelPerformanceWindow {
+                start_time: 1_787_616_000_000_000_000,
+                end_time: 1_787_702_400_000_000_000,
+            },
+            preceding_window: ModelPerformanceWindow {
+                start_time: 1_787_529_600_000_000_000,
+                end_time: 1_787_616_000_000_000_000,
+            },
+            rolling_window: Some(ModelPerformanceWindow {
+                start_time: 1_787_097_600_000_000_000,
+                end_time: 1_787_529_600_000_000_000,
+            }),
+            timezone: Some("Europe/London".to_string()),
+            truncated: false,
+            identities: vec![],
+            assessments,
+        }
+    }
+
+    #[test]
+    fn test_model_perf_windows_render_exact_intervals() {
+        let w = model_perf_windows(&mp_diag(vec![mp_assessment("m", vec![])]));
+        assert_eq!(
+            w.lines,
+            vec![
+                "Current:   [2026-08-25T00:00:00Z → 2026-08-26T00:00:00Z)".to_string(),
+                "Preceding: [2026-08-24T00:00:00Z → 2026-08-25T00:00:00Z)".to_string(),
+                "Rolling:   [2026-08-19T00:00:00Z → 2026-08-24T00:00:00Z)".to_string(),
+                "Timezone:  Europe/London".to_string(),
+            ]
+        );
+    }
+
+    #[test]
+    fn test_model_perf_windows_disabled_rolling() {
+        let mut diag = mp_diag(vec![]);
+        diag.rolling_window = None;
+        diag.timezone = None;
+        diag.truncated = true;
+        let w = model_perf_windows(&diag);
+        assert_eq!(w.lines[2], "Rolling:   — (disabled)");
+        assert_eq!(w.lines[3], "Timezone:  —");
+        assert_eq!(w.lines[4], "bounded sample — older spans excluded");
+    }
+
+    #[test]
+    fn test_model_perf_rows_projection_and_vocabulary() {
+        let a = mp_assessment(
+            "gpt-4o",
+            vec![
+                mp_metric(
+                    PerformanceMetricKind::Duration,
+                    PerformanceChangeClass::TypicalRegression,
+                    PerformanceConfidence::High,
+                    Some(1300.0),
+                    Some(1000.0),
+                    Some(crate::ui::usage::ModelPerformanceDelta {
+                        absolute: 300.0,
+                        relative: Some(0.3),
+                    }),
+                    Some(12),
+                ),
+                mp_metric(
+                    PerformanceMetricKind::ErrorRate,
+                    PerformanceChangeClass::ErrorAssociated,
+                    PerformanceConfidence::High,
+                    Some(0.33),
+                    Some(0.0),
+                    // Zero baseline: the relative is None — pct unavailable,
+                    // never a fabricated 0%.
+                    Some(crate::ui::usage::ModelPerformanceDelta {
+                        absolute: 0.33,
+                        relative: None,
+                    }),
+                    None,
+                ),
+                mp_metric(
+                    PerformanceMetricKind::Ttft,
+                    PerformanceChangeClass::InsufficientTelemetry,
+                    PerformanceConfidence::Insufficient,
+                    Some(200.0),
+                    Some(200.0),
+                    None,
+                    None,
+                ),
+                mp_metric(
+                    PerformanceMetricKind::Throughput,
+                    PerformanceChangeClass::MixedEvidence,
+                    PerformanceConfidence::Medium,
+                    Some(77.0),
+                    Some(100.0),
+                    None,
+                    None,
+                ),
+            ],
+        );
+        let rows = model_perf_rows(&mp_diag(vec![a]));
+        assert_eq!(rows.len(), 4);
+        assert_eq!(rows[0].identity, "openai/gpt-4o");
+        assert_eq!(rows[0].metric, "duration");
+        assert_eq!(rows[0].baseline, "1000.0");
+        assert_eq!(rows[0].current, "1300.0");
+        assert_eq!(rows[0].delta, "+300.0 (+30.00%)");
+        assert_eq!(rows[0].samples, "12/12/12");
+        assert_eq!(rows[0].class, "typical_regression");
+        assert_eq!(rows[0].confidence, "high");
+
+        // Zero baseline: percentage-unavailable wording is verbatim.
+        assert_eq!(rows[1].metric, "error_rate");
+        assert_eq!(rows[1].delta, "+0.3 (pct unavailable)");
+        assert_eq!(rows[1].samples, "12/12");
+        assert_eq!(rows[1].class, "error_associated");
+
+        // No baseline sample at all: "n/a", never a percentage.
+        assert_eq!(rows[2].delta, "n/a");
+        assert_eq!(rows[2].class, "insufficient_telemetry");
+        assert_eq!(rows[2].confidence, "insufficient");
+        assert_eq!(rows[3].class, "mixed_evidence");
+    }
+
+    #[test]
+    fn test_model_perf_rows_empty_diagnosis() {
+        assert!(model_perf_rows(&mp_diag(vec![])).is_empty());
+        let w = model_perf_windows(&mp_diag(vec![]));
+        assert_eq!(w.lines.len(), 4);
     }
 }

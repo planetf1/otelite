@@ -253,6 +253,7 @@ class ApiClient {
     async getLatencyByContext(params = {}) { return this.get('/genai/latency_by_context', params); }
     async getLatencySeries(params = {}) { return this.get('/genai/latency_series', { bucket_secs: 3600, ...params }); }
     async getGenAiCapabilities(params = {}) { return this.get('/genai/capabilities', params); }
+    async getModelPerformance(params = {}) { return this.get('/genai/model-performance', params); }
     async getToolApprovals(params = {}) { return this.get('/genai/tool_approvals', params); }
     async getStopReasons(params = {})   { return this.get('/genai/stop_reasons', params); }
     async getContextTypeSplit(params = {}) { return this.get('/genai/context_type_split', params); }

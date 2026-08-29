@@ -39,6 +39,20 @@ pub enum PerformanceMetricKind {
     ErrorRate,
 }
 
+impl std::fmt::Display for PerformanceMetricKind {
+    /// The serde (snake_case) name — the metric vocabulary every surface
+    /// renders, so a panel never invents a parallel label.
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let s = match self {
+            Self::Duration => "duration",
+            Self::Throughput => "throughput",
+            Self::Ttft => "ttft",
+            Self::ErrorRate => "error_rate",
+        };
+        f.write_str(s)
+    }
+}
+
 /// Assessment classes. `WorkloadShiftCorrelated` and `ErrorAssociated`
 /// qualify a material change with its observed co-movement (correlation,
 /// never causation); `MixedEvidence` means the two baselines disagree and

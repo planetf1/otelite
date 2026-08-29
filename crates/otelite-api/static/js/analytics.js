@@ -104,6 +104,7 @@ class AnalyticsView {
                 ${this._renderSectionShell('reliability', 'Reliability', 'Errors · retries · truncation · drift')}
                 ${this._renderSectionShell('behavior', 'Behavior', 'Tool use · retrieval · request volume')}
                 ${this._renderSectionShell('capabilities', 'Telemetry Capabilities', 'Which metrics each emitter actually provides · availability & quality')}
+                ${this._renderSectionShell('model_performance', 'Model Performance', 'Per-model duration · throughput · TTFT · error diagnosis vs preceding & rolling baselines')}
             </div>
         `;
 
@@ -658,6 +659,7 @@ class AnalyticsView {
             reliability: () => this._loadReliabilitySection(),
             behavior: () => this._loadBehaviorSection(),
             capabilities: () => this._loadCapabilitiesSection(),
+            model_performance: () => this._loadModelPerformanceSection(),
         };
     }
 
@@ -1239,6 +1241,135 @@ class AnalyticsView {
         } catch (err) {
             this._setSectionError('capabilities', err);
         }
+    }
+
+    /**
+     * Model-performance diagnosis section (#121/#154). The current interval
+     * is the page's time window; the preceding window is derived by the API
+     * and the rolling baseline is six equal windows before it. Both the raw
+     * comparison and the deterministic assessments come back in one object —
+     * this section renders them, it never recomputes a percentage or
+     * reclassifies.
+     */
+    async _loadModelPerformanceSection() {
+        this._setSectionLoading('model_performance');
+        try {
+            const params = this._baseParams();
+            if (!params.start_time || !params.end_time) {
+                this._setSectionBody('model_performance', `
+                    <h3>Model performance</h3>
+                    <div class="empty-state-hint">Pick a time window (start and end) to diagnose model performance against the preceding interval.</div>`);
+                this.loadedSections.add('model_performance');
+                return;
+            }
+            const span = params.end_time - params.start_time;
+            params.rolling_ns = span * 6;
+            const tz = this._localTimezone();
+            if (tz) params.timezone = tz;
+            const resp = await this.api.getModelPerformance(params).catch(() => null);
+            this._setSectionBody('model_performance', this._buildModelPerformanceTable(resp));
+            this.loadedSections.add('model_performance');
+        } catch (err) {
+            this._setSectionError('model_performance', err);
+        }
+    }
+
+    _mpFmtValue(v, metric) {
+        if (v == null) return '—';
+        if (metric === 'error_rate') return `${(v * 100).toFixed(1)}%`;
+        if (metric === 'throughput') return `${Math.round(v)} tok/s`;
+        return `${Math.round(v)} ms`; // duration, ttft
+    }
+
+    _mpFmtDelta(d, metric) {
+        // Wording mirrors the CLI/TUI: "pct unavailable" when the percentage
+        // is undefined (zero baseline), "n/a" when there is no baseline at all.
+        if (!d) return 'n/a';
+        const abs = metric === 'error_rate'
+            ? `${(d.absolute * 100).toFixed(1)} pts`
+            : `${d.absolute.toFixed(1)}`;
+        const sign = d.absolute > 0 ? '+' : '';
+        const rel = d.relative != null
+            ? `(${(d.relative * 100).toFixed(2)}%)`
+            : '(pct unavailable)';
+        return `${sign}${abs} ${rel}`;
+    }
+
+    _mpClassCell(m) {
+        let cls = '';
+        if (m.class === 'typical_regression' || m.class === 'tail_regression') cls = ' class="bad"';
+        else if (m.class === 'workload_shift_correlated' || m.class === 'error_associated' || m.class === 'mixed_evidence') cls = ' class="warn"';
+        else if (m.class === 'insufficient_telemetry') cls = ' class="dim"';
+        const notes = (m.notes || []).length ? ` title="${this._esc(m.notes.join(' · '))}"` : '';
+        return `<td${cls}${notes}>${this._esc(m.class)}</td>`;
+    }
+
+    _mpConfCell(conf) {
+        const cls = (conf === 'insufficient' || conf === 'low') ? ' class="warn"' : '';
+        return `<td${cls}>${this._esc(conf)}</td>`;
+    }
+
+    _buildModelPerformanceTable(diag) {
+        if (!diag || !(diag.identities || []).length) {
+            return `<h3>Model performance</h3>
+                <div class="empty-state-hint">No LLM request spans in this window.</div>`;
+        }
+        const fmtIso = (ns) => new Date(ns / 1e6).toISOString().replace('.000Z', 'Z');
+        const win = (w) => w ? `[${fmtIso(w.start_time)} → ${fmtIso(w.end_time)})` : null;
+        const meta = [
+            `Current ${win(diag.current_window)}`,
+            `Preceding ${win(diag.preceding_window)}`,
+            `Rolling ${diag.rolling_window ? win(diag.rolling_window) : '— (disabled)'}`,
+        ];
+        if (diag.timezone) meta.push(`Timezone ${this._esc(diag.timezone)}`);
+        if (diag.truncated) meta.push('bounded sample — older spans excluded');
+
+        const assessments = diag.assessments || [];
+        const body = assessments.map((a) => {
+            const identity = [a.provider, a.model].filter(Boolean).join('/') || '(unknown)';
+            // Route to the full evidence for this identity and interval.
+            const evidenceParams = new URLSearchParams({
+                start_time: String(diag.current_window.start_time),
+                end_time: String(diag.current_window.end_time),
+            });
+            if (a.model) evidenceParams.set('model', a.model);
+            if (a.provider) evidenceParams.set('provider', a.provider);
+            const identityCell = (rowspan) => `
+                <td${rowspan ? ` rowspan="${rowspan}"` : ''}>
+                    ${this._esc(identity)}
+                    <br><span class="dim">fp ${this._esc(a.emitter_fingerprint || '—')} · overall ${this._esc(a.overall_class)} (${this._esc(a.overall_confidence)})</span>
+                    <br><a href="/api/genai/model-performance?${evidenceParams.toString()}" target="_blank" rel="noopener">full JSON</a>
+                </td>`;
+            return (a.metrics || []).map((m, j) => {
+                const samples = m.eligible_rolling != null
+                    ? `${m.eligible_current}/${m.eligible_preceding}/${m.eligible_rolling}`
+                    : `${m.eligible_current}/${m.eligible_preceding}`;
+                return `<tr>
+                    ${j === 0 ? identityCell(a.metrics.length) : ''}
+                    <td>${this._esc(m.metric)}</td>
+                    <td class="num">${this._mpFmtValue(m.preceding_median, m.metric)}</td>
+                    <td class="num">${this._mpFmtValue(m.current_median, m.metric)}</td>
+                    <td class="num">${this._mpFmtDelta(m.median_delta_vs_preceding, m.metric)}</td>
+                    <td class="num">${samples}</td>
+                    ${this._mpClassCell(m)}
+                    ${this._mpConfCell(m.confidence)}
+                </tr>`;
+            }).join('');
+        }).join('');
+
+        return `
+            <h3>Model performance</h3>
+            <p class="table-hint">${meta.join(' · ')}. Classes are deterministic from named thresholds — they are reported states, not opinions. Workload and error relationships are <em>correlation, not causation</em>. <span class="dim">pct unavailable</span> means the percentage is undefined (zero baseline) — it is never a measured zero.</p>
+            <table class="data-table model-performance-table">
+                <thead><tr>
+                    <th>Provider / Model</th><th>Metric</th>
+                    <th>Base p50 (preceding)</th><th>Now p50</th>
+                    <th>Δ vs preceding</th><th>N cur/prev(/roll)</th>
+                    <th>Class</th><th>Conf</th>
+                </tr></thead>
+                <tbody>${body}</tbody>
+            </table>
+            <p class="table-hint">classes: no_material_change · typical_regression · tail_regression · workload_shift_correlated · error_associated · mixed_evidence (both baselines are reported) · insufficient_telemetry — confidence: high · medium · low · insufficient. N is eligible sample counts (current/preceding/rolling when enabled); below 10 current samples every class is insufficient_telemetry.</p>`;
     }
 
     _capabilityCell(m) {

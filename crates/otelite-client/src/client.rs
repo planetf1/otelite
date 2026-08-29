@@ -333,6 +333,24 @@ impl ApiClient {
         Ok(response.json().await?)
     }
 
+    /// Fetch the model-performance diagnosis (issue #121/#154). The caller
+    /// selects the current interval, the optional rolling baseline length and
+    /// an optional model/provider filter.
+    pub async fn fetch_model_performance(
+        &self,
+        params: Vec<(&str, String)>,
+    ) -> Result<otelite_core::api::ModelPerformanceDiagnosis> {
+        let url = format!("{}/api/genai/model-performance", self.base_url);
+        let response = self.client.get(&url).query(&params).send().await?;
+        if !response.status().is_success() {
+            return Err(non_success(
+                response.status(),
+                "Failed to fetch model performance",
+            ));
+        }
+        Ok(response.json().await?)
+    }
+
     pub async fn fetch_truncation_rate(
         &self,
         params: Vec<(&str, String)>,
@@ -1305,6 +1323,67 @@ mod tests {
         let report = result.unwrap();
         assert_eq!(report.canonical_span_count, 0);
         assert!(!report.truncated);
+    }
+
+    #[tokio::test]
+    async fn test_fetch_model_performance_success() {
+        let mut server = Server::new_async().await;
+        let mock = server
+            .mock("GET", "/api/genai/model-performance")
+            .match_query(mockito::Matcher::UrlEncoded(
+                "start_time".to_string(),
+                "100".to_string(),
+            ))
+            .match_query(mockito::Matcher::UrlEncoded(
+                "end_time".to_string(),
+                "200".to_string(),
+            ))
+            .with_status(200)
+            .with_header("content-type", "application/json")
+            .with_body(
+                r#"{
+                    "current_window": {"start_time": 100, "end_time": 200},
+                    "preceding_window": {"start_time": 0, "end_time": 100},
+                    "truncated": false,
+                    "identities": [],
+                    "assessments": []
+                }"#,
+            )
+            .create_async()
+            .await;
+
+        let client = ApiClient::new(server.url(), Duration::from_secs(30)).unwrap();
+        let result = client
+            .fetch_model_performance(vec![
+                ("start_time", "100".to_string()),
+                ("end_time", "200".to_string()),
+            ])
+            .await;
+
+        mock.assert_async().await;
+        let diag = result.unwrap();
+        assert_eq!(diag.current_window.start_time, 100);
+        assert_eq!(diag.preceding_window.end_time, 100);
+        assert!(diag.rolling_window.is_none());
+        assert!(diag.identities.is_empty());
+    }
+
+    #[tokio::test]
+    async fn test_fetch_model_performance_server_error() {
+        let mut server = Server::new_async().await;
+        let mock = server
+            .mock("GET", "/api/genai/model-performance")
+            .with_status(500)
+            .create_async()
+            .await;
+        let client = ApiClient::new(server.url(), Duration::from_secs(30)).unwrap();
+        let result = client.fetch_model_performance(vec![]).await;
+        mock.assert_async().await;
+        assert!(result.is_err());
+        match result.unwrap_err() {
+            Error::ApiError(msg) => assert!(msg.contains("500")),
+            _ => panic!("Expected ApiError"),
+        }
     }
 
     #[tokio::test]

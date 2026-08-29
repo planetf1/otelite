@@ -11,6 +11,18 @@ have to work around), not implementation detail.
 
 ## [Unreleased]
 
+### Added
+
+- The TUI Usage view now includes a Model performance panel and the web
+  analytics page a Model performance section: for each (provider, model,
+  emitter) identity they show the exact current/preceding/rolling
+  comparison intervals and timezone, per-metric baseline/current medians
+  with deltas (percentage-unavailable stays unavailable, never zero),
+  eligible sample counts, the deterministic class (typical/tail
+  regression, workload-correlated, error-associated, mixed evidence,
+  insufficient telemetry) and confidence. The web section links to the
+  full JSON evidence for the selected model and interval.
+
 ## [0.1.103] - 2026-08-29
 
 ### Added
