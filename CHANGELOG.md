@@ -11,8 +11,6 @@ have to work around), not implementation detail.
 
 ## [Unreleased]
 
-## [0.1.101] - 2026-08-29
-
 ### Internal
 
 - Deterministic model-performance assessment rules (classification classes,
@@ -20,6 +18,11 @@ have to work around), not implementation detail.
   counts, mixed-evidence reporting, workload/error correlation labelling,
   TTFT trust gate) — the assessment layer for the #121 diagnosis; no
   user-visible change yet.
+
+## [0.1.101] - 2026-08-29
+
+### Internal
+
 - Model-performance comparison query and response types (canonical
   request population, preceding/rolling baseline windows, per-metric
   eligibility and deltas with percentage-unavailable state) — the
