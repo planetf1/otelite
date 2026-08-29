@@ -11,6 +11,8 @@ have to work around), not implementation detail.
 
 ## [Unreleased]
 
+## [0.1.97] - 2026-08-29
+
 ### Added
 
 - Cross-signal navigation: the TUI log detail shows the log's trace ID as a
