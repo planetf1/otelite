@@ -1,6 +1,10 @@
 //! Capability parity test (#120): the API capability report must match the
-//! frozen fixture `capability_parity_v1.json` exactly, and the CLI's
+//! frozen fixture `capability_parity_v2.json` exactly, and the CLI's
 //! json-compact output must deep-equal it (asserted in the CLI test).
+//!
+//! v2 adds parent-linked Codex usage spans so the `codex-one-to-one-v1`
+//! correlation rule is exercised end to end (matched, ambiguous, unmatched,
+//! rejected and orphan candidates).
 
 use axum::body::Body;
 use axum::http::Request;
@@ -19,6 +23,8 @@ struct FixtureSpan {
     id: String,
     name: String,
     #[serde(default)]
+    parent: Option<String>,
+    #[serde(default)]
     hour: Option<i64>,
     #[serde(default)]
     min: Option<i64>,
@@ -31,7 +37,7 @@ struct FixtureSpan {
 fn fixture() -> serde_json::Value {
     let raw = std::fs::read_to_string(concat!(
         env!("CARGO_MANIFEST_DIR"),
-        "/tests/fixtures/capability_parity_v1.json"
+        "/tests/fixtures/capability_parity_v2.json"
     ))
     .unwrap();
     serde_json::from_str(&raw).unwrap()
@@ -48,7 +54,7 @@ fn span_from(f: &FixtureSpan) -> Span {
         resource: None,
         trace_id: f.trace.clone(),
         span_id: f.id.clone(),
-        parent_span_id: None,
+        parent_span_id: f.parent.clone(),
         name: f.name.clone(),
         kind: SpanKind::Internal,
         start_time: W0 + off_ns,
@@ -102,7 +108,7 @@ async fn capability_report_matches_frozen_fixture() {
     let expected = fixture()["api"].clone();
     assert_eq!(
         got, expected,
-        "capability report drifted from frozen fixture v1"
+        "capability report drifted from frozen fixture v2"
     );
 }
 
@@ -123,7 +129,8 @@ async fn capability_fixture_semantic_guards() {
     let api = &fx["api"];
 
     // Duplicate OTLP delivery of (d0,s0) collapsed to one canonical span.
-    assert_eq!(api["canonical_span_count"], 28);
+    // v2 adds three Codex request spans (cx1/cx2/cx4).
+    assert_eq!(api["canonical_span_count"], 31);
     assert_eq!(api["duplicate_span_count"], 1);
     assert_eq!(api["truncated"], false);
 
@@ -185,19 +192,34 @@ async fn capability_fixture_semantic_guards() {
     assert_eq!(opencode["input_tokens"]["valid_count"], 2);
     assert_eq!(opencode["input_tokens"]["availability"], "available");
 
-    // Codex timing-only: nothing token-related is assessed as native.
+    // Codex: five requests, one clean 1:1 join, one retry pair (ambiguous),
+    // one model conflict (rejected), two timing-only requests (unmatched),
+    // one orphan usage span (not counted anywhere).
     let codex = find("codex", "gpt-5");
+    assert_eq!(codex["request_count"], 5);
+    assert_eq!(codex["correlation"]["rule"], "codex-one-to-one-v1");
+    assert_eq!(codex["correlation"]["matched_count"], 1);
+    assert_eq!(codex["correlation"]["unmatched_count"], 2);
+    assert_eq!(codex["correlation"]["rejected_count"], 1);
+    assert_eq!(codex["correlation"]["ambiguous_count"], 2);
     for metric in [
         "input_tokens",
         "output_tokens",
         "cache_creation_tokens",
         "cache_read_tokens",
-        "ttft",
     ] {
-        assert_eq!(codex[metric]["derivation"], "unavailable", "{metric}");
-        assert_eq!(codex[metric]["availability"], "absent", "{metric}");
+        assert_eq!(codex[metric]["derivation"], "correlated", "{metric}");
+        assert_eq!(codex[metric]["availability"], "sparse", "{metric}");
+        assert_eq!(codex[metric]["valid_count"], 1, "{metric}");
+        assert_eq!(codex[metric]["eligible_count"], 5, "{metric}");
     }
-    assert_eq!(codex["correlation"]["rule"], "none");
+    assert_eq!(
+        codex["cache_creation_tokens"]["source_attributes"]
+            ["gen_ai.usage.cache_write.input_tokens"],
+        1,
+        "Codex cache writes must surface under their real attribute"
+    );
+    assert_eq!(codex["ttft"]["derivation"], "unavailable");
 
     // Unidentified span contributes nothing.
     assert!(
@@ -207,10 +229,15 @@ async fn capability_fixture_semantic_guards() {
         "unidentified span must not be reported"
     );
 
-    // Correlation provenance is all-none until a join rule ships.
+    // Only the Codex group carries a correlation rule; every other group's
+    // provenance stays all-none.
     for r in &reports {
+        if r["emitter"] == "codex" {
+            continue;
+        }
         assert_eq!(r["correlation"]["rule"], "none");
         assert_eq!(r["correlation"]["matched_count"], 0);
+        assert_eq!(r["correlation"]["unmatched_count"], 0);
     }
 
     let empty = &fx["api_empty"];

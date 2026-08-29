@@ -28,6 +28,9 @@ pub struct CapabilityRow {
     pub input: String,
     pub output: String,
     pub ttft: String,
+    /// `matched/unmatched/rejected/ambiguous` candidate counts under the
+    /// group's correlation rule, or `—` when no rule applies.
+    pub correlation: String,
 }
 
 /// State for the Usage analytics view.

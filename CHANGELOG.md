@@ -11,6 +11,21 @@ have to work around), not implementation detail.
 
 ## [Unreleased]
 
+### Added
+
+- `otelite capabilities` (CLI, TUI Usage panel, and the analytics web page)
+  now shows Codex token usage: request timing and token counters arrive on
+  separate Codex spans, so they are joined with a strict one-to-one rule and
+  a new Correlation column reports matched/unmatched/rejected/ambiguous
+  counts. Retries, concurrent sampling, and model mismatches are counted,
+  never guessed into values; only counts and the rule name are exposed.
+
+### Fixed
+
+- Codex prompt-cache writes are now recognised: `gen_ai.usage.cache_write.input_tokens`
+  counts as cache-creation tokens, so cache-write metrics no longer show as
+  absent for Codex traffic.
+
 ## [0.1.97] - 2026-08-29
 
 ### Added

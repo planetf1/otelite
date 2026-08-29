@@ -1253,6 +1253,12 @@ class AnalyticsView {
         return `<td${cls} title="valid ${m.valid_count} / observed ${m.observed_count} / eligible ${m.eligible_count}; invalid ${m.invalid_count}">${m.availability}/${m.quality}${derivation} (${counts})</td>`;
     }
 
+    _correlationCell(c) {
+        if (!c || c.rule === 'none') return '<td class="num dim">—</td>';
+        const rejected = (c.rejected_count + c.ambiguous_count) > 0 ? ' class="num warn"' : ' class="num"';
+        return `<td${rejected} title="${this._esc(c.rule)}: ${c.matched_count} matched, ${c.unmatched_count} unmatched, ${c.rejected_count} rejected, ${c.ambiguous_count} ambiguous candidates">${c.matched_count}/${c.unmatched_count}/${c.rejected_count}/${c.ambiguous_count}</td>`;
+    }
+
     _buildCapabilitiesTable(resp) {
         const reports = (resp && resp.reports) || [];
         if (!reports.length) {
@@ -1274,20 +1280,21 @@ class AnalyticsView {
                 ${this._capabilityCell(r.cache_creation_tokens)}
                 ${this._capabilityCell(r.cache_read_tokens)}
                 ${this._capabilityCell(r.ttft)}
+                ${this._correlationCell(r.correlation)}
             </tr>`;
         }).join('');
         return `
             <h3>Telemetry capabilities</h3>
-            <p class="table-hint">${meta.join(' · ')}. Cells are availability/quality(/derivation) with valid/observed counts. <span class="dim">absent</span> means the metric is not provided — it is never a measured zero. Emitters without a verified token signature (e.g. codex) stay timing-only with derivation <em>unavailable</em> instead of guessed values.</p>
+            <p class="table-hint">${meta.join(' · ')}. Cells are availability/quality(/derivation) with valid/observed counts. <span class="dim">absent</span> means the metric is not provided — it is never a measured zero. Emitters without a verified token signature stay <em>unavailable</em> instead of guessed values.</p>
             <table class="data-table capabilities-table">
                 <thead><tr>
                     <th>Provider / Model</th><th>Emitter</th><th>Requests</th>
                     <th>Input tokens</th><th>Output tokens</th>
-                    <th>Cache write</th><th>Cache read</th><th>TTFT</th>
+                    <th>Cache write</th><th>Cache read</th><th>TTFT</th><th>Correlation</th>
                 </tr></thead>
                 <tbody>${body}</tbody>
             </table>
-            <p class="table-hint">availability: available · sparse · absent — quality: reliable · invalid · degenerate · not_assessed — derivation (shown when not native): correlated · unavailable.</p>`;
+            <p class="table-hint">availability: available · sparse · absent — quality: reliable · invalid · degenerate · not_assessed — derivation (shown when not native): correlated · unavailable. Correlation: matched/unmatched/rejected/ambiguous candidates under the group's join rule (— when no rule applies).</p>`;
     }
 
     _buildDailyThroughputTable(resp, tz) {

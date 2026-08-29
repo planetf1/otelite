@@ -736,15 +736,34 @@ pub struct GenAiMetricCapability {
 
 /// Correlation outcome counts for one capability group.
 ///
-/// The initial report only supports native observations, so every count is
-/// zero and `rule` is `none`.
+/// `rule` is `none` when no cross-span correlation rule applies to the group;
+/// Codex groups report `codex-one-to-one-v1`.
+///
+/// Candidate-centred counts for the rule applied to this group:
+/// - `matched_count`: request spans with exactly one verified usage candidate
+///   (one per candidate used);
+/// - `unmatched_count`: request spans in the group with no usage candidate
+///   (a request-level gap, also visible as `absent`/`sparse` availability);
+/// - `rejected_count`: request spans whose single candidate failed a join
+///   invariant (error status, conflicting model);
+/// - `ambiguous_count`: usage candidates sitting under a request span with
+///   two or more candidates (retries, concurrent sampling, reused
+///   identifiers, turn-level counters) — none of them is attributed.
+///
+/// Only counts and the rule name are exposed — never span or trace
+/// identifiers.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct GenAiCorrelationProvenance {
+    /// Correlation rule applied: `none` or a versioned rule name.
     pub rule: String,
+    /// Request spans joined to exactly one verified usage candidate.
     pub matched_count: usize,
+    /// Request spans in the group with no usage candidate.
     pub unmatched_count: usize,
+    /// Request spans whose candidate failed a join invariant.
     pub rejected_count: usize,
+    /// Usage candidates excluded because their request had multiple candidates.
     pub ambiguous_count: usize,
 }
 

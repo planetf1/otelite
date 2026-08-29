@@ -34,6 +34,9 @@ pub const OUTPUT_TOKEN_KEYS: &[&str] = &[
 /// Tokens written into the prompt cache on this request.
 pub const CACHE_CREATION_TOKEN_KEYS: &[&str] = &[
     "gen_ai.usage.cache_creation.input_tokens",
+    // Codex reports cache writes under the `cache_write` dotted form
+    // (verified against live codex_cli_rs spans).
+    "gen_ai.usage.cache_write.input_tokens",
     "gen_ai.usage.cache_creation_input_tokens",
     "gen_ai.usage.cache_creation_tokens",
     "cache_creation_input_tokens",

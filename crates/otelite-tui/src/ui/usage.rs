@@ -96,6 +96,17 @@ pub fn capability_rows(resp: &GenAiCapabilityResponse) -> Vec<CapabilityRow> {
                 (None, Some(m)) => m.clone(),
                 (None, None) => "(unknown)".to_string(),
             };
+            let correlation = if r.correlation.rule == "none" {
+                "—".to_string()
+            } else {
+                format!(
+                    "{}/{}/{}/{}",
+                    r.correlation.matched_count,
+                    r.correlation.unmatched_count,
+                    r.correlation.rejected_count,
+                    r.correlation.ambiguous_count
+                )
+            };
             CapabilityRow {
                 identity,
                 emitter: r.emitter.clone(),
@@ -103,6 +114,7 @@ pub fn capability_rows(resp: &GenAiCapabilityResponse) -> Vec<CapabilityRow> {
                 input: cell(&r.input_tokens),
                 output: cell(&r.output_tokens),
                 ttft: cell(&r.ttft),
+                correlation,
             }
         })
         .collect()
@@ -617,6 +629,7 @@ fn render_capability_table(frame: &mut Frame, area: Rect, state: &UsageState) {
         Cell::from("Input").style(header_style),
         Cell::from("Output").style(header_style),
         Cell::from("TTFT").style(header_style),
+        Cell::from("Corr").style(header_style),
     ]);
 
     let rows: Vec<Row> = state
@@ -632,6 +645,12 @@ fn render_capability_table(frame: &mut Frame, area: Rect, state: &UsageState) {
                     Style::default()
                 }
             };
+            let corr_style =
+                if r.correlation != "—" && (r.correlation.split('/').skip(2).any(|n| n != "0")) {
+                    Style::default().fg(Color::Yellow)
+                } else {
+                    Style::default()
+                };
             Row::new(vec![
                 Cell::from(truncate(&r.identity, 28)),
                 Cell::from(truncate(&r.emitter, 14)),
@@ -639,6 +658,7 @@ fn render_capability_table(frame: &mut Frame, area: Rect, state: &UsageState) {
                 Cell::from(r.input.clone()).style(cell_style(&r.input)),
                 Cell::from(r.output.clone()).style(cell_style(&r.output)),
                 Cell::from(r.ttft.clone()).style(cell_style(&r.ttft)),
+                Cell::from(r.correlation.clone()).style(corr_style),
             ])
         })
         .collect();
@@ -652,6 +672,7 @@ fn render_capability_table(frame: &mut Frame, area: Rect, state: &UsageState) {
             Constraint::Min(16),    // Input
             Constraint::Min(16),    // Output
             Constraint::Min(16),    // TTFT
+            Constraint::Length(12), // Corr
         ],
     )
     .header(header)
@@ -1697,12 +1718,15 @@ mod tests {
         }
     }
 
+    // Test helper only: one field per report column, so six arguments.
+    #[allow(clippy::too_many_arguments)]
     fn cap_report(
         provider: Option<&str>,
         model: Option<&str>,
         emitter: &str,
         count: usize,
         ttft: GenAiMetricCapability,
+        correlation: GenAiCorrelationProvenance,
     ) -> GenAiCapabilityReport {
         let absent = cap((count, 0, 0, "absent", "not_assessed", "unavailable"));
         GenAiCapabilityReport {
@@ -1717,13 +1741,27 @@ mod tests {
             cache_creation_tokens: absent.clone(),
             cache_read_tokens: absent,
             ttft,
-            correlation: GenAiCorrelationProvenance {
-                rule: "none".into(),
-                matched_count: 0,
-                unmatched_count: 0,
-                rejected_count: 0,
-                ambiguous_count: 0,
-            },
+            correlation,
+        }
+    }
+
+    fn corr_none() -> GenAiCorrelationProvenance {
+        GenAiCorrelationProvenance {
+            rule: "none".into(),
+            matched_count: 0,
+            unmatched_count: 0,
+            rejected_count: 0,
+            ambiguous_count: 0,
+        }
+    }
+
+    fn corr_codex() -> GenAiCorrelationProvenance {
+        GenAiCorrelationProvenance {
+            rule: "codex-one-to-one-v1".into(),
+            matched_count: 1,
+            unmatched_count: 2,
+            rejected_count: 1,
+            ambiguous_count: 2,
         }
     }
 
@@ -1734,13 +1772,21 @@ mod tests {
         let degenerate = cap((12, 12, 12, "available", "degenerate", "native"));
         let absent = cap((3, 0, 0, "absent", "not_assessed", "unavailable"));
         let resp = cap_resp(vec![
-            cap_report(Some("openai"), Some("gpt-4o"), "standard_otel", 5, full),
+            cap_report(
+                Some("openai"),
+                Some("gpt-4o"),
+                "standard_otel",
+                5,
+                full,
+                corr_none(),
+            ),
             cap_report(
                 Some("openai"),
                 Some("gpt-4o-mini"),
                 "standard_otel",
                 4,
                 invalid,
+                corr_none(),
             ),
             cap_report(
                 Some("anthropic"),
@@ -1748,8 +1794,16 @@ mod tests {
                 "standard_otel",
                 12,
                 degenerate,
+                corr_none(),
             ),
-            cap_report(None, Some("claude-opus-4-6"), "claude_code", 3, absent),
+            cap_report(
+                None,
+                Some("claude-opus-4-6"),
+                "claude_code",
+                3,
+                absent,
+                corr_codex(),
+            ),
         ]);
         let rows = capability_rows(&resp);
         assert_eq!(rows.len(), 4);
@@ -1763,6 +1817,9 @@ mod tests {
         assert_eq!(rows[2].ttft, "available/degenerate (12/12 obs)");
         // absent keeps the derivation and shows the eligibility count
         assert_eq!(rows[3].ttft, "absent/not_assessed/unavailable (0/3 elig)");
+        // correlation: no rule renders a dash, a rule renders candidate counts
+        assert_eq!(rows[0].correlation, "—");
+        assert_eq!(rows[3].correlation, "1/2/1/2");
     }
 
     #[test]

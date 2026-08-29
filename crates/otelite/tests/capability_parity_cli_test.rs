@@ -14,6 +14,8 @@ struct FixtureSpan {
     id: String,
     name: String,
     #[serde(default)]
+    parent: Option<String>,
+    #[serde(default)]
     hour: Option<i64>,
     #[serde(default)]
     min: Option<i64>,
@@ -26,7 +28,7 @@ struct FixtureSpan {
 fn fixture() -> serde_json::Value {
     let raw = std::fs::read_to_string(concat!(
         env!("CARGO_MANIFEST_DIR"),
-        "/../otelite-api/tests/fixtures/capability_parity_v1.json"
+        "/../otelite-api/tests/fixtures/capability_parity_v2.json"
     ))
     .unwrap();
     serde_json::from_str(&raw).unwrap()
@@ -49,7 +51,7 @@ async fn build_fixture_db(dir: &std::path::Path) {
             resource: None,
             trace_id: f.trace.clone(),
             span_id: f.id.clone(),
-            parent_span_id: None,
+            parent_span_id: f.parent.clone(),
             name: f.name.clone(),
             kind: SpanKind::Internal,
             start_time: W0 + off_ns,
@@ -152,4 +154,7 @@ async fn cli_capabilities_pretty_prints_vocabulary() {
     assert!(stdout.contains("available/degenerate"));
     assert!(stdout.contains("absent/not_assessed/unavailable"));
     assert!(stdout.contains("1 duplicate deliveries collapsed"));
+    // Codex correlation provenance renders as candidate counts (v2).
+    assert!(stdout.contains("1/2/1/2"));
+    assert!(stdout.contains("sparse/reliable/correlated"));
 }

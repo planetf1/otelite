@@ -12,7 +12,9 @@ use crate::commands::usage::{now_ns, parse_cli_time, parse_time_range};
 use crate::error::{Error, Result};
 use clap::Args;
 use comfy_table::{presets::UTF8_FULL, ContentArrangement, Table};
-use otelite_core::api::{GenAiCapabilityResponse, GenAiMetricCapability};
+use otelite_core::api::{
+    GenAiCapabilityResponse, GenAiCorrelationProvenance, GenAiMetricCapability,
+};
 use otelite_storage::StorageBackend;
 use std::sync::Arc;
 
@@ -121,8 +123,17 @@ fn metric_cell(m: &GenAiMetricCapability) -> String {
 }
 
 fn display_capabilities(response: &GenAiCapabilityResponse) {
-    println!("\nTelemetry Capabilities");
-    println!(
+    print!("{}", render_capabilities(response));
+}
+
+/// Render the full pretty report. The JSON output stays the canonical
+/// evidence; this is a compact projection that keeps the same vocabulary.
+fn render_capabilities(response: &GenAiCapabilityResponse) -> String {
+    use std::fmt::Write;
+    let mut out = String::new();
+    let _ = writeln!(out, "\nTelemetry Capabilities");
+    let _ = writeln!(
+        out,
         "Canonical spans: {} ({} duplicate deliveries collapsed){}",
         response.canonical_span_count,
         response.duplicate_span_count,
@@ -133,8 +144,11 @@ fn display_capabilities(response: &GenAiCapabilityResponse) {
         }
     );
     if response.reports.is_empty() {
-        println!("\nNo LLM request spans in this range — no capability report.");
-        return;
+        let _ = writeln!(
+            out,
+            "\nNo LLM request spans in this range — no capability report."
+        );
+        return out;
     }
 
     let mut table = Table::new();
@@ -150,6 +164,7 @@ fn display_capabilities(response: &GenAiCapabilityResponse) {
         "Cache write",
         "Cache read",
         "TTFT",
+        "Correlation",
     ]);
 
     for r in &response.reports {
@@ -168,12 +183,39 @@ fn display_capabilities(response: &GenAiCapabilityResponse) {
             metric_cell(&r.cache_creation_tokens),
             metric_cell(&r.cache_read_tokens),
             metric_cell(&r.ttft),
+            correlation_cell(&r.correlation),
         ]);
     }
-    println!("{table}");
-    println!("\nCells: availability/quality[/derivation] (valid/observed or 0/eligible).");
-    println!("availability: available | sparse | absent — quality: reliable | invalid | degenerate | not_assessed");
-    println!("derivation (shown when not native): correlated | unavailable");
+    let _ = writeln!(out, "{table}");
+    let _ = writeln!(
+        out,
+        "\nCells: availability/quality[/derivation] (valid/observed or 0/eligible)."
+    );
+    let _ = writeln!(
+        out,
+        "availability: available | sparse | absent — quality: reliable | invalid | degenerate | not_assessed"
+    );
+    let _ = writeln!(
+        out,
+        "derivation (shown when not native): correlated | unavailable"
+    );
+    let _ = writeln!(
+        out,
+        "Correlation: matched/unmatched/rejected/ambiguous candidates under the group's rule (see JSON for the rule name)."
+    );
+    out
+}
+
+/// Compact per-group correlation provenance: candidate counts under the
+/// group's rule. Groups without a correlation rule show a dash.
+fn correlation_cell(c: &GenAiCorrelationProvenance) -> String {
+    if c.rule == "none" {
+        return "—".to_string();
+    }
+    format!(
+        "{}/{}/{}/{}",
+        c.matched_count, c.unmatched_count, c.rejected_count, c.ambiguous_count
+    )
 }
 
 #[cfg(test)]
@@ -233,19 +275,12 @@ mod tests {
             truncated: false,
             filters_applied: vec![],
         };
-        let out = render(&response);
+        let out = render_capabilities(&response);
         assert!(out.contains("No LLM request spans in this range"));
     }
 
     #[test]
     fn display_reports_identity_and_counts() {
-        let corr = GenAiCorrelationProvenance {
-            rule: "none".into(),
-            matched_count: 0,
-            unmatched_count: 0,
-            rejected_count: 0,
-            ambiguous_count: 0,
-        };
         let report = otelite_core::api::GenAiCapabilityReport {
             provider: Some("openai".into()),
             model: Some("gpt-4o".into()),
@@ -258,7 +293,13 @@ mod tests {
             cache_creation_tokens: cap((12, 0, 0, "absent", "not_assessed", "unavailable")),
             cache_read_tokens: cap((12, 0, 0, "absent", "not_assessed", "unavailable")),
             ttft: cap((12, 12, 12, "available", "degenerate", "native")),
-            correlation: corr,
+            correlation: GenAiCorrelationProvenance {
+                rule: "none".into(),
+                matched_count: 0,
+                unmatched_count: 0,
+                rejected_count: 0,
+                ambiguous_count: 0,
+            },
         };
         let response = GenAiCapabilityResponse {
             reports: vec![report],
@@ -267,45 +308,48 @@ mod tests {
             truncated: false,
             filters_applied: vec![],
         };
-        let out = render(&response);
+        let out = render_capabilities(&response);
         assert!(out.contains("openai/gpt-4o"));
         assert!(out.contains("12"));
         assert!(out.contains("2 duplicate deliveries collapsed"));
         assert!(out.contains("available/degenerate"));
         assert!(out.contains("absent/not_assessed/unavailable"));
+        // No correlation rule: the column is an explicit dash, not a zero.
+        assert!(out.contains("—"));
     }
 
-    fn render(response: &GenAiCapabilityResponse) -> String {
-        use std::fmt::Write;
-        let mut out = String::new();
-        let _ = writeln!(
-            out,
-            "Canonical spans: {} ({} duplicate deliveries collapsed)",
-            response.canonical_span_count, response.duplicate_span_count
-        );
-        if response.reports.is_empty() {
-            let _ = writeln!(out, "No LLM request spans in this range");
-            return out;
-        }
-        for r in &response.reports {
-            let identity = match (&r.provider, &r.model) {
-                (Some(p), Some(m)) => format!("{p}/{m}"),
-                (Some(p), None) => p.clone(),
-                (None, Some(m)) => m.clone(),
-                (None, None) => "(unknown)".to_string(),
-            };
-            let _ = writeln!(
-                out,
-                "{identity} reqs={} ttft={}",
-                r.request_count,
-                metric_cell(&r.ttft)
-            );
-            let _ = writeln!(
-                out,
-                "  cache_creation={}",
-                metric_cell(&r.cache_creation_tokens)
-            );
-        }
-        out
+    #[test]
+    fn display_renders_correlation_provenance_counts() {
+        let report = otelite_core::api::GenAiCapabilityReport {
+            provider: None,
+            model: Some("m1".into()),
+            emitter_fingerprint: "fp-2".into(),
+            emitter: "codex".into(),
+            adapter_rule: "codex-request-v1".into(),
+            request_count: 10,
+            input_tokens: cap((10, 5, 5, "sparse", "reliable", "correlated")),
+            output_tokens: cap((10, 5, 5, "sparse", "reliable", "correlated")),
+            cache_creation_tokens: cap((10, 0, 0, "absent", "not_assessed", "unavailable")),
+            cache_read_tokens: cap((10, 0, 0, "absent", "not_assessed", "unavailable")),
+            ttft: cap((10, 0, 0, "absent", "not_assessed", "unavailable")),
+            correlation: GenAiCorrelationProvenance {
+                rule: "codex-one-to-one-v1".into(),
+                matched_count: 5,
+                unmatched_count: 3,
+                rejected_count: 1,
+                ambiguous_count: 2,
+            },
+        };
+        let response = GenAiCapabilityResponse {
+            reports: vec![report],
+            canonical_span_count: 10,
+            duplicate_span_count: 0,
+            truncated: false,
+            filters_applied: vec![],
+        };
+        let out = render_capabilities(&response);
+        assert!(out.contains("5/3/1/2"));
+        assert!(out.contains("sparse/reliable/correlated"));
+        assert!(out.contains("matched/unmatched/rejected/ambiguous"));
     }
 }

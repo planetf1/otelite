@@ -393,7 +393,11 @@ fn test_genai_capability_report_keeps_codex_usage_unavailable_and_deduplicates_s
         .unwrap();
     assert_eq!(codex.output_tokens.availability, "absent");
     assert_eq!(codex.output_tokens.derivation, "unavailable");
-    assert_eq!(codex.correlation.rule, "none");
+    // No usage spans were delivered, so the rule is applied but everything
+    // is a request-level gap.
+    assert_eq!(codex.correlation.rule, "codex-one-to-one-v1");
+    assert_eq!(codex.correlation.unmatched_count, 1);
+    assert_eq!(codex.correlation.matched_count, 0);
 
     let opencode = report
         .reports
@@ -410,6 +414,174 @@ fn test_genai_capability_report_keeps_codex_usage_unavailable_and_deduplicates_s
             .get("llm.usage.prompt_tokens"),
         Some(&1)
     );
+}
+
+#[test]
+fn test_genai_capability_report_correlates_codex_usage_one_to_one() {
+    let conn = setup_test_db();
+    let insert_span = |trace: &str, id: &str, name: &str, parent: &str, attributes: &str| {
+        conn.execute(
+            r#"INSERT INTO spans (trace_id, span_id, parent_span_id, name, kind, start_time, end_time, attributes, status_code)
+               VALUES (?1, ?2, ?3, ?4, 0, 0, 4000000000, ?5, 0)"#,
+            rusqlite::params![trace, id, parent, name, attributes],
+        )
+        .unwrap();
+    };
+
+    // t1: clean one-to-one join (request -> attempt -> usage span).
+    insert_span("t1", "turn1", "run_turn", "", "{}");
+    insert_span(
+        "t1",
+        "req1",
+        "run_sampling_request",
+        "turn1",
+        r#"{"model":"m1","otel.scope.name":"codex_cli_rs"}"#,
+    );
+    insert_span("t1", "try1", "try_run_sampling_request", "req1", "{}");
+    insert_span(
+        "t1",
+        "usage1",
+        "handle_responses",
+        "try1",
+        r#"{"otel.scope.name":"codex_cli_rs","gen_ai.usage.input_tokens":"100","gen_ai.usage.output_tokens":"50"}"#,
+    );
+
+    // t2: two usage candidates under one request (retry) -> ambiguous.
+    insert_span("t2", "turn2", "run_turn", "", "{}");
+    insert_span(
+        "t2",
+        "req2",
+        "run_sampling_request",
+        "turn2",
+        r#"{"model":"m1","otel.scope.name":"codex_cli_rs"}"#,
+    );
+    insert_span("t2", "try2a", "try_run_sampling_request", "req2", "{}");
+    insert_span("t2", "try2b", "try_run_sampling_request", "req2", "{}");
+    insert_span(
+        "t2",
+        "usage2a",
+        "handle_responses",
+        "try2a",
+        r#"{"otel.scope.name":"codex_cli_rs","gen_ai.usage.output_tokens":"5"}"#,
+    );
+    insert_span(
+        "t2",
+        "usage2b",
+        "handle_responses",
+        "try2b",
+        r#"{"otel.scope.name":"codex_cli_rs","gen_ai.usage.output_tokens":"6"}"#,
+    );
+
+    // t3: request with no usage span -> unmatched.
+    insert_span("t3", "turn3", "run_turn", "", "{}");
+    insert_span(
+        "t3",
+        "req3",
+        "run_sampling_request",
+        "turn3",
+        r#"{"model":"m1","otel.scope.name":"codex_cli_rs"}"#,
+    );
+
+    // t4: orphan usage span whose chain never reaches a request span.
+    insert_span("t4", "orphan", "turn_context.make", "", "{}");
+    insert_span(
+        "t4",
+        "usage4",
+        "handle_responses",
+        "orphan",
+        r#"{"otel.scope.name":"codex_cli_rs","gen_ai.usage.output_tokens":"7"}"#,
+    );
+
+    // t5: errored request with a usage span -> rejected.
+    insert_span("t5", "turn5", "run_turn", "", "{}");
+    insert_span(
+        "t5",
+        "req5",
+        "run_sampling_request",
+        "turn5",
+        r#"{"model":"m1","otel.scope.name":"codex_cli_rs"}"#,
+    );
+    insert_span(
+        "t5",
+        "usage5",
+        "handle_responses",
+        "req5",
+        r#"{"otel.scope.name":"codex_cli_rs","gen_ai.usage.output_tokens":"8"}"#,
+    );
+    conn.execute(
+        r#"UPDATE spans SET status_code = 2 WHERE trace_id = 't5' AND span_id = 'req5'"#,
+        [],
+    )
+    .unwrap();
+
+    // t6: usage span whose model conflicts with the request -> rejected.
+    insert_span("t6", "turn6", "run_turn", "", "{}");
+    insert_span(
+        "t6",
+        "req6",
+        "run_sampling_request",
+        "turn6",
+        r#"{"model":"m1","otel.scope.name":"codex_cli_rs"}"#,
+    );
+    insert_span(
+        "t6",
+        "usage6",
+        "handle_responses",
+        "req6",
+        r#"{"otel.scope.name":"codex_cli_rs","model":"m2","gen_ai.usage.output_tokens":"9"}"#,
+    );
+
+    // A non-Codex identity shares the sample and must keep rule `none`.
+    insert_span(
+        "opencode-trace",
+        "request",
+        "opencode.llm",
+        "",
+        r#"{"openinference.span.kind":"LLM","llm.system":"opencode-go","llm.model_name":"opencode-test-model","llm.usage.prompt_tokens":"0","llm.usage.completion_tokens":"40"}"#,
+    );
+
+    let report =
+        reader::query_genai_capabilities(&conn, None, None, &GenAiFilters::default()).unwrap();
+
+    let codex = report
+        .reports
+        .iter()
+        .find(|row| row.emitter == "codex")
+        .unwrap();
+    // t4 deliberately has no request span: five requests in the group.
+    assert_eq!(codex.request_count, 5);
+    assert_eq!(codex.correlation.rule, "codex-one-to-one-v1");
+    assert_eq!(codex.correlation.matched_count, 1);
+    assert_eq!(codex.correlation.unmatched_count, 1);
+    assert_eq!(codex.correlation.rejected_count, 2);
+    assert_eq!(codex.correlation.ambiguous_count, 2);
+
+    // The single clean join surfaces as correlated derivation with the
+    // candidate's source attributes; the request denominator stays 5.
+    assert_eq!(codex.input_tokens.derivation, "correlated");
+    assert_eq!(codex.input_tokens.availability, "sparse");
+    assert_eq!(codex.input_tokens.valid_count, 1);
+    assert_eq!(codex.input_tokens.eligible_count, 5);
+    assert_eq!(
+        codex
+            .input_tokens
+            .source_attributes
+            .get("gen_ai.usage.input_tokens"),
+        Some(&1)
+    );
+    assert_eq!(codex.output_tokens.derivation, "correlated");
+    assert_eq!(codex.output_tokens.valid_count, 1);
+    // Rejected, ambiguous and unmatched requests contribute no values.
+    assert_eq!(codex.cache_read_tokens.derivation, "unavailable");
+    assert_eq!(codex.cache_read_tokens.valid_count, 0);
+
+    let opencode = report
+        .reports
+        .iter()
+        .find(|row| row.emitter == "opencode")
+        .unwrap();
+    assert_eq!(opencode.correlation.rule, "none");
+    assert_eq!(opencode.input_tokens.derivation, "native");
 }
 
 #[test]

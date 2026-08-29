@@ -125,8 +125,9 @@ pub struct GenAiSpanCapabilities {
 
 /// Classify one span using verified request signatures and per-metric evidence.
 ///
-/// This deliberately does not correlate separate spans. In particular, Codex
-/// usage remains unavailable until a deterministic one-to-one join is verified.
+/// This only inspects the span itself; cross-span attribution is a separate
+/// step (`correlate_codex_usage`), which is where Codex token counters on
+/// usage spans are joined to request spans under a verified one-to-one rule.
 pub fn classify_span_capabilities(span: &Span) -> GenAiSpanCapabilities {
     let attrs = &span.attributes;
     let has_model = first_attribute(attrs, semconv::MODEL_KEYS).is_some();
@@ -391,6 +392,165 @@ pub fn classify_ttft_value(ttft_secs: Option<f64>, duration_secs: f64) -> TtftVa
     }
 
     TtftValueQuality::Valid
+}
+
+/// Adapter rule name reported in correlation provenance for the Codex
+/// one-to-one usage join.
+pub const CODEX_CORRELATION_RULE: &str = "codex-one-to-one-v1";
+
+/// Why a candidate usage span was excluded from request-level attribution.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CorrelationRejection {
+    /// The enclosing request span ended in an error status.
+    IncompleteRequest,
+    /// The candidate declares a model that conflicts with the request span.
+    ConflictingModel,
+}
+
+/// Outcome of the `codex-one-to-one-v1` join for one request span.
+///
+/// Cardinality is decided on the structurally related candidate set (see
+/// `correlate_codex_usage`): anything other than exactly one candidate is a
+/// rejected attribution, never a guess.
+#[derive(Debug, Clone, PartialEq)]
+pub enum CorrelationOutcome {
+    /// No usage-bearing candidate in the request's structural neighbourhood.
+    Unmatched,
+    /// Exactly one candidate, validated; its counters feed the request.
+    Matched {
+        input_tokens: TokenMetricEvidence,
+        output_tokens: TokenMetricEvidence,
+        cache_creation_tokens: TokenMetricEvidence,
+        cache_read_tokens: TokenMetricEvidence,
+    },
+    /// The single candidate failed a join invariant.
+    Rejected(CorrelationRejection),
+    /// Two or more candidates (retries, concurrent sampling, reused
+    /// identifiers, turn-level counters): not one-to-one, so no request-level
+    /// attribution is made. Carries the candidate count.
+    Ambiguous(usize),
+}
+
+/// Whether a span matches the Codex request-span signature
+/// (`run_sampling_request` under the `codex_cli_rs` scope carrying a model).
+///
+/// This is the structural half of the `codex-one-to-one-v1` join; it must
+/// stay in lockstep with the Codex candidate in `classify_span_capabilities`.
+pub fn is_codex_request_span(span: &Span) -> bool {
+    span.name == semconv::CODEX_LLM_REQUEST_SPAN_NAME
+        && span
+            .attributes
+            .get("otel.scope.name")
+            .is_some_and(|scope| scope == semconv::CODEX_OTEL_SCOPE_NAME)
+        && first_attribute(&span.attributes, semconv::MODEL_KEYS).is_some()
+}
+
+/// Whether a span is a Codex usage candidate: the verified usage-span
+/// signature (`handle_responses` under the `codex_cli_rs` scope) carrying at
+/// least one token counter attribute.
+pub fn is_codex_usage_candidate(span: &Span) -> bool {
+    span.name == semconv::CODEX_HANDLE_RESPONSES_SPAN_NAME
+        && span
+            .attributes
+            .get("otel.scope.name")
+            .is_some_and(|scope| scope == semconv::CODEX_OTEL_SCOPE_NAME)
+        && semconv::INPUT_TOKEN_KEYS
+            .iter()
+            .chain(semconv::OUTPUT_TOKEN_KEYS)
+            .chain(semconv::CACHE_CREATION_TOKEN_KEYS)
+            .chain(semconv::CACHE_READ_TOKEN_KEYS)
+            .any(|key| span.attributes.contains_key(*key))
+}
+
+/// Token counter evidence taken from a correlated (non-request) usage span.
+///
+/// Absence of a counter on the candidate is a plain absence, not a
+/// rejection: the candidate signature is already verified, so a missing
+/// counter just means that metric is not provided for this request.
+pub fn correlated_token_evidence(
+    attrs: &HashMap<String, String>,
+    keys: &[&'static str],
+) -> TokenMetricEvidence {
+    let mut evidence = token_evidence(
+        attrs,
+        keys,
+        true,
+        MetricRejectionReason::MissingNativeAttribute,
+    );
+    match evidence.observation {
+        MetricObservation::Absent => {
+            evidence.rejection_reason = None;
+        },
+        _ => {
+            evidence.derivation = MetricDerivation::Correlated;
+            evidence.rejection_reason = (evidence.observation == MetricObservation::Invalid)
+                .then_some(MetricRejectionReason::InvalidInteger);
+        },
+    }
+    evidence
+}
+
+/// Apply the `codex-one-to-one-v1` join rule to one request span.
+///
+/// `candidates` must already be restricted to spans that pass
+/// `is_codex_usage_candidate` and are descendants of the request span within
+/// the same trace — the structural half of the rule, which the caller
+/// establishes from the stored span tree. This function enforces the rest:
+///
+/// - the request span must not have ended in an error status;
+/// - a model attribute on the candidate must match the request's model;
+/// - exactly one candidate may exist (retries, concurrent sampling, reused
+///   identifiers and turn-level counters all produce two or more and are
+///   rejected as `Ambiguous`).
+pub fn correlate_codex_usage(
+    request_completed: bool,
+    request_model: Option<&str>,
+    candidates: &[&Span],
+) -> CorrelationOutcome {
+    match candidates.len() {
+        0 => CorrelationOutcome::Unmatched,
+        1 => {
+            if !request_completed {
+                return CorrelationOutcome::Rejected(CorrelationRejection::IncompleteRequest);
+            }
+            // Any request-model attribute on the candidate must agree with
+            // the request span; response-model attributes are ignored.
+            let candidate_models: Vec<&str> = semconv::REQUEST_MODEL_KEYS
+                .iter()
+                .filter_map(|key| {
+                    candidates[0]
+                        .attributes
+                        .get(*key)
+                        .map(|value| value.as_str())
+                })
+                .collect();
+            if candidate_models
+                .iter()
+                .any(|value| request_model != Some(value))
+            {
+                return CorrelationOutcome::Rejected(CorrelationRejection::ConflictingModel);
+            }
+            CorrelationOutcome::Matched {
+                input_tokens: correlated_token_evidence(
+                    &candidates[0].attributes,
+                    semconv::INPUT_TOKEN_KEYS,
+                ),
+                output_tokens: correlated_token_evidence(
+                    &candidates[0].attributes,
+                    semconv::OUTPUT_TOKEN_KEYS,
+                ),
+                cache_creation_tokens: correlated_token_evidence(
+                    &candidates[0].attributes,
+                    semconv::CACHE_CREATION_TOKEN_KEYS,
+                ),
+                cache_read_tokens: correlated_token_evidence(
+                    &candidates[0].attributes,
+                    semconv::CACHE_READ_TOKEN_KEYS,
+                ),
+            }
+        },
+        n => CorrelationOutcome::Ambiguous(n),
+    }
 }
 
 /// Information extracted from a GenAI/LLM span.
@@ -1190,5 +1350,152 @@ mod tests {
         assert!(info.is_genai);
         assert_eq!(info.model, None);
         assert_eq!(info.operation.as_deref(), Some("chat"));
+    }
+
+    fn codex_usage_span(attributes: HashMap<String, String>) -> Span {
+        let mut span = test_span(semconv::CODEX_HANDLE_RESPONSES_SPAN_NAME, 0, attributes);
+        span.attributes.insert(
+            "otel.scope.name".to_string(),
+            semconv::CODEX_OTEL_SCOPE_NAME.to_string(),
+        );
+        span
+    }
+
+    fn codex_usage_attrs(input: Option<&str>, output: Option<&str>) -> HashMap<String, String> {
+        let mut attrs = HashMap::new();
+        if let Some(input) = input {
+            attrs.insert("gen_ai.usage.input_tokens".to_string(), input.to_string());
+        }
+        if let Some(output) = output {
+            attrs.insert("gen_ai.usage.output_tokens".to_string(), output.to_string());
+        }
+        attrs
+    }
+
+    #[test]
+    fn codex_usage_candidate_requires_scope_and_counter() {
+        // Correct signature: scope + counter.
+        assert!(is_codex_usage_candidate(&codex_usage_span(
+            codex_usage_attrs(Some("10"), Some("5"),)
+        )));
+        // Wrong span name.
+        let mut wrong_name = codex_usage_span(codex_usage_attrs(Some("10"), Some("5")));
+        wrong_name.name = "receiving_stream".to_string();
+        assert!(!is_codex_usage_candidate(&wrong_name));
+        // Right name, wrong scope (product names alone do not classify).
+        let mut wrong_scope = codex_usage_span(codex_usage_attrs(Some("10"), Some("5")));
+        wrong_scope
+            .attributes
+            .insert("otel.scope.name".to_string(), "other_tool".to_string());
+        assert!(!is_codex_usage_candidate(&wrong_scope));
+        // Right signature but no counter attributes.
+        assert!(!is_codex_usage_candidate(&codex_usage_span(HashMap::from(
+            [("thread.id".to_string(), "1".to_string())]
+        ))));
+    }
+
+    #[test]
+    fn correlate_codex_usage_matches_one_verified_candidate() {
+        let mut attrs = codex_usage_attrs(Some("760018"), Some("738"));
+        attrs.insert(
+            "gen_ai.usage.cache_read.input_tokens".to_string(),
+            "759816".to_string(),
+        );
+        let candidate = codex_usage_span(attrs);
+        let outcome = correlate_codex_usage(true, Some("gpt-5.6-terra"), &[&candidate]);
+        match outcome {
+            CorrelationOutcome::Matched {
+                input_tokens,
+                output_tokens,
+                cache_creation_tokens,
+                cache_read_tokens,
+            } => {
+                assert_eq!(input_tokens.value, Some(760018));
+                assert_eq!(input_tokens.derivation, MetricDerivation::Correlated);
+                assert_eq!(output_tokens.value, Some(738));
+                assert_eq!(
+                    output_tokens.source_attribute,
+                    Some("gen_ai.usage.output_tokens")
+                );
+                assert_eq!(cache_creation_tokens.observation, MetricObservation::Absent);
+                assert_eq!(
+                    cache_creation_tokens.rejection_reason, None,
+                    "a missing counter on a verified candidate is an absence, not a rejection"
+                );
+                assert_eq!(cache_read_tokens.value, Some(759816));
+            },
+            other => panic!("expected Matched, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn correlate_codex_usage_rejects_incomplete_request() {
+        let candidate = codex_usage_span(codex_usage_attrs(Some("10"), Some("5")));
+        let outcome = correlate_codex_usage(false, Some("m"), &[&candidate]);
+        assert_eq!(
+            outcome,
+            CorrelationOutcome::Rejected(CorrelationRejection::IncompleteRequest)
+        );
+    }
+
+    #[test]
+    fn correlate_codex_usage_rejects_conflicting_model() {
+        let mut attrs = codex_usage_attrs(Some("10"), Some("5"));
+        attrs.insert("model".to_string(), "other-model".to_string());
+        let candidate = codex_usage_span(attrs);
+        let outcome = correlate_codex_usage(true, Some("requested-model"), &[&candidate]);
+        assert_eq!(
+            outcome,
+            CorrelationOutcome::Rejected(CorrelationRejection::ConflictingModel)
+        );
+        // A matching model attribute does not conflict.
+        let mut attrs = codex_usage_attrs(Some("10"), Some("5"));
+        attrs.insert("model".to_string(), "requested-model".to_string());
+        let candidate = codex_usage_span(attrs);
+        assert!(matches!(
+            correlate_codex_usage(true, Some("requested-model"), &[&candidate]),
+            CorrelationOutcome::Matched { .. }
+        ));
+        // A response-model-only attribute is ignored by the join.
+        let mut attrs = codex_usage_attrs(Some("10"), Some("5"));
+        attrs.insert(
+            "gen_ai.response.model".to_string(),
+            "routed-model".to_string(),
+        );
+        let candidate = codex_usage_span(attrs);
+        assert!(matches!(
+            correlate_codex_usage(true, Some("requested-model"), &[&candidate]),
+            CorrelationOutcome::Matched { .. }
+        ));
+    }
+
+    #[test]
+    fn correlate_codex_usage_rejects_ambiguous_candidates() {
+        let a = codex_usage_span(codex_usage_attrs(Some("10"), Some("5")));
+        let b = codex_usage_span(codex_usage_attrs(Some("11"), Some("6")));
+        assert_eq!(
+            correlate_codex_usage(true, Some("m"), &[&a, &b]),
+            CorrelationOutcome::Ambiguous(2)
+        );
+        assert_eq!(
+            correlate_codex_usage(true, Some("m"), &[]),
+            CorrelationOutcome::Unmatched
+        );
+    }
+
+    #[test]
+    fn correlated_token_evidence_marks_invalid_counters() {
+        let attrs = codex_usage_attrs(Some("not-a-number"), Some("5"));
+        let evidence = correlated_token_evidence(&attrs, semconv::INPUT_TOKEN_KEYS);
+        assert_eq!(evidence.observation, MetricObservation::Invalid);
+        assert_eq!(evidence.derivation, MetricDerivation::Correlated);
+        assert_eq!(
+            evidence.rejection_reason,
+            Some(MetricRejectionReason::InvalidInteger)
+        );
+        let output = correlated_token_evidence(&attrs, semconv::OUTPUT_TOKEN_KEYS);
+        assert_eq!(output.observation, MetricObservation::Valid);
+        assert_eq!(output.value, Some(5));
+        assert_eq!(output.rejection_reason, None);
     }
 }

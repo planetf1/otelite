@@ -255,7 +255,11 @@ async fn test_genai_capabilities_reports_native_and_unavailable_metrics() {
         .find(|entry| entry.emitter == "codex")
         .unwrap();
     assert_eq!(codex.output_tokens.derivation, "unavailable");
-    assert_eq!(codex.correlation.rule, "none");
+    // The Codex group always carries the join rule; with no usage span
+    // delivered, its single request is an unmatched request-level gap.
+    assert_eq!(codex.correlation.rule, "codex-one-to-one-v1");
+    assert_eq!(codex.correlation.matched_count, 0);
+    assert_eq!(codex.correlation.unmatched_count, 1);
 }
 
 #[tokio::test]

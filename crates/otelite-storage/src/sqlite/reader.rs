@@ -8,8 +8,9 @@ use otelite_core::semconv;
 use otelite_core::telemetry::log::SeverityLevel;
 use otelite_core::telemetry::trace::{SpanKind, SpanStatus, StatusCode};
 use otelite_core::telemetry::{
-    classify_span_capabilities, GenAiEmitter, GenAiSpanRole, LogRecord, Metric, MetricObservation,
-    Span,
+    classify_span_capabilities, correlate_codex_usage, is_codex_request_span,
+    is_codex_usage_candidate, CorrelationOutcome, GenAiEmitter, GenAiSpanRole, LogRecord, Metric,
+    MetricObservation, Span, CODEX_CORRELATION_RULE,
 };
 use rusqlite::{Connection, Row};
 use serde::de::DeserializeOwned;
@@ -821,6 +822,9 @@ struct CapabilityMetricAccum {
     valid_count: usize,
     invalid_count: usize,
     degenerate_count: usize,
+    /// Correlated observations that were recorded because the request span
+    /// carried no native attribute for this metric.
+    correlated_observed_count: usize,
     source_attributes: HashMap<String, usize>,
 }
 
@@ -851,6 +855,23 @@ impl CapabilityMetricAccum {
         }
     }
 
+    /// Record a value that a correlation rule associated with a request whose
+    /// native observation for this metric was absent. Only valid/invalid
+    /// states reach this path; absent correlated counters are skipped by the
+    /// caller (they carry no evidence to record).
+    fn record_correlated(&mut self, observation: MetricObservation, source_attribute: &str) {
+        *self
+            .source_attributes
+            .entry(source_attribute.to_string())
+            .or_default() += 1;
+        self.correlated_observed_count += 1;
+        match observation {
+            MetricObservation::Valid => self.valid_count += 1,
+            MetricObservation::Invalid => self.invalid_count += 1,
+            MetricObservation::Absent => {},
+        }
+    }
+
     fn report(&self, ttft: bool) -> otelite_core::api::GenAiMetricCapability {
         let availability = if self.valid_count == 0 {
             "absent"
@@ -871,6 +892,13 @@ impl CapabilityMetricAccum {
         } else {
             "not_assessed"
         };
+        let derivation = if self.observed_count > 0 {
+            "native"
+        } else if self.correlated_observed_count > 0 {
+            "correlated"
+        } else {
+            "unavailable"
+        };
         otelite_core::api::GenAiMetricCapability {
             eligible_count: self.eligible_count,
             observed_count: self.observed_count,
@@ -878,11 +906,7 @@ impl CapabilityMetricAccum {
             invalid_count: self.invalid_count,
             availability: availability.to_string(),
             quality: quality.to_string(),
-            derivation: if self.observed_count > 0 {
-                "native".to_string()
-            } else {
-                "unavailable".to_string()
-            },
+            derivation: derivation.to_string(),
             source_attributes: self.source_attributes.clone(),
         }
     }
@@ -940,11 +964,21 @@ fn capability_fingerprint(
     format!("genai-v1-{hash:016x}")
 }
 
-/// Query native GenAI telemetry capability coverage without cross-span correlation.
+/// Query GenAI telemetry capability coverage.
 ///
-/// The report is calculated from the most recent bounded physical-span sample.
-/// Duplicate delivery is canonicalised within that sample. `truncated` means
-/// older physical spans were not examined.
+/// Native observations come from the verified request spans themselves.
+/// For Codex, token counters that live on separate usage spans are joined to
+/// their enclosing request span with the `codex-one-to-one-v1` rule: same
+/// trace, same stored parent chain (the usage span must be a descendant of
+/// the request span), a non-error request status, no conflicting model, and
+/// exactly one candidate — anything else is reported in the group's
+/// correlation provenance rather than guessed.
+///
+/// The report is calculated from the most recent bounded physical-span
+/// sample, so the join is bounded by construction. Duplicate delivery is
+/// canonicalised within that sample. `truncated` means older physical spans
+/// were not examined. No correlation identifiers are exposed: provenance
+/// carries counts and the rule name only.
 pub fn query_genai_capabilities(
     conn: &Connection,
     start_time: Option<i64>,
@@ -1026,8 +1060,20 @@ pub fn query_genai_capabilities(
     let mut canonical_request_span_count = 0;
     let mut duplicate_span_count = 0;
     let mut groups: BTreeMap<CapabilityGroupKey, CapabilityAccum> = BTreeMap::new();
-    for (span, duplicate_deliveries) in rows {
-        let capabilities = classify_span_capabilities(&span);
+    // Codex request spans seen in the sample: row index, their group key,
+    // whether the span completed, its request model, and which metrics had a
+    // native observation (the join only fills metrics the request span did
+    // not carry itself).
+    #[derive(Clone, Copy)]
+    struct CodexRequestRef {
+        row: usize,
+        completed: bool,
+        native_present: [bool; 4],
+    }
+    let mut codex_requests: Vec<(CodexRequestRef, CapabilityGroupKey)> = Vec::new();
+
+    for (row_index, (span, duplicate_deliveries)) in rows.iter().enumerate() {
+        let capabilities = classify_span_capabilities(span);
         if capabilities.role != GenAiSpanRole::RequestTiming {
             continue;
         }
@@ -1059,7 +1105,7 @@ pub fn query_genai_capabilities(
             emitter_name(capabilities.emitter).to_string(),
             capabilities.fingerprint.adapter_rule.to_string(),
         );
-        let entry = groups.entry(key).or_default();
+        let entry = groups.entry(key.clone()).or_default();
         entry.request_count += 1;
         entry.input_tokens.record(
             capabilities.input_tokens.observation,
@@ -1091,12 +1137,160 @@ pub fn query_genai_capabilities(
             capabilities.ttft.source_attribute,
             degenerate,
         );
+        if capabilities.emitter == GenAiEmitter::Codex {
+            codex_requests.push((
+                CodexRequestRef {
+                    row: row_index,
+                    completed: span.status.code != StatusCode::Error,
+                    native_present: [
+                        capabilities.input_tokens.observation != MetricObservation::Absent,
+                        capabilities.output_tokens.observation != MetricObservation::Absent,
+                        capabilities.cache_creation_tokens.observation != MetricObservation::Absent,
+                        capabilities.cache_read_tokens.observation != MetricObservation::Absent,
+                    ],
+                },
+                key,
+            ));
+        }
+    }
+
+    // Correlation pass (codex-one-to-one-v1): join usage-bearing
+    // `handle_responses` spans to their enclosing `run_sampling_request`
+    // span through the stored parent chain. Operates only on the bounded
+    // sample above, so the join is bounded by construction; the parent walk
+    // is depth-capped.
+    let mut provenance: BTreeMap<
+        CapabilityGroupKey,
+        otelite_core::api::GenAiCorrelationProvenance,
+    > = BTreeMap::new();
+    if !codex_requests.is_empty() {
+        let key_to_row: HashMap<(String, String), usize> = rows
+            .iter()
+            .enumerate()
+            .map(|(i, (span, _))| ((span.trace_id.clone(), span.span_id.clone()), i))
+            .collect();
+        let mut candidates_by_request: HashMap<usize, Vec<usize>> = HashMap::new();
+        for (row_index, (span, _)) in rows.iter().enumerate() {
+            if !is_codex_usage_candidate(span) {
+                continue;
+            }
+            let mut current = span.parent_span_id.clone();
+            let mut found: Option<usize> = None;
+            // Depth cap: a request is at most a handful of levels above its
+            // usage spans; anything deeper is a corrupted or foreign chain.
+            for _ in 0..64 {
+                let Some(parent_id) = current.clone() else {
+                    break;
+                };
+                let Some(&parent_row) = key_to_row.get(&(span.trace_id.clone(), parent_id)) else {
+                    break; // chain leaves the bounded sample
+                };
+                if is_codex_request_span(&rows[parent_row].0) {
+                    found = Some(parent_row);
+                    break;
+                }
+                current = rows[parent_row].0.parent_span_id.clone();
+            }
+            if let Some(request_row) = found {
+                candidates_by_request
+                    .entry(request_row)
+                    .or_default()
+                    .push(row_index);
+            }
+            // A candidate whose chain never reaches a Codex request span is
+            // outside the request-level population (turn-level or orphaned
+            // delivery); it is not attributable to any (provider, model)
+            // group and is not counted in group provenance.
+        }
+        for (request, key) in &codex_requests {
+            let prov = provenance.entry(key.clone()).or_insert_with(|| {
+                otelite_core::api::GenAiCorrelationProvenance {
+                    rule: CODEX_CORRELATION_RULE.to_string(),
+                    matched_count: 0,
+                    unmatched_count: 0,
+                    rejected_count: 0,
+                    ambiguous_count: 0,
+                }
+            });
+            let request_span = &rows[request.row].0;
+            let model = first_semconv_attribute(
+                &request_span.attributes,
+                otelite_core::semconv::REQUEST_MODEL_KEYS,
+            )
+            .map(str::to_string);
+            let candidates: Vec<&Span> = candidates_by_request
+                .get(&request.row)
+                .map(|list| list.iter().map(|i| &rows[*i].0).collect())
+                .unwrap_or_default();
+            match correlate_codex_usage(request.completed, model.as_deref(), &candidates) {
+                CorrelationOutcome::Matched {
+                    input_tokens,
+                    output_tokens,
+                    cache_creation_tokens,
+                    cache_read_tokens,
+                } => {
+                    prov.matched_count += 1;
+                    let evidence = [
+                        (input_tokens, request.native_present[0]),
+                        (output_tokens, request.native_present[1]),
+                        (cache_creation_tokens, request.native_present[2]),
+                        (cache_read_tokens, request.native_present[3]),
+                    ];
+                    if let Some(accum) = groups.get_mut(key) {
+                        for (metric_index, (evidence, native)) in evidence.iter().enumerate() {
+                            if *native {
+                                continue; // native data wins; no silent override
+                            }
+                            let Some(attribute) = evidence.source_attribute else {
+                                continue; // absent on the candidate: no evidence
+                            };
+                            match metric_index {
+                                0 => accum
+                                    .input_tokens
+                                    .record_correlated(evidence.observation, attribute),
+                                1 => accum
+                                    .output_tokens
+                                    .record_correlated(evidence.observation, attribute),
+                                2 => accum
+                                    .cache_creation_tokens
+                                    .record_correlated(evidence.observation, attribute),
+                                _ => accum
+                                    .cache_read_tokens
+                                    .record_correlated(evidence.observation, attribute),
+                            }
+                        }
+                    }
+                },
+                CorrelationOutcome::Unmatched => {
+                    // Request-level gap: visible through the metric cells
+                    // (absent/sparse availability) as well as this count.
+                    prov.unmatched_count += 1;
+                },
+                CorrelationOutcome::Rejected(_) => prov.rejected_count += 1,
+                CorrelationOutcome::Ambiguous(count) => prov.ambiguous_count += count,
+            }
+        }
     }
 
     let reports = groups
         .into_iter()
         .map(
             |((provider, model, emitter_fingerprint, emitter, adapter_rule), accum)| {
+                let correlation = provenance
+                    .remove(&(
+                        provider.clone(),
+                        model.clone(),
+                        emitter_fingerprint.clone(),
+                        emitter.clone(),
+                        adapter_rule.clone(),
+                    ))
+                    .unwrap_or(otelite_core::api::GenAiCorrelationProvenance {
+                        rule: "none".to_string(),
+                        matched_count: 0,
+                        unmatched_count: 0,
+                        rejected_count: 0,
+                        ambiguous_count: 0,
+                    });
                 otelite_core::api::GenAiCapabilityReport {
                     provider,
                     model,
@@ -1109,13 +1303,7 @@ pub fn query_genai_capabilities(
                     cache_creation_tokens: accum.cache_creation_tokens.report(false),
                     cache_read_tokens: accum.cache_read_tokens.report(false),
                     ttft: accum.ttft.report(true),
-                    correlation: otelite_core::api::GenAiCorrelationProvenance {
-                        rule: "none".to_string(),
-                        matched_count: 0,
-                        unmatched_count: 0,
-                        rejected_count: 0,
-                        ambiguous_count: 0,
-                    },
+                    correlation,
                 }
             },
         )

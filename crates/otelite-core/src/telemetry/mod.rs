@@ -9,10 +9,12 @@ pub mod trace;
 
 pub use formatting::{format_attribute_preview, format_attribute_value};
 pub use genai::{
-    classify_span_capabilities, classify_ttft_value, extract_ttft_secs, GenAiEmitter,
-    GenAiEmitterFingerprint, GenAiSpanCapabilities, GenAiSpanInfo, GenAiSpanRole, MetricDerivation,
-    MetricObservation, MetricRejectionReason, TokenMetricEvidence, TtftMetricEvidence,
-    TtftSourceUnit, TtftValueQuality,
+    classify_span_capabilities, classify_ttft_value, correlate_codex_usage,
+    correlated_token_evidence, extract_ttft_secs, is_codex_request_span, is_codex_usage_candidate,
+    CorrelationOutcome, CorrelationRejection, GenAiEmitter, GenAiEmitterFingerprint,
+    GenAiSpanCapabilities, GenAiSpanInfo, GenAiSpanRole, MetricDerivation, MetricObservation,
+    MetricRejectionReason, TokenMetricEvidence, TtftMetricEvidence, TtftSourceUnit,
+    TtftValueQuality, CODEX_CORRELATION_RULE,
 };
 pub use log::LogRecord;
 pub use metric::Metric;

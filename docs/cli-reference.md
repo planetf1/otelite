@@ -277,6 +277,42 @@ otelite usage --model-drift
 otelite usage --by-session --top 10 --format json | jq
 ```
 
+### Capability coverage: `otelite capabilities`
+
+```bash
+otelite capabilities --since 7d
+```
+
+Shows which GenAI telemetry capabilities each emitter identity (provider/model +
+verified signature) actually provides, per metric: availability (`available` |
+`sparse` | `absent`), quality (`reliable` | `invalid` | `degenerate` |
+`not_assessed`) and derivation (`native` | `correlated` | `unavailable`).
+`absent` means the metric is not provided — it is never a measured zero.
+
+The report is computed from the most recent bounded span sample (newest first),
+so it is always fast; `truncated` is shown when older spans were excluded.
+
+The **Correlation** column reports, per group, how usage metrics that live on
+separate spans were joined back to request spans. Codex reports request timing
+(`run_sampling_request`) and token usage (`handle_responses`) on different
+spans, so otelite joins them with a strict one-to-one rule
+(`codex-one-to-one-v1`): same trace, usage span structurally inside the
+request span, request not errored, model compatible, and exactly one usage
+candidate. The column shows `matched/unmatched/rejected/ambiguous` candidate
+counts; retries, concurrent sampling, reused identifiers and turn-level
+counters land in `ambiguous` or `rejected` and are never guessed into a
+value. Emitters whose usage rides on the request span itself (OpenAI,
+Anthropic, Claude Code, OpenCode) carry no join rule and show `—`. Only
+counts and the rule name are exposed — never span or trace identifiers.
+
+```bash
+# Which emitters actually provide TTFT in the last month?
+otelite capabilities --since 30d
+
+# Machine-readable report (identical to the API response)
+otelite capabilities --since 7d --format json | jq
+```
+
 ---
 
 ## Importing from files
