@@ -559,6 +559,21 @@ async fn run_cli() -> Result<()> {
         no_pager: cli.no_pager || file_config.no_pager,
     };
 
+    // Validate the endpoint and timeout up front so a bad --endpoint or
+    // --timeout fails immediately with a clear message instead of
+    // mid-request.
+    if let Err(e) = reqwest::Url::parse(&config.endpoint) {
+        return Err(Error::InvalidArgument(format!(
+            "Invalid --endpoint '{}': {} (expected a URL like http://127.0.0.1:4318)",
+            config.endpoint, e
+        )));
+    }
+    if config.timeout.is_zero() {
+        return Err(Error::InvalidArgument(
+            "Invalid --timeout 0: the timeout must be at least 1 second".to_string(),
+        ));
+    }
+
     // Handle commands
     match cli.command {
         Some(Commands::Serve { addr, storage_path }) => run_dashboard(addr, storage_path).await,

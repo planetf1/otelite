@@ -24,6 +24,11 @@ have to work around), not implementation detail.
   accept lowercase `and` between predicates and fractional seconds such as
   `duration > 1.5s`; second values that would overflow milliseconds now
   fail with a clear error instead of panicking.
+- CLI exit codes are now stable for scripting: a missing resource (HTTP 404)
+  exits 3, connection and request-timeout failures exit 2, and API, JSON,
+  and invalid-argument errors exit 1. An unparseable `--endpoint` URL or
+  `--timeout 0` now fails immediately with a clear message instead of
+  failing per request.
 
 ### Fixed
 

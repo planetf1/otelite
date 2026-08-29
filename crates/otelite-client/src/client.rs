@@ -5,6 +5,16 @@ use crate::models::{
 use reqwest::Client;
 use std::time::Duration;
 
+/// Map a non-2xx status to the client error it deserves: 404 becomes a
+/// `NotFound` (the CLI exits 3 for it), everything else an `ApiError`.
+fn non_success(status: reqwest::StatusCode, context: &str) -> Error {
+    if status.as_u16() == 404 {
+        Error::NotFound(format!("{}: resource not found", context))
+    } else {
+        Error::ApiError(format!("{}: HTTP {}", context, status))
+    }
+}
+
 pub struct ApiClient {
     client: Client,
     base_url: String,
@@ -28,10 +38,7 @@ impl ApiClient {
         let response = self.client.get(&url).query(&params).send().await?;
 
         if !response.status().is_success() {
-            return Err(Error::ApiError(format!(
-                "Failed to fetch logs: HTTP {}",
-                response.status()
-            )));
+            return Err(non_success(response.status(), "Failed to fetch logs"));
         }
 
         Ok(response.json().await?)
@@ -49,10 +56,7 @@ impl ApiClient {
         }
 
         if !response.status().is_success() {
-            return Err(Error::ApiError(format!(
-                "Failed to fetch log: HTTP {}",
-                response.status()
-            )));
+            return Err(non_success(response.status(), "Failed to fetch log"));
         }
 
         Ok(response.json().await?)
@@ -70,10 +74,7 @@ impl ApiClient {
         let response = self.client.get(&url).query(&all_params).send().await?;
 
         if !response.status().is_success() {
-            return Err(Error::ApiError(format!(
-                "Failed to search logs: HTTP {}",
-                response.status()
-            )));
+            return Err(non_success(response.status(), "Failed to search logs"));
         }
 
         Ok(response.json().await?)
@@ -84,10 +85,7 @@ impl ApiClient {
         let response = self.client.get(&url).query(query).send().await?;
 
         if !response.status().is_success() {
-            return Err(Error::ApiError(format!(
-                "Failed to fetch logs: HTTP {}",
-                response.status()
-            )));
+            return Err(non_success(response.status(), "Failed to fetch logs"));
         }
 
         Ok(response.json().await?)
@@ -98,10 +96,7 @@ impl ApiClient {
         let response = self.client.get(&url).query(&params).send().await?;
 
         if !response.status().is_success() {
-            return Err(Error::ApiError(format!(
-                "Failed to fetch traces: HTTP {}",
-                response.status()
-            )));
+            return Err(non_success(response.status(), "Failed to fetch traces"));
         }
 
         Ok(response.json().await?)
@@ -116,10 +111,7 @@ impl ApiClient {
         }
 
         if !response.status().is_success() {
-            return Err(Error::ApiError(format!(
-                "Failed to fetch trace: HTTP {}",
-                response.status()
-            )));
+            return Err(non_success(response.status(), "Failed to fetch trace"));
         }
 
         Ok(response.json().await?)
@@ -130,10 +122,7 @@ impl ApiClient {
         let response = self.client.get(&url).query(query).send().await?;
 
         if !response.status().is_success() {
-            return Err(Error::ApiError(format!(
-                "Failed to fetch traces: HTTP {}",
-                response.status()
-            )));
+            return Err(non_success(response.status(), "Failed to fetch traces"));
         }
 
         Ok(response.json().await?)
@@ -144,10 +133,7 @@ impl ApiClient {
         let response = self.client.get(&url).query(&params).send().await?;
 
         if !response.status().is_success() {
-            return Err(Error::ApiError(format!(
-                "Failed to fetch metrics: HTTP {}",
-                response.status()
-            )));
+            return Err(non_success(response.status(), "Failed to fetch metrics"));
         }
 
         Ok(response.json().await?)
@@ -165,10 +151,7 @@ impl ApiClient {
         let response = self.client.get(&url).query(&all_params).send().await?;
 
         if !response.status().is_success() {
-            return Err(Error::ApiError(format!(
-                "Failed to fetch metric: HTTP {}",
-                response.status()
-            )));
+            return Err(non_success(response.status(), "Failed to fetch metric"));
         }
 
         let metrics: Vec<MetricResponse> = response.json().await?;
@@ -185,10 +168,7 @@ impl ApiClient {
         let response = self.client.get(&url).query(&params).send().await?;
 
         if !response.status().is_success() {
-            return Err(Error::ApiError(format!(
-                "Failed to export logs: HTTP {}",
-                response.status()
-            )));
+            return Err(non_success(response.status(), "Failed to export logs"));
         }
 
         Ok(response.text().await?)
@@ -199,10 +179,7 @@ impl ApiClient {
         let response = self.client.get(&url).query(&params).send().await?;
 
         if !response.status().is_success() {
-            return Err(Error::ApiError(format!(
-                "Failed to export traces: HTTP {}",
-                response.status()
-            )));
+            return Err(non_success(response.status(), "Failed to export traces"));
         }
 
         Ok(response.text().await?)
@@ -213,10 +190,7 @@ impl ApiClient {
         let response = self.client.get(&url).query(&params).send().await?;
 
         if !response.status().is_success() {
-            return Err(Error::ApiError(format!(
-                "Failed to export metrics: HTTP {}",
-                response.status()
-            )));
+            return Err(non_success(response.status(), "Failed to export metrics"));
         }
 
         Ok(response.text().await?)
@@ -252,10 +226,10 @@ impl ApiClient {
         let response = self.client.get(&url).query(&params).send().await?;
 
         if !response.status().is_success() {
-            return Err(Error::ApiError(format!(
-                "Failed to fetch logs for trace: HTTP {}",
-                response.status()
-            )));
+            return Err(non_success(
+                response.status(),
+                "Failed to fetch logs for trace",
+            ));
         }
 
         Ok(response.json().await?)
@@ -268,10 +242,10 @@ impl ApiClient {
         let url = format!("{}/api/genai/usage", self.base_url);
         let response = self.client.get(&url).query(&params).send().await?;
         if !response.status().is_success() {
-            return Err(Error::ApiError(format!(
-                "Failed to fetch token usage: HTTP {}",
-                response.status()
-            )));
+            return Err(non_success(
+                response.status(),
+                "Failed to fetch token usage",
+            ));
         }
         Ok(response.json().await?)
     }
@@ -320,10 +294,10 @@ impl ApiClient {
         let url = format!("{}/api/genai/distributions", self.base_url);
         let response = self.client.get(&url).query(&params).send().await?;
         if !response.status().is_success() {
-            return Err(Error::ApiError(format!(
-                "Failed to fetch distribution: HTTP {}",
-                response.status()
-            )));
+            return Err(non_success(
+                response.status(),
+                "Failed to fetch distribution",
+            ));
         }
         Ok(response.json().await?)
     }
@@ -336,10 +310,10 @@ impl ApiClient {
         let url = format!("{}/api/genai/latency_percentiles", self.base_url);
         let response = self.client.get(&url).query(&params).send().await?;
         if !response.status().is_success() {
-            return Err(Error::ApiError(format!(
-                "Failed to fetch latency percentiles: HTTP {}",
-                response.status()
-            )));
+            return Err(non_success(
+                response.status(),
+                "Failed to fetch latency percentiles",
+            ));
         }
         Ok(response.json().await?)
     }
@@ -351,10 +325,10 @@ impl ApiClient {
         let url = format!("{}/api/genai/capabilities", self.base_url);
         let response = self.client.get(&url).query(&params).send().await?;
         if !response.status().is_success() {
-            return Err(Error::ApiError(format!(
-                "Failed to fetch GenAI capabilities: HTTP {}",
-                response.status()
-            )));
+            return Err(non_success(
+                response.status(),
+                "Failed to fetch GenAI capabilities",
+            ));
         }
         Ok(response.json().await?)
     }
@@ -384,10 +358,10 @@ impl ApiClient {
         let url = format!("{}/api/genai/agent_roles", self.base_url);
         let response = self.client.get(&url).query(&params).send().await?;
         if !response.status().is_success() {
-            return Err(Error::ApiError(format!(
-                "Failed to fetch agent roles: HTTP {}",
-                response.status()
-            )));
+            return Err(non_success(
+                response.status(),
+                "Failed to fetch agent roles",
+            ));
         }
         Ok(response.json().await?)
     }
@@ -399,10 +373,10 @@ impl ApiClient {
         let url = format!("{}/api/genai/provider_mix", self.base_url);
         let response = self.client.get(&url).query(&params).send().await?;
         if !response.status().is_success() {
-            return Err(Error::ApiError(format!(
-                "Failed to fetch provider mix: HTTP {}",
-                response.status()
-            )));
+            return Err(non_success(
+                response.status(),
+                "Failed to fetch provider mix",
+            ));
         }
         Ok(response.json().await?)
     }
@@ -417,10 +391,10 @@ impl ApiClient {
         let url = format!("{}/api/genai/cache_hit_rate", self.base_url);
         let response = self.client.get(&url).query(&params).send().await?;
         if !response.status().is_success() {
-            return Err(Error::ApiError(format!(
-                "Failed to fetch cache economics: HTTP {}",
-                response.status()
-            )));
+            return Err(non_success(
+                response.status(),
+                "Failed to fetch cache economics",
+            ));
         }
         Ok(response.json().await?)
     }
@@ -432,10 +406,10 @@ impl ApiClient {
         let url = format!("{}/api/genai/reasoning_share", self.base_url);
         let response = self.client.get(&url).query(&params).send().await?;
         if !response.status().is_success() {
-            return Err(Error::ApiError(format!(
-                "Failed to fetch reasoning share: HTTP {}",
-                response.status()
-            )));
+            return Err(non_success(
+                response.status(),
+                "Failed to fetch reasoning share",
+            ));
         }
         Ok(response.json().await?)
     }
@@ -447,10 +421,10 @@ impl ApiClient {
         let url = format!("{}/api/genai/agents", self.base_url);
         let response = self.client.get(&url).query(&params).send().await?;
         if !response.status().is_success() {
-            return Err(Error::ApiError(format!(
-                "Failed to fetch agent rollup: HTTP {}",
-                response.status()
-            )));
+            return Err(non_success(
+                response.status(),
+                "Failed to fetch agent rollup",
+            ));
         }
         Ok(response.json().await?)
     }
@@ -462,10 +436,10 @@ impl ApiClient {
         let url = format!("{}/api/genai/projects", self.base_url);
         let response = self.client.get(&url).query(&params).send().await?;
         if !response.status().is_success() {
-            return Err(Error::ApiError(format!(
-                "Failed to fetch project rollup: HTTP {}",
-                response.status()
-            )));
+            return Err(non_success(
+                response.status(),
+                "Failed to fetch project rollup",
+            ));
         }
         Ok(response.json().await?)
     }
@@ -477,10 +451,10 @@ impl ApiClient {
         let url = format!("{}/api/sessions/costs", self.base_url);
         let response = self.client.get(&url).query(&params).send().await?;
         if !response.status().is_success() {
-            return Err(Error::ApiError(format!(
-                "Failed to fetch session costs: HTTP {}",
-                response.status()
-            )));
+            return Err(non_success(
+                response.status(),
+                "Failed to fetch session costs",
+            ));
         }
         Ok(response.json().await?)
     }
@@ -492,10 +466,10 @@ impl ApiClient {
         let url = format!("{}/api/sessions/cost-distribution", self.base_url);
         let response = self.client.get(&url).query(&params).send().await?;
         if !response.status().is_success() {
-            return Err(Error::ApiError(format!(
-                "Failed to fetch session cost distribution: HTTP {}",
-                response.status()
-            )));
+            return Err(non_success(
+                response.status(),
+                "Failed to fetch session cost distribution",
+            ));
         }
         Ok(response.json().await?)
     }
@@ -507,10 +481,10 @@ impl ApiClient {
         let url = format!("{}/api/genai/conversation_depth", self.base_url);
         let response = self.client.get(&url).query(&params).send().await?;
         if !response.status().is_success() {
-            return Err(Error::ApiError(format!(
-                "Failed to fetch conversation depth: HTTP {}",
-                response.status()
-            )));
+            return Err(non_success(
+                response.status(),
+                "Failed to fetch conversation depth",
+            ));
         }
         Ok(response.json().await?)
     }
@@ -557,10 +531,10 @@ impl ApiClient {
         }
 
         if !response.status().is_success() {
-            return Err(Error::ApiError(format!(
-                "Failed to fetch session diagnose: HTTP {}",
-                response.status()
-            )));
+            return Err(non_success(
+                response.status(),
+                "Failed to fetch session diagnose",
+            ));
         }
 
         Ok(response.json().await?)
@@ -575,10 +549,7 @@ impl ApiClient {
         let url = format!("{}/api/sessions", self.base_url);
         let response = self.client.get(&url).query(&params).send().await?;
         if !response.status().is_success() {
-            return Err(Error::ApiError(format!(
-                "Failed to fetch sessions: HTTP {}",
-                response.status()
-            )));
+            return Err(non_success(response.status(), "Failed to fetch sessions"));
         }
         Ok(response.json().await?)
     }
@@ -590,10 +561,10 @@ impl ApiClient {
         let url = format!("{}/api/genai/tool_approvals", self.base_url);
         let response = self.client.get(&url).query(&params).send().await?;
         if !response.status().is_success() {
-            return Err(Error::ApiError(format!(
-                "Failed to fetch tool approvals: HTTP {}",
-                response.status()
-            )));
+            return Err(non_success(
+                response.status(),
+                "Failed to fetch tool approvals",
+            ));
         }
         Ok(response.json().await?)
     }
