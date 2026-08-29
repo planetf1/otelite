@@ -11,6 +11,8 @@ have to work around), not implementation detail.
 
 ## [Unreleased]
 
+## [0.1.98] - 2026-08-29
+
 ### Added
 
 - `otelite capabilities` (CLI, TUI Usage panel, and the analytics web page)
