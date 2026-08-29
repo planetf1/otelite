@@ -11,6 +11,8 @@ have to work around), not implementation detail.
 
 ## [Unreleased]
 
+## [0.1.99] - 2026-08-29
+
 ### Internal
 
 - Codex correlation edge-case integration matrix (cancellation-style and
