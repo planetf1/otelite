@@ -254,6 +254,34 @@ pub fn initialize_schema(conn: &Connection) -> Result<()> {
           WHERE name = 'opencode.session.cost.total';",
     )?;
 
+    // Covering index for effort × model × type rollup on claude_code.token.usage.
+    // Enables O(index) aggregation for the effort breakdown endpoint (#157)
+    // without touching the table rows. The json_valid-gated expressions are
+    // total so evaluating them at INSERT time never raises.
+    conn.execute_batch(
+        "CREATE INDEX IF NOT EXISTS idx_metrics_claude_code_token_effort ON metrics(
+             CASE WHEN json_valid(attributes) THEN json_extract(attributes, '$.effort') END,
+             CASE WHEN json_valid(attributes) THEN json_extract(attributes, '$.model') END,
+             CASE WHEN json_valid(attributes) THEN json_extract(attributes, '$.type') END,
+             timestamp, value_int)
+          WHERE name = 'claude_code.token.usage';",
+    )?;
+
+    // Expression index for Codex cwd-based project rollup (#160/#164).
+    // Covers run_sampling_request spans only; the cwd value and start_time
+    // let project-rollup and busy/idle breakdown queries seek by project
+    // without scanning the full span table.
+    conn.execute(
+        &format!(
+            "CREATE INDEX IF NOT EXISTS idx_spans_codex_cwd ON spans(\
+              CASE WHEN json_valid(attributes) THEN json_extract(attributes, '$.\"{cwd}\"') END,\
+              start_time) WHERE name = '{span}'",
+            cwd = otelite_core::semconv::CODEX_CWD_KEY,
+            span = otelite_core::semconv::CODEX_LLM_REQUEST_SPAN_NAME,
+        ),
+        [],
+    )?;
+
     // Create purge_history table
     conn.execute_batch(
         "CREATE TABLE IF NOT EXISTS purge_history (

@@ -2437,6 +2437,256 @@ pub async fn get_hour_of_day(
     }))
 }
 
+/// Claude Code effort breakdown by effort level × model × token type (#157).
+#[utoipa::path(
+    get,
+    path = "/api/genai/effort_breakdown",
+    params(TimeRangeQuery),
+    responses(
+        (status = 200, description = "Effort breakdown", body = otelite_core::api::EffortBreakdownResponse),
+        (status = 500, description = "Internal server error", body = ErrorResponse)
+    ),
+    tag = "genai"
+)]
+pub async fn get_effort_breakdown(
+    State(state): State<AppState>,
+    Query(query): Query<TimeRangeQuery>,
+) -> Result<Json<otelite_core::api::EffortBreakdownResponse>, (StatusCode, Json<ErrorResponse>)> {
+    let mut response = state
+        .storage
+        .query_effort_breakdown(query.start_time, query.end_time)
+        .await
+        .map_err(|e| {
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(ErrorResponse::storage_error(format!(
+                    "query effort breakdown: {e}"
+                ))),
+            )
+        })?;
+    response.filters_applied = query.filters().applied(&[]);
+    Ok(Json(response))
+}
+
+/// Cross-agent efficiency stats: tokens/commit, tokens/LOC (#158).
+#[utoipa::path(
+    get,
+    path = "/api/genai/efficiency_stats",
+    params(TimeRangeQuery),
+    responses(
+        (status = 200, description = "Efficiency stats", body = otelite_core::api::EfficiencyStats),
+        (status = 500, description = "Internal server error", body = ErrorResponse)
+    ),
+    tag = "genai"
+)]
+pub async fn get_efficiency_stats(
+    State(state): State<AppState>,
+    Query(query): Query<TimeRangeQuery>,
+) -> Result<Json<otelite_core::api::EfficiencyStats>, (StatusCode, Json<ErrorResponse>)> {
+    let mut response = state
+        .storage
+        .query_efficiency_stats(query.start_time, query.end_time)
+        .await
+        .map_err(|e| {
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(ErrorResponse::storage_error(format!(
+                    "query efficiency stats: {e}"
+                ))),
+            )
+        })?;
+    response.filters_applied = query.filters().applied(&[]);
+    Ok(Json(response))
+}
+
+/// Codex TTFT histogram percentiles per model (#159).
+#[utoipa::path(
+    get,
+    path = "/api/genai/codex_ttft",
+    params(TimeRangeQuery),
+    responses(
+        (status = 200, description = "Codex TTFT percentiles", body = otelite_core::api::CodexTtftResponse),
+        (status = 500, description = "Internal server error", body = ErrorResponse)
+    ),
+    tag = "genai"
+)]
+pub async fn get_codex_ttft(
+    State(state): State<AppState>,
+    Query(query): Query<TimeRangeQuery>,
+) -> Result<Json<otelite_core::api::CodexTtftResponse>, (StatusCode, Json<ErrorResponse>)> {
+    let mut response = state
+        .storage
+        .query_codex_ttft(query.start_time, query.end_time)
+        .await
+        .map_err(|e| {
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(ErrorResponse::storage_error(format!(
+                    "query codex ttft: {e}"
+                ))),
+            )
+        })?;
+    response.filters_applied = query.filters().applied(&[]);
+    Ok(Json(response))
+}
+
+/// Per-project token + commit rollup across all agents (#160).
+#[utoipa::path(
+    get,
+    path = "/api/genai/project_rollup",
+    params(TimeRangeQuery),
+    responses(
+        (status = 200, description = "Per-project rollup", body = otelite_core::api::AgentProjectRollupResponse),
+        (status = 500, description = "Internal server error", body = ErrorResponse)
+    ),
+    tag = "genai"
+)]
+pub async fn get_agent_project_rollup(
+    State(state): State<AppState>,
+    Query(query): Query<TimeRangeQuery>,
+) -> Result<Json<otelite_core::api::AgentProjectRollupResponse>, (StatusCode, Json<ErrorResponse>)>
+{
+    let mut response = state
+        .storage
+        .query_agent_project_rollup(query.start_time, query.end_time)
+        .await
+        .map_err(|e| {
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(ErrorResponse::storage_error(format!(
+                    "query project rollup: {e}"
+                ))),
+            )
+        })?;
+    response.filters_applied = query.filters().applied(&[]);
+    Ok(Json(response))
+}
+
+/// MCP call success/error health per server+tool (#161).
+#[utoipa::path(
+    get,
+    path = "/api/genai/mcp_health",
+    params(TimeRangeQuery),
+    responses(
+        (status = 200, description = "MCP health", body = otelite_core::api::McpHealthResponse),
+        (status = 500, description = "Internal server error", body = ErrorResponse)
+    ),
+    tag = "genai"
+)]
+pub async fn get_mcp_health(
+    State(state): State<AppState>,
+    Query(query): Query<TimeRangeQuery>,
+) -> Result<Json<otelite_core::api::McpHealthResponse>, (StatusCode, Json<ErrorResponse>)> {
+    let mut response = state
+        .storage
+        .query_mcp_health(query.start_time, query.end_time)
+        .await
+        .map_err(|e| {
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(ErrorResponse::storage_error(format!(
+                    "query mcp health: {e}"
+                ))),
+            )
+        })?;
+    response.filters_applied = query.filters().applied(&[]);
+    Ok(Json(response))
+}
+
+/// Codex Guardian review summary by risk level and action (#162).
+#[utoipa::path(
+    get,
+    path = "/api/genai/guardian_stats",
+    params(TimeRangeQuery),
+    responses(
+        (status = 200, description = "Guardian stats", body = otelite_core::api::GuardianStatsResponse),
+        (status = 500, description = "Internal server error", body = ErrorResponse)
+    ),
+    tag = "genai"
+)]
+pub async fn get_guardian_stats(
+    State(state): State<AppState>,
+    Query(query): Query<TimeRangeQuery>,
+) -> Result<Json<otelite_core::api::GuardianStatsResponse>, (StatusCode, Json<ErrorResponse>)> {
+    let mut response = state
+        .storage
+        .query_guardian_stats(query.start_time, query.end_time)
+        .await
+        .map_err(|e| {
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(ErrorResponse::storage_error(format!(
+                    "query guardian stats: {e}"
+                ))),
+            )
+        })?;
+    response.filters_applied = query.filters().applied(&[]);
+    Ok(Json(response))
+}
+
+/// Codex multi-agent spawn/resume topology by role (#163).
+#[utoipa::path(
+    get,
+    path = "/api/genai/multi_agent_stats",
+    params(TimeRangeQuery),
+    responses(
+        (status = 200, description = "Multi-agent topology", body = otelite_core::api::MultiAgentStatsResponse),
+        (status = 500, description = "Internal server error", body = ErrorResponse)
+    ),
+    tag = "genai"
+)]
+pub async fn get_multi_agent_stats(
+    State(state): State<AppState>,
+    Query(query): Query<TimeRangeQuery>,
+) -> Result<Json<otelite_core::api::MultiAgentStatsResponse>, (StatusCode, Json<ErrorResponse>)> {
+    let mut response = state
+        .storage
+        .query_multi_agent_stats(query.start_time, query.end_time)
+        .await
+        .map_err(|e| {
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(ErrorResponse::storage_error(format!(
+                    "query multi_agent stats: {e}"
+                ))),
+            )
+        })?;
+    response.filters_applied = query.filters().applied(&[]);
+    Ok(Json(response))
+}
+
+/// Codex turn busy vs idle breakdown per model and project (#164).
+#[utoipa::path(
+    get,
+    path = "/api/genai/codex_turn_breakdown",
+    params(TimeRangeQuery),
+    responses(
+        (status = 200, description = "Codex turn busy/idle breakdown", body = otelite_core::api::CodexTurnBreakdownResponse),
+        (status = 500, description = "Internal server error", body = ErrorResponse)
+    ),
+    tag = "genai"
+)]
+pub async fn get_codex_turn_breakdown(
+    State(state): State<AppState>,
+    Query(query): Query<TimeRangeQuery>,
+) -> Result<Json<otelite_core::api::CodexTurnBreakdownResponse>, (StatusCode, Json<ErrorResponse>)>
+{
+    let mut response = state
+        .storage
+        .query_codex_turn_breakdown(query.start_time, query.end_time)
+        .await
+        .map_err(|e| {
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(ErrorResponse::storage_error(format!(
+                    "query codex_turn_breakdown: {e}"
+                ))),
+            )
+        })?;
+    response.filters_applied = query.filters().applied(&[]);
+    Ok(Json(response))
+}
+
 genai_filter_impl!(TokenUsageQuery);
 genai_filter_impl!(CostSeriesQuery);
 genai_filter_impl!(FinishReasonsQuery);

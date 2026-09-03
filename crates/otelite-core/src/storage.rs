@@ -585,4 +585,84 @@ pub trait StorageBackend: Send + Sync {
         end_time: Option<i64>,
         filters: &GenAiFilters,
     ) -> Result<Vec<crate::api::HourOfDayBucket>>;
+
+    /// Claude Code token usage broken down by effort level × model × token type. (#157)
+    async fn query_effort_breakdown(
+        &self,
+        start_time: Option<i64>,
+        end_time: Option<i64>,
+    ) -> Result<crate::api::EffortBreakdownResponse> {
+        let _ = (start_time, end_time);
+        Err(StorageError::QueryError("not implemented".to_string()))
+    }
+
+    /// Cross-agent tokens-per-commit / tokens-per-LOC efficiency stats. (#158)
+    async fn query_efficiency_stats(
+        &self,
+        start_time: Option<i64>,
+        end_time: Option<i64>,
+    ) -> Result<crate::api::EfficiencyStats> {
+        let _ = (start_time, end_time);
+        Err(StorageError::QueryError("not implemented".to_string()))
+    }
+
+    /// Codex TTFT histogram percentiles (p50/p90/p99) per model. (#159)
+    async fn query_codex_ttft(
+        &self,
+        start_time: Option<i64>,
+        end_time: Option<i64>,
+    ) -> Result<crate::api::CodexTtftResponse> {
+        let _ = (start_time, end_time);
+        Err(StorageError::QueryError("not implemented".to_string()))
+    }
+
+    /// Per-project token + commit rollup across all agents. (#160)
+    async fn query_agent_project_rollup(
+        &self,
+        start_time: Option<i64>,
+        end_time: Option<i64>,
+    ) -> Result<crate::api::AgentProjectRollupResponse> {
+        let _ = (start_time, end_time);
+        Err(StorageError::QueryError("not implemented".to_string()))
+    }
+
+    /// MCP call success/error rates per server+tool. (#161)
+    async fn query_mcp_health(
+        &self,
+        start_time: Option<i64>,
+        end_time: Option<i64>,
+    ) -> Result<crate::api::McpHealthResponse> {
+        let _ = (start_time, end_time);
+        Err(StorageError::QueryError("not implemented".to_string()))
+    }
+
+    /// Codex Guardian review summary by risk level and action. (#162)
+    async fn query_guardian_stats(
+        &self,
+        start_time: Option<i64>,
+        end_time: Option<i64>,
+    ) -> Result<crate::api::GuardianStatsResponse> {
+        let _ = (start_time, end_time);
+        Err(StorageError::QueryError("not implemented".to_string()))
+    }
+
+    /// Codex multi-agent spawn/resume topology by role. (#163)
+    async fn query_multi_agent_stats(
+        &self,
+        start_time: Option<i64>,
+        end_time: Option<i64>,
+    ) -> Result<crate::api::MultiAgentStatsResponse> {
+        let _ = (start_time, end_time);
+        Err(StorageError::QueryError("not implemented".to_string()))
+    }
+
+    /// Codex turn busy/idle breakdown per model and project. (#164)
+    async fn query_codex_turn_breakdown(
+        &self,
+        start_time: Option<i64>,
+        end_time: Option<i64>,
+    ) -> Result<crate::api::CodexTurnBreakdownResponse> {
+        let _ = (start_time, end_time);
+        Err(StorageError::QueryError("not implemented".to_string()))
+    }
 }

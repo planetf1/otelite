@@ -134,6 +134,20 @@ pub const CODEX_REASONING_EFFORT_KEY: &str = "codex.request.reasoning_effort";
 /// (string-valued, present on a subset of spans).
 pub const CODEX_REASONING_OUTPUT_TOKENS_KEY: &str = "codex.usage.reasoning_output_tokens";
 
+/// Codex attribute carrying the working-directory path for a sampling request.
+/// Present on every `run_sampling_request` span; used for project-level rollup.
+/// Value: absolute path string, e.g. `/Users/jonesn/src/mellea`.
+pub const CODEX_CWD_KEY: &str = "cwd";
+
+/// Codex attribute carrying CPU-busy nanoseconds for a sampling request turn.
+/// The complement of `CODEX_IDLE_NS_KEY`; together they decompose total
+/// turn duration into model-wait time vs. active processing time.
+pub const CODEX_BUSY_NS_KEY: &str = "busy_ns";
+
+/// Codex attribute carrying idle (model-wait) nanoseconds for a sampling
+/// request turn.
+pub const CODEX_IDLE_NS_KEY: &str = "idle_ns";
+
 /// Attribute carrying the agent session identifier (Claude Code `session.id`).
 pub const SESSION_ID_KEY: &str = "session.id";
 
@@ -378,6 +392,22 @@ pub mod metric_names {
     /// Per-session start marker (`value_int = 1`); the distinct
     /// `session.id` values in a window are that window's sessions.
     pub const CLAUDE_CODE_SESSION_COUNT: &str = "claude_code.session.count";
+    /// Per-session commit counter from Claude Code.
+    pub const CLAUDE_CODE_COMMIT_COUNT: &str = "claude_code.commit.count";
+    /// Per-session PR counter from Claude Code.
+    pub const CLAUDE_CODE_PR_COUNT: &str = "claude_code.pull_request.count";
+    /// Cumulative per-session lines-of-code gauge from Claude Code.
+    pub const CLAUDE_CODE_LINES_OF_CODE: &str = "claude_code.lines_of_code.count";
+    /// Cumulative per-session lines-of-code gauge from opencode.
+    pub const OPENCODE_LINES_OF_CODE: &str = "opencode.lines_of_code.total";
+    /// Guardian review event from Codex (value_int = 1 per review).
+    pub const CODEX_GUARDIAN_REVIEW: &str = "codex.guardian.review";
+    /// Multi-agent spawn event from Codex (value_int = 1 per spawn).
+    pub const CODEX_MULTI_AGENT_SPAWN: &str = "codex.multi_agent.spawn";
+    /// Multi-agent resume event from Codex (value_int = 1 per resume).
+    pub const CODEX_MULTI_AGENT_RESUME: &str = "codex.multi_agent.resume";
+    /// Per-event MCP tool call from Codex (value_int = 1 per call).
+    pub const CODEX_MCP_CALL: &str = "codex.mcp.call";
 }
 
 /// Attribute label paths for agent metrics.
@@ -403,6 +433,26 @@ pub mod metric_labels {
     pub const SESSION_SOURCE: &str = "$.session_source";
     /// "true"/"false" on `codex.api_request`.
     pub const SUCCESS: &str = "$.success";
+    /// Effort label on `claude_code.token.usage` (low/medium/high/xhigh).
+    pub const EFFORT: &str = "$.effort";
+    /// query_source label on `claude_code.token.usage` (main/sub-agent).
+    pub const QUERY_SOURCE: &str = "$.query_source";
+    /// Lines-of-code type label (added/removed).
+    pub const LOC_TYPE: &str = "$.type";
+    /// Guardian review decision label (approved/denied).
+    pub const DECISION: &str = "$.decision";
+    /// Guardian risk level label (low/medium/high/none).
+    pub const RISK_LEVEL: &str = "$.risk_level";
+    /// Guardian action label (unified_exec/apply_patch/mcp_tool_call).
+    pub const ACTION: &str = "$.action";
+    /// Multi-agent role label (deep_reviewer, worker, etc.).
+    pub const ROLE: &str = "$.role";
+    /// MCP server name label.
+    pub const MCP_SERVER: &str = "$.server";
+    /// MCP tool name label.
+    pub const MCP_TOOL: &str = "$.tool";
+    /// MCP/API call status label ("ok" / "error").
+    pub const STATUS: &str = "$.status";
 }
 
 /// `type` label values on `opencode.token.usage`.

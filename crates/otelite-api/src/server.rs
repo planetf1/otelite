@@ -73,6 +73,14 @@ use utoipa::OpenApi;
         crate::api::genai::get_context_type_split,
         crate::api::genai::get_tool_errors,
         crate::api::genai::get_hour_of_day,
+        crate::api::genai::get_effort_breakdown,
+        crate::api::genai::get_efficiency_stats,
+        crate::api::genai::get_codex_ttft,
+        crate::api::genai::get_agent_project_rollup,
+        crate::api::genai::get_mcp_health,
+        crate::api::genai::get_guardian_stats,
+        crate::api::genai::get_multi_agent_stats,
+        crate::api::genai::get_codex_turn_breakdown,
         crate::api::sessions::get_session_costs,
         crate::api::sessions::get_session_cost_distribution,
         crate::api::sessions::get_session_context,
@@ -174,6 +182,23 @@ use utoipa::OpenApi;
             otelite_core::api::SessionContextMetric,
             otelite_core::api::SessionContextTimelineEvent,
             crate::api::sessions::SessionContextQuery,
+            otelite_core::api::EffortBreakdownRow,
+            otelite_core::api::EffortBreakdownResponse,
+            otelite_core::api::EfficiencyStats,
+            otelite_core::api::AgentEfficiencyRow,
+            otelite_core::api::CodexTtftByModel,
+            otelite_core::api::CodexTtftResponse,
+            otelite_core::api::ProjectRollupEntry,
+            otelite_core::api::AgentProjectRollupResponse,
+            otelite_core::api::McpHealthEntry,
+            otelite_core::api::McpHealthResponse,
+            otelite_core::api::GuardianRiskLevelEntry,
+            otelite_core::api::GuardianActionEntry,
+            otelite_core::api::GuardianStatsResponse,
+            otelite_core::api::MultiAgentRoleEntry,
+            otelite_core::api::MultiAgentStatsResponse,
+            otelite_core::api::CodexTurnBreakdownRow,
+            otelite_core::api::CodexTurnBreakdownResponse,
         )
     ),
     tags(
@@ -379,6 +404,14 @@ impl DashboardServer {
             .route("/api/genai/context_type_split", get(crate::api::genai::get_context_type_split))
             .route("/api/genai/tool_errors", get(crate::api::genai::get_tool_errors))
             .route("/api/genai/hour_of_day", get(crate::api::genai::get_hour_of_day))
+            .route("/api/genai/effort_breakdown", get(crate::api::genai::get_effort_breakdown))
+            .route("/api/genai/efficiency_stats", get(crate::api::genai::get_efficiency_stats))
+            .route("/api/genai/codex_ttft", get(crate::api::genai::get_codex_ttft))
+            .route("/api/genai/project_rollup", get(crate::api::genai::get_agent_project_rollup))
+            .route("/api/genai/mcp_health", get(crate::api::genai::get_mcp_health))
+            .route("/api/genai/guardian_stats", get(crate::api::genai::get_guardian_stats))
+            .route("/api/genai/multi_agent_stats", get(crate::api::genai::get_multi_agent_stats))
+            .route("/api/genai/codex_turn_breakdown", get(crate::api::genai::get_codex_turn_breakdown))
             // API routes - Sessions
             .route("/api/sessions", get(crate::api::sessions::list_sessions))
             .route("/api/sessions/costs", get(crate::api::sessions::get_session_costs))

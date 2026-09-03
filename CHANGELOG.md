@@ -15,6 +15,37 @@ have to work around), not implementation detail.
 
 ### Added
 
+- **Effort Breakdown** (`GET /api/genai/effort_breakdown`): see how Claude Code token spend
+  splits across effort levels (low / medium / high / xhigh) and models — understand whether
+  you are paying for high-effort reasoning where quick responses would do.
+
+- **Agent Efficiency** (`GET /api/genai/efficiency_stats`): tokens per commit and tokens per
+  net line of code across Claude Code and opencode — a single cross-agent productivity ratio.
+
+- **Codex TTFT** (`GET /api/genai/codex_ttft`): first-token latency percentiles (p50/p90/p95)
+  per Codex model derived from the `codex.turn.ttft.duration_ms` histogram metric.
+
+- **Project Rollup** (`GET /api/genai/project_rollup`): token activity and turn counts grouped
+  by project (Codex `cwd` basename; opencode `project.id`) across all agents in a single view.
+
+- **MCP Health** (`GET /api/genai/mcp_health`): per-server, per-tool call counts and error rates
+  for every MCP integration tracked by Codex — instantly surfaces flaky servers like the
+  rust-agent-memory server's elevated failure rate.
+
+- **Guardian Reviews** (`GET /api/genai/guardian_stats`): Codex Guardian risk-level distribution
+  and action breakdown across the review window — see approval rates and whether high-risk
+  actions are being blocked at the expected rate.
+
+- **Multi-Agent Topology** (`GET /api/genai/multi_agent_stats`): spawn and resume counts by
+  sub-agent role — understand how many orchestration layers your Codex sessions are using.
+
+- **Codex Busy/Idle** (`GET /api/genai/codex_turn_breakdown`): average busy (tool execution) vs
+  idle (model wait) time per turn, broken down by model and project — shows where time goes
+  inside a Codex session.
+
+- All eight insights have dedicated accordion panels on the analytics web page (lazy-loaded
+  on expand) and covering database indexes for fast queries.
+
 - Model performance diagnosis documentation: the LLM observability guide
   now covers the canonical request population, the identity key
   (provider, requested model, emitter fingerprint), the comparison

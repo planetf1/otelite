@@ -2309,6 +2309,214 @@ pub struct HourOfDayBucket {
     pub tool_calls: usize,
 }
 
+// ── New insight response types (issues #157–#164) ────────────────────────────
+
+/// One row in the effort × model cost breakdown (#157).
+/// `token_type` is the raw `type` label from `claude_code.token.usage`
+/// (input / output / cacheRead / cacheCreation).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
+pub struct EffortBreakdownRow {
+    pub effort: String,
+    pub model: String,
+    pub token_type: String,
+    pub tokens: u64,
+    /// Estimated cost; `None` when the model has no known pricing.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cost_usd: Option<f64>,
+}
+
+/// Response for `GET /api/genai/effort_breakdown` (#157).
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
+pub struct EffortBreakdownResponse {
+    pub rows: Vec<EffortBreakdownRow>,
+    /// Filter dimensions the endpoint actually applied.
+    pub filters_applied: Vec<String>,
+}
+
+/// Agent efficiency stats — tokens/loc and tokens/commit (#158).
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
+pub struct EfficiencyStats {
+    /// Total tokens spent in the window across all agents.
+    pub total_tokens: u64,
+    /// Net lines added (added − removed) across opencode + Claude Code.
+    pub net_lines_added: i64,
+    /// Total commits recorded by Claude Code.
+    pub total_commits: u64,
+    /// Total pull requests recorded by Claude Code.
+    pub total_prs: u64,
+    /// Tokens per net line added; `None` when net lines is zero.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tokens_per_loc: Option<f64>,
+    /// Tokens per commit; `None` when commits is zero.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tokens_per_commit: Option<f64>,
+    /// Per-agent breakdown of the same stats.
+    pub by_agent: Vec<AgentEfficiencyRow>,
+    /// Filter dimensions the endpoint actually applied.
+    pub filters_applied: Vec<String>,
+}
+
+/// One agent's row in `EfficiencyStats.by_agent`.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
+pub struct AgentEfficiencyRow {
+    pub agent: String,
+    pub tokens: u64,
+    pub lines_added: i64,
+    pub lines_removed: i64,
+    pub commits: u64,
+}
+
+/// Codex TTFT histogram percentiles (#159), sourced from
+/// `codex.turn.ttft.duration_ms` metric histograms.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
+pub struct CodexTtftByModel {
+    pub model: String,
+    pub count: u64,
+    /// p50 TTFT in milliseconds, derived from histogram buckets.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub p50_ms: Option<f64>,
+    /// p90 TTFT in milliseconds.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub p90_ms: Option<f64>,
+    /// p95 TTFT in milliseconds.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub p95_ms: Option<f64>,
+}
+
+/// Response for `GET /api/genai/codex_ttft` (#159).
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
+pub struct CodexTtftResponse {
+    pub models: Vec<CodexTtftByModel>,
+    pub filters_applied: Vec<String>,
+}
+
+/// One project in the cross-agent project rollup (#160).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
+pub struct ProjectRollupEntry {
+    /// Basename of the `cwd` path for Codex turns; opaque `project.id` for opencode.
+    pub project: String,
+    /// Agents that contributed to this project.
+    pub agents: Vec<String>,
+    pub total_tokens: u64,
+    pub requests: u64,
+    /// Estimated cost; `None` when no model has known pricing.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cost_usd: Option<f64>,
+}
+
+/// Response for `GET /api/genai/project_rollup` (#160).
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
+pub struct AgentProjectRollupResponse {
+    pub projects: Vec<ProjectRollupEntry>,
+    pub filters_applied: Vec<String>,
+}
+
+/// One MCP (server, tool) pair with error stats (#161).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
+pub struct McpHealthEntry {
+    pub server: String,
+    pub tool: String,
+    pub ok_calls: u64,
+    pub error_calls: u64,
+    pub total_calls: u64,
+    /// `error_calls / total_calls`; 0.0 when total is zero.
+    pub error_rate: f64,
+}
+
+/// Response for `GET /api/genai/mcp_health` (#161).
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
+pub struct McpHealthResponse {
+    /// Sorted by error_rate descending, ties by total_calls descending.
+    pub entries: Vec<McpHealthEntry>,
+    pub filters_applied: Vec<String>,
+}
+
+/// Summary stats for one risk level in the Guardian breakdown (#162).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
+pub struct GuardianRiskLevelEntry {
+    pub risk_level: String,
+    pub count: u64,
+    pub approval_rate: f64,
+}
+
+/// Summary stats for one action type in the Guardian breakdown (#162).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
+pub struct GuardianActionEntry {
+    pub action: String,
+    pub count: u64,
+    pub denial_rate: f64,
+}
+
+/// Response for `GET /api/genai/guardian_stats` (#162).
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
+pub struct GuardianStatsResponse {
+    pub total_reviews: u64,
+    pub approval_rate: f64,
+    pub by_risk_level: Vec<GuardianRiskLevelEntry>,
+    pub by_action: Vec<GuardianActionEntry>,
+    pub filters_applied: Vec<String>,
+}
+
+/// One sub-agent role in the multi-agent topology (#163).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
+pub struct MultiAgentRoleEntry {
+    pub role: String,
+    pub spawns: u64,
+    pub resumes: u64,
+    pub share_pct: f64,
+}
+
+/// Response for `GET /api/genai/multi_agent_stats` (#163).
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
+pub struct MultiAgentStatsResponse {
+    pub total_spawns: u64,
+    pub total_resumes: u64,
+    /// Roles sorted by spawns descending.
+    pub roles: Vec<MultiAgentRoleEntry>,
+    pub filters_applied: Vec<String>,
+}
+
+/// Codex busy-vs-idle breakdown per (model, project) (#164).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
+pub struct CodexTurnBreakdownRow {
+    pub model: String,
+    /// Basename of the `cwd` attribute (project directory name).
+    pub project: String,
+    pub turn_count: u64,
+    pub avg_duration_ms: f64,
+    /// Average CPU-busy time per turn in milliseconds (tool execution etc.).
+    pub avg_busy_ms: f64,
+    /// Average idle (model-wait) time per turn in milliseconds.
+    pub avg_idle_ms: f64,
+    /// `avg_busy_ms / avg_duration_ms`; 0.0 when duration is zero.
+    pub busy_ratio: f64,
+}
+
+/// Response for `GET /api/genai/codex_turn_breakdown` (#164).
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
+pub struct CodexTurnBreakdownResponse {
+    /// Sorted by turn_count descending.
+    pub rows: Vec<CodexTurnBreakdownRow>,
+    pub filters_applied: Vec<String>,
+}
+
 #[cfg(test)]
 mod project_rollup_tests {
     use super::*;

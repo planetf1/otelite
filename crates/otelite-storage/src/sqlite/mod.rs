@@ -976,6 +976,96 @@ impl StorageBackend for SqliteBackend {
         .await
     }
 
+    async fn query_effort_breakdown(
+        &self,
+        start_time: Option<i64>,
+        end_time: Option<i64>,
+    ) -> Result<otelite_core::api::EffortBreakdownResponse> {
+        self.read_query(move |conn| {
+            reader::query_effort_breakdown(conn, start_time, end_time).map_err(StorageError::from)
+        })
+        .await
+    }
+
+    async fn query_efficiency_stats(
+        &self,
+        start_time: Option<i64>,
+        end_time: Option<i64>,
+    ) -> Result<otelite_core::api::EfficiencyStats> {
+        self.read_query(move |conn| {
+            reader::query_efficiency_stats(conn, start_time, end_time).map_err(StorageError::from)
+        })
+        .await
+    }
+
+    async fn query_codex_ttft(
+        &self,
+        start_time: Option<i64>,
+        end_time: Option<i64>,
+    ) -> Result<otelite_core::api::CodexTtftResponse> {
+        self.read_query(move |conn| {
+            reader::query_codex_ttft(conn, start_time, end_time).map_err(StorageError::from)
+        })
+        .await
+    }
+
+    async fn query_agent_project_rollup(
+        &self,
+        start_time: Option<i64>,
+        end_time: Option<i64>,
+    ) -> Result<otelite_core::api::AgentProjectRollupResponse> {
+        self.read_query(move |conn| {
+            reader::query_agent_project_rollup(conn, start_time, end_time)
+                .map_err(StorageError::from)
+        })
+        .await
+    }
+
+    async fn query_mcp_health(
+        &self,
+        start_time: Option<i64>,
+        end_time: Option<i64>,
+    ) -> Result<otelite_core::api::McpHealthResponse> {
+        self.read_query(move |conn| {
+            reader::query_mcp_health(conn, start_time, end_time).map_err(StorageError::from)
+        })
+        .await
+    }
+
+    async fn query_guardian_stats(
+        &self,
+        start_time: Option<i64>,
+        end_time: Option<i64>,
+    ) -> Result<otelite_core::api::GuardianStatsResponse> {
+        self.read_query(move |conn| {
+            reader::query_guardian_stats(conn, start_time, end_time).map_err(StorageError::from)
+        })
+        .await
+    }
+
+    async fn query_multi_agent_stats(
+        &self,
+        start_time: Option<i64>,
+        end_time: Option<i64>,
+    ) -> Result<otelite_core::api::MultiAgentStatsResponse> {
+        self.read_query(move |conn| {
+            reader::query_multi_agent_stats(conn, start_time, end_time).map_err(StorageError::from)
+        })
+        .await
+    }
+
+    async fn query_codex_turn_breakdown(
+        &self,
+        start_time: Option<i64>,
+        end_time: Option<i64>,
+    ) -> Result<otelite_core::api::CodexTurnBreakdownResponse> {
+        self.read_query(move |conn| {
+            reader::query_codex_turn_breakdown(conn, start_time, end_time)
+                .map_err(StorageError::from)
+        })
+        .await
+    }
+
     async fn close(&mut self) -> Result<()> {
         if let Some(handle) = self.purge_handle.lock().take() {
             handle.abort();

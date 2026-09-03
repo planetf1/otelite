@@ -105,6 +105,14 @@ class AnalyticsView {
                 ${this._renderSectionShell('behavior', 'Behavior', 'Tool use · retrieval · request volume')}
                 ${this._renderSectionShell('capabilities', 'Telemetry Capabilities', 'Which metrics each emitter actually provides · availability & quality')}
                 ${this._renderSectionShell('model_performance', 'Model Performance', 'Per-model duration · throughput · TTFT · error diagnosis vs preceding & rolling baselines')}
+                ${this._renderSectionShell('effort', 'Effort Breakdown', 'Claude Code token usage by effort level (low/medium/high/xhigh) × model × type')}
+                ${this._renderSectionShell('efficiency', 'Agent Efficiency', 'Tokens per commit · tokens per line of code · cross-agent comparison')}
+                ${this._renderSectionShell('codex_ttft', 'Codex TTFT', 'First-token latency percentiles (p50/p90/p95) per model from histogram metrics')}
+                ${this._renderSectionShell('project_rollup', 'Project Rollup', 'Token activity and turn counts per project across all agents')}
+                ${this._renderSectionShell('mcp_health', 'MCP Health', 'Call success/error rates per MCP server and tool — spot flaky integrations')}
+                ${this._renderSectionShell('guardian', 'Guardian Reviews', 'Codex Guardian risk levels and action breakdown from code-review events')}
+                ${this._renderSectionShell('multi_agent', 'Multi-Agent Topology', 'Sub-agent spawn and resume counts by role')}
+                ${this._renderSectionShell('codex_turns', 'Codex Busy/Idle', 'Average busy vs idle time per turn by model and project')}
             </div>
         `;
 
@@ -660,6 +668,14 @@ class AnalyticsView {
             behavior: () => this._loadBehaviorSection(),
             capabilities: () => this._loadCapabilitiesSection(),
             model_performance: () => this._loadModelPerformanceSection(),
+            effort: () => this._loadEffortSection(),
+            efficiency: () => this._loadEfficiencySection(),
+            codex_ttft: () => this._loadCodexTtftSection(),
+            project_rollup: () => this._loadProjectRollupSection(),
+            mcp_health: () => this._loadMcpHealthSection(),
+            guardian: () => this._loadGuardianSection(),
+            multi_agent: () => this._loadMultiAgentSection(),
+            codex_turns: () => this._loadCodexTurnsSection(),
         };
     }
 
@@ -3059,6 +3075,237 @@ class AnalyticsView {
         if (diffSec < 3600) return `${Math.round(diffSec / 60)} min ago`;
         if (diffSec < 86400) return `${Math.round(diffSec / 3600)} h ago`;
         return `${Math.round(diffSec / 86400)} d ago`;
+    }
+
+    // ── New insight section loaders (#157–#164) ──────────────────────────
+
+    async _loadEffortSection() {
+        this._setSectionLoading('effort');
+        try {
+            const data = await this.api.getEffortBreakdown(this._baseParams());
+            const rows = data.rows || [];
+            if (!rows.length) {
+                this._setSectionBody('effort', '<div class="empty-state-hint">No effort-level data in this window. Try a wider time range.</div>');
+                this.loadedSections.add('effort');
+                return;
+            }
+            // Group by effort level for a summary table
+            const byEffort = {};
+            for (const r of rows) {
+                if (!byEffort[r.effort]) byEffort[r.effort] = 0;
+                if (r.token_type === 'input' || r.token_type === 'output') byEffort[r.effort] += r.tokens;
+            }
+            const effortOrder = ['low', 'medium', 'high', 'xhigh', '(none)'];
+            const sortedEfforts = Object.keys(byEffort).sort((a, b) =>
+                (effortOrder.indexOf(a) + 1 || 99) - (effortOrder.indexOf(b) + 1 || 99));
+            const total = Object.values(byEffort).reduce((s, v) => s + v, 0);
+            let html = '<div class="analytics-table-wrap"><table class="analytics-table"><thead><tr><th>Effort</th><th>Tokens (input+output)</th><th>Share</th></tr></thead><tbody>';
+            for (const e of sortedEfforts) {
+                const pct = total > 0 ? (byEffort[e] / total * 100).toFixed(1) : '0.0';
+                html += `<tr><td>${this._esc(e)}</td><td>${Number(byEffort[e]).toLocaleString()}</td><td>${pct}%</td></tr>`;
+            }
+            html += '</tbody></table></div>';
+            // Also add per-model table
+            const modelTotals = {};
+            for (const r of rows) {
+                const key = r.model;
+                if (!modelTotals[key]) modelTotals[key] = 0;
+                if (r.token_type === 'input' || r.token_type === 'output') modelTotals[key] += r.tokens;
+            }
+            const topModels = Object.entries(modelTotals).sort((a, b) => b[1] - a[1]).slice(0, 10);
+            html += '<h4 style="margin-top:1rem">By model</h4><div class="analytics-table-wrap"><table class="analytics-table"><thead><tr><th>Model</th><th>Tokens</th></tr></thead><tbody>';
+            for (const [m, t] of topModels) html += `<tr><td>${this._esc(m)}</td><td>${Number(t).toLocaleString()}</td></tr>`;
+            html += '</tbody></table></div>';
+            this._setSectionBody('effort', html);
+            this.loadedSections.add('effort');
+        } catch (err) {
+            this._setSectionError('effort', err);
+        }
+    }
+
+    async _loadEfficiencySection() {
+        this._setSectionLoading('efficiency');
+        try {
+            const data = await this.api.getEfficiencyStats(this._baseParams());
+            const fmt = n => Number(n).toLocaleString();
+            const fmtF = n => n != null ? n.toFixed(1) : '—';
+            let html = `
+                <div class="usage-summary-cards">
+                    <div class="usage-gauge-card"><div class="usage-card-label">Total tokens</div><div class="usage-card-value">${fmt(data.total_tokens)}</div></div>
+                    <div class="usage-gauge-card"><div class="usage-card-label">Commits</div><div class="usage-card-value">${fmt(data.total_commits)}</div></div>
+                    <div class="usage-gauge-card"><div class="usage-card-label">Net lines added</div><div class="usage-card-value">${fmt(data.net_lines_added)}</div></div>
+                    <div class="usage-gauge-card"><div class="usage-card-label">Tokens / commit</div><div class="usage-card-value">${fmtF(data.tokens_per_commit)}</div></div>
+                    <div class="usage-gauge-card"><div class="usage-card-label">Tokens / LOC</div><div class="usage-card-value">${fmtF(data.tokens_per_loc)}</div></div>
+                </div>`;
+            if (data.by_agent && data.by_agent.length) {
+                html += '<div class="analytics-table-wrap"><table class="analytics-table"><thead><tr><th>Agent</th><th>Tokens</th><th>Commits</th><th>Lines added</th><th>Lines removed</th></tr></thead><tbody>';
+                for (const a of data.by_agent) {
+                    html += `<tr><td>${this._esc(a.agent)}</td><td>${fmt(a.tokens)}</td><td>${fmt(a.commits)}</td><td>${fmt(a.lines_added)}</td><td>${fmt(a.lines_removed)}</td></tr>`;
+                }
+                html += '</tbody></table></div>';
+            }
+            this._setSectionBody('efficiency', html);
+            this.loadedSections.add('efficiency');
+        } catch (err) {
+            this._setSectionError('efficiency', err);
+        }
+    }
+
+    async _loadCodexTtftSection() {
+        this._setSectionLoading('codex_ttft');
+        try {
+            const data = await this.api.getCodexTtft(this._baseParams());
+            const models = data.models || [];
+            if (!models.length) {
+                this._setSectionBody('codex_ttft', '<div class="empty-state-hint">No Codex TTFT data in this window.</div>');
+                this.loadedSections.add('codex_ttft');
+                return;
+            }
+            const fmtMs = v => v != null ? `${v.toFixed(0)} ms` : '—';
+            let html = '<div class="analytics-table-wrap"><table class="analytics-table"><thead><tr><th>Model</th><th>Samples</th><th>p50</th><th>p90</th><th>p95</th></tr></thead><tbody>';
+            for (const m of models) {
+                html += `<tr><td>${this._esc(m.model)}</td><td>${Number(m.count).toLocaleString()}</td><td>${fmtMs(m.p50_ms)}</td><td>${fmtMs(m.p90_ms)}</td><td>${fmtMs(m.p95_ms)}</td></tr>`;
+            }
+            html += '</tbody></table></div>';
+            this._setSectionBody('codex_ttft', html);
+            this.loadedSections.add('codex_ttft');
+        } catch (err) {
+            this._setSectionError('codex_ttft', err);
+        }
+    }
+
+    async _loadProjectRollupSection() {
+        this._setSectionLoading('project_rollup');
+        try {
+            const data = await this.api.getProjectRollup(this._baseParams());
+            const projects = data.projects || [];
+            if (!projects.length) {
+                this._setSectionBody('project_rollup', '<div class="empty-state-hint">No project data in this window.</div>');
+                this.loadedSections.add('project_rollup');
+                return;
+            }
+            let html = '<div class="analytics-table-wrap"><table class="analytics-table"><thead><tr><th>Project</th><th>Agents</th><th>Tokens / turns</th></tr></thead><tbody>';
+            for (const p of projects.slice(0, 30)) {
+                const agents = (p.agents || []).join(', ');
+                html += `<tr><td>${this._esc(p.project)}</td><td>${this._esc(agents)}</td><td>${Number(p.total_tokens).toLocaleString()}</td></tr>`;
+            }
+            html += '</tbody></table></div>';
+            if (projects.length > 30) html += `<p class="empty-state-hint">Showing top 30 of ${projects.length} projects.</p>`;
+            this._setSectionBody('project_rollup', html);
+            this.loadedSections.add('project_rollup');
+        } catch (err) {
+            this._setSectionError('project_rollup', err);
+        }
+    }
+
+    async _loadMcpHealthSection() {
+        this._setSectionLoading('mcp_health');
+        try {
+            const data = await this.api.getMcpHealth(this._baseParams());
+            const entries = data.entries || [];
+            if (!entries.length) {
+                this._setSectionBody('mcp_health', '<div class="empty-state-hint">No MCP call data in this window.</div>');
+                this.loadedSections.add('mcp_health');
+                return;
+            }
+            let html = '<div class="analytics-table-wrap"><table class="analytics-table"><thead><tr><th>Server</th><th>Tool</th><th>OK</th><th>Errors</th><th>Error rate</th></tr></thead><tbody>';
+            for (const e of entries) {
+                const pct = (e.error_rate * 100).toFixed(1);
+                const cls = e.error_rate > 0.1 ? ' style="color:var(--error-color,#c0392b)"' : '';
+                html += `<tr><td>${this._esc(e.server)}</td><td>${this._esc(e.tool)}</td><td>${Number(e.ok_calls).toLocaleString()}</td><td>${Number(e.error_calls).toLocaleString()}</td><td${cls}>${pct}%</td></tr>`;
+            }
+            html += '</tbody></table></div>';
+            this._setSectionBody('mcp_health', html);
+            this.loadedSections.add('mcp_health');
+        } catch (err) {
+            this._setSectionError('mcp_health', err);
+        }
+    }
+
+    async _loadGuardianSection() {
+        this._setSectionLoading('guardian');
+        try {
+            const data = await this.api.getGuardianStats(this._baseParams());
+            if (!data.total_reviews) {
+                this._setSectionBody('guardian', '<div class="empty-state-hint">No Guardian review data in this window.</div>');
+                this.loadedSections.add('guardian');
+                return;
+            }
+            const approvalPct = (data.approval_rate * 100).toFixed(1);
+            let html = `
+                <div class="usage-summary-cards">
+                    <div class="usage-gauge-card"><div class="usage-card-label">Total reviews</div><div class="usage-card-value">${Number(data.total_reviews).toLocaleString()}</div></div>
+                    <div class="usage-gauge-card"><div class="usage-card-label">Approval rate</div><div class="usage-card-value">${approvalPct}%</div></div>
+                </div>`;
+            if (data.by_risk_level && data.by_risk_level.length) {
+                html += '<h4 style="margin-top:1rem">By risk level</h4><div class="analytics-table-wrap"><table class="analytics-table"><thead><tr><th>Risk</th><th>Count</th></tr></thead><tbody>';
+                for (const r of data.by_risk_level) html += `<tr><td>${this._esc(r.risk_level)}</td><td>${Number(r.count).toLocaleString()}</td></tr>`;
+                html += '</tbody></table></div>';
+            }
+            if (data.by_action && data.by_action.length) {
+                html += '<h4 style="margin-top:1rem">By action</h4><div class="analytics-table-wrap"><table class="analytics-table"><thead><tr><th>Action</th><th>Count</th></tr></thead><tbody>';
+                for (const a of data.by_action) html += `<tr><td>${this._esc(a.action)}</td><td>${Number(a.count).toLocaleString()}</td></tr>`;
+                html += '</tbody></table></div>';
+            }
+            this._setSectionBody('guardian', html);
+            this.loadedSections.add('guardian');
+        } catch (err) {
+            this._setSectionError('guardian', err);
+        }
+    }
+
+    async _loadMultiAgentSection() {
+        this._setSectionLoading('multi_agent');
+        try {
+            const data = await this.api.getMultiAgentStats(this._baseParams());
+            const roles = data.roles || [];
+            if (!roles.length && !data.total_spawns) {
+                this._setSectionBody('multi_agent', '<div class="empty-state-hint">No multi-agent spawn data in this window.</div>');
+                this.loadedSections.add('multi_agent');
+                return;
+            }
+            let html = `
+                <div class="usage-summary-cards">
+                    <div class="usage-gauge-card"><div class="usage-card-label">Total spawns</div><div class="usage-card-value">${Number(data.total_spawns).toLocaleString()}</div></div>
+                    <div class="usage-gauge-card"><div class="usage-card-label">Total resumes</div><div class="usage-card-value">${Number(data.total_resumes).toLocaleString()}</div></div>
+                </div>`;
+            if (roles.length) {
+                html += '<div class="analytics-table-wrap"><table class="analytics-table"><thead><tr><th>Role</th><th>Spawns</th><th>Resumes</th><th>Share</th></tr></thead><tbody>';
+                for (const r of roles) {
+                    html += `<tr><td>${this._esc(r.role)}</td><td>${Number(r.spawns).toLocaleString()}</td><td>${Number(r.resumes).toLocaleString()}</td><td>${r.share_pct.toFixed(1)}%</td></tr>`;
+                }
+                html += '</tbody></table></div>';
+            }
+            this._setSectionBody('multi_agent', html);
+            this.loadedSections.add('multi_agent');
+        } catch (err) {
+            this._setSectionError('multi_agent', err);
+        }
+    }
+
+    async _loadCodexTurnsSection() {
+        this._setSectionLoading('codex_turns');
+        try {
+            const data = await this.api.getCodexTurnBreakdown(this._baseParams());
+            const rows = data.rows || [];
+            if (!rows.length) {
+                this._setSectionBody('codex_turns', '<div class="empty-state-hint">No Codex turn data in this window.</div>');
+                this.loadedSections.add('codex_turns');
+                return;
+            }
+            const fmtMs = v => v != null ? `${v.toFixed(0)} ms` : '—';
+            const fmtPct = v => v != null ? `${(v * 100).toFixed(1)}%` : '—';
+            let html = '<div class="analytics-table-wrap"><table class="analytics-table"><thead><tr><th>Model</th><th>Project</th><th>Turns</th><th>Avg duration</th><th>Avg busy</th><th>Avg idle</th><th>Busy ratio</th></tr></thead><tbody>';
+            for (const r of rows.slice(0, 30)) {
+                html += `<tr><td>${this._esc(r.model)}</td><td>${this._esc(r.project)}</td><td>${Number(r.turn_count).toLocaleString()}</td><td>${fmtMs(r.avg_duration_ms)}</td><td>${fmtMs(r.avg_busy_ms)}</td><td>${fmtMs(r.avg_idle_ms)}</td><td>${fmtPct(r.busy_ratio)}</td></tr>`;
+            }
+            html += '</tbody></table></div>';
+            if (rows.length > 30) html += `<p class="empty-state-hint">Showing top 30 of ${rows.length} rows.</p>`;
+            this._setSectionBody('codex_turns', html);
+            this.loadedSections.add('codex_turns');
+        } catch (err) {
+            this._setSectionError('codex_turns', err);
+        }
     }
 }
 

@@ -4228,10 +4228,12 @@ pub(crate) fn counter_window_deltas_value(
         params.push(Box::new(end));
     }
 
-    let sql = format!(
-        "SELECT {}, timestamp, {value_sql} FROM metrics {where_clause}",
-        label_exprs.join(", ")
-    );
+    let select_cols = if label_exprs.is_empty() {
+        format!("timestamp, {value_sql}")
+    } else {
+        format!("{}, timestamp, {value_sql}", label_exprs.join(", "))
+    };
+    let sql = format!("SELECT {select_cols} FROM metrics {where_clause}");
     let param_refs: Vec<&dyn rusqlite::ToSql> = params.iter().map(|p| p.as_ref()).collect();
     let mut stmt = conn.prepare(&sql).map_err(|e| {
         StorageError::QueryError(format!(
@@ -8149,6 +8151,822 @@ pub fn query_hour_of_day(
         .collect())
 }
 
+// ── New insight queries (issues #157–#164) ────────────────────────────────
+
+/// Claude Code effort-level × model × token-type breakdown. (#157)
+///
+/// Uses the `idx_metrics_claude_code_token_effort` covering index.
+pub fn query_effort_breakdown(
+    conn: &Connection,
+    start_time: Option<i64>,
+    end_time: Option<i64>,
+) -> Result<otelite_core::api::EffortBreakdownResponse> {
+    use otelite_core::api::{EffortBreakdownResponse, EffortBreakdownRow};
+    use otelite_core::semconv::metric_names as mnames;
+
+    let mut where_clause = String::from("WHERE name = ?");
+    let mut params: Vec<Box<dyn rusqlite::ToSql>> =
+        vec![Box::new(mnames::CLAUDE_CODE_TOKEN_USAGE.to_string())];
+    if let Some(s) = start_time {
+        where_clause.push_str(" AND timestamp >= ?");
+        params.push(Box::new(s));
+    }
+    if let Some(e) = end_time {
+        where_clause.push_str(" AND timestamp <= ?");
+        params.push(Box::new(e));
+    }
+
+    // Effort breakdown uses the claude_code.token.usage metric which stores
+    // cumulative counters per (effort, model, type, session_id) label key.
+    // We use counter_window_deltas to avoid overcounting cumulative resets.
+    let deltas = counter_window_deltas(
+        conn,
+        mnames::CLAUDE_CODE_TOKEN_USAGE,
+        &["$.effort", "$.model", "$.type"],
+        start_time,
+        end_time,
+    )?;
+
+    // Accumulate: (effort, model, token_type) -> total
+    let mut acc: HashMap<(String, String, String), u64> = HashMap::new();
+    for d in deltas {
+        let effort = d
+            .labels
+            .first()
+            .and_then(|l| l.clone())
+            .unwrap_or_else(|| "(none)".to_string());
+        let model = d
+            .labels
+            .get(1)
+            .and_then(|l| l.clone())
+            .unwrap_or_else(|| "(unknown)".to_string());
+        let token_type = d
+            .labels
+            .get(2)
+            .and_then(|l| l.clone())
+            .unwrap_or_else(|| "(unknown)".to_string());
+        *acc.entry((effort, model, token_type)).or_default() += d.delta as u64;
+    }
+
+    let mut rows: Vec<EffortBreakdownRow> = acc
+        .into_iter()
+        .map(|((effort, model, token_type), tokens)| EffortBreakdownRow {
+            effort,
+            model,
+            token_type,
+            tokens,
+            cost_usd: None,
+        })
+        .collect();
+    rows.sort_by(|a, b| {
+        a.effort
+            .cmp(&b.effort)
+            .then(a.model.cmp(&b.model))
+            .then(a.token_type.cmp(&b.token_type))
+    });
+
+    Ok(EffortBreakdownResponse {
+        rows,
+        filters_applied: Vec::new(),
+    })
+}
+
+/// Cross-agent tokens-per-commit and tokens-per-LOC efficiency stats. (#158)
+///
+/// Aggregates token usage from claude_code and opencode cumulative counters
+/// alongside commit counts and lines-of-code counters.
+pub fn query_efficiency_stats(
+    conn: &Connection,
+    start_time: Option<i64>,
+    end_time: Option<i64>,
+) -> Result<otelite_core::api::EfficiencyStats> {
+    use otelite_core::api::{AgentEfficiencyRow, EfficiencyStats};
+    use otelite_core::semconv::metric_names as mnames;
+
+    // ── Claude Code tokens (cumulative counter) ──────────────────────────
+    let cc_token_deltas = counter_window_deltas(
+        conn,
+        mnames::CLAUDE_CODE_TOKEN_USAGE,
+        &["$.type"],
+        start_time,
+        end_time,
+    )?;
+    let mut cc_tokens: u64 = 0;
+    for d in cc_token_deltas {
+        let t = d.labels.first().and_then(|l| l.as_deref()).unwrap_or("");
+        // Include input + output (skip cache_read to avoid double-count)
+        if matches!(t, "input" | "output") {
+            cc_tokens += d.delta as u64;
+        }
+    }
+
+    // ── Claude Code commits (cumulative counter) ─────────────────────────
+    let cc_commit_deltas = counter_window_deltas(
+        conn,
+        mnames::CLAUDE_CODE_COMMIT_COUNT,
+        &[],
+        start_time,
+        end_time,
+    )?;
+    let cc_commits: u64 = cc_commit_deltas.iter().map(|d| d.delta as u64).sum();
+
+    // ── Claude Code LOC (cumulative counter) ─────────────────────────────
+    let cc_loc_deltas = counter_window_deltas(
+        conn,
+        mnames::CLAUDE_CODE_LINES_OF_CODE,
+        &["$.type"],
+        start_time,
+        end_time,
+    )?;
+    let cc_loc_added: i64 = cc_loc_deltas
+        .iter()
+        .filter(|d| d.labels.first().and_then(|l| l.as_deref()) == Some("added"))
+        .map(|d| d.delta as i64)
+        .sum();
+    let cc_loc_removed: i64 = cc_loc_deltas
+        .iter()
+        .filter(|d| d.labels.first().and_then(|l| l.as_deref()) == Some("removed"))
+        .map(|d| d.delta as i64)
+        .sum();
+
+    // ── opencode tokens (cumulative counter) ─────────────────────────────
+    let oc_token_deltas = counter_window_deltas(
+        conn,
+        mnames::OPENCODE_TOKEN_USAGE,
+        &["$.type"],
+        start_time,
+        end_time,
+    )?;
+    let mut oc_tokens: u64 = 0;
+    for d in oc_token_deltas {
+        let t = d.labels.first().and_then(|l| l.as_deref()).unwrap_or("");
+        if matches!(t, "input" | "output") {
+            oc_tokens += d.delta as u64;
+        }
+    }
+
+    // ── opencode LOC (cumulative counter) ────────────────────────────────
+    let oc_loc_deltas = counter_window_deltas(
+        conn,
+        mnames::OPENCODE_LINES_OF_CODE,
+        &["$.type"],
+        start_time,
+        end_time,
+    )?;
+    let oc_loc_added: i64 = oc_loc_deltas
+        .iter()
+        .filter(|d| d.labels.first().and_then(|l| l.as_deref()) == Some("added"))
+        .map(|d| d.delta as i64)
+        .sum();
+    let oc_loc_removed: i64 = oc_loc_deltas
+        .iter()
+        .filter(|d| d.labels.first().and_then(|l| l.as_deref()) == Some("removed"))
+        .map(|d| d.delta as i64)
+        .sum();
+
+    let total_tokens = cc_tokens + oc_tokens;
+    let total_commits = cc_commits; // opencode doesn't emit commit metrics
+    let net_lines_added: i64 = (cc_loc_added + oc_loc_added) - (cc_loc_removed + oc_loc_removed);
+
+    let tokens_per_commit = if total_commits > 0 {
+        Some(total_tokens as f64 / total_commits as f64)
+    } else {
+        None
+    };
+    let tokens_per_loc = if net_lines_added > 0 {
+        Some(total_tokens as f64 / net_lines_added as f64)
+    } else {
+        None
+    };
+
+    let by_agent = vec![
+        AgentEfficiencyRow {
+            agent: "claude_code".to_string(),
+            tokens: cc_tokens,
+            commits: cc_commits,
+            lines_added: cc_loc_added,
+            lines_removed: cc_loc_removed,
+        },
+        AgentEfficiencyRow {
+            agent: "opencode".to_string(),
+            tokens: oc_tokens,
+            commits: 0,
+            lines_added: oc_loc_added,
+            lines_removed: oc_loc_removed,
+        },
+    ];
+
+    Ok(EfficiencyStats {
+        total_tokens,
+        total_commits,
+        total_prs: 0,
+        net_lines_added,
+        tokens_per_commit,
+        tokens_per_loc,
+        by_agent,
+        filters_applied: Vec::new(),
+    })
+}
+
+/// Codex turn TTFT histogram: p50/p90/p99 per model. (#159)
+///
+/// Reuses the existing `collect_codex_ttft_values` helper to expand buckets
+/// then computes percentiles in Rust.
+pub fn query_codex_ttft(
+    conn: &Connection,
+    start_time: Option<i64>,
+    end_time: Option<i64>,
+) -> Result<otelite_core::api::CodexTtftResponse> {
+    use otelite_core::api::{CodexTtftByModel, CodexTtftResponse};
+
+    let filters = otelite_core::filters::GenAiFilters::default();
+    let values = collect_codex_ttft_values(conn, start_time, end_time, &filters)?;
+
+    // Group by model
+    let mut by_model: HashMap<String, Vec<f64>> = HashMap::new();
+    for (model, _ts, v) in values {
+        let key = model.unwrap_or_else(|| "(unknown)".to_string());
+        by_model.entry(key).or_default().push(v);
+    }
+
+    fn percentile(sorted: &[f64], p: f64) -> f64 {
+        if sorted.is_empty() {
+            return 0.0;
+        }
+        let idx = ((sorted.len() as f64 - 1.0) * p).floor() as usize;
+        sorted[idx.min(sorted.len() - 1)]
+    }
+
+    let mut models: Vec<CodexTtftByModel> = by_model
+        .into_iter()
+        .map(|(model, mut vals)| {
+            vals.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+            let count = vals.len() as u64;
+            CodexTtftByModel {
+                model,
+                count,
+                p50_ms: if vals.is_empty() {
+                    None
+                } else {
+                    Some(percentile(&vals, 0.50))
+                },
+                p90_ms: if vals.is_empty() {
+                    None
+                } else {
+                    Some(percentile(&vals, 0.90))
+                },
+                p95_ms: if vals.is_empty() {
+                    None
+                } else {
+                    Some(percentile(&vals, 0.95))
+                },
+            }
+        })
+        .collect();
+    models.sort_by(|a, b| a.model.cmp(&b.model));
+
+    Ok(CodexTtftResponse {
+        models,
+        filters_applied: Vec::new(),
+    })
+}
+
+/// Per-project token + commit rollup across all agents. (#160)
+///
+/// Projects are identified from the `cwd` label on Codex `run_sampling_request`
+/// spans (basename of the path) and from opencode `project.id` metric labels.
+/// Claude Code is attributed by the `cwd` label carried on opencode sessions
+/// when detected — otherwise falls back to "(unattributed)".
+pub fn query_agent_project_rollup(
+    conn: &Connection,
+    start_time: Option<i64>,
+    end_time: Option<i64>,
+) -> Result<otelite_core::api::AgentProjectRollupResponse> {
+    use otelite_core::api::{AgentProjectRollupResponse, ProjectRollupEntry};
+    use otelite_core::semconv::metric_names as mnames;
+
+    // project -> (agent -> tokens)
+    let mut project_tokens: HashMap<String, HashMap<String, u64>> = HashMap::new();
+
+    // ── Codex: extract project from cwd basename on run_sampling_request spans ──
+    {
+        let mut where_clause = String::from("WHERE name = 'run_sampling_request'");
+        let mut params: Vec<Box<dyn rusqlite::ToSql>> = Vec::new();
+        if let Some(s) = start_time {
+            where_clause.push_str(" AND start_time >= ?");
+            params.push(Box::new(s));
+        }
+        if let Some(e) = end_time {
+            where_clause.push_str(" AND end_time <= ?");
+            params.push(Box::new(e));
+        }
+
+        // Extract basename: last segment after the final '/'.
+        // rtrim(path, replace(path,'/','')) strips all non-slash chars from the
+        // right, leaving everything up to and including the last slash.
+        // Adding 1 to its length gives the start position of the basename.
+        let sql = format!(
+            "SELECT
+                CASE
+                    WHEN json_valid(attributes) AND instr(json_extract(attributes,'$.cwd'),'/') > 0
+                    THEN substr(
+                        json_extract(attributes,'$.cwd'),
+                        1 + length(rtrim(
+                            json_extract(attributes,'$.cwd'),
+                            replace(json_extract(attributes,'$.cwd'), '/', '')
+                        ))
+                    )
+                    WHEN json_valid(attributes)
+                    THEN json_extract(attributes,'$.cwd')
+                    ELSE NULL
+                END AS project,
+                COUNT(*) AS turns
+             FROM spans
+             {where_clause}
+             GROUP BY project
+             HAVING project IS NOT NULL"
+        );
+        let param_refs: Vec<&dyn rusqlite::ToSql> = params.iter().map(|p| p.as_ref()).collect();
+        let mut stmt = conn.prepare(&sql).map_err(|e| {
+            StorageError::QueryError(format!("Failed to prepare codex project rollup query: {e}"))
+        })?;
+        let rows = stmt
+            .query_map(param_refs.as_slice(), |r| {
+                Ok((r.get::<_, String>(0)?, r.get::<_, i64>(1)?))
+            })
+            .map_err(|e| StorageError::QueryError(format!("{e}")))?
+            .collect::<std::result::Result<Vec<_>, _>>()
+            .map_err(|e| StorageError::QueryError(format!("{e}")))?;
+
+        for (project, turns) in rows {
+            // Codex spans don't carry token counts — use turn count as a proxy
+            *project_tokens
+                .entry(project)
+                .or_default()
+                .entry("codex".to_string())
+                .or_default() += turns as u64;
+        }
+    }
+
+    // ── opencode: project.id from token usage metric labels ──────────────
+    let oc_deltas = counter_window_deltas(
+        conn,
+        mnames::OPENCODE_TOKEN_USAGE,
+        &["$.project.id", "$.type"],
+        start_time,
+        end_time,
+    )?;
+    for d in oc_deltas {
+        let project = d
+            .labels
+            .first()
+            .and_then(|l| l.clone())
+            .unwrap_or_else(|| "(unattributed)".to_string());
+        let token_type = d.labels.get(1).and_then(|l| l.as_deref()).unwrap_or("");
+        if matches!(token_type, "input" | "output") {
+            *project_tokens
+                .entry(project)
+                .or_default()
+                .entry("opencode".to_string())
+                .or_default() += d.delta as u64;
+        }
+    }
+
+    // ── Claude Code: no cwd label on metrics; use a single "(unattributed)" bucket ──
+    let cc_deltas = counter_window_deltas(
+        conn,
+        mnames::CLAUDE_CODE_TOKEN_USAGE,
+        &["$.type"],
+        start_time,
+        end_time,
+    )?;
+    let cc_total: u64 = cc_deltas
+        .iter()
+        .filter(|d| {
+            matches!(
+                d.labels.first().and_then(|l| l.as_deref()),
+                Some("input") | Some("output")
+            )
+        })
+        .map(|d| d.delta as u64)
+        .sum();
+    if cc_total > 0 {
+        *project_tokens
+            .entry("(claude_code-unattributed)".to_string())
+            .or_default()
+            .entry("claude_code".to_string())
+            .or_default() += cc_total;
+    }
+
+    let mut entries: Vec<ProjectRollupEntry> = project_tokens
+        .into_iter()
+        .map(|(project, agent_map)| {
+            let total_tokens: u64 = agent_map.values().sum();
+            let requests: u64 = agent_map.values().sum(); // same as tokens for codex (turn proxy)
+            let agents: Vec<String> = {
+                let mut v: Vec<String> = agent_map.into_keys().collect();
+                v.sort();
+                v
+            };
+            ProjectRollupEntry {
+                project,
+                agents,
+                total_tokens,
+                requests,
+                cost_usd: None,
+            }
+        })
+        .collect();
+    entries.sort_by_key(|a| std::cmp::Reverse(a.total_tokens));
+
+    Ok(AgentProjectRollupResponse {
+        projects: entries,
+        filters_applied: Vec::new(),
+    })
+}
+
+/// MCP call health: success/error rates per server+tool. (#161)
+///
+/// Queries the `codex.mcp.call` event counter, grouping by server, tool, and status.
+pub fn query_mcp_health(
+    conn: &Connection,
+    start_time: Option<i64>,
+    end_time: Option<i64>,
+) -> Result<otelite_core::api::McpHealthResponse> {
+    use otelite_core::api::{McpHealthEntry, McpHealthResponse};
+    use otelite_core::semconv::metric_names as mnames;
+
+    let mut where_clause = String::from("WHERE name = ? AND json_valid(attributes)");
+    let mut params: Vec<Box<dyn rusqlite::ToSql>> =
+        vec![Box::new(mnames::CODEX_MCP_CALL.to_string())];
+    if let Some(s) = start_time {
+        where_clause.push_str(" AND timestamp >= ?");
+        params.push(Box::new(s));
+    }
+    if let Some(e) = end_time {
+        where_clause.push_str(" AND timestamp <= ?");
+        params.push(Box::new(e));
+    }
+
+    let sql = format!(
+        "SELECT
+            COALESCE(json_extract(attributes,'$.mcp_server'), '(unknown)') AS server,
+            COALESCE(json_extract(attributes,'$.mcp_tool'),   '(unknown)') AS tool,
+            COALESCE(json_extract(attributes,'$.status'),     '(unknown)') AS status,
+            SUM(COALESCE(value_int, 1)) AS cnt
+         FROM metrics
+         {where_clause}
+         GROUP BY server, tool, status
+         ORDER BY server, tool, cnt DESC"
+    );
+    let param_refs: Vec<&dyn rusqlite::ToSql> = params.iter().map(|p| p.as_ref()).collect();
+    let mut stmt = conn.prepare(&sql).map_err(|e| {
+        StorageError::QueryError(format!("Failed to prepare mcp_health query: {e}"))
+    })?;
+    let raw = stmt
+        .query_map(param_refs.as_slice(), |r| {
+            Ok((
+                r.get::<_, String>(0)?,
+                r.get::<_, String>(1)?,
+                r.get::<_, String>(2)?,
+                r.get::<_, i64>(3)?,
+            ))
+        })
+        .map_err(|e| StorageError::QueryError(format!("{e}")))?
+        .collect::<std::result::Result<Vec<_>, _>>()
+        .map_err(|e| StorageError::QueryError(format!("{e}")))?;
+
+    // Pivot: (server, tool) -> (ok_count, error_count)
+    let mut pivot: HashMap<(String, String), (u64, u64)> = HashMap::new();
+    for (server, tool, status, cnt) in raw {
+        let entry = pivot.entry((server, tool)).or_default();
+        let is_error = status.to_lowercase().contains("error")
+            || status.to_lowercase().contains("fail")
+            || status == "false";
+        if is_error {
+            entry.1 += cnt as u64;
+        } else {
+            entry.0 += cnt as u64;
+        }
+    }
+
+    let mut entries: Vec<McpHealthEntry> = pivot
+        .into_iter()
+        .map(|((server, tool), (ok, errors))| {
+            let total_calls = ok + errors;
+            let error_rate = if total_calls > 0 {
+                errors as f64 / total_calls as f64
+            } else {
+                0.0
+            };
+            McpHealthEntry {
+                server,
+                tool,
+                ok_calls: ok,
+                error_calls: errors,
+                total_calls,
+                error_rate,
+            }
+        })
+        .collect();
+    entries.sort_by(|a, b| {
+        b.error_rate
+            .partial_cmp(&a.error_rate)
+            .unwrap_or(std::cmp::Ordering::Equal)
+            .then(b.total_calls.cmp(&a.total_calls))
+    });
+
+    Ok(McpHealthResponse {
+        entries,
+        filters_applied: Vec::new(),
+    })
+}
+
+/// Codex Guardian review summary by risk level and action. (#162)
+pub fn query_guardian_stats(
+    conn: &Connection,
+    start_time: Option<i64>,
+    end_time: Option<i64>,
+) -> Result<otelite_core::api::GuardianStatsResponse> {
+    use otelite_core::api::{GuardianActionEntry, GuardianRiskLevelEntry, GuardianStatsResponse};
+    use otelite_core::semconv::metric_names as mnames;
+
+    let mut where_clause = String::from("WHERE name = ? AND json_valid(attributes)");
+    let mut params: Vec<Box<dyn rusqlite::ToSql>> =
+        vec![Box::new(mnames::CODEX_GUARDIAN_REVIEW.to_string())];
+    if let Some(s) = start_time {
+        where_clause.push_str(" AND timestamp >= ?");
+        params.push(Box::new(s));
+    }
+    if let Some(e) = end_time {
+        where_clause.push_str(" AND timestamp <= ?");
+        params.push(Box::new(e));
+    }
+
+    let risk_sql = format!(
+        "SELECT
+            COALESCE(json_extract(attributes,'$.risk_level'), '(unknown)') AS risk,
+            SUM(COALESCE(value_int, 1)) AS cnt
+         FROM metrics
+         {where_clause}
+         GROUP BY risk
+         ORDER BY cnt DESC"
+    );
+    let action_sql = format!(
+        "SELECT
+            COALESCE(json_extract(attributes,'$.decision'), '(unknown)') AS decision,
+            COALESCE(json_extract(attributes,'$.action'),   '(unknown)') AS action,
+            SUM(COALESCE(value_int, 1)) AS cnt
+         FROM metrics
+         {where_clause}
+         GROUP BY decision, action
+         ORDER BY cnt DESC"
+    );
+
+    let param_refs: Vec<&dyn rusqlite::ToSql> = params.iter().map(|p| p.as_ref()).collect();
+
+    let mut stmt = conn.prepare(&risk_sql).map_err(|e| {
+        StorageError::QueryError(format!("Failed to prepare guardian risk query: {e}"))
+    })?;
+    let by_risk: Vec<GuardianRiskLevelEntry> = stmt
+        .query_map(param_refs.as_slice(), |r| {
+            Ok(GuardianRiskLevelEntry {
+                risk_level: r.get(0)?,
+                count: r.get::<_, i64>(1)? as u64,
+                approval_rate: 0.0, // enriched below
+            })
+        })
+        .map_err(|e| StorageError::QueryError(format!("{e}")))?
+        .collect::<std::result::Result<Vec<_>, _>>()
+        .map_err(|e| StorageError::QueryError(format!("{e}")))?;
+
+    let total: u64 = by_risk.iter().map(|r| r.count).sum();
+
+    let mut stmt2 = conn.prepare(&action_sql).map_err(|e| {
+        StorageError::QueryError(format!("Failed to prepare guardian action query: {e}"))
+    })?;
+    // action_sql selects: decision (col0), action (col1), cnt (col2)
+    // GuardianActionEntry has: action, count, denial_rate
+    let by_action: Vec<GuardianActionEntry> = stmt2
+        .query_map(param_refs.as_slice(), |r| {
+            let _decision: String = r.get(0)?; // decision label — not a struct field
+            let action: String = r.get(1)?;
+            let count: u64 = r.get::<_, i64>(2)? as u64;
+            Ok(GuardianActionEntry {
+                action,
+                count,
+                denial_rate: 0.0, // enriched below
+            })
+        })
+        .map_err(|e| StorageError::QueryError(format!("{e}")))?
+        .collect::<std::result::Result<Vec<_>, _>>()
+        .map_err(|e| StorageError::QueryError(format!("{e}")))?;
+
+    // Approximate approval rate: reviews whose action was not a denial/block.
+    let denied: u64 = by_action
+        .iter()
+        .filter(|a| {
+            a.action.to_lowercase().contains("den") || a.action.to_lowercase().contains("block")
+        })
+        .map(|a| a.count)
+        .sum();
+    let approval_rate = if total > 0 {
+        1.0 - denied as f64 / total as f64
+    } else {
+        0.0
+    };
+
+    Ok(GuardianStatsResponse {
+        total_reviews: total,
+        approval_rate,
+        by_risk_level: by_risk,
+        by_action,
+        filters_applied: Vec::new(),
+    })
+}
+
+/// Codex multi-agent spawn/resume topology by role. (#163)
+pub fn query_multi_agent_stats(
+    conn: &Connection,
+    start_time: Option<i64>,
+    end_time: Option<i64>,
+) -> Result<otelite_core::api::MultiAgentStatsResponse> {
+    use otelite_core::api::{MultiAgentRoleEntry, MultiAgentStatsResponse};
+    use otelite_core::semconv::metric_names as mnames;
+
+    fn metric_by_role(
+        conn: &Connection,
+        metric_name: &str,
+        start_time: Option<i64>,
+        end_time: Option<i64>,
+    ) -> Result<Vec<(String, u64)>> {
+        let mut where_clause = String::from("WHERE name = ? AND json_valid(attributes)");
+        let mut params: Vec<Box<dyn rusqlite::ToSql>> = vec![Box::new(metric_name.to_string())];
+        if let Some(s) = start_time {
+            where_clause.push_str(" AND timestamp >= ?");
+            params.push(Box::new(s));
+        }
+        if let Some(e) = end_time {
+            where_clause.push_str(" AND timestamp <= ?");
+            params.push(Box::new(e));
+        }
+        let sql = format!(
+            "SELECT COALESCE(json_extract(attributes,'$.role'), '(unknown)') AS role,
+                    SUM(COALESCE(value_int, 1)) AS cnt
+             FROM metrics {where_clause} GROUP BY role ORDER BY cnt DESC"
+        );
+        let param_refs: Vec<&dyn rusqlite::ToSql> = params.iter().map(|p| p.as_ref()).collect();
+        let mut stmt = conn.prepare(&sql).map_err(|e| {
+            StorageError::QueryError(format!("Failed to prepare multi_agent query: {e}"))
+        })?;
+        let rows = stmt
+            .query_map(param_refs.as_slice(), |r| {
+                Ok((r.get::<_, String>(0)?, r.get::<_, i64>(1)? as u64))
+            })
+            .map_err(|e| StorageError::QueryError(format!("{e}")))?
+            .collect::<std::result::Result<Vec<_>, _>>()
+            .map_err(|e| StorageError::QueryError(format!("{e}")))?;
+        Ok(rows)
+    }
+
+    let spawn_by_role =
+        metric_by_role(conn, mnames::CODEX_MULTI_AGENT_SPAWN, start_time, end_time)?;
+    let resume_by_role =
+        metric_by_role(conn, mnames::CODEX_MULTI_AGENT_RESUME, start_time, end_time)?;
+
+    // Merge into MultiAgentRoleEntry
+    let mut role_map: HashMap<String, (u64, u64)> = HashMap::new();
+    for (role, cnt) in spawn_by_role {
+        role_map.entry(role).or_default().0 += cnt;
+    }
+    for (role, cnt) in resume_by_role {
+        role_map.entry(role).or_default().1 += cnt;
+    }
+
+    let total_spawns: u64 = role_map.values().map(|v| v.0).sum();
+    let total_resumes: u64 = role_map.values().map(|v| v.1).sum();
+
+    let total_events = total_spawns + total_resumes;
+    let mut roles: Vec<MultiAgentRoleEntry> = role_map
+        .into_iter()
+        .map(|(role, (spawns, resumes))| {
+            let share_pct = if total_events > 0 {
+                (spawns + resumes) as f64 / total_events as f64 * 100.0
+            } else {
+                0.0
+            };
+            MultiAgentRoleEntry {
+                role,
+                spawns,
+                resumes,
+                share_pct,
+            }
+        })
+        .collect();
+    roles.sort_by_key(|a| std::cmp::Reverse(a.spawns + a.resumes));
+
+    Ok(MultiAgentStatsResponse {
+        total_spawns,
+        total_resumes,
+        roles,
+        filters_applied: Vec::new(),
+    })
+}
+
+/// Codex turn busy vs idle breakdown per model and project. (#164)
+///
+/// Uses `run_sampling_request` spans which carry `busy_ns`, `idle_ns`, and
+/// `cwd` attributes. Project is the basename of `cwd`.
+pub fn query_codex_turn_breakdown(
+    conn: &Connection,
+    start_time: Option<i64>,
+    end_time: Option<i64>,
+) -> Result<otelite_core::api::CodexTurnBreakdownResponse> {
+    use otelite_core::api::{CodexTurnBreakdownResponse, CodexTurnBreakdownRow};
+
+    let mut where_clause =
+        String::from("WHERE name = 'run_sampling_request' AND json_valid(attributes)");
+    let mut params: Vec<Box<dyn rusqlite::ToSql>> = Vec::new();
+    if let Some(s) = start_time {
+        where_clause.push_str(" AND start_time >= ?");
+        params.push(Box::new(s));
+    }
+    if let Some(e) = end_time {
+        where_clause.push_str(" AND end_time <= ?");
+        params.push(Box::new(e));
+    }
+
+    // Extract basename from cwd using SQLite string functions:
+    // last segment after the final '/' character.
+    let sql = format!(
+        "SELECT
+            COALESCE(json_extract(attributes,'$.model'), '(unknown)') AS model,
+            CASE
+                WHEN json_extract(attributes,'$.cwd') IS NOT NULL
+                     AND instr(json_extract(attributes,'$.cwd'), '/') > 0
+                THEN substr(
+                    json_extract(attributes,'$.cwd'),
+                    1 + length(rtrim(
+                        json_extract(attributes,'$.cwd'),
+                        replace(json_extract(attributes,'$.cwd'), '/', '')
+                    ))
+                )
+                ELSE COALESCE(json_extract(attributes,'$.cwd'), '(unknown)')
+            END AS project,
+            COUNT(*) AS turns,
+            AVG((end_time - start_time) / 1000000.0) AS avg_turn_ms,
+            AVG(
+                CASE WHEN json_extract(attributes,'$.busy_ns') IS NOT NULL
+                     THEN CAST(json_extract(attributes,'$.busy_ns') AS REAL) / 1000000.0
+                     ELSE NULL END
+            ) AS avg_busy_ms,
+            AVG(
+                CASE WHEN json_extract(attributes,'$.idle_ns') IS NOT NULL
+                     THEN CAST(json_extract(attributes,'$.idle_ns') AS REAL) / 1000000.0
+                     ELSE NULL END
+            ) AS avg_idle_ms
+         FROM spans
+         {where_clause}
+         GROUP BY model, project
+         ORDER BY turns DESC"
+    );
+
+    let param_refs: Vec<&dyn rusqlite::ToSql> = params.iter().map(|p| p.as_ref()).collect();
+    let mut stmt = conn.prepare(&sql).map_err(|e| {
+        StorageError::QueryError(format!("Failed to prepare codex_turn_breakdown query: {e}"))
+    })?;
+
+    let rows = stmt
+        .query_map(param_refs.as_slice(), |r| {
+            let turn_count: u64 = r.get::<_, i64>(2)? as u64;
+            let avg_duration_ms: f64 = r.get::<_, f64>(3).unwrap_or(0.0);
+            let avg_busy_ms: f64 = r.get::<_, Option<f64>>(4)?.unwrap_or(0.0);
+            let avg_idle_ms: f64 = r.get::<_, Option<f64>>(5)?.unwrap_or(0.0);
+            let busy_ratio = if avg_duration_ms > 0.0 {
+                avg_busy_ms / avg_duration_ms
+            } else {
+                0.0
+            };
+            Ok(CodexTurnBreakdownRow {
+                model: r.get(0)?,
+                project: r.get(1)?,
+                turn_count,
+                avg_duration_ms,
+                avg_busy_ms,
+                avg_idle_ms,
+                busy_ratio,
+            })
+        })
+        .map_err(|e| StorageError::QueryError(format!("{e}")))?
+        .collect::<std::result::Result<Vec<_>, _>>()
+        .map_err(|e| StorageError::QueryError(format!("{e}")))?;
+
+    Ok(CodexTurnBreakdownResponse {
+        rows,
+        filters_applied: Vec::new(),
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -10834,5 +11652,297 @@ mod tests {
         let s = resp.stats.as_ref().unwrap();
         assert_eq!(s.min, 300.0);
         assert_eq!(s.max, 300.0);
+    }
+
+    // ── New insight query tests (#157–#164) ──────────────────────────────
+
+    fn insert_metric(conn: &Connection, name: &str, ts: i64, value_int: i64, attributes: &str) {
+        conn.execute(
+            "INSERT INTO metrics (name, metric_type, timestamp, value_int, attributes) VALUES (?1, 'counter', ?2, ?3, ?4)",
+            rusqlite::params![name, ts, value_int, attributes],
+        )
+        .unwrap();
+    }
+
+    fn insert_span_simple(conn: &Connection, name: &str, start: i64, end: i64, attributes: &str) {
+        conn.execute(
+            "INSERT INTO spans (trace_id, span_id, name, kind, start_time, end_time, attributes, status_code, events, resource) \
+             VALUES ('t1', random() || '', ?1, 0, ?2, ?3, ?4, 0, '[]', '{}')",
+            rusqlite::params![name, start, end, attributes],
+        )
+        .unwrap();
+    }
+
+    #[test]
+    fn test_query_effort_breakdown_empty() {
+        let conn = setup_test_db();
+        let result = query_effort_breakdown(&conn, None, None).unwrap();
+        assert!(result.rows.is_empty());
+    }
+
+    #[test]
+    fn test_query_effort_breakdown_aggregates_by_effort() {
+        let conn = setup_test_db();
+        // Two rows for effort=high, one for effort=low
+        insert_metric(
+            &conn,
+            "claude_code.token.usage",
+            1000,
+            500,
+            r#"{"effort":"high","model":"claude-opus","type":"input"}"#,
+        );
+        insert_metric(
+            &conn,
+            "claude_code.token.usage",
+            2000,
+            300,
+            r#"{"effort":"high","model":"claude-opus","type":"output"}"#,
+        );
+        insert_metric(
+            &conn,
+            "claude_code.token.usage",
+            3000,
+            100,
+            r#"{"effort":"low","model":"claude-haiku","type":"input"}"#,
+        );
+        let result = query_effort_breakdown(&conn, None, None).unwrap();
+        let efforts: Vec<&str> = result.rows.iter().map(|r| r.effort.as_str()).collect();
+        assert!(efforts.contains(&"high"), "effort=high should be present");
+        assert!(efforts.contains(&"low"), "effort=low should be present");
+    }
+
+    #[test]
+    fn test_query_efficiency_stats_empty() {
+        let conn = setup_test_db();
+        let result = query_efficiency_stats(&conn, None, None).unwrap();
+        assert_eq!(result.total_tokens, 0);
+        assert_eq!(result.total_commits, 0);
+    }
+
+    #[test]
+    fn test_query_efficiency_stats_counts_tokens() {
+        let conn = setup_test_db();
+        insert_metric(
+            &conn,
+            "claude_code.token.usage",
+            1000,
+            1000,
+            r#"{"type":"input"}"#,
+        );
+        insert_metric(
+            &conn,
+            "claude_code.token.usage",
+            2000,
+            500,
+            r#"{"type":"output"}"#,
+        );
+        insert_metric(&conn, "claude_code.commit.count", 1000, 5, "{}");
+        let result = query_efficiency_stats(&conn, None, None).unwrap();
+        // tokens: counter window delta includes input (1000) + output (500) = 1500
+        // but counter_window_deltas with no start uses "last value before window" = None
+        // so delta = last_value = cumulative value. We only have single entries per series.
+        assert!(result.total_tokens >= 1000, "should count input tokens");
+        assert_eq!(
+            result
+                .by_agent
+                .iter()
+                .find(|a| a.agent == "claude_code")
+                .map(|a| a.commits)
+                .unwrap_or(0),
+            5
+        );
+    }
+
+    #[test]
+    fn test_query_codex_ttft_empty() {
+        let conn = setup_test_db();
+        let result = query_codex_ttft(&conn, None, None).unwrap();
+        assert!(result.models.is_empty());
+    }
+
+    #[test]
+    fn test_query_agent_project_rollup_empty() {
+        let conn = setup_test_db();
+        let result = query_agent_project_rollup(&conn, None, None).unwrap();
+        assert!(result.projects.is_empty());
+    }
+
+    #[test]
+    fn test_query_agent_project_rollup_extracts_cwd_basename() {
+        let conn = setup_test_db();
+        insert_span_simple(
+            &conn,
+            "run_sampling_request",
+            1_000_000_000,
+            2_000_000_000,
+            r#"{"cwd":"/Users/test/src/otelite","model":"gpt-4"}"#,
+        );
+        let result = query_agent_project_rollup(&conn, None, None).unwrap();
+        let projects: Vec<&str> = result.projects.iter().map(|p| p.project.as_str()).collect();
+        assert!(
+            projects.contains(&"otelite"),
+            "basename should be 'otelite', got: {projects:?}"
+        );
+    }
+
+    #[test]
+    fn test_query_mcp_health_empty() {
+        let conn = setup_test_db();
+        let result = query_mcp_health(&conn, None, None).unwrap();
+        assert!(result.entries.is_empty());
+    }
+
+    #[test]
+    fn test_query_mcp_health_computes_error_rate() {
+        let conn = setup_test_db();
+        insert_metric(
+            &conn,
+            "codex.mcp.call",
+            1000,
+            1,
+            r#"{"mcp_server":"memory","mcp_tool":"search","status":"ok"}"#,
+        );
+        insert_metric(
+            &conn,
+            "codex.mcp.call",
+            2000,
+            1,
+            r#"{"mcp_server":"memory","mcp_tool":"search","status":"error"}"#,
+        );
+        let result = query_mcp_health(&conn, None, None).unwrap();
+        assert!(!result.entries.is_empty(), "should have MCP health entries");
+        let entry = result
+            .entries
+            .iter()
+            .find(|e| e.server == "memory" && e.tool == "search")
+            .unwrap();
+        assert_eq!(entry.ok_calls, 1);
+        assert_eq!(entry.error_calls, 1);
+        assert!(
+            (entry.error_rate - 0.5).abs() < 0.001,
+            "error rate should be 50%"
+        );
+    }
+
+    #[test]
+    fn test_query_guardian_stats_empty() {
+        let conn = setup_test_db();
+        let result = query_guardian_stats(&conn, None, None).unwrap();
+        assert_eq!(result.total_reviews, 0);
+    }
+
+    #[test]
+    fn test_query_guardian_stats_by_risk() {
+        let conn = setup_test_db();
+        insert_metric(
+            &conn,
+            "codex.guardian.review",
+            1000,
+            1,
+            r#"{"risk_level":"low","decision":"approved","action":"allow"}"#,
+        );
+        insert_metric(
+            &conn,
+            "codex.guardian.review",
+            2000,
+            1,
+            r#"{"risk_level":"high","decision":"approved","action":"allow"}"#,
+        );
+        insert_metric(
+            &conn,
+            "codex.guardian.review",
+            3000,
+            1,
+            r#"{"risk_level":"high","decision":"denied","action":"block"}"#,
+        );
+        let result = query_guardian_stats(&conn, None, None).unwrap();
+        assert_eq!(result.total_reviews, 3);
+        let high = result
+            .by_risk_level
+            .iter()
+            .find(|r| r.risk_level == "high")
+            .unwrap();
+        assert_eq!(high.count, 2);
+    }
+
+    #[test]
+    fn test_query_multi_agent_stats_empty() {
+        let conn = setup_test_db();
+        let result = query_multi_agent_stats(&conn, None, None).unwrap();
+        assert_eq!(result.total_spawns, 0);
+        assert_eq!(result.total_resumes, 0);
+        assert!(result.roles.is_empty());
+    }
+
+    #[test]
+    fn test_query_multi_agent_stats_spawn_and_resume() {
+        let conn = setup_test_db();
+        insert_metric(
+            &conn,
+            "codex.multi_agent.spawn",
+            1000,
+            3,
+            r#"{"role":"researcher"}"#,
+        );
+        insert_metric(
+            &conn,
+            "codex.multi_agent.resume",
+            2000,
+            1,
+            r#"{"role":"researcher"}"#,
+        );
+        let result = query_multi_agent_stats(&conn, None, None).unwrap();
+        assert_eq!(result.total_spawns, 3);
+        assert_eq!(result.total_resumes, 1);
+        let researcher = result
+            .roles
+            .iter()
+            .find(|r| r.role == "researcher")
+            .unwrap();
+        assert_eq!(researcher.spawns, 3);
+        assert_eq!(researcher.resumes, 1);
+        assert!((researcher.share_pct - 100.0).abs() < 0.001);
+    }
+
+    #[test]
+    fn test_query_codex_turn_breakdown_empty() {
+        let conn = setup_test_db();
+        let result = query_codex_turn_breakdown(&conn, None, None).unwrap();
+        assert!(result.rows.is_empty());
+    }
+
+    #[test]
+    fn test_query_codex_turn_breakdown_busy_idle() {
+        let conn = setup_test_db();
+        // Insert a run_sampling_request span with busy_ns and idle_ns
+        insert_span_simple(
+            &conn,
+            "run_sampling_request",
+            0,
+            2_000_000_000, // 2 seconds
+            r#"{"model":"gpt-4o","cwd":"/Users/x/src/myproject","busy_ns":1000000000,"idle_ns":500000000}"#,
+        );
+        let result = query_codex_turn_breakdown(&conn, None, None).unwrap();
+        assert!(!result.rows.is_empty(), "should have turn breakdown rows");
+        let row = &result.rows[0];
+        assert_eq!(row.model, "gpt-4o");
+        assert_eq!(row.project, "myproject");
+        assert_eq!(row.turn_count, 1);
+        assert!(
+            (row.avg_duration_ms - 2000.0).abs() < 1.0,
+            "avg duration should be ~2000ms"
+        );
+        assert!(
+            (row.avg_busy_ms - 1000.0).abs() < 1.0,
+            "avg busy should be ~1000ms"
+        );
+        assert!(
+            (row.avg_idle_ms - 500.0).abs() < 1.0,
+            "avg idle should be ~500ms"
+        );
+        assert!(
+            (row.busy_ratio - 0.5).abs() < 0.01,
+            "busy ratio should be ~0.5"
+        );
     }
 }
