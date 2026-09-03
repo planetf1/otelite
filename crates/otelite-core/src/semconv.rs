@@ -52,6 +52,13 @@ pub const CACHE_READ_TOKEN_KEYS: &[&str] = &[
     "cache_read_tokens",
 ];
 
+/// Reasoning / thinking token count attribute key.
+///
+/// Emitted by the opencode-plugin-otel on every LLM span when the model
+/// performs extended thinking (`gen_ai.usage.reasoning_tokens`), and by
+/// the pi harness (`gen_ai.usage.reasoning_tokens`).
+pub const REASONING_TOKEN_KEYS: &[&str] = &["gen_ai.usage.reasoning_tokens"];
+
 /// Model identifier.
 pub const MODEL_KEYS: &[&str] = &[
     "gen_ai.request.model",

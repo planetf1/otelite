@@ -642,6 +642,8 @@ pub struct GenAiSpanInfo {
     pub cache_creation_tokens: Option<u64>,
     /// Cache read input tokens (Anthropic prompt caching)
     pub cache_read_tokens: Option<u64>,
+    /// Reasoning / thinking tokens (opencode extended thinking, pi harness)
+    pub reasoning_tokens: Option<u64>,
     /// Temperature parameter
     pub temperature: Option<f64>,
     /// Maximum tokens requested
@@ -735,6 +737,9 @@ impl GenAiSpanInfo {
             .and_then(|(_, value)| value.parse().ok());
         info.cache_read_tokens = first_attribute(attrs, semconv::CACHE_READ_TOKEN_KEYS)
             .and_then(|(_, value)| value.parse().ok());
+        info.reasoning_tokens = first_attribute(attrs, semconv::REASONING_TOKEN_KEYS)
+            .and_then(|(_, value)| value.parse::<u64>().ok())
+            .filter(|&v| v > 0);
 
         // Extract response ID
         info.response_id = attrs.get("gen_ai.response.id").cloned();
@@ -768,12 +773,16 @@ impl GenAiSpanInfo {
         match (self.input_tokens, self.output_tokens, self.total_tokens) {
             (Some(input), Some(output), _) => {
                 let total = input + output;
-                Some(format!(
+                let mut s = format!(
                     "Input: {} | Output: {} | Total: {}",
                     format_number(input),
                     format_number(output),
                     format_number(total)
-                ))
+                );
+                if let Some(r) = self.reasoning_tokens {
+                    s.push_str(&format!(" | Reasoning: {}", format_number(r)));
+                }
+                Some(s)
             },
             (None, None, Some(total)) => Some(format!("Total: {}", format_number(total))),
             _ => None,
@@ -1668,5 +1677,44 @@ mod tests {
         assert_eq!(output.observation, MetricObservation::Valid);
         assert_eq!(output.value, Some(5));
         assert_eq!(output.rejection_reason, None);
+    }
+
+    #[test]
+    fn test_reasoning_tokens_parsed() {
+        let mut attrs = HashMap::new();
+        attrs.insert("gen_ai.system".to_string(), "anthropic".to_string());
+        attrs.insert("gen_ai.request.model".to_string(), "deepseek-v4-flash".to_string());
+        attrs.insert("gen_ai.usage.input_tokens".to_string(), "100".to_string());
+        attrs.insert("gen_ai.usage.output_tokens".to_string(), "80".to_string());
+        attrs.insert("gen_ai.usage.reasoning_tokens".to_string(), "50".to_string());
+
+        let info = GenAiSpanInfo::from_attributes(&attrs);
+        assert_eq!(info.reasoning_tokens, Some(50));
+        let fmt = info.format_token_usage().unwrap();
+        assert!(fmt.contains("Reasoning: 50"), "expected reasoning in: {fmt}");
+    }
+
+    #[test]
+    fn test_reasoning_tokens_zero_filtered() {
+        let mut attrs = HashMap::new();
+        attrs.insert("gen_ai.system".to_string(), "anthropic".to_string());
+        attrs.insert("gen_ai.usage.reasoning_tokens".to_string(), "0".to_string());
+        attrs.insert("gen_ai.usage.output_tokens".to_string(), "20".to_string());
+
+        let info = GenAiSpanInfo::from_attributes(&attrs);
+        assert_eq!(info.reasoning_tokens, None);
+    }
+
+    #[test]
+    fn test_reasoning_tokens_absent() {
+        let mut attrs = HashMap::new();
+        attrs.insert("gen_ai.system".to_string(), "openai".to_string());
+        attrs.insert("gen_ai.usage.input_tokens".to_string(), "10".to_string());
+        attrs.insert("gen_ai.usage.output_tokens".to_string(), "5".to_string());
+
+        let info = GenAiSpanInfo::from_attributes(&attrs);
+        assert_eq!(info.reasoning_tokens, None);
+        let fmt = info.format_token_usage().unwrap();
+        assert!(!fmt.contains("Reasoning"), "no reasoning field expected: {fmt}");
     }
 }

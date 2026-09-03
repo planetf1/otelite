@@ -4914,6 +4914,58 @@ pub fn query_reasoning_share(
         }
     }
 
+    // ── span-level gen_ai.usage.reasoning_tokens (opencode plugin, pi, etc.) ──
+    // These spans carry the attribute directly; aggregate by model.
+    {
+        let reasoning_key = otelite_core::semconv::REASONING_TOKEN_KEYS[0];
+        let model_expr = "COALESCE(json_extract(attributes,'$.\"gen_ai.request.model\"'), \
+             json_extract(attributes,'$.\"model\"'), '(unknown)')".to_string();
+        let rtok_expr = format!(
+            "CAST(json_extract(attributes,'$.\"{reasoning_key}\"') AS INTEGER)"
+        );
+        let output_expr = "CAST(COALESCE(json_extract(attributes,'$.\"gen_ai.usage.output_tokens\"'), \
+             json_extract(attributes,'$.\"output_tokens\"')) AS INTEGER)".to_string();
+        let mut where_clause = format!(
+            "WHERE json_valid(attributes) \
+             AND json_extract(attributes,'$.\"{reasoning_key}\"') IS NOT NULL \
+             AND CAST(json_extract(attributes,'$.\"{reasoning_key}\"') AS INTEGER) > 0"
+        );
+        let mut params: Vec<Box<dyn rusqlite::ToSql>> = Vec::new();
+        if let Some(start) = start_time {
+            where_clause.push_str(&format!(" AND start_time >= ?{}", params.len() + 1));
+            params.push(Box::new(start));
+        }
+        if let Some(end) = end_time {
+            where_clause.push_str(&format!(" AND end_time <= ?{}", params.len() + 1));
+            params.push(Box::new(end));
+        }
+        let sql = format!(
+            "SELECT {model_expr} AS model, \
+             COALESCE(SUM({rtok_expr}), 0) AS reasoning_sum, \
+             COALESCE(SUM({output_expr}), 0) AS output_sum \
+             FROM spans {where_clause} GROUP BY model"
+        );
+        let param_refs: Vec<&dyn rusqlite::ToSql> = params.iter().map(|p| p.as_ref()).collect();
+        if let Ok(mut stmt) = conn.prepare(&sql) {
+            if let Ok(rows) = stmt
+                .query_map(param_refs.as_slice(), |row| {
+                    Ok((
+                        row.get::<_, String>(0)?,
+                        row.get::<_, i64>(1)?,
+                        row.get::<_, i64>(2)?,
+                    ))
+                })
+                .and_then(|r| r.collect::<std::result::Result<Vec<_>, _>>())
+            {
+                for (model, reasoning, output) in rows {
+                    let acc = models.entry(model).or_default();
+                    acc.reasoning += reasoning.max(0) as u64;
+                    acc.output += output.max(0) as u64;
+                }
+            }
+        }
+    }
+
     // ── codex effort breakdown: handle_responses spans (no model attr) ──
     let effort_expr = format!(
         "CASE WHEN json_valid(attributes) THEN json_extract(attributes, '$.\"{key}\"') END",
