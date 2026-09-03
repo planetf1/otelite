@@ -23,6 +23,28 @@ fn wait_for_port(port: u16, deadline: Instant) {
     }
 }
 
+/// Wait until `local_otelite_pid(port)` returns `Some` — i.e. the listener is
+/// both connectable *and* attributed to an otelite process by `lsof`. This is
+/// a stricter precondition than `wait_for_port` alone; without it `start` may
+/// run discovery before `lsof` has registered the new process and see the port
+/// as free.
+fn wait_for_otelite_attribution(port: u16, deadline: Instant) {
+    loop {
+        if otelite::commands::service::local_otelite_pid(port)
+            .ok()
+            .flatten()
+            .is_some()
+        {
+            return;
+        }
+        assert!(
+            Instant::now() < deadline,
+            "otelite process was not attributed to port {port} within the deadline"
+        );
+        std::thread::sleep(Duration::from_millis(200));
+    }
+}
+
 #[test]
 fn test_discovery_finds_serve_without_pid_file() {
     // Probe 4317: if something owns it, a daemon (or another test) is
@@ -166,6 +188,7 @@ fn test_start_refuses_when_daemon_has_no_pid_file() {
             .spawn()
             .unwrap();
         wait_for_port(4317, Instant::now() + Duration::from_secs(15));
+        wait_for_otelite_attribution(4317, Instant::now() + Duration::from_secs(15));
         throwaway = Some(child);
     }
 
