@@ -12201,3 +12201,260 @@ mod tests {
         assert_eq!(extended.input_tokens, 300);
     }
 }
+
+// ── New insight queries ───────────────────────────────────────────────────────
+
+/// Cross-tool TTFT comparison from span-level `ttft_ms` attribute.
+///
+/// Reads `ttft_ms` from every span that carries it, normalises the
+/// `otel.scope.name` to a short tool label, and returns per-(tool, model)
+/// aggregates. Codex TTFT comes from the separate `query_codex_ttft` histogram
+/// path and is NOT included here (those spans lack a `ttft_ms` attribute).
+pub fn query_cross_tool_ttft(
+    conn: &Connection,
+    start_time: Option<i64>,
+    end_time: Option<i64>,
+) -> Result<otelite_core::api::CrossToolTtftResponse> {
+    use otelite_core::api::{CrossToolTtftResponse, CrossToolTtftRow};
+
+    let mut where_parts = vec!["json_valid(attributes)".to_string()];
+    let mut params: Vec<Box<dyn rusqlite::ToSql>> = Vec::new();
+
+    // Only spans that actually carry ttft_ms with a positive value
+    where_parts.push("CAST(json_extract(attributes,'$.\"ttft_ms\"') AS REAL) > 0".to_string());
+
+    if let Some(s) = start_time {
+        where_parts.push("start_time >= ?".to_string());
+        params.push(Box::new(s));
+    }
+    if let Some(e) = end_time {
+        where_parts.push("start_time <= ?".to_string());
+        params.push(Box::new(e));
+    }
+
+    let where_clause = format!("WHERE {}", where_parts.join(" AND "));
+
+    let sql = format!(
+        r#"
+        SELECT
+          CASE
+            WHEN json_extract(attributes,'$."otel.scope.name"') LIKE '%claude_code%' THEN 'claude_code'
+            WHEN json_extract(attributes,'$."otel.scope.name"') LIKE 'com.opencode' THEN 'opencode'
+            WHEN json_extract(attributes,'$."otel.scope.name"') LIKE '%opencode%'    THEN 'opencode'
+            WHEN json_extract(attributes,'$."otel.scope.name"') LIKE 'pi-otel'       THEN 'pi'
+            ELSE COALESCE(json_extract(attributes,'$."otel.scope.name"'), 'unknown')
+          END AS tool,
+          COALESCE(json_extract(attributes,'$."model"'), '(unknown)') AS model,
+          COUNT(*) AS cnt,
+          AVG(CAST(json_extract(attributes,'$."ttft_ms"') AS REAL)) AS avg_ms,
+          MIN(CAST(json_extract(attributes,'$."ttft_ms"') AS REAL)) AS min_ms,
+          MAX(CAST(json_extract(attributes,'$."ttft_ms"') AS REAL)) AS max_ms
+        FROM spans
+        {where_clause}
+        GROUP BY tool, model
+        HAVING cnt > 0
+        ORDER BY tool ASC, avg_ms ASC
+        "#
+    );
+
+    let param_refs: Vec<&dyn rusqlite::ToSql> = params.iter().map(|p| p.as_ref()).collect();
+    let mut stmt = conn.prepare(&sql).map_err(|e| {
+        StorageError::QueryError(format!("Failed to prepare cross_tool_ttft query: {e}"))
+    })?;
+
+    // We also need individual values to compute p90; do a second pass per group.
+    let rows: Vec<CrossToolTtftRow> = stmt
+        .query_map(param_refs.as_slice(), |r| {
+            Ok((
+                r.get::<_, String>(0)?,
+                r.get::<_, String>(1)?,
+                r.get::<_, i64>(2)? as u64,
+                r.get::<_, f64>(3)?,
+                r.get::<_, f64>(4)?,
+                r.get::<_, f64>(5)?,
+            ))
+        })
+        .map_err(|e| StorageError::QueryError(format!("{e}")))?
+        .collect::<std::result::Result<Vec<_>, _>>()
+        .map_err(|e| StorageError::QueryError(format!("{e}")))?
+        .into_iter()
+        .map(|(tool, model, count, avg_ms, min_ms, max_ms)| {
+            // p90: fetch sorted ttft values for this model and compute in Rust.
+            // Only when there are enough samples; inline model into SQL to avoid
+            // closure-lifetime issues with the existing params Vec.
+            let p90_ms = if count >= 10 {
+                let values_sql = format!(
+                    r#"
+                    SELECT CAST(json_extract(attributes,'$."ttft_ms"') AS REAL)
+                    FROM spans
+                    {where_clause}
+                      AND COALESCE(json_extract(attributes,'$."model"'), '(unknown)') = '{model}'
+                    ORDER BY CAST(json_extract(attributes,'$."ttft_ms"') AS REAL) ASC
+                    "#
+                );
+                if let Ok(mut vstmt) = conn.prepare(&values_sql) {
+                    if let Ok(vals) = vstmt
+                        .query_map(param_refs.as_slice(), |r| r.get::<_, f64>(0))
+                        .and_then(|rows| rows.collect::<std::result::Result<Vec<_>, _>>())
+                    {
+                        if !vals.is_empty() {
+                            let idx = ((vals.len() as f64 * 0.90) as usize).min(vals.len() - 1);
+                            Some(vals[idx])
+                        } else {
+                            None
+                        }
+                    } else {
+                        None
+                    }
+                } else {
+                    None
+                }
+            } else {
+                None
+            };
+
+            CrossToolTtftRow {
+                tool,
+                model,
+                count,
+                avg_ms,
+                min_ms,
+                p90_ms,
+                max_ms,
+            }
+        })
+        .collect();
+
+    Ok(CrossToolTtftResponse {
+        rows,
+        filters_applied: Vec::new(),
+    })
+}
+
+/// Codex hook overhead: total and average invocation time per hook event type.
+///
+/// Reads the `codex.hooks.run.duration_ms` histogram metric which carries a
+/// `hook_name` attribute. Uses the histogram sum (index 1 of the JSON array)
+/// as the aggregate duration, consistent with how we handle other histograms.
+pub fn query_hook_overhead(
+    conn: &Connection,
+    start_time: Option<i64>,
+    end_time: Option<i64>,
+) -> Result<otelite_core::api::HookOverheadResponse> {
+    use otelite_core::api::{HookOverheadResponse, HookOverheadRow};
+    use otelite_core::semconv::metric_names as mnames;
+
+    let mut where_clause =
+        String::from("WHERE name = ? AND json_valid(attributes) AND value_histogram IS NOT NULL");
+    let mut params: Vec<Box<dyn rusqlite::ToSql>> =
+        vec![Box::new(mnames::CODEX_HOOKS_RUN_DURATION.to_string())];
+
+    if let Some(s) = start_time {
+        where_clause.push_str(" AND timestamp >= ?");
+        params.push(Box::new(s));
+    }
+    if let Some(e) = end_time {
+        where_clause.push_str(" AND timestamp <= ?");
+        params.push(Box::new(e));
+    }
+
+    let sql = format!(
+        r#"
+        SELECT
+          COALESCE(json_extract(attributes,'$.hook_name'), '(unknown)') AS event,
+          SUM(json_extract(value_histogram,'$[0]'))                     AS total_cnt,
+          SUM(json_extract(value_histogram,'$[1]'))                     AS total_ms
+        FROM metrics
+        {where_clause}
+        GROUP BY event
+        ORDER BY total_ms DESC
+        "#
+    );
+
+    let param_refs: Vec<&dyn rusqlite::ToSql> = params.iter().map(|p| p.as_ref()).collect();
+    let mut stmt = conn.prepare(&sql).map_err(|e| {
+        StorageError::QueryError(format!("Failed to prepare hook_overhead query: {e}"))
+    })?;
+
+    let rows: Vec<HookOverheadRow> = stmt
+        .query_map(param_refs.as_slice(), |r| {
+            let event: String = r.get(0)?;
+            let count: i64 = r.get(1).unwrap_or(0);
+            let total_ms: f64 = r.get(2).unwrap_or(0.0);
+            let avg_ms = if count > 0 {
+                total_ms / count as f64
+            } else {
+                0.0
+            };
+            Ok(HookOverheadRow {
+                event,
+                count: count as u64,
+                total_ms,
+                avg_ms,
+            })
+        })
+        .map_err(|e| StorageError::QueryError(format!("{e}")))?
+        .collect::<std::result::Result<Vec<_>, _>>()
+        .map_err(|e| StorageError::QueryError(format!("{e}")))?;
+
+    let grand_total_ms: f64 = rows.iter().map(|r| r.total_ms).sum();
+
+    Ok(HookOverheadResponse {
+        rows,
+        grand_total_ms,
+        filters_applied: Vec::new(),
+    })
+}
+
+#[cfg(test)]
+mod new_insight_tests {
+    use super::*;
+    use rusqlite::Connection;
+
+    fn setup_db() -> Connection {
+        let conn = Connection::open_in_memory().unwrap();
+        crate::sqlite::schema::initialize_schema(&conn).unwrap();
+        conn
+    }
+
+    #[test]
+    fn test_query_cross_tool_ttft_empty() {
+        let conn = setup_db();
+        let result = query_cross_tool_ttft(&conn, None, None).unwrap();
+        assert!(result.rows.is_empty());
+    }
+
+    #[test]
+    fn test_query_hook_overhead_empty() {
+        let conn = setup_db();
+        let result = query_hook_overhead(&conn, None, None).unwrap();
+        assert!(result.rows.is_empty());
+        assert_eq!(result.grand_total_ms, 0.0);
+    }
+
+    #[test]
+    fn test_query_hook_overhead_with_data() {
+        let conn = setup_db();
+        // Insert a codex.hooks.run.duration_ms histogram metric
+        // Format: [count, sum, [...buckets...]]
+        let hist = r#"[3,450.0,[{"upper_bound":100.0,"count":1},{"upper_bound":500.0,"count":2}]]"#;
+        conn.execute(
+            "INSERT INTO metrics (name, metric_type, timestamp, value_histogram, attributes, flags, created_at)
+             VALUES (?,2,1000000000,?,?,0,1000000000)",
+            rusqlite::params![
+                "codex.hooks.run.duration_ms",
+                hist,
+                r#"{"hook_name":"PreToolUse","model":"gpt-5.6-terra","otel.scope.name":"codex"}"#,
+            ],
+        )
+        .unwrap();
+
+        let result = query_hook_overhead(&conn, None, None).unwrap();
+        assert_eq!(result.rows.len(), 1);
+        assert_eq!(result.rows[0].event, "PreToolUse");
+        assert_eq!(result.rows[0].count, 3);
+        assert!((result.rows[0].total_ms - 450.0).abs() < 0.01);
+        assert!((result.rows[0].avg_ms - 150.0).abs() < 0.01);
+        assert!((result.grand_total_ms - 450.0).abs() < 0.01);
+    }
+}

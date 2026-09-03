@@ -1089,6 +1089,28 @@ impl StorageBackend for SqliteBackend {
         .await
     }
 
+    async fn query_cross_tool_ttft(
+        &self,
+        start_time: Option<i64>,
+        end_time: Option<i64>,
+    ) -> Result<otelite_core::api::CrossToolTtftResponse> {
+        self.read_query(move |conn| {
+            reader::query_cross_tool_ttft(conn, start_time, end_time).map_err(StorageError::from)
+        })
+        .await
+    }
+
+    async fn query_hook_overhead(
+        &self,
+        start_time: Option<i64>,
+        end_time: Option<i64>,
+    ) -> Result<otelite_core::api::HookOverheadResponse> {
+        self.read_query(move |conn| {
+            reader::query_hook_overhead(conn, start_time, end_time).map_err(StorageError::from)
+        })
+        .await
+    }
+
     async fn close(&mut self) -> Result<()> {
         if let Some(handle) = self.purge_handle.lock().take() {
             handle.abort();

@@ -172,6 +172,42 @@ pub struct UsageCommand {
     /// Show speed/effort attribute distribution across Claude Code LLM spans (#114)
     #[arg(long)]
     pub speed: bool,
+
+    /// Show Codex reasoning-effort × token-type breakdown (effort level vs cost per model)
+    #[arg(long)]
+    pub effort_breakdown: bool,
+
+    /// Show cross-agent efficiency: tokens/commit and tokens/LOC for Claude Code + opencode
+    #[arg(long)]
+    pub efficiency: bool,
+
+    /// Show reasoning token share per model (opencode + Codex thinking tokens as % of output)
+    #[arg(long)]
+    pub reasoning_share: bool,
+
+    /// Show Codex Guardian review summary: risk levels, actions, approval rate
+    #[arg(long)]
+    pub guardian: bool,
+
+    /// Show Codex multi-agent spawn/resume topology by sub-agent role
+    #[arg(long)]
+    pub multi_agent: bool,
+
+    /// Show Codex first-token latency (TTFT) percentiles (p50/p90/p95) per model
+    #[arg(long)]
+    pub codex_ttft: bool,
+
+    /// Show Codex turn busy/idle breakdown per model and project
+    #[arg(long)]
+    pub codex_turns: bool,
+
+    /// Show cross-tool first-token latency comparison (Claude Code, opencode, pi) from spans
+    #[arg(long)]
+    pub cross_tool_ttft: bool,
+
+    /// Show Codex hook overhead: total and average invocation time per hook event type
+    #[arg(long)]
+    pub hook_overhead: bool,
 }
 
 // ── serialisable output types (used for --format json) ───────────────────────
@@ -260,6 +296,24 @@ struct UsageOutput {
     session_models: Option<otelite_core::api::SessionModelBreakdown>,
     #[serde(skip_serializing_if = "Option::is_none")]
     speed: Option<otelite_core::api::SpeedDistribution>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    effort_breakdown: Option<otelite_core::api::EffortBreakdownResponse>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    efficiency: Option<otelite_core::api::EfficiencyStats>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    reasoning_share: Option<otelite_core::api::ReasoningShareResponse>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    guardian: Option<otelite_core::api::GuardianStatsResponse>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    multi_agent: Option<otelite_core::api::MultiAgentStatsResponse>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    codex_ttft: Option<otelite_core::api::CodexTtftResponse>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    codex_turns: Option<otelite_core::api::CodexTurnBreakdownResponse>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    cross_tool_ttft: Option<otelite_core::api::CrossToolTtftResponse>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    hook_overhead: Option<otelite_core::api::HookOverheadResponse>,
 }
 
 // ── pricing fetch ─────────────────────────────────────────────────────────────
@@ -809,6 +863,134 @@ impl UsageCommand {
             None
         };
 
+        // --effort-breakdown
+        let effort_breakdown: Option<otelite_core::api::EffortBreakdownResponse> =
+            if self.effort_breakdown {
+                Some(
+                    storage
+                        .query_effort_breakdown(Some(start_time), Some(end_time))
+                        .await
+                        .map_err(|e| {
+                            Error::ApiError(format!("Failed to query effort_breakdown: {}", e))
+                        })?,
+                )
+            } else {
+                None
+            };
+
+        // --efficiency
+        let efficiency: Option<otelite_core::api::EfficiencyStats> = if self.efficiency {
+            Some(
+                storage
+                    .query_efficiency_stats(Some(start_time), Some(end_time))
+                    .await
+                    .map_err(|e| {
+                        Error::ApiError(format!("Failed to query efficiency_stats: {}", e))
+                    })?,
+            )
+        } else {
+            None
+        };
+
+        // --reasoning-share
+        let reasoning_share: Option<otelite_core::api::ReasoningShareResponse> =
+            if self.reasoning_share {
+                Some(
+                    storage
+                        .query_reasoning_share(Some(start_time), Some(end_time))
+                        .await
+                        .map_err(|e| {
+                            Error::ApiError(format!("Failed to query reasoning_share: {}", e))
+                        })?,
+                )
+            } else {
+                None
+            };
+
+        // --guardian
+        let guardian: Option<otelite_core::api::GuardianStatsResponse> = if self.guardian {
+            Some(
+                storage
+                    .query_guardian_stats(Some(start_time), Some(end_time))
+                    .await
+                    .map_err(|e| {
+                        Error::ApiError(format!("Failed to query guardian_stats: {}", e))
+                    })?,
+            )
+        } else {
+            None
+        };
+
+        // --multi-agent
+        let multi_agent: Option<otelite_core::api::MultiAgentStatsResponse> = if self.multi_agent {
+            Some(
+                storage
+                    .query_multi_agent_stats(Some(start_time), Some(end_time))
+                    .await
+                    .map_err(|e| {
+                        Error::ApiError(format!("Failed to query multi_agent_stats: {}", e))
+                    })?,
+            )
+        } else {
+            None
+        };
+
+        // --codex-ttft
+        let codex_ttft: Option<otelite_core::api::CodexTtftResponse> = if self.codex_ttft {
+            Some(
+                storage
+                    .query_codex_ttft(Some(start_time), Some(end_time))
+                    .await
+                    .map_err(|e| Error::ApiError(format!("Failed to query codex_ttft: {}", e)))?,
+            )
+        } else {
+            None
+        };
+
+        // --codex-turns
+        let codex_turns: Option<otelite_core::api::CodexTurnBreakdownResponse> = if self.codex_turns
+        {
+            Some(
+                storage
+                    .query_codex_turn_breakdown(Some(start_time), Some(end_time))
+                    .await
+                    .map_err(|e| {
+                        Error::ApiError(format!("Failed to query codex_turn_breakdown: {}", e))
+                    })?,
+            )
+        } else {
+            None
+        };
+
+        // --cross-tool-ttft
+        let cross_tool_ttft: Option<otelite_core::api::CrossToolTtftResponse> =
+            if self.cross_tool_ttft {
+                Some(
+                    storage
+                        .query_cross_tool_ttft(Some(start_time), Some(end_time))
+                        .await
+                        .map_err(|e| {
+                            Error::ApiError(format!("Failed to query cross_tool_ttft: {}", e))
+                        })?,
+                )
+            } else {
+                None
+            };
+
+        // --hook-overhead
+        let hook_overhead: Option<otelite_core::api::HookOverheadResponse> = if self.hook_overhead {
+            Some(
+                storage
+                    .query_hook_overhead(Some(start_time), Some(end_time))
+                    .await
+                    .map_err(|e| {
+                        Error::ApiError(format!("Failed to query hook_overhead: {}", e))
+                    })?,
+            )
+        } else {
+            None
+        };
+
         use crate::config::OutputFormat;
         match format {
             OutputFormat::Json | OutputFormat::JsonCompact => {
@@ -839,6 +1021,15 @@ impl UsageCommand {
                     agent_roles,
                     session_models,
                     speed,
+                    effort_breakdown,
+                    efficiency,
+                    reasoning_share,
+                    guardian,
+                    multi_agent,
+                    codex_ttft,
+                    codex_turns,
+                    cross_tool_ttft,
+                    hook_overhead,
                 };
                 let json = if matches!(format, OutputFormat::JsonCompact) {
                     serde_json::to_string(&output)
@@ -990,6 +1181,51 @@ impl UsageCommand {
 
                 if let Some(ref dist) = speed {
                     display_speed_distribution(dist);
+                    println!();
+                }
+
+                if let Some(ref resp) = effort_breakdown {
+                    display_effort_breakdown(resp);
+                    println!();
+                }
+
+                if let Some(ref stats) = efficiency {
+                    display_efficiency(stats);
+                    println!();
+                }
+
+                if let Some(ref resp) = reasoning_share {
+                    display_reasoning_share(resp);
+                    println!();
+                }
+
+                if let Some(ref resp) = guardian {
+                    display_guardian(resp);
+                    println!();
+                }
+
+                if let Some(ref resp) = multi_agent {
+                    display_multi_agent(resp);
+                    println!();
+                }
+
+                if let Some(ref resp) = codex_ttft {
+                    display_codex_ttft(resp);
+                    println!();
+                }
+
+                if let Some(ref resp) = codex_turns {
+                    display_codex_turns(resp);
+                    println!();
+                }
+
+                if let Some(ref resp) = cross_tool_ttft {
+                    display_cross_tool_ttft(resp);
+                    println!();
+                }
+
+                if let Some(ref resp) = hook_overhead {
+                    display_hook_overhead(resp);
                     println!();
                 }
 
@@ -2299,6 +2535,364 @@ fn display_speed_distribution(dist: &otelite_core::api::SpeedDistribution) {
         ]);
     }
     println!("Speed / Effort mode distribution:");
+    println!("{}", table);
+}
+
+fn display_effort_breakdown(resp: &otelite_core::api::EffortBreakdownResponse) {
+    if resp.rows.is_empty() {
+        println!("Effort Breakdown: no data (Codex token.usage metrics not found in range)");
+        return;
+    }
+    let mut table = Table::new();
+    table
+        .load_preset(UTF8_FULL)
+        .set_content_arrangement(ContentArrangement::Dynamic);
+    table.set_header(vec![
+        Cell::new("Effort").fg(Color::Cyan),
+        Cell::new("Model").fg(Color::Cyan),
+        Cell::new("Token type").fg(Color::Cyan),
+        Cell::new("Tokens").fg(Color::Cyan),
+        Cell::new("Est. cost").fg(Color::Cyan),
+    ]);
+    for row in &resp.rows {
+        table.add_row(vec![
+            row.effort.as_str(),
+            row.model.as_str(),
+            row.token_type.as_str(),
+            &format_number(row.tokens),
+            &format_cost(row.cost_usd),
+        ]);
+    }
+    println!("Codex Reasoning Effort × Token Type:");
+    println!("{}", table);
+}
+
+fn display_efficiency(stats: &otelite_core::api::EfficiencyStats) {
+    println!("Cross-Agent Efficiency:");
+    println!("  Total tokens    : {}", format_number(stats.total_tokens));
+    println!(
+        "  Net lines added : {}",
+        format_number(stats.net_lines_added.unsigned_abs())
+    );
+    println!("  Commits         : {}", stats.total_commits);
+    println!("  PRs             : {}", stats.total_prs);
+    if let Some(tpc) = stats.tokens_per_commit {
+        println!("  Tokens / commit : {:.0}", tpc);
+    }
+    if let Some(tpl) = stats.tokens_per_loc {
+        println!("  Tokens / LOC    : {:.1}", tpl);
+    }
+    if !stats.by_agent.is_empty() {
+        let mut table = Table::new();
+        table
+            .load_preset(UTF8_FULL)
+            .set_content_arrangement(ContentArrangement::Dynamic);
+        table.set_header(vec![
+            Cell::new("Agent").fg(Color::Cyan),
+            Cell::new("Tokens").fg(Color::Cyan),
+            Cell::new("Lines +").fg(Color::Cyan),
+            Cell::new("Lines -").fg(Color::Cyan),
+            Cell::new("Commits").fg(Color::Cyan),
+        ]);
+        for r in &stats.by_agent {
+            table.add_row(vec![
+                r.agent.as_str(),
+                &format_number(r.tokens),
+                &format_number(r.lines_added.unsigned_abs()),
+                &format_number(r.lines_removed.unsigned_abs()),
+                &r.commits.to_string(),
+            ]);
+        }
+        println!("{}", table);
+    }
+}
+
+fn display_reasoning_share(resp: &otelite_core::api::ReasoningShareResponse) {
+    if resp.models.is_empty() && resp.effort.is_empty() {
+        println!("Reasoning Share: no thinking-token data in range");
+        return;
+    }
+    if !resp.models.is_empty() {
+        let mut table = Table::new();
+        table
+            .load_preset(UTF8_FULL)
+            .set_content_arrangement(ContentArrangement::Dynamic);
+        table.set_header(vec![
+            Cell::new("Model").fg(Color::Cyan),
+            Cell::new("Reasoning tok").fg(Color::Cyan),
+            Cell::new("Output tok").fg(Color::Cyan),
+            Cell::new("Share %").fg(Color::Cyan),
+            Cell::new("Est. cost").fg(Color::Cyan),
+        ]);
+        for m in &resp.models {
+            let share = match m.share_pct {
+                Some(p) => format!("{:.1}%", p),
+                None => "—".to_string(),
+            };
+            table.add_row(vec![
+                m.model.as_str(),
+                &format_number(m.reasoning_tokens),
+                &format_number(m.output_tokens),
+                &share,
+                &format_cost(m.cost_usd),
+            ]);
+        }
+        println!("Reasoning Token Share by Model:");
+        println!("{}", table);
+    }
+    if !resp.effort.is_empty() {
+        let mut table = Table::new();
+        table
+            .load_preset(UTF8_FULL)
+            .set_content_arrangement(ContentArrangement::Dynamic);
+        table.set_header(vec![
+            Cell::new("Effort level").fg(Color::Cyan),
+            Cell::new("Reasoning tok").fg(Color::Cyan),
+            Cell::new("Calls").fg(Color::Cyan),
+        ]);
+        for e in &resp.effort {
+            table.add_row(vec![
+                e.effort.as_str(),
+                &format_number(e.reasoning_tokens),
+                &e.calls.to_string(),
+            ]);
+        }
+        println!("Reasoning Tokens by Effort Level (Codex):");
+        println!("{}", table);
+    }
+}
+
+fn display_guardian(resp: &otelite_core::api::GuardianStatsResponse) {
+    if resp.total_reviews == 0 {
+        println!("Guardian Reviews: no data in range");
+        return;
+    }
+    println!(
+        "Codex Guardian Reviews: {} total, {:.1}% approved",
+        resp.total_reviews,
+        resp.approval_rate * 100.0
+    );
+    {
+        let mut table = Table::new();
+        table
+            .load_preset(UTF8_FULL)
+            .set_content_arrangement(ContentArrangement::Dynamic);
+        table.set_header(vec![
+            Cell::new("Risk level").fg(Color::Cyan),
+            Cell::new("Count").fg(Color::Cyan),
+            Cell::new("Approval %").fg(Color::Cyan),
+        ]);
+        for r in &resp.by_risk_level {
+            table.add_row(vec![
+                r.risk_level.as_str(),
+                &r.count.to_string(),
+                &format!("{:.1}%", r.approval_rate * 100.0),
+            ]);
+        }
+        println!("{}", table);
+    }
+    if !resp.by_action.is_empty() {
+        let mut table = Table::new();
+        table
+            .load_preset(UTF8_FULL)
+            .set_content_arrangement(ContentArrangement::Dynamic);
+        table.set_header(vec![
+            Cell::new("Action").fg(Color::Cyan),
+            Cell::new("Count").fg(Color::Cyan),
+            Cell::new("Denial %").fg(Color::Cyan),
+        ]);
+        for a in &resp.by_action {
+            table.add_row(vec![
+                a.action.as_str(),
+                &a.count.to_string(),
+                &format!("{:.1}%", a.denial_rate * 100.0),
+            ]);
+        }
+        println!("By action type:");
+        println!("{}", table);
+    }
+}
+
+fn display_multi_agent(resp: &otelite_core::api::MultiAgentStatsResponse) {
+    if resp.total_spawns == 0 {
+        println!("Multi-Agent: no spawn data in range");
+        return;
+    }
+    println!(
+        "Codex Multi-Agent: {} spawns, {} resumes",
+        resp.total_spawns, resp.total_resumes
+    );
+    if !resp.roles.is_empty() {
+        let mut table = Table::new();
+        table
+            .load_preset(UTF8_FULL)
+            .set_content_arrangement(ContentArrangement::Dynamic);
+        table.set_header(vec![
+            Cell::new("Role").fg(Color::Cyan),
+            Cell::new("Spawns").fg(Color::Cyan),
+            Cell::new("Resumes").fg(Color::Cyan),
+            Cell::new("Share %").fg(Color::Cyan),
+        ]);
+        for r in &resp.roles {
+            table.add_row(vec![
+                r.role.as_str(),
+                &r.spawns.to_string(),
+                &r.resumes.to_string(),
+                &format!("{:.1}%", r.share_pct),
+            ]);
+        }
+        println!("{}", table);
+    }
+}
+
+fn display_codex_ttft(resp: &otelite_core::api::CodexTtftResponse) {
+    if resp.models.is_empty() {
+        println!("Codex TTFT: no histogram data in range");
+        return;
+    }
+    let mut table = Table::new();
+    table
+        .load_preset(UTF8_FULL)
+        .set_content_arrangement(ContentArrangement::Dynamic);
+    table.set_header(vec![
+        Cell::new("Model").fg(Color::Cyan),
+        Cell::new("Count").fg(Color::Cyan),
+        Cell::new("p50 (ms)").fg(Color::Cyan),
+        Cell::new("p90 (ms)").fg(Color::Cyan),
+        Cell::new("p95 (ms)").fg(Color::Cyan),
+    ]);
+    for m in &resp.models {
+        let fmt = |v: Option<f64>| match v {
+            Some(x) => format!("{:.0}", x),
+            None => "—".to_string(),
+        };
+        table.add_row(vec![
+            m.model.as_str(),
+            &m.count.to_string(),
+            &fmt(m.p50_ms),
+            &fmt(m.p90_ms),
+            &fmt(m.p95_ms),
+        ]);
+    }
+    println!("Codex First-Token Latency (TTFT) by Model:");
+    println!("{}", table);
+}
+
+fn display_codex_turns(resp: &otelite_core::api::CodexTurnBreakdownResponse) {
+    if resp.rows.is_empty() {
+        println!("Codex Turns: no turn data in range");
+        return;
+    }
+    let mut table = Table::new();
+    table
+        .load_preset(UTF8_FULL)
+        .set_content_arrangement(ContentArrangement::Dynamic);
+    table.set_header(vec![
+        Cell::new("Model").fg(Color::Cyan),
+        Cell::new("Project").fg(Color::Cyan),
+        Cell::new("Turns").fg(Color::Cyan),
+        Cell::new("Avg dur (ms)").fg(Color::Cyan),
+        Cell::new("Avg busy (ms)").fg(Color::Cyan),
+        Cell::new("Avg idle (ms)").fg(Color::Cyan),
+        Cell::new("Busy %").fg(Color::Cyan),
+    ]);
+    for r in &resp.rows {
+        table.add_row(vec![
+            r.model.as_str(),
+            r.project.as_str(),
+            &r.turn_count.to_string(),
+            &format!("{:.0}", r.avg_duration_ms),
+            &format!("{:.0}", r.avg_busy_ms),
+            &format!("{:.0}", r.avg_idle_ms),
+            &format!("{:.1}%", r.busy_ratio * 100.0),
+        ]);
+    }
+    println!("Codex Turn Busy/Idle Breakdown:");
+    println!("{}", table);
+}
+
+fn display_cross_tool_ttft(resp: &otelite_core::api::CrossToolTtftResponse) {
+    if resp.rows.is_empty() {
+        println!("Cross-Tool TTFT: no span-level ttft_ms data in range");
+        return;
+    }
+    let mut table = Table::new();
+    table
+        .load_preset(UTF8_FULL)
+        .set_content_arrangement(ContentArrangement::Dynamic);
+    table.set_header(vec![
+        Cell::new("Tool").fg(Color::Cyan),
+        Cell::new("Model").fg(Color::Cyan),
+        Cell::new("Count").fg(Color::Cyan),
+        Cell::new("Avg TTFT").fg(Color::Cyan),
+        Cell::new("Min").fg(Color::Cyan),
+        Cell::new("p90").fg(Color::Cyan),
+        Cell::new("Max").fg(Color::Cyan),
+    ]);
+    let fmt_ms = |v: f64| {
+        format!(
+            "{} ms",
+            (v.round() as i64)
+                .to_string()
+                .chars()
+                .rev()
+                .collect::<Vec<_>>()
+                .chunks(3)
+                .map(|c| c.iter().collect::<String>())
+                .collect::<Vec<_>>()
+                .join(",")
+                .chars()
+                .rev()
+                .collect::<String>()
+        )
+    };
+    let fmt_opt = |v: Option<f64>| match v {
+        Some(x) => fmt_ms(x),
+        None => "—".to_string(),
+    };
+    for r in &resp.rows {
+        table.add_row(vec![
+            r.tool.as_str(),
+            r.model.as_str(),
+            &r.count.to_string(),
+            &fmt_ms(r.avg_ms),
+            &fmt_ms(r.min_ms),
+            &fmt_opt(r.p90_ms),
+            &fmt_ms(r.max_ms),
+        ]);
+    }
+    println!("Cross-Tool First-Token Latency (span-level):");
+    println!("{}", table);
+}
+
+fn display_hook_overhead(resp: &otelite_core::api::HookOverheadResponse) {
+    if resp.rows.is_empty() {
+        println!("Hook Overhead: no Codex hook metrics in range");
+        return;
+    }
+    println!(
+        "Codex Hook Overhead: {:.1} h total ({:.0} s)",
+        resp.grand_total_ms / 3_600_000.0,
+        resp.grand_total_ms / 1000.0,
+    );
+    let mut table = Table::new();
+    table
+        .load_preset(UTF8_FULL)
+        .set_content_arrangement(ContentArrangement::Dynamic);
+    table.set_header(vec![
+        Cell::new("Hook event").fg(Color::Cyan),
+        Cell::new("Invocations").fg(Color::Cyan),
+        Cell::new("Total time").fg(Color::Cyan),
+        Cell::new("Avg / call").fg(Color::Cyan),
+    ]);
+    for r in &resp.rows {
+        table.add_row(vec![
+            r.event.as_str(),
+            &r.count.to_string(),
+            &format!("{:.0} ms", r.total_ms),
+            &format!("{:.1} ms", r.avg_ms),
+        ]);
+    }
     println!("{}", table);
 }
 

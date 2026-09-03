@@ -685,4 +685,24 @@ pub trait StorageBackend: Send + Sync {
         let _ = (start_time, end_time);
         Err(StorageError::QueryError("not implemented".to_string()))
     }
+
+    /// Cross-tool TTFT comparison from span-level `ttft_ms` attribute.
+    async fn query_cross_tool_ttft(
+        &self,
+        start_time: Option<i64>,
+        end_time: Option<i64>,
+    ) -> Result<crate::api::CrossToolTtftResponse> {
+        let _ = (start_time, end_time);
+        Err(StorageError::QueryError("not implemented".to_string()))
+    }
+
+    /// Codex hook overhead: total and average duration per hook event type.
+    async fn query_hook_overhead(
+        &self,
+        start_time: Option<i64>,
+        end_time: Option<i64>,
+    ) -> Result<crate::api::HookOverheadResponse> {
+        let _ = (start_time, end_time);
+        Err(StorageError::QueryError("not implemented".to_string()))
+    }
 }

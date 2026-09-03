@@ -115,6 +115,9 @@ class AnalyticsView {
                 ${this._renderSectionShell('codex_turns', 'Codex Busy/Idle', 'Average busy vs idle time per turn by model and project')}
                 ${this._renderSectionShell('session_model', 'Session × Model', 'Token and cost breakdown per (session, model) pair — spot opus spend in specific sessions')}
                 ${this._renderSectionShell('speed_dist', 'Speed / Effort Mode', 'Distribution of the Claude Code speed attribute (normal / extended thinking) by model')}
+                ${this._renderSectionShell('cross_tool_ttft', 'Cross-Tool TTFT', 'First-token latency by model across all tools (Claude Code, opencode, pi) from span attributes')}
+                ${this._renderSectionShell('hook_overhead', 'Hook Overhead', 'Codex hook total and average invocation time per event type — how much latency hooks add')}
+                ${this._renderSectionShell('reasoning_share', 'Reasoning Token Share', 'Thinking tokens as a percentage of output tokens per model — opencode + Codex')}
             </div>
         `;
 
@@ -680,6 +683,9 @@ class AnalyticsView {
             codex_turns: () => this._loadCodexTurnsSection(),
             session_model: () => this._loadSessionModelSection(),
             speed_dist: () => this._loadSpeedDistSection(),
+            cross_tool_ttft: () => this._loadCrossToolTtftSection(),
+            hook_overhead: () => this._loadHookOverheadSection(),
+            reasoning_share: () => this._loadReasoningShareSection(),
         };
     }
 
@@ -3359,6 +3365,124 @@ class AnalyticsView {
             this.loadedSections.add('speed_dist');
         } catch (err) {
             this._setSectionError('speed_dist', err);
+        }
+    }
+
+    async _loadCrossToolTtftSection() {
+        this._setSectionLoading('cross_tool_ttft');
+        try {
+            const data = await this.api.getCrossToolTtft(this._timeParams());
+            const rows = data.rows || [];
+            if (!rows.length) {
+                this._setSectionBody('cross_tool_ttft', '<div class="empty-state-hint">No TTFT span data in this window. Only Claude Code and opencode spans carry ttft_ms.</div>');
+                this.loadedSections.add('cross_tool_ttft');
+                return;
+            }
+            const fmtMs = v => v != null ? `${Math.round(v).toLocaleString()} ms` : '—';
+            let html = '<div class="analytics-table-wrap"><table class="analytics-table"><thead><tr>' +
+                '<th>Tool</th><th>Model</th><th>Count</th><th>Avg TTFT</th><th>Min</th><th>p90</th><th>Max</th>' +
+                '</tr></thead><tbody>';
+            for (const r of rows.slice(0, 60)) {
+                html += `<tr>
+                    <td>${this._esc(r.tool)}</td>
+                    <td>${this._esc(r.model)}</td>
+                    <td>${Number(r.count).toLocaleString()}</td>
+                    <td>${fmtMs(r.avg_ms)}</td>
+                    <td>${fmtMs(r.min_ms)}</td>
+                    <td>${r.p90_ms != null ? fmtMs(r.p90_ms) : '<span class="dim">n/a</span>'}</td>
+                    <td>${fmtMs(r.max_ms)}</td>
+                </tr>`;
+            }
+            html += '</tbody></table></div>';
+            if (rows.length > 60) html += `<p class="empty-state-hint">Showing top 60 of ${rows.length} rows.</p>`;
+            this._setSectionBody('cross_tool_ttft', html);
+            this.loadedSections.add('cross_tool_ttft');
+        } catch (err) {
+            this._setSectionError('cross_tool_ttft', err);
+        }
+    }
+
+    async _loadHookOverheadSection() {
+        this._setSectionLoading('hook_overhead');
+        try {
+            const data = await this.api.getHookOverhead(this._timeParams());
+            const rows = data.rows || [];
+            if (!rows.length) {
+                this._setSectionBody('hook_overhead', '<div class="empty-state-hint">No Codex hook data in this window.</div>');
+                this.loadedSections.add('hook_overhead');
+                return;
+            }
+            const totalHours = (data.grand_total_ms / 3_600_000).toFixed(1);
+            const fmtMs = v => v != null ? `${Math.round(v).toLocaleString()} ms` : '—';
+            let html = `<p class="analytics-summary-line">Grand total hook time: <strong>${Number(data.grand_total_ms / 1000).toLocaleString(undefined, {maximumFractionDigits:0})} s</strong> (${totalHours} h)</p>`;
+            html += '<div class="analytics-table-wrap"><table class="analytics-table"><thead><tr>' +
+                '<th>Hook event</th><th>Invocations</th><th>Total time</th><th>Avg per call</th>' +
+                '</tr></thead><tbody>';
+            for (const r of rows) {
+                html += `<tr>
+                    <td>${this._esc(r.event)}</td>
+                    <td>${Number(r.count).toLocaleString()}</td>
+                    <td>${fmtMs(r.total_ms)}</td>
+                    <td>${fmtMs(r.avg_ms)}</td>
+                </tr>`;
+            }
+            html += '</tbody></table></div>';
+            this._setSectionBody('hook_overhead', html);
+            this.loadedSections.add('hook_overhead');
+        } catch (err) {
+            this._setSectionError('hook_overhead', err);
+        }
+    }
+
+    async _loadReasoningShareSection() {
+        this._setSectionLoading('reasoning_share');
+        try {
+            const data = await this.api.getReasoningShare(this._timeParams());
+            const models = data.models || [];
+            const effort = data.effort || [];
+            if (!models.length && !effort.length) {
+                this._setSectionBody('reasoning_share', '<div class="empty-state-hint">No reasoning/thinking token data in this window. Requires opencode or Codex with extended thinking enabled.</div>');
+                this.loadedSections.add('reasoning_share');
+                return;
+            }
+            const fmtTok = v => v != null ? Number(v).toLocaleString() : '—';
+            let html = '';
+            if (models.length) {
+                html += '<h4 class="analytics-sub-heading">By model</h4>';
+                html += '<div class="analytics-table-wrap"><table class="analytics-table"><thead><tr>' +
+                    '<th>Model</th><th>Reasoning tokens</th><th>Output tokens</th><th>Share %</th><th>Est. cost</th>' +
+                    '</tr></thead><tbody>';
+                for (const m of models) {
+                    const share = m.share_pct != null ? `${m.share_pct.toFixed(1)}%` : '—';
+                    const cost = m.cost_usd != null ? `$${m.cost_usd.toFixed(4)}` : '—';
+                    html += `<tr>
+                        <td>${this._esc(m.model)}</td>
+                        <td>${fmtTok(m.reasoning_tokens)}</td>
+                        <td>${fmtTok(m.output_tokens)}</td>
+                        <td>${share}</td>
+                        <td>${cost}</td>
+                    </tr>`;
+                }
+                html += '</tbody></table></div>';
+            }
+            if (effort.length) {
+                html += '<h4 class="analytics-sub-heading">By effort level (Codex)</h4>';
+                html += '<div class="analytics-table-wrap"><table class="analytics-table"><thead><tr>' +
+                    '<th>Effort level</th><th>Reasoning tokens</th><th>Calls</th>' +
+                    '</tr></thead><tbody>';
+                for (const e of effort) {
+                    html += `<tr>
+                        <td>${this._esc(e.effort)}</td>
+                        <td>${fmtTok(e.reasoning_tokens)}</td>
+                        <td>${Number(e.calls).toLocaleString()}</td>
+                    </tr>`;
+                }
+                html += '</tbody></table></div>';
+            }
+            this._setSectionBody('reasoning_share', html);
+            this.loadedSections.add('reasoning_share');
+        } catch (err) {
+            this._setSectionError('reasoning_share', err);
         }
     }
 }

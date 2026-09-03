@@ -83,6 +83,8 @@ use utoipa::OpenApi;
         crate::api::genai::get_codex_turn_breakdown,
         crate::api::genai::get_session_model_breakdown,
         crate::api::genai::get_speed_distribution,
+        crate::api::genai::get_cross_tool_ttft,
+        crate::api::genai::get_hook_overhead,
         crate::api::sessions::get_session_costs,
         crate::api::sessions::get_session_cost_distribution,
         crate::api::sessions::get_session_context,
@@ -205,6 +207,10 @@ use utoipa::OpenApi;
             otelite_core::api::SessionModelBreakdown,
             otelite_core::api::SpeedBucket,
             otelite_core::api::SpeedDistribution,
+            otelite_core::api::CrossToolTtftRow,
+            otelite_core::api::CrossToolTtftResponse,
+            otelite_core::api::HookOverheadRow,
+            otelite_core::api::HookOverheadResponse,
         )
     ),
     tags(
@@ -420,6 +426,8 @@ impl DashboardServer {
             .route("/api/genai/codex_turn_breakdown", get(crate::api::genai::get_codex_turn_breakdown))
             .route("/api/genai/session_model_breakdown", get(crate::api::genai::get_session_model_breakdown))
             .route("/api/genai/speed_distribution", get(crate::api::genai::get_speed_distribution))
+            .route("/api/genai/cross_tool_ttft", get(crate::api::genai::get_cross_tool_ttft))
+            .route("/api/genai/hook_overhead", get(crate::api::genai::get_hook_overhead))
             // API routes - Sessions
             .route("/api/sessions", get(crate::api::sessions::list_sessions))
             .route("/api/sessions/costs", get(crate::api::sessions::get_session_costs))

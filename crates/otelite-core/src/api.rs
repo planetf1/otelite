@@ -2564,6 +2564,60 @@ pub struct SpeedDistribution {
     pub filters_applied: Vec<String>,
 }
 
+/// One tool's row in the cross-tool TTFT comparison.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
+pub struct CrossToolTtftRow {
+    /// Short human-readable label derived from `otel.scope.name`
+    /// (e.g. "claude_code", "opencode", "codex").
+    pub tool: String,
+    pub model: String,
+    pub count: u64,
+    /// Average TTFT in milliseconds.
+    pub avg_ms: f64,
+    /// Minimum TTFT in milliseconds.
+    pub min_ms: f64,
+    /// p90 TTFT in milliseconds (NULL when fewer than 10 samples).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub p90_ms: Option<f64>,
+    /// Maximum TTFT in milliseconds.
+    pub max_ms: f64,
+}
+
+/// Response for `GET /api/genai/cross_tool_ttft`.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
+pub struct CrossToolTtftResponse {
+    /// Rows sorted by tool asc, avg_ms asc.
+    pub rows: Vec<CrossToolTtftRow>,
+    pub filters_applied: Vec<String>,
+}
+
+/// One hook event's overhead row.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
+pub struct HookOverheadRow {
+    /// The hook event name (PreToolUse, PostToolUse, …).
+    pub event: String,
+    /// Total invocations in the window.
+    pub count: u64,
+    /// Sum of all hook durations in milliseconds.
+    pub total_ms: f64,
+    /// Average duration per invocation in milliseconds.
+    pub avg_ms: f64,
+}
+
+/// Response for `GET /api/genai/hook_overhead`.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
+pub struct HookOverheadResponse {
+    /// Rows sorted by total_ms descending.
+    pub rows: Vec<HookOverheadRow>,
+    /// Grand total hook time across all event types, in milliseconds.
+    pub grand_total_ms: f64,
+    pub filters_applied: Vec<String>,
+}
+
 #[cfg(test)]
 mod project_rollup_tests {
     use super::*;

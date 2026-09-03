@@ -2768,6 +2768,66 @@ pub async fn get_speed_distribution(
     Ok(Json(response))
 }
 
+/// Cross-tool TTFT comparison from span-level ttft_ms attribute.
+#[utoipa::path(
+    get,
+    path = "/api/genai/cross_tool_ttft",
+    params(TimeRangeQuery),
+    responses(
+        (status = 200, description = "TTFT statistics by tool and model", body = otelite_core::api::CrossToolTtftResponse),
+        (status = 500, description = "Internal server error", body = ErrorResponse)
+    ),
+    tag = "genai"
+)]
+pub async fn get_cross_tool_ttft(
+    State(state): State<AppState>,
+    Query(query): Query<TimeRangeQuery>,
+) -> Result<Json<otelite_core::api::CrossToolTtftResponse>, (StatusCode, Json<ErrorResponse>)> {
+    let response = state
+        .storage
+        .query_cross_tool_ttft(query.start_time, query.end_time)
+        .await
+        .map_err(|e| {
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(ErrorResponse::storage_error(format!(
+                    "query cross_tool_ttft: {e}"
+                ))),
+            )
+        })?;
+    Ok(Json(response))
+}
+
+/// Codex hook overhead: total and average duration per hook event type.
+#[utoipa::path(
+    get,
+    path = "/api/genai/hook_overhead",
+    params(TimeRangeQuery),
+    responses(
+        (status = 200, description = "Hook overhead by event type", body = otelite_core::api::HookOverheadResponse),
+        (status = 500, description = "Internal server error", body = ErrorResponse)
+    ),
+    tag = "genai"
+)]
+pub async fn get_hook_overhead(
+    State(state): State<AppState>,
+    Query(query): Query<TimeRangeQuery>,
+) -> Result<Json<otelite_core::api::HookOverheadResponse>, (StatusCode, Json<ErrorResponse>)> {
+    let response = state
+        .storage
+        .query_hook_overhead(query.start_time, query.end_time)
+        .await
+        .map_err(|e| {
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(ErrorResponse::storage_error(format!(
+                    "query hook_overhead: {e}"
+                ))),
+            )
+        })?;
+    Ok(Json(response))
+}
+
 genai_filter_impl!(TokenUsageQuery);
 genai_filter_impl!(CostSeriesQuery);
 genai_filter_impl!(FinishReasonsQuery);

@@ -413,6 +413,8 @@ pub mod metric_names {
     pub const CODEX_MULTI_AGENT_RESUME: &str = "codex.multi_agent.resume";
     /// Per-event MCP tool call from Codex (value_int = 1 per call).
     pub const CODEX_MCP_CALL: &str = "codex.mcp.call";
+    /// Hook invocation duration histogram from Codex.
+    pub const CODEX_HOOKS_RUN_DURATION: &str = "codex.hooks.run.duration_ms";
 }
 
 /// Attribute label paths for agent metrics.

@@ -25,6 +25,29 @@ have to work around), not implementation detail.
 
 - Both panels also appear in the web Analytics accordion and expose their data via the OpenAPI spec.
 
+- **CLI coverage for existing analytics endpoints** — the following panels, already available via
+  the web UI and REST API, are now also reachable from `otelite usage`:
+  - `--effort-breakdown` — Codex reasoning-effort × token-type × cost breakdown
+  - `--efficiency` — cross-agent tokens/commit and tokens/LOC (Claude Code + opencode)
+  - `--reasoning-share` — thinking token % of output per model (opencode + Codex)
+  - `--guardian` — Codex Guardian risk levels, action breakdown, approval rate
+  - `--multi-agent` — Codex multi-agent spawn/resume topology by role
+  - `--codex-ttft` — Codex first-token latency percentiles (p50/p90/p95) per model
+  - `--codex-turns` — Codex turn busy/idle breakdown per model and project
+
+- **Cross-tool TTFT comparison** (`GET /api/genai/cross_tool_ttft`, `otelite usage --cross-tool-ttft`,
+  web Analytics accordion): first-token latency across all tools side-by-side (Claude Code, opencode,
+  pi) derived from span-level `ttft_ms` attributes — min / avg / p90 / max per (tool, model).
+
+- **Hook overhead** (`GET /api/genai/hook_overhead`, `otelite usage --hook-overhead`, web Analytics
+  accordion): Codex hook invocation totals and averages per event type (PreToolUse, PostToolUse, …)
+  from `codex.hooks.run.duration_ms` histograms — shows the real wall-clock cost of your hook
+  configuration (e.g. > 3,000 seconds of PreToolUse time in a typical session window).
+
+- **Reasoning token share** web panel (Analytics accordion, `reasoning_share` section): thinking
+  tokens as a percentage of output tokens per model, plus a by-effort-level breakdown for Codex —
+  sourced from `opencode.token.usage` counters and `codex.turn.token_usage` histograms.
+
 ## [0.1.107] - 2026-09-03
 
 ### Changed
