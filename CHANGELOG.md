@@ -11,6 +11,8 @@ have to work around), not implementation detail.
 
 ## [Unreleased]
 
+## [0.1.108] - 2026-09-03
+
 ### Added
 
 - **Session × Model** (`GET /api/genai/session_model_breakdown`, `otelite usage --session-models`):
