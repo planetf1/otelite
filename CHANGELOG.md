@@ -11,6 +11,8 @@ have to work around), not implementation detail.
 
 ## [Unreleased]
 
+## [0.1.106] - 2026-09-03
+
 ### Internal
 
 - Removed `grpc_compression` and `http_compression` fields from `ReceiverConfig` — they were
