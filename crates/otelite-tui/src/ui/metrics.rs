@@ -461,7 +461,7 @@ fn render_status_bar(frame: &mut Frame, area: Rect, state: &MetricsState, api_er
     // Help text
     status_parts.push(Span::raw(" | "));
     status_parts.push(Span::styled(
-        "↑↓/jk: Navigate | Enter: Detail | /: Search | f: Filter | q: Quit",
+        "↑↓/jk: Navigate | Enter: Detail | /: Search | f: Filter | ?: Help | q: Quit",
         Style::default().fg(Color::Gray),
     ));
 

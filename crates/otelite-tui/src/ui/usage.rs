@@ -1335,6 +1335,8 @@ fn render_status_bar(frame: &mut Frame, area: Rect, state: &UsageState) {
             Span::raw(":Usage  "),
             Span::styled("r", Style::default().fg(Color::Yellow)),
             Span::raw(":Refresh  "),
+            Span::styled("?", Style::default().fg(Color::Yellow)),
+            Span::raw(":Help  "),
             Span::styled("q", Style::default().fg(Color::Red)),
             Span::raw(":Quit"),
         ])

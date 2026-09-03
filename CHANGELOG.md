@@ -11,6 +11,11 @@ have to work around), not implementation detail.
 
 ## [Unreleased]
 
+### Changed
+
+- TUI status bars now include `?:Help` in the bottom keybind hint on every view — new users
+  no longer need to discover the help screen by trial and error.
+
 ## [0.1.106] - 2026-09-03
 
 ### Internal

@@ -337,7 +337,7 @@ fn render_status_bar(frame: &mut Frame, area: Rect, state: &LogsState, api_error
     // Help text
     status_parts.push(Span::raw(" | "));
     status_parts.push(Span::styled(
-        "↑↓/jk:Navigate  Enter:Detail/Trace  f:Filter  s:AutoScroll",
+        "↑↓/jk:Navigate  Enter:Detail/Trace  f:Filter  s:AutoScroll  ?:Help",
         Style::default().fg(Color::Gray),
     ));
 

@@ -1012,7 +1012,7 @@ fn render_status_bar(frame: &mut Frame, area: Rect, state: &TracesState, api_err
     } else if state.show_detail {
         "↑↓/jk: Navigate spans | Enter: Span detail | Esc: Back | q: Quit"
     } else {
-        "↑↓: Navigate | Enter: Detail | /: Search | f: Filter | q: Quit"
+        "↑↓: Navigate | Enter: Detail | /: Search | f: Filter | ?: Help | q: Quit"
     };
     status_parts.push(TextSpan::styled(
         help_text,
