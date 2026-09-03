@@ -113,6 +113,8 @@ class AnalyticsView {
                 ${this._renderSectionShell('guardian', 'Guardian Reviews', 'Codex Guardian risk levels and action breakdown from code-review events')}
                 ${this._renderSectionShell('multi_agent', 'Multi-Agent Topology', 'Sub-agent spawn and resume counts by role')}
                 ${this._renderSectionShell('codex_turns', 'Codex Busy/Idle', 'Average busy vs idle time per turn by model and project')}
+                ${this._renderSectionShell('session_model', 'Session × Model', 'Token and cost breakdown per (session, model) pair — spot opus spend in specific sessions')}
+                ${this._renderSectionShell('speed_dist', 'Speed / Effort Mode', 'Distribution of the Claude Code speed attribute (normal / extended thinking) by model')}
             </div>
         `;
 
@@ -676,6 +678,8 @@ class AnalyticsView {
             guardian: () => this._loadGuardianSection(),
             multi_agent: () => this._loadMultiAgentSection(),
             codex_turns: () => this._loadCodexTurnsSection(),
+            session_model: () => this._loadSessionModelSection(),
+            speed_dist: () => this._loadSpeedDistSection(),
         };
     }
 
@@ -3305,6 +3309,56 @@ class AnalyticsView {
             this.loadedSections.add('codex_turns');
         } catch (err) {
             this._setSectionError('codex_turns', err);
+        }
+    }
+
+    async _loadSessionModelSection() {
+        this._setSectionLoading('session_model');
+        try {
+            const data = await this.api.getSessionModelBreakdown(this._baseParams());
+            const rows = data.rows || [];
+            if (!rows.length) {
+                this._setSectionBody('session_model', '<div class="empty-state-hint">No session × model data in this window.</div>');
+                this.loadedSections.add('session_model');
+                return;
+            }
+            const fmtTok = v => v != null ? Number(v).toLocaleString() : '—';
+            const fmtCost = v => v != null ? `$${Number(v).toFixed(4)}` : '—';
+            let html = '<div class="analytics-table-wrap"><table class="analytics-table"><thead><tr><th>Session</th><th>Model</th><th>Requests</th><th>Input tokens</th><th>Output tokens</th><th>Est. cost</th></tr></thead><tbody>';
+            for (const r of rows.slice(0, 50)) {
+                html += `<tr><td title="${this._esc(r.session_id)}">${this._esc(r.session_id.slice(0, 8))}</td><td>${this._esc(r.model)}</td><td>${Number(r.requests).toLocaleString()}</td><td>${fmtTok(r.input_tokens)}</td><td>${fmtTok(r.output_tokens)}</td><td>${fmtCost(r.cost)}</td></tr>`;
+            }
+            html += '</tbody></table></div>';
+            if (rows.length > 50) html += `<p class="empty-state-hint">Showing top 50 of ${rows.length} rows (sorted by cost).</p>`;
+            this._setSectionBody('session_model', html);
+            this.loadedSections.add('session_model');
+        } catch (err) {
+            this._setSectionError('session_model', err);
+        }
+    }
+
+    async _loadSpeedDistSection() {
+        this._setSectionLoading('speed_dist');
+        try {
+            const data = await this.api.getSpeedDistribution(this._baseParams());
+            const rows = data.rows || [];
+            if (!rows.length) {
+                this._setSectionBody('speed_dist', '<div class="empty-state-hint">No speed attribute data in this window. Only Claude Code spans carry the speed attribute.</div>');
+                this.loadedSections.add('speed_dist');
+                return;
+            }
+            const fmtTok = v => v != null ? Number(v).toLocaleString() : '—';
+            let html = '<div class="analytics-table-wrap"><table class="analytics-table"><thead><tr><th>Speed / mode</th><th>Model</th><th>Requests</th><th>Input tokens</th><th>Output tokens</th></tr></thead><tbody>';
+            for (const r of rows.slice(0, 40)) {
+                const speed = r.speed != null ? this._esc(r.speed) : '<span class="dim">(not set)</span>';
+                html += `<tr><td>${speed}</td><td>${this._esc(r.model)}</td><td>${Number(r.requests).toLocaleString()}</td><td>${fmtTok(r.input_tokens)}</td><td>${fmtTok(r.output_tokens)}</td></tr>`;
+            }
+            html += '</tbody></table></div>';
+            if (rows.length > 40) html += `<p class="empty-state-hint">Showing top 40 of ${rows.length} rows.</p>`;
+            this._setSectionBody('speed_dist', html);
+            this.loadedSections.add('speed_dist');
+        } catch (err) {
+            this._setSectionError('speed_dist', err);
         }
     }
 }

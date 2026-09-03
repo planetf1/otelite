@@ -1066,6 +1066,29 @@ impl StorageBackend for SqliteBackend {
         .await
     }
 
+    async fn query_session_model_breakdown(
+        &self,
+        start_time: Option<i64>,
+        end_time: Option<i64>,
+    ) -> Result<otelite_core::api::SessionModelBreakdown> {
+        self.read_query(move |conn| {
+            reader::query_session_model_breakdown(conn, start_time, end_time)
+                .map_err(StorageError::from)
+        })
+        .await
+    }
+
+    async fn query_speed_distribution(
+        &self,
+        start_time: Option<i64>,
+        end_time: Option<i64>,
+    ) -> Result<otelite_core::api::SpeedDistribution> {
+        self.read_query(move |conn| {
+            reader::query_speed_distribution(conn, start_time, end_time).map_err(StorageError::from)
+        })
+        .await
+    }
+
     async fn close(&mut self) -> Result<()> {
         if let Some(handle) = self.purge_handle.lock().take() {
             handle.abort();

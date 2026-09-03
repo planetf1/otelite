@@ -81,6 +81,8 @@ use utoipa::OpenApi;
         crate::api::genai::get_guardian_stats,
         crate::api::genai::get_multi_agent_stats,
         crate::api::genai::get_codex_turn_breakdown,
+        crate::api::genai::get_session_model_breakdown,
+        crate::api::genai::get_speed_distribution,
         crate::api::sessions::get_session_costs,
         crate::api::sessions::get_session_cost_distribution,
         crate::api::sessions::get_session_context,
@@ -199,6 +201,10 @@ use utoipa::OpenApi;
             otelite_core::api::MultiAgentStatsResponse,
             otelite_core::api::CodexTurnBreakdownRow,
             otelite_core::api::CodexTurnBreakdownResponse,
+            otelite_core::api::SessionModelRow,
+            otelite_core::api::SessionModelBreakdown,
+            otelite_core::api::SpeedBucket,
+            otelite_core::api::SpeedDistribution,
         )
     ),
     tags(
@@ -412,6 +418,8 @@ impl DashboardServer {
             .route("/api/genai/guardian_stats", get(crate::api::genai::get_guardian_stats))
             .route("/api/genai/multi_agent_stats", get(crate::api::genai::get_multi_agent_stats))
             .route("/api/genai/codex_turn_breakdown", get(crate::api::genai::get_codex_turn_breakdown))
+            .route("/api/genai/session_model_breakdown", get(crate::api::genai::get_session_model_breakdown))
+            .route("/api/genai/speed_distribution", get(crate::api::genai::get_speed_distribution))
             // API routes - Sessions
             .route("/api/sessions", get(crate::api::sessions::list_sessions))
             .route("/api/sessions/costs", get(crate::api::sessions::get_session_costs))

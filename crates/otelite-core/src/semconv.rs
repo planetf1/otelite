@@ -151,6 +151,11 @@ pub const CODEX_IDLE_NS_KEY: &str = "idle_ns";
 /// Attribute carrying the agent session identifier (Claude Code `session.id`).
 pub const SESSION_ID_KEY: &str = "session.id";
 
+/// Claude Code attribute indicating thinking/effort speed mode of a request.
+/// Values observed: "normal", "extended".
+/// Claude Code only; not part of OTel GenAI semconv (as of 2026-09).
+pub const SPEED_KEY: &str = "speed";
+
 /// Span name for one Claude Code LLM request.
 pub const LLM_REQUEST_SPAN_NAME: &str = "claude_code.llm_request";
 

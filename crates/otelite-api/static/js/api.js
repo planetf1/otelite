@@ -267,6 +267,8 @@ class ApiClient {
     async getGuardianStats(params = {}) { return this.get('/genai/guardian_stats', params); }
     async getMultiAgentStats(params = {}) { return this.get('/genai/multi_agent_stats', params); }
     async getCodexTurnBreakdown(params = {}) { return this.get('/genai/codex_turn_breakdown', params); }
+    async getSessionModelBreakdown(params = {}) { return this.get('/genai/session_model_breakdown', params); }
+    async getSpeedDistribution(params = {}) { return this.get('/genai/speed_distribution', params); }
     async getAgentRoles(params = {})    { return this.get('/genai/agent_roles', params); }
     async getProviderMix(params = {})   { return this.get('/genai/provider_mix', params); }
 

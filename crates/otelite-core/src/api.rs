@@ -2517,6 +2517,53 @@ pub struct CodexTurnBreakdownResponse {
     pub filters_applied: Vec<String>,
 }
 
+/// One (session, model) row in the session×model cross-tab (#115).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
+pub struct SessionModelRow {
+    /// Short prefix of the session ID (first 8 hex chars) for display.
+    pub session_id: String,
+    pub model: String,
+    pub requests: u64,
+    pub input_tokens: u64,
+    pub output_tokens: u64,
+    /// Estimated cost in USD; None when no pricing matched.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cost: Option<f64>,
+}
+
+/// Response for `GET /api/genai/session_model_breakdown` (#115).
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
+pub struct SessionModelBreakdown {
+    /// Rows sorted by cost desc (nulls last), then requests desc.
+    pub rows: Vec<SessionModelRow>,
+    pub filters_applied: Vec<String>,
+}
+
+/// One speed/effort-level bucket (#114).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
+pub struct SpeedBucket {
+    /// The value of the `speed` attribute (e.g. "normal", "extended").
+    /// `None` = spans that carry no speed attribute.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub speed: Option<String>,
+    pub model: String,
+    pub requests: u64,
+    pub input_tokens: u64,
+    pub output_tokens: u64,
+}
+
+/// Response for `GET /api/genai/speed_distribution` (#114).
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
+pub struct SpeedDistribution {
+    /// Rows sorted by requests desc.
+    pub rows: Vec<SpeedBucket>,
+    pub filters_applied: Vec<String>,
+}
+
 #[cfg(test)]
 mod project_rollup_tests {
     use super::*;

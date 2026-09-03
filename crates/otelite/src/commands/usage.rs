@@ -164,6 +164,14 @@ pub struct UsageCommand {
     /// Show cost and token attribution per sub-agent role (opencode `agent` label)
     #[arg(long)]
     pub agent_roles: bool,
+
+    /// Show session × model cross-tab: which sessions used which models and at what cost (#115)
+    #[arg(long)]
+    pub session_models: bool,
+
+    /// Show speed/effort attribute distribution across Claude Code LLM spans (#114)
+    #[arg(long)]
+    pub speed: bool,
 }
 
 // ── serialisable output types (used for --format json) ───────────────────────
@@ -248,6 +256,10 @@ struct UsageOutput {
     calls_series: Option<Vec<otelite_core::api::CallsSeriesPoint>>,
     #[serde(skip_serializing_if = "Option::is_none")]
     agent_roles: Option<otelite_core::api::AgentRolesResponse>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    session_models: Option<otelite_core::api::SessionModelBreakdown>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    speed: Option<otelite_core::api::SpeedDistribution>,
 }
 
 // ── pricing fetch ─────────────────────────────────────────────────────────────
@@ -752,6 +764,51 @@ impl UsageCommand {
             None
         };
 
+        // --session-models
+        let session_models: Option<otelite_core::api::SessionModelBreakdown> = if self
+            .session_models
+        {
+            let mut breakdown = storage
+                .query_session_model_breakdown(Some(start_time), Some(end_time))
+                .await
+                .map_err(|e| {
+                    Error::ApiError(format!("Failed to query session_model_breakdown: {}", e))
+                })?;
+            for row in &mut breakdown.rows {
+                let usage = TokenUsage {
+                    input: row.input_tokens,
+                    output: row.output_tokens,
+                    cache_creation: 0,
+                    cache_read: 0,
+                };
+                let cr = pricing_db.compute_cost(Some(&row.model), usage, None);
+                row.cost = cr.cost;
+            }
+            breakdown.rows.sort_by(|a, b| match (a.cost, b.cost) {
+                (Some(ac), Some(bc)) => bc.partial_cmp(&ac).unwrap_or(std::cmp::Ordering::Equal),
+                (Some(_), None) => std::cmp::Ordering::Less,
+                (None, Some(_)) => std::cmp::Ordering::Greater,
+                (None, None) => b.requests.cmp(&a.requests),
+            });
+            Some(breakdown)
+        } else {
+            None
+        };
+
+        // --speed
+        let speed: Option<otelite_core::api::SpeedDistribution> = if self.speed {
+            Some(
+                storage
+                    .query_speed_distribution(Some(start_time), Some(end_time))
+                    .await
+                    .map_err(|e| {
+                        Error::ApiError(format!("Failed to query speed_distribution: {}", e))
+                    })?,
+            )
+        } else {
+            None
+        };
+
         use crate::config::OutputFormat;
         match format {
             OutputFormat::Json | OutputFormat::JsonCompact => {
@@ -780,6 +837,8 @@ impl UsageCommand {
                     hour_of_day,
                     calls_series,
                     agent_roles,
+                    session_models,
+                    speed,
                 };
                 let json = if matches!(format, OutputFormat::JsonCompact) {
                     serde_json::to_string(&output)
@@ -921,6 +980,16 @@ impl UsageCommand {
 
                 if let Some(ref roles) = agent_roles {
                     display_agent_roles(roles);
+                    println!();
+                }
+
+                if let Some(ref breakdown) = session_models {
+                    display_session_models(breakdown);
+                    println!();
+                }
+
+                if let Some(ref dist) = speed {
+                    display_speed_distribution(dist);
                     println!();
                 }
 
@@ -2170,6 +2239,66 @@ fn display_calls_series(points: &[otelite_core::api::CallsSeriesPoint]) {
     }
 
     println!("Call Volume Trend (per bucket × model):");
+    println!("{}", table);
+}
+
+fn display_session_models(breakdown: &otelite_core::api::SessionModelBreakdown) {
+    if breakdown.rows.is_empty() {
+        println!("Session × Model: no data in range");
+        return;
+    }
+    let mut table = Table::new();
+    table
+        .load_preset(UTF8_FULL)
+        .set_content_arrangement(ContentArrangement::Dynamic);
+    table.set_header(vec![
+        Cell::new("Session ID").fg(Color::Cyan),
+        Cell::new("Model").fg(Color::Cyan),
+        Cell::new("Requests").fg(Color::Cyan),
+        Cell::new("Input").fg(Color::Cyan),
+        Cell::new("Output").fg(Color::Cyan),
+        Cell::new("Est. cost").fg(Color::Cyan),
+    ]);
+    for row in &breakdown.rows {
+        table.add_row(vec![
+            &truncate(&row.session_id, 16),
+            &row.model,
+            &row.requests.to_string(),
+            &format_number(row.input_tokens),
+            &format_number(row.output_tokens),
+            &format_cost(row.cost),
+        ]);
+    }
+    println!("Session × Model breakdown:");
+    println!("{}", table);
+}
+
+fn display_speed_distribution(dist: &otelite_core::api::SpeedDistribution) {
+    if dist.rows.is_empty() {
+        println!("Speed distribution: no Claude Code span data in range");
+        return;
+    }
+    let mut table = Table::new();
+    table
+        .load_preset(UTF8_FULL)
+        .set_content_arrangement(ContentArrangement::Dynamic);
+    table.set_header(vec![
+        Cell::new("Speed / mode").fg(Color::Cyan),
+        Cell::new("Model").fg(Color::Cyan),
+        Cell::new("Requests").fg(Color::Cyan),
+        Cell::new("Input").fg(Color::Cyan),
+        Cell::new("Output").fg(Color::Cyan),
+    ]);
+    for row in &dist.rows {
+        table.add_row(vec![
+            row.speed.as_deref().unwrap_or("(not set)"),
+            &row.model,
+            &row.requests.to_string(),
+            &format_number(row.input_tokens),
+            &format_number(row.output_tokens),
+        ]);
+    }
+    println!("Speed / Effort mode distribution:");
     println!("{}", table);
 }
 

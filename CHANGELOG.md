@@ -11,6 +11,18 @@ have to work around), not implementation detail.
 
 ## [Unreleased]
 
+### Added
+
+- **Session × Model** (`GET /api/genai/session_model_breakdown`, `otelite usage --session-models`):
+  token and cost breakdown per (session, model) pair — instantly answers "which session is burning
+  my opus budget?" without querying SQLite directly. Sorted by estimated cost descending.
+
+- **Speed / Effort distribution** (`GET /api/genai/speed_distribution`, `otelite usage --speed`):
+  surfaces the Claude Code `speed` attribute (e.g. "normal", "extended") grouped by model — lets
+  you verify whether extended-thinking mode is on and on which models it shows up.
+
+- Both panels also appear in the web Analytics accordion and expose their data via the OpenAPI spec.
+
 ## [0.1.107] - 2026-09-03
 
 ### Changed

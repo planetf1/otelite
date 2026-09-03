@@ -8967,6 +8967,164 @@ pub fn query_codex_turn_breakdown(
     })
 }
 
+/// Session × model cross-tab: tokens and estimated cost per (session_id, model) pair. (#115)
+///
+/// Returns rows sorted by requests descending. Spans that carry no session.id
+/// are grouped under "(no session)". Cost is unenriched here — the API layer
+/// prices each row from the model field after this function returns.
+pub fn query_session_model_breakdown(
+    conn: &Connection,
+    start_time: Option<i64>,
+    end_time: Option<i64>,
+) -> Result<otelite_core::api::SessionModelBreakdown> {
+    use otelite_core::{
+        api::{SessionModelBreakdown, SessionModelRow},
+        semconv,
+    };
+
+    let session_expr = semconv::session_id_expr("attributes");
+    let model_expr = semconv::coalesce_extract("attributes", semconv::MODEL_KEYS);
+    let input_expr =
+        semconv::coalesce_extract_cast("attributes", semconv::INPUT_TOKEN_KEYS, "INTEGER");
+    let output_expr =
+        semconv::coalesce_extract_cast("attributes", semconv::OUTPUT_TOKEN_KEYS, "INTEGER");
+    let llm_guard = semconv::llm_span_guard("attributes");
+
+    let mut where_clause = format!(
+        "WHERE ({llm_guard} OR name = '{llm_req}')",
+        llm_req = semconv::LLM_REQUEST_SPAN_NAME
+    );
+    let mut params: Vec<Box<dyn rusqlite::ToSql>> = Vec::new();
+    if let Some(s) = start_time {
+        where_clause.push_str(" AND start_time >= ?");
+        params.push(Box::new(s));
+    }
+    if let Some(e) = end_time {
+        where_clause.push_str(" AND end_time <= ?");
+        params.push(Box::new(e));
+    }
+
+    let sql = format!(
+        "SELECT
+            COALESCE({session_expr}, '(no session)') AS session_id,
+            COALESCE({model_expr}, '(unknown)') AS model,
+            COUNT(*) AS requests,
+            COALESCE(SUM({input_expr}), 0) AS input_tokens,
+            COALESCE(SUM({output_expr}), 0) AS output_tokens
+         FROM spans
+         {where_clause}
+         GROUP BY session_id, model
+         ORDER BY requests DESC"
+    );
+
+    let param_refs: Vec<&dyn rusqlite::ToSql> = params.iter().map(|p| p.as_ref()).collect();
+    let mut stmt = conn.prepare(&sql).map_err(|e| {
+        StorageError::QueryError(format!(
+            "Failed to prepare session_model_breakdown query: {e}"
+        ))
+    })?;
+
+    let rows = stmt
+        .query_map(param_refs.as_slice(), |r| {
+            Ok(SessionModelRow {
+                session_id: r.get::<_, String>(0)?,
+                model: r.get::<_, String>(1)?,
+                requests: r.get::<_, i64>(2)? as u64,
+                input_tokens: r.get::<_, i64>(3)? as u64,
+                output_tokens: r.get::<_, i64>(4)? as u64,
+                cost: None, // priced by the API layer
+            })
+        })
+        .map_err(|e| StorageError::QueryError(format!("{e}")))?
+        .collect::<std::result::Result<Vec<_>, _>>()
+        .map_err(|e| StorageError::QueryError(format!("{e}")))?;
+
+    Ok(SessionModelBreakdown {
+        rows,
+        filters_applied: Vec::new(),
+    })
+}
+
+/// Speed/effort attribute distribution across Claude Code LLM spans. (#114)
+///
+/// Groups by (speed, model) and returns counts + token sums. Rows where
+/// `speed` is absent are included with `speed = None` so callers can see
+/// the split between instrumented and un-instrumented spans.
+pub fn query_speed_distribution(
+    conn: &Connection,
+    start_time: Option<i64>,
+    end_time: Option<i64>,
+) -> Result<otelite_core::api::SpeedDistribution> {
+    use otelite_core::{
+        api::{SpeedBucket, SpeedDistribution},
+        semconv,
+    };
+
+    let model_expr = semconv::coalesce_extract("attributes", semconv::MODEL_KEYS);
+    let input_expr =
+        semconv::coalesce_extract_cast("attributes", semconv::INPUT_TOKEN_KEYS, "INTEGER");
+    let output_expr =
+        semconv::coalesce_extract_cast("attributes", semconv::OUTPUT_TOKEN_KEYS, "INTEGER");
+    let llm_guard = semconv::llm_span_guard("attributes");
+
+    // Include only spans that originate from Claude Code (the only instrumentation
+    // known to emit `speed`). Using the full LLM guard keeps the result general
+    // in case other frameworks adopt the attribute later.
+    let mut where_clause = format!(
+        "WHERE ({llm_guard} OR name = '{llm_req}')",
+        llm_req = semconv::LLM_REQUEST_SPAN_NAME
+    );
+    let mut params: Vec<Box<dyn rusqlite::ToSql>> = Vec::new();
+    if let Some(s) = start_time {
+        where_clause.push_str(" AND start_time >= ?");
+        params.push(Box::new(s));
+    }
+    if let Some(e) = end_time {
+        where_clause.push_str(" AND end_time <= ?");
+        params.push(Box::new(e));
+    }
+
+    let speed_key = semconv::SPEED_KEY;
+    let sql = format!(
+        "SELECT
+            CASE WHEN json_valid(attributes)
+                 THEN json_extract(attributes, '$.\"{speed_key}\"')
+                 ELSE NULL END AS speed,
+            COALESCE({model_expr}, '(unknown)') AS model,
+            COUNT(*) AS requests,
+            COALESCE(SUM({input_expr}), 0) AS input_tokens,
+            COALESCE(SUM({output_expr}), 0) AS output_tokens
+         FROM spans
+         {where_clause}
+         GROUP BY speed, model
+         ORDER BY requests DESC"
+    );
+
+    let param_refs: Vec<&dyn rusqlite::ToSql> = params.iter().map(|p| p.as_ref()).collect();
+    let mut stmt = conn.prepare(&sql).map_err(|e| {
+        StorageError::QueryError(format!("Failed to prepare speed_distribution query: {e}"))
+    })?;
+
+    let rows = stmt
+        .query_map(param_refs.as_slice(), |r| {
+            Ok(SpeedBucket {
+                speed: r.get::<_, Option<String>>(0)?,
+                model: r.get::<_, String>(1)?,
+                requests: r.get::<_, i64>(2)? as u64,
+                input_tokens: r.get::<_, i64>(3)? as u64,
+                output_tokens: r.get::<_, i64>(4)? as u64,
+            })
+        })
+        .map_err(|e| StorageError::QueryError(format!("{e}")))?
+        .collect::<std::result::Result<Vec<_>, _>>()
+        .map_err(|e| StorageError::QueryError(format!("{e}")))?;
+
+    Ok(SpeedDistribution {
+        rows,
+        filters_applied: Vec::new(),
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -11944,5 +12102,102 @@ mod tests {
             (row.busy_ratio - 0.5).abs() < 0.01,
             "busy ratio should be ~0.5"
         );
+    }
+
+    #[test]
+    fn test_query_session_model_breakdown_empty() {
+        let conn = setup_test_db();
+        let result = query_session_model_breakdown(&conn, None, None).unwrap();
+        assert!(result.rows.is_empty());
+    }
+
+    #[test]
+    fn test_query_session_model_breakdown_groups_by_session_and_model() {
+        let conn = setup_test_db();
+        // Session A used sonnet (2 spans), session B used opus (1 span)
+        for _ in 0..2 {
+            insert_span_simple(
+                &conn,
+                "claude_code.llm_request",
+                0,
+                1_000_000_000,
+                r#"{"session.id":"session-a","gen_ai.request.model":"claude-sonnet-5","gen_ai.usage.input_tokens":100,"gen_ai.usage.output_tokens":50}"#,
+            );
+        }
+        insert_span_simple(
+            &conn,
+            "claude_code.llm_request",
+            0,
+            1_000_000_000,
+            r#"{"session.id":"session-b","gen_ai.request.model":"claude-opus-5","gen_ai.usage.input_tokens":200,"gen_ai.usage.output_tokens":80}"#,
+        );
+        let result = query_session_model_breakdown(&conn, None, None).unwrap();
+        assert!(!result.rows.is_empty());
+        // session-a/sonnet should have 2 requests
+        let sonnet_row = result
+            .rows
+            .iter()
+            .find(|r| r.session_id == "session-a")
+            .unwrap();
+        assert_eq!(sonnet_row.model, "claude-sonnet-5");
+        assert_eq!(sonnet_row.requests, 2);
+        assert_eq!(sonnet_row.input_tokens, 200);
+        assert_eq!(sonnet_row.output_tokens, 100);
+        // session-b/opus should have 1 request
+        let opus_row = result
+            .rows
+            .iter()
+            .find(|r| r.session_id == "session-b")
+            .unwrap();
+        assert_eq!(opus_row.model, "claude-opus-5");
+        assert_eq!(opus_row.requests, 1);
+    }
+
+    #[test]
+    fn test_query_speed_distribution_empty() {
+        let conn = setup_test_db();
+        let result = query_speed_distribution(&conn, None, None).unwrap();
+        assert!(result.rows.is_empty());
+    }
+
+    #[test]
+    fn test_query_speed_distribution_groups_by_speed_and_model() {
+        let conn = setup_test_db();
+        // Two normal spans, one extended span, all for claude-sonnet
+        for _ in 0..2 {
+            insert_span_simple(
+                &conn,
+                "claude_code.llm_request",
+                0,
+                1_000_000_000,
+                r#"{"speed":"normal","gen_ai.request.model":"claude-sonnet-5","gen_ai.usage.input_tokens":100,"gen_ai.usage.output_tokens":50}"#,
+            );
+        }
+        insert_span_simple(
+            &conn,
+            "claude_code.llm_request",
+            0,
+            1_000_000_000,
+            r#"{"speed":"extended","gen_ai.request.model":"claude-sonnet-5","gen_ai.usage.input_tokens":300,"gen_ai.usage.output_tokens":200}"#,
+        );
+        let result = query_speed_distribution(&conn, None, None).unwrap();
+        assert!(!result.rows.is_empty());
+        // "normal" should have 2 requests (sorted first because 2 > 1)
+        let normal = result
+            .rows
+            .iter()
+            .find(|r| r.speed.as_deref() == Some("normal"))
+            .unwrap();
+        assert_eq!(normal.model, "claude-sonnet-5");
+        assert_eq!(normal.requests, 2);
+        assert_eq!(normal.input_tokens, 200);
+        // "extended" should have 1 request
+        let extended = result
+            .rows
+            .iter()
+            .find(|r| r.speed.as_deref() == Some("extended"))
+            .unwrap();
+        assert_eq!(extended.requests, 1);
+        assert_eq!(extended.input_tokens, 300);
     }
 }

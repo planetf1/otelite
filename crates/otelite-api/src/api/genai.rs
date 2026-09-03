@@ -2687,6 +2687,87 @@ pub async fn get_codex_turn_breakdown(
     Ok(Json(response))
 }
 
+/// Session × model cross-tab: tokens and cost per (session_id, model) pair (#115).
+#[utoipa::path(
+    get,
+    path = "/api/genai/session_model_breakdown",
+    params(TimeRangeQuery),
+    responses(
+        (status = 200, description = "Session × model cross-tab", body = otelite_core::api::SessionModelBreakdown),
+        (status = 500, description = "Internal server error", body = ErrorResponse)
+    ),
+    tag = "genai"
+)]
+pub async fn get_session_model_breakdown(
+    State(state): State<AppState>,
+    Query(query): Query<TimeRangeQuery>,
+) -> Result<Json<otelite_core::api::SessionModelBreakdown>, (StatusCode, Json<ErrorResponse>)> {
+    let mut response = state
+        .storage
+        .query_session_model_breakdown(query.start_time, query.end_time)
+        .await
+        .map_err(|e| {
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(ErrorResponse::storage_error(format!(
+                    "query session_model_breakdown: {e}"
+                ))),
+            )
+        })?;
+    // Enrich each row with pricing cost from model identifier.
+    let pricing_db = state.pricing.snapshot().await;
+    for row in &mut response.rows {
+        let usage = TokenUsage {
+            input: row.input_tokens,
+            output: row.output_tokens,
+            cache_creation: 0,
+            cache_read: 0,
+        };
+        let cr = pricing_db.db.compute_cost(Some(&row.model), usage, None);
+        row.cost = cr.cost;
+    }
+    // Re-sort by cost desc (nulls last), then requests desc.
+    response.rows.sort_by(|a, b| match (a.cost, b.cost) {
+        (Some(ac), Some(bc)) => bc.partial_cmp(&ac).unwrap_or(std::cmp::Ordering::Equal),
+        (Some(_), None) => std::cmp::Ordering::Less,
+        (None, Some(_)) => std::cmp::Ordering::Greater,
+        (None, None) => b.requests.cmp(&a.requests),
+    });
+    response.filters_applied = query.filters().applied(&[]);
+    Ok(Json(response))
+}
+
+/// Speed/effort attribute distribution across Claude Code LLM spans (#114).
+#[utoipa::path(
+    get,
+    path = "/api/genai/speed_distribution",
+    params(TimeRangeQuery),
+    responses(
+        (status = 200, description = "Speed/effort distribution by model", body = otelite_core::api::SpeedDistribution),
+        (status = 500, description = "Internal server error", body = ErrorResponse)
+    ),
+    tag = "genai"
+)]
+pub async fn get_speed_distribution(
+    State(state): State<AppState>,
+    Query(query): Query<TimeRangeQuery>,
+) -> Result<Json<otelite_core::api::SpeedDistribution>, (StatusCode, Json<ErrorResponse>)> {
+    let mut response = state
+        .storage
+        .query_speed_distribution(query.start_time, query.end_time)
+        .await
+        .map_err(|e| {
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(ErrorResponse::storage_error(format!(
+                    "query speed_distribution: {e}"
+                ))),
+            )
+        })?;
+    response.filters_applied = query.filters().applied(&[]);
+    Ok(Json(response))
+}
+
 genai_filter_impl!(TokenUsageQuery);
 genai_filter_impl!(CostSeriesQuery);
 genai_filter_impl!(FinishReasonsQuery);

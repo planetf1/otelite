@@ -665,4 +665,24 @@ pub trait StorageBackend: Send + Sync {
         let _ = (start_time, end_time);
         Err(StorageError::QueryError("not implemented".to_string()))
     }
+
+    /// Session × model cross-tab: tokens and cost per (session_id, model) pair. (#115)
+    async fn query_session_model_breakdown(
+        &self,
+        start_time: Option<i64>,
+        end_time: Option<i64>,
+    ) -> Result<crate::api::SessionModelBreakdown> {
+        let _ = (start_time, end_time);
+        Err(StorageError::QueryError("not implemented".to_string()))
+    }
+
+    /// Speed/effort attribute distribution across Claude Code LLM spans. (#114)
+    async fn query_speed_distribution(
+        &self,
+        start_time: Option<i64>,
+        end_time: Option<i64>,
+    ) -> Result<crate::api::SpeedDistribution> {
+        let _ = (start_time, end_time);
+        Err(StorageError::QueryError("not implemented".to_string()))
+    }
 }
