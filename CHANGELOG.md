@@ -11,6 +11,35 @@ have to work around), not implementation detail.
 
 ## [Unreleased]
 
+### Added
+
+- **Tool Failure Rates** (`GET /api/genai/tool_failure_rates`): see which opencode tools are failing
+  and at what rate — `ram_memorize`, `edit`, `webfetch`, and others visible at a glance with
+  red/amber colour coding. Surfaced as a new Analytics accordion section near the top.
+
+- **Daily Tool Mix** (`GET /api/genai/daily_tool_mix`): stacked bar chart + table showing
+  Claude Code / opencode / Codex activity day-by-day — answers "when do I use which tool" and
+  makes tool-switching patterns immediately visible.
+
+- **Skills Activity** (`GET /api/genai/skill_activity`): Codex skill injection counts by skill
+  name and invoke type — shows which skills in your library actually fire vs sit idle, letting
+  you prune or prioritise maintenance effort.
+
+- **Guardian denial rate** enriched: risk-level and action tables in Guardian Reviews now show
+  denied counts and deny % per row (computed from the `decision` attribute), making it easy to
+  see what the guardian is actually blocking without querying SQLite.
+
+- **Agent Role × Model routing matrix**: the Agent Roles section now appends a cross-tab showing
+  what percentage of each role's tokens were routed to each model — makes routing strategy legible.
+
+- **Cache zero-coverage alert**: Cost section now calls out models with zero cache reads/writes
+  (e.g. Qwen) with an amber banner — flags where you're sending full context every turn and
+  could benefit from enabling prompt caching.
+
+- **Reasoning tokens** (`gen_ai.usage.reasoning_tokens`): span-level reasoning token counts from
+  pi and other OTel-conformant emitters are now aggregated into the Reasoning Token Share view
+  alongside the existing opencode and Codex histogram paths.
+
 ## [0.1.108] - 2026-09-03
 
 ### Added

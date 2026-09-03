@@ -428,6 +428,9 @@ impl DashboardServer {
             .route("/api/genai/speed_distribution", get(crate::api::genai::get_speed_distribution))
             .route("/api/genai/cross_tool_ttft", get(crate::api::genai::get_cross_tool_ttft))
             .route("/api/genai/hook_overhead", get(crate::api::genai::get_hook_overhead))
+            .route("/api/genai/tool_failure_rates", get(crate::api::genai::get_tool_failure_rates))
+            .route("/api/genai/daily_tool_mix", get(crate::api::genai::get_daily_tool_mix))
+            .route("/api/genai/skill_activity", get(crate::api::genai::get_skill_activity))
             // API routes - Sessions
             .route("/api/sessions", get(crate::api::sessions::list_sessions))
             .route("/api/sessions/costs", get(crate::api::sessions::get_session_costs))

@@ -705,4 +705,34 @@ pub trait StorageBackend: Send + Sync {
         let _ = (start_time, end_time);
         Err(StorageError::QueryError("not implemented".to_string()))
     }
+
+    /// Tool failure rates from opencode.tool.duration metric (#insight-1).
+    async fn query_tool_failure_rates(
+        &self,
+        start_time: Option<i64>,
+        end_time: Option<i64>,
+    ) -> Result<crate::api::ToolFailureRatesResponse> {
+        let _ = (start_time, end_time);
+        Err(StorageError::QueryError("not implemented".to_string()))
+    }
+
+    /// Daily tool mix: datapoints per tool per calendar day (#insight-2).
+    async fn query_daily_tool_mix(
+        &self,
+        start_time: Option<i64>,
+        end_time: Option<i64>,
+    ) -> Result<crate::api::DailyToolMixResponse> {
+        let _ = (start_time, end_time);
+        Err(StorageError::QueryError("not implemented".to_string()))
+    }
+
+    /// Codex skill injection activity (#insight-3).
+    async fn query_skill_activity(
+        &self,
+        start_time: Option<i64>,
+        end_time: Option<i64>,
+    ) -> Result<crate::api::SkillActivityResponse> {
+        let _ = (start_time, end_time);
+        Err(StorageError::QueryError("not implemented".to_string()))
+    }
 }

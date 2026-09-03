@@ -1111,6 +1111,39 @@ impl StorageBackend for SqliteBackend {
         .await
     }
 
+    async fn query_tool_failure_rates(
+        &self,
+        start_time: Option<i64>,
+        end_time: Option<i64>,
+    ) -> Result<otelite_core::api::ToolFailureRatesResponse> {
+        self.read_query(move |conn| {
+            reader::query_tool_failure_rates(conn, start_time, end_time).map_err(StorageError::from)
+        })
+        .await
+    }
+
+    async fn query_daily_tool_mix(
+        &self,
+        start_time: Option<i64>,
+        end_time: Option<i64>,
+    ) -> Result<otelite_core::api::DailyToolMixResponse> {
+        self.read_query(move |conn| {
+            reader::query_daily_tool_mix(conn, start_time, end_time).map_err(StorageError::from)
+        })
+        .await
+    }
+
+    async fn query_skill_activity(
+        &self,
+        start_time: Option<i64>,
+        end_time: Option<i64>,
+    ) -> Result<otelite_core::api::SkillActivityResponse> {
+        self.read_query(move |conn| {
+            reader::query_skill_activity(conn, start_time, end_time).map_err(StorageError::from)
+        })
+        .await
+    }
+
     async fn close(&mut self) -> Result<()> {
         if let Some(handle) = self.purge_handle.lock().take() {
             handle.abort();

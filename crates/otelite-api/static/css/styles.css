@@ -3429,3 +3429,43 @@ svg .brush-overlay {
     stroke-width: 0.4;
     pointer-events: none;
 }
+
+/* ── Insight analytics additions ─────────────────────────────────────────── */
+
+/* Row highlight colours for tool failure rate table */
+tr.row-error td { background: rgba(229, 83, 75, 0.12); }
+tr.row-warn  td { background: rgba(245, 166, 35, 0.12); }
+
+/* Inline badges used in table-hint text */
+.badge-error { color: #e5534b; font-weight: 600; }
+.badge-warn  { color: #f5a623; font-weight: 600; }
+
+/* Zero-cache alert in Cost section */
+.insight-alert {
+    padding: 0.4rem 0.75rem;
+    background: rgba(245, 166, 35, 0.10);
+    border-left: 3px solid var(--warning-color, #f59e0b);
+    border-radius: 0 4px 4px 0;
+    margin: 0.5rem 0 0.75rem;
+}
+
+/* Horizontally scrollable table wrapper */
+.table-scroll-x { overflow-x: auto; }
+
+/* Daily tool mix: day label below each bar column */
+.ce-label {
+    font-size: 0.65rem;
+    color: var(--text-secondary, #8b8b9e);
+    text-align: center;
+    margin-top: 3px;
+    white-space: nowrap;
+    overflow: hidden;
+    max-width: 38px;
+    text-overflow: ellipsis;
+}
+
+/* Role × model matrix: dimmed empty cells */
+td.dim { color: var(--muted-color, #8b8b9e); }
+
+/* Compact small text for role-matrix column headers */
+.role-matrix-table th.small { font-size: 0.7rem; }

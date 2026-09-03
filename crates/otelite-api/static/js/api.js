@@ -273,6 +273,9 @@ class ApiClient {
     async getSpeedDistribution(params = {}) { return this.get('/genai/speed_distribution', params); }
     async getAgentRoles(params = {})    { return this.get('/genai/agent_roles', params); }
     async getProviderMix(params = {})   { return this.get('/genai/provider_mix', params); }
+    async getToolFailureRates(params = {}) { return this.get('/genai/tool_failure_rates', params); }
+    async getDailyToolMix(params = {})     { return this.get('/genai/daily_tool_mix', params); }
+    async getSkillActivity(params = {})    { return this.get('/genai/skill_activity', params); }
 
     /**
      * Fetch session diagnose report

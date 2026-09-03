@@ -2828,6 +2828,96 @@ pub async fn get_hook_overhead(
     Ok(Json(response))
 }
 
+/// Tool failure rates from opencode.tool.duration.
+#[utoipa::path(
+    get,
+    path = "/api/genai/tool_failure_rates",
+    params(TimeRangeQuery),
+    responses(
+        (status = 200, description = "Tool failure rates sorted by failure count", body = otelite_core::api::ToolFailureRatesResponse),
+        (status = 500, description = "Internal server error", body = ErrorResponse)
+    ),
+    tag = "genai"
+)]
+pub async fn get_tool_failure_rates(
+    State(state): State<AppState>,
+    Query(query): Query<TimeRangeQuery>,
+) -> Result<Json<otelite_core::api::ToolFailureRatesResponse>, (StatusCode, Json<ErrorResponse>)> {
+    let response = state
+        .storage
+        .query_tool_failure_rates(query.start_time, query.end_time)
+        .await
+        .map_err(|e| {
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(ErrorResponse::storage_error(format!(
+                    "query tool_failure_rates: {e}"
+                ))),
+            )
+        })?;
+    Ok(Json(response))
+}
+
+/// Daily tool activity mix (claude_code / opencode / codex datapoints per day).
+#[utoipa::path(
+    get,
+    path = "/api/genai/daily_tool_mix",
+    params(TimeRangeQuery),
+    responses(
+        (status = 200, description = "Datapoints per tool per calendar day", body = otelite_core::api::DailyToolMixResponse),
+        (status = 500, description = "Internal server error", body = ErrorResponse)
+    ),
+    tag = "genai"
+)]
+pub async fn get_daily_tool_mix(
+    State(state): State<AppState>,
+    Query(query): Query<TimeRangeQuery>,
+) -> Result<Json<otelite_core::api::DailyToolMixResponse>, (StatusCode, Json<ErrorResponse>)> {
+    let response = state
+        .storage
+        .query_daily_tool_mix(query.start_time, query.end_time)
+        .await
+        .map_err(|e| {
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(ErrorResponse::storage_error(format!(
+                    "query daily_tool_mix: {e}"
+                ))),
+            )
+        })?;
+    Ok(Json(response))
+}
+
+/// Codex skill injection activity.
+#[utoipa::path(
+    get,
+    path = "/api/genai/skill_activity",
+    params(TimeRangeQuery),
+    responses(
+        (status = 200, description = "Skill injection counts by skill name and invoke type", body = otelite_core::api::SkillActivityResponse),
+        (status = 500, description = "Internal server error", body = ErrorResponse)
+    ),
+    tag = "genai"
+)]
+pub async fn get_skill_activity(
+    State(state): State<AppState>,
+    Query(query): Query<TimeRangeQuery>,
+) -> Result<Json<otelite_core::api::SkillActivityResponse>, (StatusCode, Json<ErrorResponse>)> {
+    let response = state
+        .storage
+        .query_skill_activity(query.start_time, query.end_time)
+        .await
+        .map_err(|e| {
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(ErrorResponse::storage_error(format!(
+                    "query skill_activity: {e}"
+                ))),
+            )
+        })?;
+    Ok(Json(response))
+}
+
 genai_filter_impl!(TokenUsageQuery);
 genai_filter_impl!(CostSeriesQuery);
 genai_filter_impl!(FinishReasonsQuery);

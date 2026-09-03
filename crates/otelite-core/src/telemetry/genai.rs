@@ -1683,15 +1683,24 @@ mod tests {
     fn test_reasoning_tokens_parsed() {
         let mut attrs = HashMap::new();
         attrs.insert("gen_ai.system".to_string(), "anthropic".to_string());
-        attrs.insert("gen_ai.request.model".to_string(), "deepseek-v4-flash".to_string());
+        attrs.insert(
+            "gen_ai.request.model".to_string(),
+            "deepseek-v4-flash".to_string(),
+        );
         attrs.insert("gen_ai.usage.input_tokens".to_string(), "100".to_string());
         attrs.insert("gen_ai.usage.output_tokens".to_string(), "80".to_string());
-        attrs.insert("gen_ai.usage.reasoning_tokens".to_string(), "50".to_string());
+        attrs.insert(
+            "gen_ai.usage.reasoning_tokens".to_string(),
+            "50".to_string(),
+        );
 
         let info = GenAiSpanInfo::from_attributes(&attrs);
         assert_eq!(info.reasoning_tokens, Some(50));
         let fmt = info.format_token_usage().unwrap();
-        assert!(fmt.contains("Reasoning: 50"), "expected reasoning in: {fmt}");
+        assert!(
+            fmt.contains("Reasoning: 50"),
+            "expected reasoning in: {fmt}"
+        );
     }
 
     #[test]
@@ -1715,6 +1724,9 @@ mod tests {
         let info = GenAiSpanInfo::from_attributes(&attrs);
         assert_eq!(info.reasoning_tokens, None);
         let fmt = info.format_token_usage().unwrap();
-        assert!(!fmt.contains("Reasoning"), "no reasoning field expected: {fmt}");
+        assert!(
+            !fmt.contains("Reasoning"),
+            "no reasoning field expected: {fmt}"
+        );
     }
 }

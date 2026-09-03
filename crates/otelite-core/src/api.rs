@@ -2448,6 +2448,9 @@ pub struct GuardianRiskLevelEntry {
     pub risk_level: String,
     pub count: u64,
     pub approval_rate: f64,
+    /// Number of denied reviews at this risk level.
+    #[serde(default)]
+    pub denied: u64,
 }
 
 /// Summary stats for one action type in the Guardian breakdown (#162).
@@ -2457,6 +2460,9 @@ pub struct GuardianActionEntry {
     pub action: String,
     pub count: u64,
     pub denial_rate: f64,
+    /// Number of denied reviews for this action type.
+    #[serde(default)]
+    pub denied: u64,
 }
 
 /// Response for `GET /api/genai/guardian_stats` (#162).
@@ -2615,6 +2621,81 @@ pub struct HookOverheadResponse {
     pub rows: Vec<HookOverheadRow>,
     /// Grand total hook time across all event types, in milliseconds.
     pub grand_total_ms: f64,
+    pub filters_applied: Vec<String>,
+}
+
+// ── Tool Failure Rates (#insight-1) ──────────────────────────────────────────
+
+/// One tool's failure-rate row.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
+pub struct ToolFailureRow {
+    /// Tool name (e.g. "edit", "ram_memorize").
+    pub tool: String,
+    /// Total invocations in the window.
+    pub total: u64,
+    /// Number of failed invocations.
+    pub failures: u64,
+    /// Failure percentage (0.0–100.0).
+    pub fail_pct: f64,
+}
+
+/// Response for `GET /api/genai/tool_failure_rates`.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
+pub struct ToolFailureRatesResponse {
+    /// Rows sorted by failures descending.
+    pub rows: Vec<ToolFailureRow>,
+    pub filters_applied: Vec<String>,
+}
+
+// ── Daily Tool Mix (#insight-2) ───────────────────────────────────────────────
+
+/// One tool's datapoints for a single calendar day.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
+pub struct DailyToolMixRow {
+    /// Calendar day in ISO-8601 format (YYYY-MM-DD), UTC.
+    pub day: String,
+    /// Short tool label: "claude_code", "opencode", "codex".
+    pub tool: String,
+    /// Number of metric datapoints for this tool on this day.
+    pub datapoints: u64,
+}
+
+/// Response for `GET /api/genai/daily_tool_mix`.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
+pub struct DailyToolMixResponse {
+    /// Rows in (day asc, tool asc) order.
+    pub rows: Vec<DailyToolMixRow>,
+    /// Distinct tool labels present in the data.
+    pub tools: Vec<String>,
+    pub filters_applied: Vec<String>,
+}
+
+// ── Skills Activity (#insight-3) ─────────────────────────────────────────────
+
+/// One skill's usage row.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
+pub struct SkillActivityRow {
+    /// Skill name (e.g. "code-review", "inbox-triage").
+    pub skill: String,
+    /// How the skill was invoked: "implicit" or "explicit".
+    pub invoke_type: String,
+    /// Number of injections in the window.
+    pub injections: u64,
+}
+
+/// Response for `GET /api/genai/skill_activity`.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
+pub struct SkillActivityResponse {
+    /// Rows sorted by injections descending.
+    pub rows: Vec<SkillActivityRow>,
+    /// Total injection count.
+    pub total_injections: u64,
     pub filters_applied: Vec<String>,
 }
 

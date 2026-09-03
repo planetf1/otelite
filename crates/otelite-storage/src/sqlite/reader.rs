@@ -4919,12 +4919,14 @@ pub fn query_reasoning_share(
     {
         let reasoning_key = otelite_core::semconv::REASONING_TOKEN_KEYS[0];
         let model_expr = "COALESCE(json_extract(attributes,'$.\"gen_ai.request.model\"'), \
-             json_extract(attributes,'$.\"model\"'), '(unknown)')".to_string();
-        let rtok_expr = format!(
-            "CAST(json_extract(attributes,'$.\"{reasoning_key}\"') AS INTEGER)"
-        );
-        let output_expr = "CAST(COALESCE(json_extract(attributes,'$.\"gen_ai.usage.output_tokens\"'), \
-             json_extract(attributes,'$.\"output_tokens\"')) AS INTEGER)".to_string();
+             json_extract(attributes,'$.\"model\"'), '(unknown)')"
+            .to_string();
+        let rtok_expr =
+            format!("CAST(json_extract(attributes,'$.\"{reasoning_key}\"') AS INTEGER)");
+        let output_expr =
+            "CAST(COALESCE(json_extract(attributes,'$.\"gen_ai.usage.output_tokens\"'), \
+             json_extract(attributes,'$.\"output_tokens\"')) AS INTEGER)"
+                .to_string();
         let mut where_clause = format!(
             "WHERE json_valid(attributes) \
              AND json_extract(attributes,'$.\"{reasoning_key}\"') IS NOT NULL \
@@ -8755,24 +8757,27 @@ pub fn query_guardian_stats(
         params.push(Box::new(e));
     }
 
+    // Count total and denied per risk level in one pass.
     let risk_sql = format!(
         "SELECT
             COALESCE(json_extract(attributes,'$.risk_level'), '(unknown)') AS risk,
-            SUM(COALESCE(value_int, 1)) AS cnt
+            COUNT(*) AS total_cnt,
+            SUM(CASE WHEN json_extract(attributes,'$.decision') = 'denied' THEN 1 ELSE 0 END) AS denied_cnt
          FROM metrics
          {where_clause}
          GROUP BY risk
-         ORDER BY cnt DESC"
+         ORDER BY total_cnt DESC"
     );
+    // Count total and denied per action type in one pass.
     let action_sql = format!(
         "SELECT
-            COALESCE(json_extract(attributes,'$.decision'), '(unknown)') AS decision,
-            COALESCE(json_extract(attributes,'$.action'),   '(unknown)') AS action,
-            SUM(COALESCE(value_int, 1)) AS cnt
+            COALESCE(json_extract(attributes,'$.action'), '(unknown)') AS action,
+            COUNT(*) AS total_cnt,
+            SUM(CASE WHEN json_extract(attributes,'$.decision') = 'denied' THEN 1 ELSE 0 END) AS denied_cnt
          FROM metrics
          {where_clause}
-         GROUP BY decision, action
-         ORDER BY cnt DESC"
+         GROUP BY action
+         ORDER BY total_cnt DESC"
     );
 
     let param_refs: Vec<&dyn rusqlite::ToSql> = params.iter().map(|p| p.as_ref()).collect();
@@ -8782,10 +8787,19 @@ pub fn query_guardian_stats(
     })?;
     let by_risk: Vec<GuardianRiskLevelEntry> = stmt
         .query_map(param_refs.as_slice(), |r| {
+            let risk_level: String = r.get(0)?;
+            let count: u64 = r.get::<_, i64>(1).unwrap_or(0) as u64;
+            let denied: u64 = r.get::<_, i64>(2).unwrap_or(0) as u64;
+            let approval_rate = if count > 0 {
+                1.0 - denied as f64 / count as f64
+            } else {
+                0.0
+            };
             Ok(GuardianRiskLevelEntry {
-                risk_level: r.get(0)?,
-                count: r.get::<_, i64>(1)? as u64,
-                approval_rate: 0.0, // enriched below
+                risk_level,
+                count,
+                approval_rate,
+                denied,
             })
         })
         .map_err(|e| StorageError::QueryError(format!("{e}")))?
@@ -8797,33 +8811,30 @@ pub fn query_guardian_stats(
     let mut stmt2 = conn.prepare(&action_sql).map_err(|e| {
         StorageError::QueryError(format!("Failed to prepare guardian action query: {e}"))
     })?;
-    // action_sql selects: decision (col0), action (col1), cnt (col2)
-    // GuardianActionEntry has: action, count, denial_rate
     let by_action: Vec<GuardianActionEntry> = stmt2
         .query_map(param_refs.as_slice(), |r| {
-            let _decision: String = r.get(0)?; // decision label — not a struct field
-            let action: String = r.get(1)?;
-            let count: u64 = r.get::<_, i64>(2)? as u64;
+            let action: String = r.get(0)?;
+            let count: u64 = r.get::<_, i64>(1).unwrap_or(0) as u64;
+            let denied: u64 = r.get::<_, i64>(2).unwrap_or(0) as u64;
+            let denial_rate = if count > 0 {
+                denied as f64 / count as f64
+            } else {
+                0.0
+            };
             Ok(GuardianActionEntry {
                 action,
                 count,
-                denial_rate: 0.0, // enriched below
+                denial_rate,
+                denied,
             })
         })
         .map_err(|e| StorageError::QueryError(format!("{e}")))?
         .collect::<std::result::Result<Vec<_>, _>>()
         .map_err(|e| StorageError::QueryError(format!("{e}")))?;
 
-    // Approximate approval rate: reviews whose action was not a denial/block.
-    let denied: u64 = by_action
-        .iter()
-        .filter(|a| {
-            a.action.to_lowercase().contains("den") || a.action.to_lowercase().contains("block")
-        })
-        .map(|a| a.count)
-        .sum();
+    let total_denied: u64 = by_risk.iter().map(|r| r.denied).sum();
     let approval_rate = if total > 0 {
-        1.0 - denied as f64 / total as f64
+        1.0 - total_denied as f64 / total as f64
     } else {
         0.0
     };
@@ -12508,5 +12519,355 @@ mod new_insight_tests {
         assert!((result.rows[0].total_ms - 450.0).abs() < 0.01);
         assert!((result.rows[0].avg_ms - 150.0).abs() < 0.01);
         assert!((result.grand_total_ms - 450.0).abs() < 0.01);
+    }
+}
+
+// ── Tool Failure Rates (#insight-1) ──────────────────────────────────────────
+
+/// Tool failure rates from the `opencode.tool.duration` metric.
+///
+/// Aggregates success/fail counts per tool name and computes the failure
+/// percentage. Only tools with at least one failure are included; rows are
+/// sorted by failure count descending so the most problematic tools appear
+/// first.
+pub fn query_tool_failure_rates(
+    conn: &Connection,
+    start_time: Option<i64>,
+    end_time: Option<i64>,
+) -> Result<otelite_core::api::ToolFailureRatesResponse> {
+    use otelite_core::api::{ToolFailureRatesResponse, ToolFailureRow};
+
+    let mut where_clause =
+        String::from("WHERE name = 'opencode.tool.duration' AND json_valid(attributes)");
+    let mut params: Vec<Box<dyn rusqlite::ToSql>> = Vec::new();
+
+    if let Some(s) = start_time {
+        where_clause.push_str(" AND timestamp >= ?");
+        params.push(Box::new(s));
+    }
+    if let Some(e) = end_time {
+        where_clause.push_str(" AND timestamp <= ?");
+        params.push(Box::new(e));
+    }
+
+    let sql = format!(
+        r#"
+        SELECT
+          COALESCE(json_extract(attributes,'$.tool_name'), '(unknown)') AS tool,
+          COUNT(*) AS total,
+          SUM(CASE WHEN json_extract(attributes,'$.success') = 'false' THEN 1 ELSE 0 END) AS failures
+        FROM metrics
+        {where_clause}
+        GROUP BY tool
+        HAVING failures > 0
+        ORDER BY failures DESC
+        "#
+    );
+
+    let param_refs: Vec<&dyn rusqlite::ToSql> = params.iter().map(|p| p.as_ref()).collect();
+    let mut stmt = conn.prepare(&sql).map_err(|e| {
+        StorageError::QueryError(format!("Failed to prepare tool_failure_rates query: {e}"))
+    })?;
+
+    let rows: Vec<ToolFailureRow> = stmt
+        .query_map(param_refs.as_slice(), |r| {
+            let tool: String = r.get(0)?;
+            let total: i64 = r.get(1).unwrap_or(0);
+            let failures: i64 = r.get(2).unwrap_or(0);
+            let fail_pct = if total > 0 {
+                failures as f64 / total as f64 * 100.0
+            } else {
+                0.0
+            };
+            Ok(ToolFailureRow {
+                tool,
+                total: total as u64,
+                failures: failures as u64,
+                fail_pct,
+            })
+        })
+        .map_err(|e| StorageError::QueryError(format!("{e}")))?
+        .collect::<std::result::Result<Vec<_>, _>>()
+        .map_err(|e| StorageError::QueryError(format!("{e}")))?;
+
+    Ok(ToolFailureRatesResponse {
+        rows,
+        filters_applied: Vec::new(),
+    })
+}
+
+// ── Daily Tool Mix (#insight-2) ───────────────────────────────────────────────
+
+/// Daily tool activity mix.
+///
+/// Counts metric datapoints per tool (identified by `otel.scope.name`) per
+/// calendar day (UTC). Returns rows for claude_code, opencode, and codex only
+/// — other scopes are excluded to keep the chart focused.
+pub fn query_daily_tool_mix(
+    conn: &Connection,
+    start_time: Option<i64>,
+    end_time: Option<i64>,
+) -> Result<otelite_core::api::DailyToolMixResponse> {
+    use otelite_core::api::{DailyToolMixResponse, DailyToolMixRow};
+
+    // Map otel.scope.name → short label.
+    let mut where_clause = String::from(
+        r#"WHERE json_valid(scope)
+           AND json_extract(scope,'$.name') IN (
+               'com.anthropic.claude_code',
+               'com.opencode',
+               'codex'
+           )"#,
+    );
+    let mut params: Vec<Box<dyn rusqlite::ToSql>> = Vec::new();
+
+    if let Some(s) = start_time {
+        where_clause.push_str(" AND timestamp >= ?");
+        params.push(Box::new(s));
+    }
+    if let Some(e) = end_time {
+        where_clause.push_str(" AND timestamp <= ?");
+        params.push(Box::new(e));
+    }
+
+    let sql = format!(
+        r#"
+        SELECT
+          strftime('%Y-%m-%d', datetime(timestamp / 1000000000, 'unixepoch')) AS day,
+          CASE json_extract(scope,'$.name')
+            WHEN 'com.anthropic.claude_code' THEN 'claude_code'
+            WHEN 'com.opencode'              THEN 'opencode'
+            WHEN 'codex'                     THEN 'codex'
+            ELSE json_extract(scope,'$.name')
+          END AS tool,
+          COUNT(*) AS datapoints
+        FROM metrics
+        {where_clause}
+        GROUP BY day, tool
+        ORDER BY day ASC, tool ASC
+        "#
+    );
+
+    let param_refs: Vec<&dyn rusqlite::ToSql> = params.iter().map(|p| p.as_ref()).collect();
+    let mut stmt = conn.prepare(&sql).map_err(|e| {
+        StorageError::QueryError(format!("Failed to prepare daily_tool_mix query: {e}"))
+    })?;
+
+    let rows: Vec<DailyToolMixRow> = stmt
+        .query_map(param_refs.as_slice(), |r| {
+            Ok(DailyToolMixRow {
+                day: r.get(0)?,
+                tool: r.get(1)?,
+                datapoints: r.get::<_, i64>(2).unwrap_or(0) as u64,
+            })
+        })
+        .map_err(|e| StorageError::QueryError(format!("{e}")))?
+        .collect::<std::result::Result<Vec<_>, _>>()
+        .map_err(|e| StorageError::QueryError(format!("{e}")))?;
+
+    // Collect distinct tools for the frontend legend.
+    let mut tools: Vec<String> = rows
+        .iter()
+        .map(|r| r.tool.clone())
+        .collect::<std::collections::HashSet<_>>()
+        .into_iter()
+        .collect();
+    tools.sort();
+
+    Ok(DailyToolMixResponse {
+        rows,
+        tools,
+        filters_applied: Vec::new(),
+    })
+}
+
+// ── Skills Activity (#insight-3) ─────────────────────────────────────────────
+
+/// Codex skill injection activity.
+///
+/// Aggregates `codex.skill.injected` metric counts by skill name and invoke
+/// type ("implicit" / "explicit"). Rows are sorted by injection count
+/// descending.
+pub fn query_skill_activity(
+    conn: &Connection,
+    start_time: Option<i64>,
+    end_time: Option<i64>,
+) -> Result<otelite_core::api::SkillActivityResponse> {
+    use otelite_core::api::{SkillActivityResponse, SkillActivityRow};
+
+    let mut where_clause = String::from(
+        "WHERE name = 'codex.skill.injected' AND json_valid(attributes) AND json_extract(attributes,'$.skill') IS NOT NULL",
+    );
+    let mut params: Vec<Box<dyn rusqlite::ToSql>> = Vec::new();
+
+    if let Some(s) = start_time {
+        where_clause.push_str(" AND timestamp >= ?");
+        params.push(Box::new(s));
+    }
+    if let Some(e) = end_time {
+        where_clause.push_str(" AND timestamp <= ?");
+        params.push(Box::new(e));
+    }
+
+    let sql = format!(
+        r#"
+        SELECT
+          json_extract(attributes,'$.skill')                                     AS skill,
+          COALESCE(json_extract(attributes,'$.invoke_type'), 'unknown')           AS invoke_type,
+          COUNT(*)                                                                AS injections
+        FROM metrics
+        {where_clause}
+        GROUP BY skill, invoke_type
+        ORDER BY injections DESC
+        "#
+    );
+
+    let param_refs: Vec<&dyn rusqlite::ToSql> = params.iter().map(|p| p.as_ref()).collect();
+    let mut stmt = conn.prepare(&sql).map_err(|e| {
+        StorageError::QueryError(format!("Failed to prepare skill_activity query: {e}"))
+    })?;
+
+    let rows: Vec<SkillActivityRow> = stmt
+        .query_map(param_refs.as_slice(), |r| {
+            Ok(SkillActivityRow {
+                skill: r.get(0)?,
+                invoke_type: r.get(1)?,
+                injections: r.get::<_, i64>(2).unwrap_or(0) as u64,
+            })
+        })
+        .map_err(|e| StorageError::QueryError(format!("{e}")))?
+        .collect::<std::result::Result<Vec<_>, _>>()
+        .map_err(|e| StorageError::QueryError(format!("{e}")))?;
+
+    let total_injections: u64 = rows.iter().map(|r| r.injections).sum();
+
+    Ok(SkillActivityResponse {
+        rows,
+        total_injections,
+        filters_applied: Vec::new(),
+    })
+}
+
+#[cfg(test)]
+mod new_insight_tests_2 {
+    use super::*;
+    use rusqlite::Connection;
+
+    fn make_conn() -> Connection {
+        let conn = Connection::open_in_memory().unwrap();
+        conn.execute_batch(
+            "CREATE TABLE metrics (
+                id INTEGER PRIMARY KEY,
+                name TEXT NOT NULL,
+                description TEXT,
+                unit TEXT,
+                metric_type INTEGER NOT NULL,
+                timestamp INTEGER NOT NULL,
+                value_int INTEGER,
+                value_double REAL,
+                value_histogram TEXT,
+                value_summary TEXT,
+                attributes TEXT,
+                resource TEXT,
+                scope TEXT,
+                flags INTEGER,
+                created_at INTEGER NOT NULL DEFAULT (strftime('%s','now'))
+            );",
+        )
+        .unwrap();
+        conn
+    }
+
+    #[test]
+    fn test_tool_failure_rates_basic() {
+        let conn = make_conn();
+        for (tool, success) in &[
+            ("edit", "true"),
+            ("edit", "true"),
+            ("edit", "false"),
+            ("ram_memorize", "false"),
+            ("ram_memorize", "false"),
+            ("bash", "true"),
+        ] {
+            conn.execute(
+                "INSERT INTO metrics (name, metric_type, timestamp, attributes, flags, created_at)
+                 VALUES ('opencode.tool.duration', 1, 1000000000, ?, 0, 1000000000)",
+                rusqlite::params![format!(r#"{{"tool_name":"{tool}","success":"{success}"}}"#)],
+            )
+            .unwrap();
+        }
+
+        let result = query_tool_failure_rates(&conn, None, None).unwrap();
+        // Only tools with failures are included; bash has none so it's excluded.
+        assert_eq!(result.rows.len(), 2);
+        let edit = result.rows.iter().find(|r| r.tool == "edit").unwrap();
+        assert_eq!(edit.total, 3);
+        assert_eq!(edit.failures, 1);
+        assert!((edit.fail_pct - 33.33).abs() < 0.1);
+        let ram = result
+            .rows
+            .iter()
+            .find(|r| r.tool == "ram_memorize")
+            .unwrap();
+        assert_eq!(ram.failures, 2);
+        assert!((ram.fail_pct - 100.0).abs() < 0.1);
+    }
+
+    #[test]
+    fn test_daily_tool_mix_basic() {
+        let conn = make_conn();
+        // Two events per tool; timestamps in different days (ns since epoch).
+        // Day 1 = 2026-01-01: 1735689600000000000
+        // Day 2 = 2026-01-02: 1735776000000000000
+        for (ts, scope) in &[
+            (1735689600000000000_i64, "com.anthropic.claude_code"),
+            (1735689600000000000_i64, "com.opencode"),
+            (1735776000000000000_i64, "codex"),
+        ] {
+            conn.execute(
+                "INSERT INTO metrics (name, metric_type, timestamp, attributes, scope, flags, created_at)
+                 VALUES ('some.metric', 1, ?, '{}', ?, 0, 1000000000)",
+                rusqlite::params![ts, format!(r#"{{"name":"{scope}"}}"#)],
+            )
+            .unwrap();
+        }
+
+        let result = query_daily_tool_mix(&conn, None, None).unwrap();
+        assert_eq!(result.rows.len(), 3);
+        let row_cc = result
+            .rows
+            .iter()
+            .find(|r| r.tool == "claude_code")
+            .unwrap();
+        assert_eq!(row_cc.datapoints, 1);
+        assert!(result.tools.contains(&"claude_code".to_string()));
+        assert!(result.tools.contains(&"opencode".to_string()));
+        assert!(result.tools.contains(&"codex".to_string()));
+    }
+
+    #[test]
+    fn test_skill_activity_basic() {
+        let conn = make_conn();
+        for skill in &["code-review", "code-review", "inbox-triage"] {
+            conn.execute(
+                "INSERT INTO metrics (name, metric_type, timestamp, attributes, flags, created_at)
+                 VALUES ('codex.skill.injected', 1, 1000000000, ?, 0, 1000000000)",
+                rusqlite::params![format!(
+                    r#"{{"skill":"{skill}","invoke_type":"implicit","status":"ok"}}"#
+                )],
+            )
+            .unwrap();
+        }
+
+        let result = query_skill_activity(&conn, None, None).unwrap();
+        assert_eq!(result.total_injections, 3);
+        assert_eq!(result.rows[0].skill, "code-review");
+        assert_eq!(result.rows[0].injections, 2);
+        let triage = result
+            .rows
+            .iter()
+            .find(|r| r.skill == "inbox-triage")
+            .unwrap();
+        assert_eq!(triage.injections, 1);
     }
 }

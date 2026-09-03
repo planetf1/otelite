@@ -98,11 +98,14 @@ class AnalyticsView {
             <div id="analytics-empty-state"></div>
             <div id="analytics-sections">
                 ${this._renderSectionShell('cost', 'Cost', 'Tokens spent · pricing · most expensive calls')}
-                ${this._renderSectionShell('roles', 'Agent Roles', 'Sub-agent attribution · cost & tokens per role (opencode)')}
+                ${this._renderSectionShell('tool_failure_rates', 'Tool Failure Rates', 'Failure % per opencode tool — spot flaky or broken integrations at a glance')}
+                ${this._renderSectionShell('daily_tool_mix', 'Daily Tool Mix', 'Claude Code / opencode / Codex activity per calendar day — when you use each tool')}
+                ${this._renderSectionShell('roles', 'Agent Roles', 'Sub-agent attribution · cost & tokens per role · role × model routing matrix (opencode)')}
                 ${this._renderSectionShell('providers', 'Provider Mix', 'Tokens & estimated cost by provider × model (opencode · codex · claude)')}
                 ${this._renderSectionShell('latency', 'Latency', 'Response time · throughput · context size')}
                 ${this._renderSectionShell('reliability', 'Reliability', 'Errors · retries · truncation · drift')}
                 ${this._renderSectionShell('behavior', 'Behavior', 'Tool use · retrieval · request volume')}
+                ${this._renderSectionShell('skill_activity', 'Skills Activity', 'Which Codex skills fire most — implicit injection counts by skill name')}
                 ${this._renderSectionShell('capabilities', 'Telemetry Capabilities', 'Which metrics each emitter actually provides · availability & quality')}
                 ${this._renderSectionShell('model_performance', 'Model Performance', 'Per-model duration · throughput · TTFT · error diagnosis vs preceding & rolling baselines')}
                 ${this._renderSectionShell('effort', 'Effort Breakdown', 'Claude Code token usage by effort level (low/medium/high/xhigh) × model × type')}
@@ -110,7 +113,7 @@ class AnalyticsView {
                 ${this._renderSectionShell('codex_ttft', 'Codex TTFT', 'First-token latency percentiles (p50/p90/p95) per model from histogram metrics')}
                 ${this._renderSectionShell('project_rollup', 'Project Rollup', 'Token activity and turn counts per project across all agents')}
                 ${this._renderSectionShell('mcp_health', 'MCP Health', 'Call success/error rates per MCP server and tool — spot flaky integrations')}
-                ${this._renderSectionShell('guardian', 'Guardian Reviews', 'Codex Guardian risk levels and action breakdown from code-review events')}
+                ${this._renderSectionShell('guardian', 'Guardian Reviews', 'Risk levels · denial rate by action type · what the guardian is actually blocking')}
                 ${this._renderSectionShell('multi_agent', 'Multi-Agent Topology', 'Sub-agent spawn and resume counts by role')}
                 ${this._renderSectionShell('codex_turns', 'Codex Busy/Idle', 'Average busy vs idle time per turn by model and project')}
                 ${this._renderSectionShell('session_model', 'Session × Model', 'Token and cost breakdown per (session, model) pair — spot opus spend in specific sessions')}
@@ -686,6 +689,9 @@ class AnalyticsView {
             cross_tool_ttft: () => this._loadCrossToolTtftSection(),
             hook_overhead: () => this._loadHookOverheadSection(),
             reasoning_share: () => this._loadReasoningShareSection(),
+            tool_failure_rates: () => this._loadToolFailureRatesSection(),
+            daily_tool_mix: () => this._loadDailyToolMixSection(),
+            skill_activity: () => this._loadSkillActivitySection(),
         };
     }
 
@@ -769,6 +775,17 @@ class AnalyticsView {
             const cachePct = cacheDenom > 0 ? (cacheRead / cacheDenom) * 100 : 0;
 
             const fmt = n => Number(n).toLocaleString();
+
+            // #insight-4: surface zero-cache models prominently
+            const zeroCacheModels = (() => {
+                const models = cacheEconomics && Array.isArray(cacheEconomics.models)
+                    ? cacheEconomics.models : [];
+                return models
+                    .filter(m => (m.cache_read_tokens || 0) === 0 &&
+                                 (m.cache_write_tokens || 0) === 0)
+                    .map(m => m.model);
+            })();
+
             const cacheCard = `
                 <div class="usage-summary-cards">
                     <div class="usage-gauge-card">
@@ -778,13 +795,14 @@ class AnalyticsView {
                         <div class="gauge-hint">${fmt(cacheRead)} / ${fmt(cacheDenom)} tokens served from cache</div>
                     </div>
                     ${this._buildRetryGauge(retryStats)}
-                </div>`;
+                </div>
+                ${zeroCacheModels.length ? `<p class="table-hint insight-alert">⚠ No caching observed for: ${zeroCacheModels.map(m => `<strong>${this._esc(m)}</strong>`).join(', ')} — these models send full context every turn.</p>` : ''}`;
 
             const html = [
                 cacheCard,
                 this._buildCostChart(costSeries || [], bucket),
-                this._buildTopNSection(topSpans || [], errorRate || []),
                 this._buildCacheEconomics(cacheEconomics, cacheHitRate || [], bucket),
+                this._buildTopNSection(topSpans || [], errorRate || []),
                 this._buildReasoningShare(reasoningShare),
                 this._buildAgents(agentsRollup, bucket),
                 this._buildProjects(projectsRollup),
@@ -2954,6 +2972,38 @@ class AnalyticsView {
             ? `<p class="table-hint">⚠ ${response.unknown_share_pct.toFixed(1)}% of tokens have no
               <code>agent</code> label (attribution gap).</p>` : '';
 
+        // #insight-6: role × model routing matrix
+        const allModels = [...new Set(
+            roles.flatMap(r => (r.top_models || []).map(m => m.model))
+        )].sort();
+        let matrixHtml = '';
+        if (allModels.length > 1) {
+            const matrixRows = roles.map(r => {
+                const modelMap = {};
+                for (const m of (r.top_models || [])) {
+                    modelMap[m.model] = tokenTotal(m.tokens);
+                }
+                const cells = allModels.map(model => {
+                    const v = modelMap[model];
+                    if (!v) return '<td class="dim">—</td>';
+                    const totalForRole = tokenTotal(r.tokens || {}) || 1;
+                    const pct = Math.round(v / totalForRole * 100);
+                    return `<td class="num" title="${fmt(v)} tokens (${pct}%)">${pct}%</td>`;
+                }).join('');
+                return `<tr><td>${this._esc(r.role)}</td>${cells}</tr>`;
+            }).join('');
+            const headCells = allModels.map(m =>
+                `<th class="small" title="${this._esc(m)}">${this._esc(m.length > 22 ? m.slice(-22) : m)}</th>`
+            ).join('');
+            matrixHtml = `
+                <h3>Role × model routing matrix</h3>
+                <p class="table-hint">Cell value = % of that role's tokens routed to the model. Shows which roles use which models.</p>
+                <div class="table-scroll-x"><table class="data-table role-matrix-table">
+                    <thead><tr><th>Role</th>${headCells}</tr></thead>
+                    <tbody>${matrixRows}</tbody>
+                </table></div>`;
+        }
+
         return `
             <h3>Sub-agent role attribution</h3>
             <p class="table-hint">Grouped by the opencode <code>agent</code> label — which sub-agent
@@ -2968,7 +3018,8 @@ class AnalyticsView {
                     <th>Top models</th>
                 </tr></thead>
                 <tbody>${tableRows}</tbody>
-            </table>`;
+            </table>
+            ${matrixHtml}`;
     }
 
     _buildProviderMix(response) {
@@ -3242,20 +3293,34 @@ class AnalyticsView {
                 return;
             }
             const approvalPct = (data.approval_rate * 100).toFixed(1);
+            const deniedCount = data.total_reviews - Math.round(data.approval_rate * data.total_reviews);
             let html = `
                 <div class="usage-summary-cards">
                     <div class="usage-gauge-card"><div class="usage-card-label">Total reviews</div><div class="usage-card-value">${Number(data.total_reviews).toLocaleString()}</div></div>
-                    <div class="usage-gauge-card"><div class="usage-card-label">Approval rate</div><div class="usage-card-value">${approvalPct}%</div></div>
+                    <div class="usage-gauge-card"><div class="usage-card-label">Approval rate</div><div class="usage-card-value">${approvalPct}%</div><div class="gauge-bar"><div class="gauge-fill" style="width:${approvalPct}%"></div></div></div>
+                    <div class="usage-gauge-card"><div class="usage-card-label">Actions blocked</div><div class="usage-card-value">${Number(deniedCount).toLocaleString()}</div><div class="gauge-hint">denied by Guardian</div></div>
                 </div>`;
+            // #insight-5: denial rate by risk level × action
             if (data.by_risk_level && data.by_risk_level.length) {
-                html += '<h4 style="margin-top:1rem">By risk level</h4><div class="analytics-table-wrap"><table class="analytics-table"><thead><tr><th>Risk</th><th>Count</th></tr></thead><tbody>';
-                for (const r of data.by_risk_level) html += `<tr><td>${this._esc(r.risk_level)}</td><td>${Number(r.count).toLocaleString()}</td></tr>`;
+                html += '<h4 style="margin-top:1rem">Risk level breakdown</h4><div class="analytics-table-wrap"><table class="analytics-table"><thead><tr><th>Risk</th><th>Total</th><th>Denied</th><th>Deny %</th></tr></thead><tbody>';
+                for (const r of data.by_risk_level) {
+                    const denied = r.denied || 0;
+                    const denyPct = r.count > 0 ? (denied / r.count * 100).toFixed(1) : '0.0';
+                    const rowClass = denied > 0 ? ' class="row-warn"' : '';
+                    html += `<tr${rowClass}><td>${this._esc(r.risk_level)}</td><td>${Number(r.count).toLocaleString()}</td><td>${Number(denied).toLocaleString()}</td><td>${denyPct}%</td></tr>`;
+                }
                 html += '</tbody></table></div>';
             }
             if (data.by_action && data.by_action.length) {
-                html += '<h4 style="margin-top:1rem">By action</h4><div class="analytics-table-wrap"><table class="analytics-table"><thead><tr><th>Action</th><th>Count</th></tr></thead><tbody>';
-                for (const a of data.by_action) html += `<tr><td>${this._esc(a.action)}</td><td>${Number(a.count).toLocaleString()}</td></tr>`;
+                html += '<h4 style="margin-top:1rem">Action breakdown</h4><div class="analytics-table-wrap"><table class="analytics-table"><thead><tr><th>Action</th><th>Total</th><th>Denied</th><th>Deny %</th></tr></thead><tbody>';
+                for (const a of data.by_action) {
+                    const denied = a.denied || 0;
+                    const denyPct = a.count > 0 ? (denied / a.count * 100).toFixed(1) : '0.0';
+                    const rowClass = denied > 0 ? ' class="row-warn"' : '';
+                    html += `<tr${rowClass}><td>${this._esc(a.action)}</td><td>${Number(a.count).toLocaleString()}</td><td>${Number(denied).toLocaleString()}</td><td>${denyPct}%</td></tr>`;
+                }
                 html += '</tbody></table></div>';
+                html += '<p class="table-hint">deny % = blocked ÷ total × 100. Rows with any blocks are highlighted.</p>';
             }
             this._setSectionBody('guardian', html);
             this.loadedSections.add('guardian');
@@ -3484,6 +3549,172 @@ class AnalyticsView {
         } catch (err) {
             this._setSectionError('reasoning_share', err);
         }
+    }
+
+    // ── Tool Failure Rates (#insight-1) ──────────────────────────────────────
+
+    async _loadToolFailureRatesSection() {
+        this._setSectionLoading('tool_failure_rates');
+        try {
+            const data = await this.api.getToolFailureRates(this._baseParams());
+            const rows = (data && data.rows) || [];
+            if (!rows.length) {
+                this._setSectionBody('tool_failure_rates', '<div class="empty-state-hint">No opencode tool failure data in this window.</div>');
+                this.loadedSections.add('tool_failure_rates');
+                return;
+            }
+            const statEl = document.getElementById('analytics-section-stat-tool_failure_rates');
+            if (statEl) statEl.textContent = `${rows.length} tool${rows.length === 1 ? '' : 's'} with failures`;
+            const html = this._buildToolFailureRates(rows);
+            this._setSectionBody('tool_failure_rates', html);
+            this.loadedSections.add('tool_failure_rates');
+        } catch (err) {
+            this._setSectionError('tool_failure_rates', err);
+        }
+    }
+
+    _buildToolFailureRates(rows) {
+        const fmt = n => Number(n || 0).toLocaleString();
+        const tableRows = rows.map(r => {
+            const cls = r.fail_pct >= 50 ? 'row-error' : r.fail_pct >= 10 ? 'row-warn' : '';
+            return `<tr class="${cls}">
+                <td>${this._esc(r.tool)}</td>
+                <td class="num">${fmt(r.total)}</td>
+                <td class="num">${fmt(r.failures)}</td>
+                <td class="num">${Number(r.fail_pct).toFixed(1)}%</td>
+            </tr>`;
+        }).join('');
+        return `
+            <h3>Tool failure rates (opencode)</h3>
+            <p class="table-hint">Only tools with at least one failure are shown. ≥ 50% fail rate = <span class="badge-error">red</span>, 10–49% = <span class="badge-warn">amber</span>. Sorted by failure count descending.</p>
+            <div class="table-scroll-x"><table class="data-table">
+                <thead><tr>
+                    <th>Tool</th><th>Total calls</th><th>Failures</th><th>Fail %</th>
+                </tr></thead>
+                <tbody>${tableRows}</tbody>
+            </table></div>`;
+    }
+
+    // ── Daily Tool Mix (#insight-2) ───────────────────────────────────────────
+
+    async _loadDailyToolMixSection() {
+        this._setSectionLoading('daily_tool_mix');
+        try {
+            const data = await this.api.getDailyToolMix(this._baseParams());
+            const rows = (data && data.rows) || [];
+            const tools = (data && data.tools) || [];
+            if (!rows.length) {
+                this._setSectionBody('daily_tool_mix', '<div class="empty-state-hint">No tool activity data in this window.</div>');
+                this.loadedSections.add('daily_tool_mix');
+                return;
+            }
+            const html = this._buildDailyToolMix(rows, tools);
+            this._setSectionBody('daily_tool_mix', html);
+            this.loadedSections.add('daily_tool_mix');
+        } catch (err) {
+            this._setSectionError('daily_tool_mix', err);
+        }
+    }
+
+    _buildDailyToolMix(rows, tools) {
+        const dayMap = {};
+        for (const r of rows) {
+            if (!dayMap[r.day]) dayMap[r.day] = {};
+            dayMap[r.day][r.tool] = r.datapoints;
+        }
+        const days = Object.keys(dayMap).sort();
+
+        const toolColours = {
+            claude_code: '#f5a623',
+            opencode:    '#4f8cff',
+            codex:       '#34c98e',
+        };
+        const defaultColours = ['#c65ce0', '#e5534b', '#5ac8c8'];
+        const getColour = (tool, i) => toolColours[tool] || defaultColours[i % defaultColours.length];
+
+        const maxTotal = Math.max(...days.map(d =>
+            tools.reduce((s, t) => s + (dayMap[d][t] || 0), 0)
+        ), 1);
+
+        const bars = days.map(d => {
+            const total = tools.reduce((s, t) => s + (dayMap[d][t] || 0), 0);
+            const height = Math.max(4, Math.round((total / maxTotal) * 100));
+            const segs = tools.map((tool, i) => {
+                const v = dayMap[d][tool] || 0;
+                const segH = total > 0 ? Math.round((v / total) * height) : 0;
+                const colour = getColour(tool, i);
+                return `<div style="height:${segH}px;background:${colour};width:100%" title="${this._esc(tool)}: ${Number(v).toLocaleString()}"></div>`;
+            }).join('');
+            const label = d.slice(5); // MM-DD
+            return `<div class="ce-col" title="${this._esc(d)} — ${Number(total).toLocaleString()} datapoints">
+                <div class="ce-stack" style="height:${height}px">${segs}</div>
+                <div class="ce-label">${label}</div>
+            </div>`;
+        }).join('');
+
+        const legend = tools.map((t, i) =>
+            `<span><span class="ce-swatch" style="background:${getColour(t, i)}"></span>${this._esc(t)}</span>`
+        ).join(' ');
+
+        const headCells = ['Day', ...tools].map(h => `<th>${this._esc(h)}</th>`).join('');
+        const tableRows = days.map(d => {
+            const cells = tools.map(t => `<td class="num">${Number(dayMap[d][t] || 0).toLocaleString()}</td>`).join('');
+            return `<tr><td>${this._esc(d)}</td>${cells}</tr>`;
+        }).join('');
+
+        return `
+            <h3>Daily tool activity mix</h3>
+            <p class="table-hint">Metric datapoints per tool per calendar day (UTC). Stacked bars show relative tool share each day.</p>
+            <div class="ce-chart" style="align-items:flex-end">${bars}</div>
+            <div class="ce-legend">${legend}</div>
+            <div class="table-scroll-x"><table class="data-table">
+                <thead><tr>${headCells}</tr></thead>
+                <tbody>${tableRows}</tbody>
+            </table></div>`;
+    }
+
+    // ── Skills Activity (#insight-3) ─────────────────────────────────────────
+
+    async _loadSkillActivitySection() {
+        this._setSectionLoading('skill_activity');
+        try {
+            const data = await this.api.getSkillActivity(this._baseParams());
+            const rows = (data && data.rows) || [];
+            if (!rows.length) {
+                this._setSectionBody('skill_activity', '<div class="empty-state-hint">No Codex skill injection data in this window. Requires Codex with skills enabled.</div>');
+                this.loadedSections.add('skill_activity');
+                return;
+            }
+            const statEl = document.getElementById('analytics-section-stat-skill_activity');
+            if (statEl) statEl.textContent = `${Number(data.total_injections || 0).toLocaleString()} injections`;
+            const html = this._buildSkillActivity(rows, data.total_injections || 0);
+            this._setSectionBody('skill_activity', html);
+            this.loadedSections.add('skill_activity');
+        } catch (err) {
+            this._setSectionError('skill_activity', err);
+        }
+    }
+
+    _buildSkillActivity(rows, totalInjections) {
+        const fmt = n => Number(n || 0).toLocaleString();
+        const tableRows = rows.map(r => {
+            const sharePct = totalInjections > 0 ? (r.injections / totalInjections * 100).toFixed(1) : '0.0';
+            return `<tr>
+                <td>${this._esc(r.skill)}</td>
+                <td>${this._esc(r.invoke_type)}</td>
+                <td class="num">${fmt(r.injections)}</td>
+                <td class="num">${sharePct}%</td>
+            </tr>`;
+        }).join('');
+        return `
+            <h3>Codex skill injections</h3>
+            <p class="table-hint">${fmt(totalInjections)} total injections. Shows which skills are selected by the shadow model and injected into Codex threads. Use this to identify skills with real usage vs those sitting idle in your library.</p>
+            <div class="table-scroll-x"><table class="data-table">
+                <thead><tr>
+                    <th>Skill</th><th>Invoke type</th><th>Injections</th><th>Share %</th>
+                </tr></thead>
+                <tbody>${tableRows}</tbody>
+            </table></div>`;
     }
 }
 
