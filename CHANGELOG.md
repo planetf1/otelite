@@ -11,6 +11,12 @@ have to work around), not implementation detail.
 
 ## [Unreleased]
 
+### Internal
+
+- Removed `grpc_compression` and `http_compression` fields from `ReceiverConfig` — they were
+  never read by the receiver (decompression is unconditional, honouring `Content-Encoding`) and
+  created a false impression that compression could be toggled at runtime.
+
 ## [0.1.105] - 2026-08-29
 
 ### Added
