@@ -11,6 +11,8 @@ have to work around), not implementation detail.
 
 ## [Unreleased]
 
+## [0.1.107] - 2026-09-03
+
 ### Changed
 
 - TUI status bars now include `?:Help` in the bottom keybind hint on every view — new users
