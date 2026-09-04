@@ -75,6 +75,17 @@ pub fn build_session_costs(
     rows: Vec<crate::api::SessionCostStorage>,
     pricing_db: &crate::pricing::PricingDatabase,
 ) -> Vec<crate::api::SessionCost> {
+    build_session_costs_with_quality(rows, pricing_db, &std::collections::HashMap::new())
+}
+
+/// Build session cost rows, annotating each with a quality grade from
+/// `quality_map` (keyed by `session_id`). Sessions absent from the map
+/// default to `SessionQuality::Clean`.
+pub fn build_session_costs_with_quality(
+    rows: Vec<crate::api::SessionCostStorage>,
+    pricing_db: &crate::pricing::PricingDatabase,
+    quality_map: &std::collections::HashMap<String, crate::api::SessionQuality>,
+) -> Vec<crate::api::SessionCost> {
     use crate::pricing::TokenUsage;
 
     let pricing_usage = |tokens: &crate::api::AgentTokenUsage| TokenUsage {
@@ -100,6 +111,10 @@ pub fn build_session_costs(
                 Some(actual) => (Some(actual), Some("actual".to_string())),
                 None => (estimated, Some("estimated".to_string())),
             };
+            let quality = quality_map
+                .get(&row.session_id)
+                .copied()
+                .unwrap_or_default();
             crate::api::SessionCost {
                 session_id: row.session_id,
                 agent: row.agent,
@@ -109,6 +124,7 @@ pub fn build_session_costs(
                 tokens: row.tokens,
                 duration_secs: row.duration_secs,
                 anomaly: false,
+                quality,
             }
         })
         .collect();

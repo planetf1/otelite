@@ -11,6 +11,15 @@ have to work around), not implementation detail.
 
 ## [Unreleased]
 
+### Added
+
+- **Session Quality** — every session in `/api/sessions/costs` and the Sessions tab now carries
+  a `clean` / `degraded` / `errored` quality badge derived from its spans: errored means an
+  error-status span or a `content_filter` finish reason; degraded means truncation
+  (`max_tokens` / `length`); clean means neither. Also available as an aggregate summary via
+  `GET /api/genai/session_quality_summary`, `otelite usage --session-quality`, and a new
+  Session Quality accordion in the web analytics view. (#174)
+
 ## [0.1.111] - 2026-09-04
 
 ### Added

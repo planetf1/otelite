@@ -677,6 +677,21 @@ impl ApiClient {
         Ok(response.json().await?)
     }
 
+    pub async fn fetch_session_quality_summary(
+        &self,
+        params: Vec<(&str, String)>,
+    ) -> Result<otelite_core::api::SessionQualitySummary> {
+        let url = format!("{}/api/genai/session_quality_summary", self.base_url);
+        let response = self.client.get(&url).query(&params).send().await?;
+        if !response.status().is_success() {
+            return Err(non_success(
+                response.status(),
+                "Failed to fetch session quality summary",
+            ));
+        }
+        Ok(response.json().await?)
+    }
+
     pub async fn fetch_skill_outcomes(
         &self,
         params: Vec<(&str, String)>,

@@ -3574,3 +3574,29 @@ td.dim { color: var(--muted-color, #8b8b9e); }
 
 /* Compact small text for role-matrix column headers */
 .role-matrix-table th.small { font-size: 0.7rem; }
+
+/* Session quality badges (#174) */
+.quality-badge {
+    display: inline-block;
+    padding: 1px 7px;
+    border-radius: 3px;
+    font-size: 0.8rem;
+    font-weight: 600;
+}
+.quality-clean    { background: #1a3a1a; color: #4caf50; }
+.quality-degraded { background: #3a2e00; color: #ffb300; }
+.quality-errored  { background: #3a1a1a; color: #f44336; }
+
+/* Session quality stacked bar */
+.quality-bar {
+    display: flex;
+    height: 14px;
+    border-radius: 4px;
+    overflow: hidden;
+    margin-bottom: 12px;
+    background: var(--border-color, #2a2a3e);
+}
+.quality-bar-segment { transition: width 0.3s ease; }
+.quality-bar-segment.quality-clean    { background: #4caf50; }
+.quality-bar-segment.quality-degraded { background: #ffb300; }
+.quality-bar-segment.quality-errored  { background: #f44336; }

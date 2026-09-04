@@ -1144,6 +1144,30 @@ impl StorageBackend for SqliteBackend {
         .await
     }
 
+    async fn query_session_quality_map(
+        &self,
+        start_time: Option<i64>,
+        end_time: Option<i64>,
+    ) -> Result<std::collections::HashMap<String, otelite_core::api::SessionQuality>> {
+        self.read_query(move |conn| {
+            reader::query_session_quality_map(conn, start_time, end_time)
+                .map_err(StorageError::from)
+        })
+        .await
+    }
+
+    async fn query_session_quality_summary(
+        &self,
+        start_time: Option<i64>,
+        end_time: Option<i64>,
+    ) -> Result<otelite_core::api::SessionQualitySummary> {
+        self.read_query(move |conn| {
+            reader::query_session_quality_summary(conn, start_time, end_time)
+                .map_err(StorageError::from)
+        })
+        .await
+    }
+
     async fn query_skill_outcomes(
         &self,
         start_time: Option<i64>,

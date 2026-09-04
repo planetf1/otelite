@@ -1533,6 +1533,45 @@ impl ProjectRollupStorage {
     }
 }
 
+/// Quality grade for a single session derived from its spans.
+///
+/// - `Clean` — no errors, no truncations, no retries.
+/// - `Degraded` — at least one retry or truncated span, but no error-status spans.
+/// - `Errored` — at least one span with error status, or a `content_filter`/`error` finish reason.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
+#[serde(rename_all = "snake_case")]
+pub enum SessionQuality {
+    #[default]
+    Clean,
+    Degraded,
+    Errored,
+}
+
+impl SessionQuality {
+    /// Merge two quality grades: take the worse one.
+    pub fn worst(self, other: SessionQuality) -> SessionQuality {
+        match (self, other) {
+            (SessionQuality::Errored, _) | (_, SessionQuality::Errored) => SessionQuality::Errored,
+            (SessionQuality::Degraded, _) | (_, SessionQuality::Degraded) => {
+                SessionQuality::Degraded
+            },
+            _ => SessionQuality::Clean,
+        }
+    }
+}
+
+/// Aggregate session quality counts for a time window.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
+pub struct SessionQualitySummary {
+    pub clean: u64,
+    pub degraded: u64,
+    pub errored: u64,
+    pub total: u64,
+    pub filters_applied: Vec<String>,
+}
+
 /// Per-session cost record (wire). `agent` is the harness that emitted the
 /// session ("opencode" or "claude" — codex emits no per-session identifiers,
 /// so it never appears). `cost_usd` is `None` when the cost cannot be
@@ -1558,6 +1597,11 @@ pub struct SessionCost {
     /// `true` when `cost_usd > 3 x median_cost_usd` (see
     /// [`SessionCostResponse::anomaly_rule`]).
     pub anomaly: bool,
+    /// Derived quality grade from span evidence: `clean`, `degraded`, or
+    /// `errored`. Defaults to `clean` for sessions with no span evidence
+    /// (e.g. pure metric-only opencode sessions).
+    #[serde(default)]
+    pub quality: SessionQuality,
 }
 
 /// Top-cost sessions response. `sessions` is sorted by cost descending

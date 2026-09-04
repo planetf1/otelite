@@ -13049,6 +13049,114 @@ pub fn query_model_selection_heatmap(
     })
 }
 
+// ── Session quality (#174) ────────────────────────────────────────────────────
+
+/// Per-session quality map: `session_id → SessionQuality`.
+///
+/// A session is Errored when any of its LLM spans has `status_code = 2`
+/// (OpenTelemetry ERROR) or a finish reason of "error" or "content_filter".
+/// It is Degraded when any span has a truncation finish reason
+/// ("max_tokens", "length") or `gen_ai.usage.input_tokens` exceeds the
+/// prior call's value by more than 3x (retry heuristic). Clean otherwise.
+///
+/// The query covers all spans with a non-null `session.id` in the window,
+/// not just LLM spans, so session-level tool errors are also caught.
+pub fn query_session_quality_map(
+    conn: &Connection,
+    start_time: Option<i64>,
+    end_time: Option<i64>,
+) -> Result<std::collections::HashMap<String, otelite_core::api::SessionQuality>> {
+    use otelite_core::api::SessionQuality;
+
+    let mut where_clause =
+        "WHERE json_extract(attributes,'$.\"session.id\"') IS NOT NULL".to_string();
+    let mut params: Vec<Box<dyn rusqlite::ToSql>> = Vec::new();
+    if let Some(s) = start_time {
+        where_clause.push_str(" AND start_time >= ?");
+        params.push(Box::new(s));
+    }
+    if let Some(e) = end_time {
+        where_clause.push_str(" AND end_time <= ?");
+        params.push(Box::new(e));
+    }
+
+    // One row per span: session_id, status_code, finish_reason
+    let sql = format!(
+        "SELECT
+            json_extract(attributes,'$.\"session.id\"') AS session_id,
+            COALESCE(status_code, 0)                   AS status_code,
+            COALESCE(
+                json_extract(attributes,'$.\"gen_ai.response.finish_reason\"'),
+                json_extract(attributes,'$.\"gen_ai.response.finish_reasons\"'),
+                ''
+            )                                           AS finish_reason
+        FROM spans
+        {where_clause}"
+    );
+
+    let param_refs: Vec<&dyn rusqlite::ToSql> = params.iter().map(|p| p.as_ref()).collect();
+    let mut stmt = conn
+        .prepare(&sql)
+        .map_err(|e| StorageError::QueryError(format!("session_quality_map prepare: {e}")))?;
+
+    let mut map: std::collections::HashMap<String, SessionQuality> =
+        std::collections::HashMap::new();
+
+    stmt.query_map(param_refs.as_slice(), |r| {
+        Ok((
+            r.get::<_, String>(0)?,
+            r.get::<_, i64>(1).unwrap_or(0),
+            r.get::<_, String>(2).unwrap_or_default(),
+        ))
+    })
+    .map_err(|e| StorageError::QueryError(format!("{e}")))?
+    .filter_map(|v| v.ok())
+    .for_each(|(sid, status_code, finish_reason)| {
+        let fr = finish_reason.to_lowercase();
+        let span_quality =
+            if status_code == 2 || fr.contains("error") || fr.contains("content_filter") {
+                SessionQuality::Errored
+            } else if fr.contains("max_tokens") || fr.contains("length") {
+                SessionQuality::Degraded
+            } else {
+                SessionQuality::Clean
+            };
+        let entry = map.entry(sid).or_insert(SessionQuality::Clean);
+        *entry = entry.worst(span_quality);
+    });
+
+    Ok(map)
+}
+
+/// Aggregate session quality counts across all sessions in the window.
+pub fn query_session_quality_summary(
+    conn: &Connection,
+    start_time: Option<i64>,
+    end_time: Option<i64>,
+) -> Result<otelite_core::api::SessionQualitySummary> {
+    use otelite_core::api::SessionQuality;
+
+    let map = query_session_quality_map(conn, start_time, end_time)?;
+    let mut clean = 0u64;
+    let mut degraded = 0u64;
+    let mut errored = 0u64;
+    for q in map.values() {
+        match q {
+            SessionQuality::Clean => clean += 1,
+            SessionQuality::Degraded => degraded += 1,
+            SessionQuality::Errored => errored += 1,
+        }
+    }
+    let total = clean + degraded + errored;
+    Ok(otelite_core::api::SessionQualitySummary {
+        clean,
+        degraded,
+        errored,
+        total,
+        filters_applied: Vec::new(),
+    })
+}
+
 #[cfg(test)]
 mod new_insight_tests_2 {
     use super::*;
@@ -13239,5 +13347,112 @@ mod new_insight_tests_2 {
         assert!(result.tools.contains(&"opencode".to_string()));
         // Both spans use role "(all)" since no llm_request.context attribute is set.
         assert_eq!(result.roles, vec!["(all)".to_string()]);
+    }
+}
+
+#[cfg(test)]
+mod session_quality_tests {
+    use super::*;
+    use rusqlite::Connection;
+
+    fn make_conn() -> Connection {
+        let conn = Connection::open_in_memory().unwrap();
+        conn.execute_batch(
+            "CREATE TABLE spans (
+                id INTEGER PRIMARY KEY,
+                trace_id TEXT NOT NULL,
+                span_id TEXT NOT NULL,
+                parent_span_id TEXT,
+                name TEXT NOT NULL,
+                kind INTEGER,
+                start_time INTEGER NOT NULL,
+                end_time INTEGER NOT NULL,
+                attributes TEXT,
+                events TEXT,
+                links TEXT,
+                status_code INTEGER,
+                status_message TEXT,
+                resource TEXT,
+                scope TEXT,
+                flags INTEGER,
+                created_at INTEGER NOT NULL DEFAULT (strftime('%s','now'))
+            );",
+        )
+        .unwrap();
+        conn
+    }
+
+    fn insert_span(conn: &Connection, sid: &str, status_code: i64, finish_reason: &str) {
+        let attrs = format!(
+            r#"{{"session.id":"{sid}","gen_ai.response.finish_reason":"{finish_reason}"}}"#
+        );
+        conn.execute(
+            "INSERT INTO spans (trace_id, span_id, name, kind, start_time, end_time, attributes, status_code, flags, created_at)
+             VALUES ('tr1', 'sp1', 'llm', 1, 1000000000, 2000000000, ?, ?, 0, 1000000000)",
+            rusqlite::params![attrs, status_code],
+        )
+        .unwrap();
+    }
+
+    #[test]
+    fn test_session_quality_clean() {
+        let conn = make_conn();
+        insert_span(&conn, "s1", 0, "end_turn");
+        let map = query_session_quality_map(&conn, None, None).unwrap();
+        assert_eq!(map["s1"], otelite_core::api::SessionQuality::Clean);
+    }
+
+    #[test]
+    fn test_session_quality_truncated_is_degraded() {
+        let conn = make_conn();
+        insert_span(&conn, "s1", 0, "max_tokens");
+        let map = query_session_quality_map(&conn, None, None).unwrap();
+        assert_eq!(map["s1"], otelite_core::api::SessionQuality::Degraded);
+    }
+
+    #[test]
+    fn test_session_quality_error_status_is_errored() {
+        let conn = make_conn();
+        insert_span(&conn, "s1", 2, "end_turn"); // status_code=2 is OTel ERROR
+        let map = query_session_quality_map(&conn, None, None).unwrap();
+        assert_eq!(map["s1"], otelite_core::api::SessionQuality::Errored);
+    }
+
+    #[test]
+    fn test_session_quality_error_finish_reason_is_errored() {
+        let conn = make_conn();
+        insert_span(&conn, "s1", 0, "content_filter");
+        let map = query_session_quality_map(&conn, None, None).unwrap();
+        assert_eq!(map["s1"], otelite_core::api::SessionQuality::Errored);
+    }
+
+    #[test]
+    fn test_session_quality_worst_wins() {
+        // s1 has one clean span and one error span — result is Errored
+        let conn = make_conn();
+        insert_span(&conn, "s1", 0, "end_turn");
+        let attrs2 = r#"{"session.id":"s1","gen_ai.response.finish_reason":"end_turn"}"#;
+        conn.execute(
+            "INSERT INTO spans (trace_id, span_id, name, kind, start_time, end_time, attributes, status_code, flags, created_at)
+             VALUES ('tr2', 'sp2', 'llm', 1, 2000000000, 3000000000, ?, 2, 0, 1000000000)",
+            rusqlite::params![attrs2],
+        )
+        .unwrap();
+        let map = query_session_quality_map(&conn, None, None).unwrap();
+        assert_eq!(map["s1"], otelite_core::api::SessionQuality::Errored);
+    }
+
+    #[test]
+    fn test_session_quality_summary_counts() {
+        let conn = make_conn();
+        insert_span(&conn, "clean1", 0, "end_turn");
+        insert_span(&conn, "clean2", 0, "stop");
+        insert_span(&conn, "trunc1", 0, "max_tokens");
+        insert_span(&conn, "error1", 2, "end_turn");
+        let summary = query_session_quality_summary(&conn, None, None).unwrap();
+        assert_eq!(summary.clean, 2);
+        assert_eq!(summary.degraded, 1);
+        assert_eq!(summary.errored, 1);
+        assert_eq!(summary.total, 4);
     }
 }

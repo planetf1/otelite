@@ -519,21 +519,26 @@ pub async fn get_session_costs(
 
     let limit = params.limit.unwrap_or(50).min(500);
 
-    let rows = state
-        .storage
-        .query_session_costs(params.start_time, params.end_time)
-        .await
-        .map_err(|e| {
-            (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                Json(ErrorResponse::storage_error(format!(
-                    "query session costs: {e}"
-                ))),
-            )
-        })?;
+    let (rows, quality_map) = tokio::try_join!(
+        state
+            .storage
+            .query_session_costs(params.start_time, params.end_time),
+        state
+            .storage
+            .query_session_quality_map(params.start_time, params.end_time),
+    )
+    .map_err(|e| {
+        (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(ErrorResponse::storage_error(format!(
+                "query session costs: {e}"
+            ))),
+        )
+    })?;
 
     let pricing = state.pricing.snapshot().await;
-    let mut sessions = session_cost::build_session_costs(rows, &pricing.db);
+    let mut sessions =
+        session_cost::build_session_costs_with_quality(rows, &pricing.db, &quality_map);
     let median = session_cost::apply_anomaly_flags(&mut sessions).map(|(m, _)| m);
     sessions.truncate(limit);
 

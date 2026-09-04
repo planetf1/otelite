@@ -753,4 +753,25 @@ pub trait StorageBackend: Send + Sync {
         let _ = (start_time, end_time);
         Err(StorageError::QueryError("not implemented".to_string()))
     }
+
+    /// Per-session quality grades (map from session_id → quality) — used by
+    /// the sessions/costs handler to annotate each session row (#174).
+    async fn query_session_quality_map(
+        &self,
+        start_time: Option<i64>,
+        end_time: Option<i64>,
+    ) -> Result<std::collections::HashMap<String, crate::api::SessionQuality>> {
+        let _ = (start_time, end_time);
+        Ok(std::collections::HashMap::new())
+    }
+
+    /// Aggregate session quality counts (#174).
+    async fn query_session_quality_summary(
+        &self,
+        start_time: Option<i64>,
+        end_time: Option<i64>,
+    ) -> Result<crate::api::SessionQualitySummary> {
+        let _ = (start_time, end_time);
+        Err(StorageError::QueryError("not implemented".to_string()))
+    }
 }

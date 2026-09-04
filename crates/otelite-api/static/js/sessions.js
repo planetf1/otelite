@@ -188,10 +188,20 @@ class SessionsView {
             const durCell = durNs > 0 ? fmtDur(durNs) : '<span class="cell-muted">—</span>';
             const cost = costBySid ? costBySid.get(s.session_id) : null;
             let costCell = '<span class="cell-muted">—</span>';
+            let qualityBadge = '';
             if (cost && cost.cost_usd != null) {
                 const estNote = cost.cost_source === 'estimated' ? ' (est.)' : '';
                 const badge = cost.anomaly ? ' <span class="anomaly-badge" title="cost exceeds 3× the median session cost">⚠</span>' : '';
                 costCell = `$${Number(cost.cost_usd).toFixed(2)}${estNote}${badge}`;
+            }
+            if (cost && cost.quality) {
+                const qMap = {
+                    clean:    ['quality-clean',    '✓'],
+                    degraded: ['quality-degraded', '⚠'],
+                    errored:  ['quality-errored',  '✗'],
+                };
+                const [cls, icon] = qMap[cost.quality] || ['quality-clean', '✓'];
+                qualityBadge = `<span class="quality-badge ${cls}" title="${cost.quality}">${icon}</span>`;
             }
             const sid = this._escape(s.session_id);
             // Cross-nav buttons — stop propagation so the row click (Session Report) doesn't also fire.
@@ -208,6 +218,7 @@ class SessionsView {
                     <td class="num-cell">${fmtNum(s.total_input_tokens)}</td>
                     <td class="num-cell">${fmtNum(s.total_output_tokens)}</td>
                     <td class="num-cell">${costCell}</td>
+                    <td class="num-cell">${qualityBadge}</td>
                     <td class="num-cell">${errCell}</td>
                     <td class="num-cell">${durCell}</td>
                     <td class="time-cell">${fmtTime(s.first_seen_ns)}</td>
@@ -226,6 +237,7 @@ class SessionsView {
                         <th class="num-cell">Input tokens</th>
                         <th class="num-cell">Output tokens</th>
                         <th class="num-cell">Cost</th>
+                        <th class="num-cell">Quality</th>
                         <th class="num-cell">Errors</th>
                         <th class="num-cell">Duration</th>
                         <th>First seen</th>

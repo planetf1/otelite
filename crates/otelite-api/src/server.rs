@@ -90,6 +90,7 @@ use utoipa::OpenApi;
         crate::api::genai::get_skill_activity,
         crate::api::genai::get_skill_outcomes,
         crate::api::genai::get_model_selection_heatmap,
+        crate::api::genai::get_session_quality_summary,
         crate::api::sessions::get_session_costs,
         crate::api::sessions::get_session_cost_distribution,
         crate::api::sessions::get_session_context,
@@ -226,6 +227,8 @@ use utoipa::OpenApi;
             otelite_core::api::SkillOutcomesResponse,
             otelite_core::api::ModelSelectionRow,
             otelite_core::api::ModelSelectionHeatmapResponse,
+            otelite_core::api::SessionQuality,
+            otelite_core::api::SessionQualitySummary,
         )
     ),
     tags(
@@ -448,6 +451,7 @@ impl DashboardServer {
             .route("/api/genai/skill_activity", get(crate::api::genai::get_skill_activity))
             .route("/api/genai/skill_outcomes", get(crate::api::genai::get_skill_outcomes))
             .route("/api/genai/model_selection_heatmap", get(crate::api::genai::get_model_selection_heatmap))
+            .route("/api/genai/session_quality_summary", get(crate::api::genai::get_session_quality_summary))
             // API routes - Sessions
             .route("/api/sessions", get(crate::api::sessions::list_sessions))
             .route("/api/sessions/costs", get(crate::api::sessions::get_session_costs))

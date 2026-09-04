@@ -2920,6 +2920,35 @@ pub async fn get_skill_activity(
 
 #[utoipa::path(
     get,
+    path = "/api/genai/session_quality_summary",
+    params(TimeRangeQuery),
+    responses(
+        (status = 200, description = "Aggregate session quality counts: clean / degraded / errored", body = otelite_core::api::SessionQualitySummary),
+        (status = 500, description = "Internal server error", body = ErrorResponse)
+    ),
+    tag = "genai"
+)]
+pub async fn get_session_quality_summary(
+    State(state): State<AppState>,
+    Query(query): Query<TimeRangeQuery>,
+) -> Result<Json<otelite_core::api::SessionQualitySummary>, (StatusCode, Json<ErrorResponse>)> {
+    let response = state
+        .storage
+        .query_session_quality_summary(query.start_time, query.end_time)
+        .await
+        .map_err(|e| {
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(ErrorResponse::storage_error(format!(
+                    "query session_quality_summary: {e}"
+                ))),
+            )
+        })?;
+    Ok(Json(response))
+}
+
+#[utoipa::path(
+    get,
     path = "/api/genai/skill_outcomes",
     params(TimeRangeQuery),
     responses(

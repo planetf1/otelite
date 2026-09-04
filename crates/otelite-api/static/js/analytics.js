@@ -119,6 +119,7 @@ class AnalyticsView {
                 ${this._renderSectionShell('session_model', 'Session × Model', 'Token and cost breakdown per (session, model) pair — spot opus spend in specific sessions')}
                 ${this._renderSectionShell('speed_dist', 'Speed / Effort Mode', 'Distribution of the Claude Code speed attribute (normal / extended thinking) by model')}
                 ${this._renderSectionShell('cross_tool_ttft', 'Cross-Tool TTFT', 'First-token latency by model across all tools (Claude Code, opencode, pi) from span attributes')}
+                ${this._renderSectionShell('session_quality', 'Session Quality', 'Clean / degraded / errored breakdown — spot sessions that truncated, retried, or failed')}
                 ${this._renderSectionShell('hook_overhead', 'Hook Overhead', 'Codex hook total and average invocation time per event type — how much latency hooks add')}
                 ${this._renderSectionShell('reasoning_share', 'Reasoning Token Share', 'Thinking tokens as a percentage of output tokens per model — opencode + Codex')}
                 ${this._renderSectionShell('skill_outcomes', 'Skill Outcomes', 'Token efficiency comparison: sessions that used each skill vs sessions that did not')}
@@ -694,6 +695,7 @@ class AnalyticsView {
             tool_failure_rates: () => this._loadToolFailureRatesSection(),
             daily_tool_mix: () => this._loadDailyToolMixSection(),
             skill_activity: () => this._loadSkillActivitySection(),
+            session_quality: () => this._loadSessionQualitySection(),
             skill_outcomes: () => this._loadSkillOutcomesSection(),
             model_selection_heatmap: () => this._loadModelSelectionHeatmapSection(),
         };
@@ -3718,6 +3720,50 @@ class AnalyticsView {
                     <th>Skill</th><th>Invoke type</th><th>Injections</th><th>Share %</th>
                 </tr></thead>
                 <tbody>${tableRows}</tbody>
+            </table></div>`;
+    }
+
+    // ── Session Quality (#174) ────────────────────────────────────────────────
+
+    async _loadSessionQualitySection() {
+        this._setSectionLoading('session_quality');
+        try {
+            const data = await this.api.getSessionQualitySummary(this._baseParams());
+            if (!data || data.total === 0) {
+                this._setSectionBody('session_quality', '<div class="empty-state-hint">No session data in this window.</div>');
+                this.loadedSections.add('session_quality');
+                return;
+            }
+            this._setSectionBody('session_quality', this._buildSessionQuality(data));
+            this.loadedSections.add('session_quality');
+        } catch (err) {
+            this._setSectionError('session_quality', err);
+        }
+    }
+
+    _buildSessionQuality(data) {
+        const total = data.total || 1;
+        const cleanPct  = ((data.clean   || 0) / total * 100).toFixed(1);
+        const degradPct = ((data.degraded || 0) / total * 100).toFixed(1);
+        const errorPct  = ((data.errored  || 0) / total * 100).toFixed(1);
+        const bar = (pct, cls) =>
+            pct > 0 ? `<div class="quality-bar-segment ${cls}" style="width:${pct}%" title="${pct}%"></div>` : '';
+        return `
+            <h3>Session quality</h3>
+            <p class="table-hint">Derived from span evidence — <strong>Errored</strong>: at least one error-status span or an error/content_filter finish reason. <strong>Degraded</strong>: at least one truncated span (max_tokens / length finish reason). <strong>Clean</strong>: none of the above.</p>
+            <div class="quality-bar">
+                ${bar(cleanPct,  'quality-clean')}
+                ${bar(degradPct, 'quality-degraded')}
+                ${bar(errorPct,  'quality-errored')}
+            </div>
+            <div class="table-scroll-x"><table class="data-table">
+                <thead><tr><th>Grade</th><th>Sessions</th><th>Share %</th></tr></thead>
+                <tbody>
+                    <tr><td><span class="quality-badge quality-clean">✓ Clean</span></td><td class="num">${data.clean || 0}</td><td class="num">${cleanPct}%</td></tr>
+                    <tr><td><span class="quality-badge quality-degraded">⚠ Degraded</span></td><td class="num">${data.degraded || 0}</td><td class="num">${degradPct}%</td></tr>
+                    <tr><td><span class="quality-badge quality-errored">✗ Errored</span></td><td class="num">${data.errored || 0}</td><td class="num">${errorPct}%</td></tr>
+                    <tr class="total-row"><td><strong>Total</strong></td><td class="num"><strong>${data.total}</strong></td><td class="num">100%</td></tr>
+                </tbody>
             </table></div>`;
     }
 

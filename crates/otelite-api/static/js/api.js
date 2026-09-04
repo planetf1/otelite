@@ -275,6 +275,7 @@ class ApiClient {
     async getProviderMix(params = {})   { return this.get('/genai/provider_mix', params); }
     async getToolFailureRates(params = {}) { return this.get('/genai/tool_failure_rates', params); }
     async getDailyToolMix(params = {})     { return this.get('/genai/daily_tool_mix', params); }
+    async getSessionQualitySummary(params = {})  { return this.get('/genai/session_quality_summary', params); }
     async getSkillActivity(params = {})          { return this.get('/genai/skill_activity', params); }
     async getSkillOutcomes(params = {})          { return this.get('/genai/skill_outcomes', params); }
     async getModelSelectionHeatmap(params = {})  { return this.get('/genai/model_selection_heatmap', params); }

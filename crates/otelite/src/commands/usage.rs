@@ -221,6 +221,10 @@ pub struct UsageCommand {
     #[arg(long)]
     pub skill_activity: bool,
 
+    /// Show session quality summary — clean / degraded / errored counts (#174)
+    #[arg(long)]
+    pub session_quality: bool,
+
     /// Show token efficiency comparison: sessions with vs without each skill (#168)
     #[arg(long)]
     pub skill_outcomes: bool,
@@ -340,6 +344,8 @@ struct UsageOutput {
     daily_tool_mix: Option<otelite_core::api::DailyToolMixResponse>,
     #[serde(skip_serializing_if = "Option::is_none")]
     skill_activity: Option<otelite_core::api::SkillActivityResponse>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    session_quality: Option<otelite_core::api::SessionQualitySummary>,
     #[serde(skip_serializing_if = "Option::is_none")]
     skill_outcomes: Option<otelite_core::api::SkillOutcomesResponse>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -1066,6 +1072,22 @@ impl UsageCommand {
                 None
             };
 
+        // --session-quality
+        let session_quality: Option<otelite_core::api::SessionQualitySummary> = if self
+            .session_quality
+        {
+            Some(
+                storage
+                    .query_session_quality_summary(Some(start_time), Some(end_time))
+                    .await
+                    .map_err(|e| {
+                        Error::ApiError(format!("Failed to query session_quality_summary: {}", e))
+                    })?,
+            )
+        } else {
+            None
+        };
+
         // --skill-outcomes
         let skill_outcomes: Option<otelite_core::api::SkillOutcomesResponse> =
             if self.skill_outcomes {
@@ -1141,6 +1163,7 @@ impl UsageCommand {
                     tool_failures,
                     daily_tool_mix,
                     skill_activity,
+                    session_quality,
                     skill_outcomes,
                     model_selection_heatmap,
                 };
@@ -1354,6 +1377,11 @@ impl UsageCommand {
 
                 if let Some(ref resp) = skill_activity {
                     display_skill_activity(resp);
+                    println!();
+                }
+
+                if let Some(ref resp) = session_quality {
+                    display_session_quality(resp);
                     println!();
                 }
 
@@ -3141,6 +3169,51 @@ fn display_skill_activity(resp: &otelite_core::api::SkillActivityResponse) {
         "Skill Activity (total injections: {}):",
         resp.total_injections
     );
+    println!("{}", table);
+}
+
+fn display_session_quality(resp: &otelite_core::api::SessionQualitySummary) {
+    if resp.total == 0 {
+        println!("Session Quality: no data");
+        return;
+    }
+    let pct = |n: u64| {
+        if resp.total > 0 {
+            format!("{:.1}%", n as f64 / resp.total as f64 * 100.0)
+        } else {
+            "—".to_string()
+        }
+    };
+    let mut table = Table::new();
+    table
+        .load_preset(UTF8_FULL)
+        .set_content_arrangement(ContentArrangement::Dynamic);
+    table.set_header(vec![
+        Cell::new("Grade").fg(Color::Cyan),
+        Cell::new("Sessions").fg(Color::Cyan),
+        Cell::new("Share %").fg(Color::Cyan),
+    ]);
+    table.add_row(vec![
+        Cell::new("✓ Clean").fg(Color::Green),
+        Cell::new(resp.clean.to_string()),
+        Cell::new(pct(resp.clean)),
+    ]);
+    table.add_row(vec![
+        Cell::new("⚠ Degraded").fg(Color::Yellow),
+        Cell::new(resp.degraded.to_string()),
+        Cell::new(pct(resp.degraded)),
+    ]);
+    table.add_row(vec![
+        Cell::new("✗ Errored").fg(Color::Red),
+        Cell::new(resp.errored.to_string()),
+        Cell::new(pct(resp.errored)),
+    ]);
+    table.add_row(vec![
+        Cell::new("Total"),
+        Cell::new(resp.total.to_string()),
+        Cell::new("100%"),
+    ]);
+    println!("Session Quality:");
     println!("{}", table);
 }
 
