@@ -12,6 +12,11 @@
 #
 # Note that the GitHub Release will be created with a generated
 # title/body based on your changelogs.
+#
+# 2026-09-04: touched to force GitHub to re-parse this workflow. The stored
+# definition had gone stale (after ddb8ace) and `gh workflow run release.yml`
+# failed with 422 "Workflow does not have 'workflow_dispatch' trigger" even
+# though the file declares it — bump-and-tag dispatches were silently blocked.
 
 name: Release
 permissions:
