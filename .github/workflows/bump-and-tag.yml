@@ -88,11 +88,18 @@ jobs:
           ./scripts/rotate-changelog.sh "${{ steps.bump.outputs.new }}"
 
       - name: Commit, tag, and push
+        # GITHUB_TOKEN pushes are refused on a PR-protected main (by design:
+        # any collaborator could otherwise route a workflow to push to main),
+        # so the release commit goes out with the PAT that already carries
+        # `repo` scope for this workflow — the same token used for the
+        # release dispatch below.
+        env:
+          RELEASE_TOKEN: ${{ secrets.RELEASE_TOKEN }}
         run: |
           git add Cargo.toml Cargo.lock CHANGELOG.md
           git commit -m "chore: release v${{ steps.bump.outputs.new }}"
           git tag "v${{ steps.bump.outputs.new }}"
-          git push origin main "v${{ steps.bump.outputs.new }}"
+          git push "https://x-access-token:${RELEASE_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" main "v${{ steps.bump.outputs.new }}"
 
       - name: Trigger binary release workflow
         # Requires RELEASE_TOKEN (PAT with repo + workflow scopes).
