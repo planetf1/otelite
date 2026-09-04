@@ -1,0 +1,50 @@
+name: Changelog entry
+
+on:
+  pull_request:
+    branches: [main, develop]
+
+permissions:
+  contents: read
+
+jobs:
+  entry:
+    name: Changelog Entry
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          fetch-depth: 0
+
+      - name: Check the PR ships release notes
+        env:
+          PR_NUMBER: ${{ github.event.number }}
+        run: |
+          set -euo pipefail
+          base=$(git merge-base origin/main HEAD)
+          changed=$(git diff --name-only "$base" HEAD)
+
+          entry=$(printf '%s\n' "$changed" | grep -E '^changelog/[^/]+\.md$' | head -1 || true)
+          if [[ -n "$entry" ]]; then
+            if git show "HEAD:$entry" | grep -qE '^- '; then
+              echo "ok: $entry carries the release notes"
+              exit 0
+            fi
+            echo "error: $entry exists but has no bullet lines ('- ...')."
+            echo "Add at least one note, e.g. under '### Added' — or for pure"
+            echo "plumbing, an '### Internal' line. See CONTRIBUTING.md → Changelog Entry."
+            exit 1
+          fi
+
+          if printf '%s\n' "$changed" | grep -qx 'CHANGELOG.md'; then
+            echo "ok: CHANGELOG.md edited directly (maintainer flow)"
+            exit 0
+          fi
+
+          echo "error: this PR has no changelog entry."
+          echo "Create changelog/${PR_NUMBER:-<PR-number>}.md in your branch (start from"
+          echo "changelog/.template.md) with one bullet per user-visible change — or, for"
+          echo "pure plumbing, an '### Internal' note. See CONTRIBUTING.md → Changelog"
+          echo "Entry. The release workflow merges entry files into CHANGELOG.md; do not"
+          echo "edit CHANGELOG.md itself."
+          exit 1

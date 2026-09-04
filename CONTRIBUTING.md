@@ -211,6 +211,10 @@ conflicts with every release that lands while it is open — and with any
 other open PR editing the same section. Each PR owning its own entry file
 removes the clash entirely.
 
+The PR template pre-checklists this, and the `Changelog Entry` CI check on
+every PR fails if neither an entry file (with at least one bullet) nor a
+direct `CHANGELOG.md` edit (maintainer flow) is present.
+
 Pure refactors, internal test changes and CI plumbing need no entry unless
 you want an `### Internal` note.
 
