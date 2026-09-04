@@ -219,6 +219,11 @@ enum Commands {
         #[arg(long)]
         debug: bool,
     },
+    /// Recent LLM request health: status, model, tokens, TTFT, trace-id
+    #[command(
+        after_help = "Examples:\n  otelite llm\n  otelite llm --since 1h --limit 50\n  otelite llm --model claude-sonnet --status error\n  otelite llm --trace <trace-id>"
+    )]
+    Llm(commands::llm::LlmCommand),
     /// One-shot forensic report for an AI agent session
     #[command(
         after_help = "Examples:\n  otelite diagnose e023c577-8f96-4de8-a86c-6ce3080519b5\n  otelite diagnose <session-id> --suggest"
@@ -651,6 +656,7 @@ async fn run_cli() -> Result<()> {
             view,
             debug,
         }) => handle_tui_command(api_url, refresh_interval, view, debug).await,
+        Some(Commands::Llm(cmd)) => cmd.execute(config).await,
         Some(Commands::Diagnose {
             session_id,
             suggest,

@@ -623,6 +623,15 @@ impl ApiClient {
         Self::read_items(response, "hour of day").await
     }
 
+    pub async fn fetch_top_spans(
+        &self,
+        params: Vec<(&str, String)>,
+    ) -> Result<Vec<otelite_core::api::TopSpan>> {
+        let url = format!("{}/api/genai/top_spans", self.base_url);
+        let response = self.client.get(&url).query(&params).send().await?;
+        Self::read_items(response, "top spans").await
+    }
+
     pub async fn fetch_tool_failure_rates(
         &self,
         params: Vec<(&str, String)>,

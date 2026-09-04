@@ -6,6 +6,7 @@ pub mod capabilities;
 pub mod diagnose;
 pub mod histogram;
 pub mod import;
+pub mod llm;
 pub mod logs;
 pub mod metrics;
 pub mod model_performance;

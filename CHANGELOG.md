@@ -15,6 +15,11 @@ have to work around), not implementation detail.
 
 ### Added
 
+- **`otelite llm`** — new subcommand showing recent LLM requests with model, token counts,
+  duration, cost, and finish status (✓ ok / ✗ error) in a colour-coded table. Supports
+  `--since`, `--limit`, `--model`, `--session`, `--status ok|error` filters, and
+  `--trace <id>` to drill into a specific trace's spans with `gen_ai.*` attributes inline. (#92)
+
 - **CLI flags** for tool failure rates, daily tool mix, and skill activity:
   `otelite usage --tool-failures`, `--daily-tool-mix`, `--skill-activity` — all three panels
   are now reachable from the command line with colour-coded output and JSON export support.
