@@ -11,6 +11,8 @@ have to work around), not implementation detail.
 
 ## [Unreleased]
 
+## [0.1.117] - 2026-09-04
+
 ### Changed
 
 - `otelite capabilities` pretty output now renders at natural width when piped or redirected instead of wrapping to a detected (or `tput`-fallback) terminal width — scripted consumers like `grep`/`jq` no longer see wrapped cell contents. Interactive terminal display is unchanged.
