@@ -471,3 +471,126 @@ async fn test_logs_severity_filter() {
         );
     }
 }
+
+// ── #83: full-stack e2e: HTTP OTLP receiver → shared storage → API → otelite-client ──
+
+mod http_test_utils_e2e {
+    // Re-declare the minimal payload helper inline so this test module
+    // is self-contained without re-exporting from http_test_utils.
+    pub fn logs_json(service: &str, body: &str) -> String {
+        serde_json::json!({
+            "resourceLogs": [{
+                "resource": {
+                    "attributes": [{
+                        "key": "service.name",
+                        "value": {"stringValue": service}
+                    }]
+                },
+                "scopeLogs": [{
+                    "scope": {"name": "e2e_test", "version": "1.0.0"},
+                    "logRecords": [{
+                        "timeUnixNano": "1700000000000000000",
+                        "observedTimeUnixNano": "1700000000000000000",
+                        "severityNumber": 9,
+                        "severityText": "INFO",
+                        "body": {"stringValue": body}
+                    }]
+                }]
+            }]
+        })
+        .to_string()
+    }
+}
+
+/// End-to-end wiring test (#83):
+///
+/// 1. OTLP HTTP receiver starts on an ephemeral port backed by shared SQLite storage.
+/// 2. A real OTLP HTTP/JSON log payload is POSTed to `POST /v1/logs`.
+/// 3. The dashboard API starts on a second ephemeral port, sharing the same storage.
+/// 4. `otelite_client::ApiClient` queries `GET /api/logs` and asserts the log arrived.
+///
+/// This catches wiring regressions in the OTLP receiver → storage → API router chain
+/// that in-process handler tests or API tests writing directly to storage would not.
+#[tokio::test]
+async fn test_e2e_otlp_http_receiver_to_api_client() {
+    use otelite_api::{config::DashboardConfig, server::DashboardServer};
+    use otelite_client::ApiClient;
+    use otelite_receiver::{config::ReceiverConfig, http::HttpServer};
+    use otelite_storage::{sqlite::SqliteBackend, StorageBackend, StorageConfig};
+    use std::{sync::Arc, time::Duration};
+    use tempfile::TempDir;
+    use tokio::net::TcpListener;
+    use tokio::time::sleep;
+
+    // ── shared storage ────────────────────────────────────────────────────────
+    let temp_dir = TempDir::new().expect("temp dir");
+    let storage_config = StorageConfig::default().with_data_dir(temp_dir.path().to_path_buf());
+    let mut backend = SqliteBackend::new(storage_config);
+    backend.initialize().await.expect("storage init");
+    let storage: Arc<dyn StorageBackend> = Arc::new(backend);
+
+    // ── OTLP HTTP receiver on port 0 ─────────────────────────────────────────
+    let mut recv_cfg = ReceiverConfig::new();
+    recv_cfg.http_addr = "127.0.0.1:0".parse().unwrap();
+    let receiver = HttpServer::new(recv_cfg);
+    receiver
+        .start(Arc::clone(&storage))
+        .await
+        .expect("receiver start");
+    sleep(Duration::from_millis(50)).await;
+    let recv_addr = receiver.local_addr().await.expect("receiver local_addr");
+
+    // ── POST a real OTLP JSON log payload ─────────────────────────────────────
+    let payload = http_test_utils_e2e::logs_json("e2e_service", "hello from e2e test");
+    let http = reqwest::Client::new();
+    let status = http
+        .post(format!("http://{}/v1/logs", recv_addr))
+        .header("Content-Type", "application/json")
+        .body(payload)
+        .send()
+        .await
+        .expect("POST /v1/logs")
+        .status();
+    assert!(
+        status.is_success(),
+        "OTLP receiver rejected the payload: {status}"
+    );
+
+    // Give the receiver a moment to flush to storage
+    sleep(Duration::from_millis(100)).await;
+
+    // ── Dashboard API on a second ephemeral port ──────────────────────────────
+    let listener = TcpListener::bind("127.0.0.1:0")
+        .await
+        .expect("API listener");
+    let api_addr = listener.local_addr().expect("API local_addr");
+    let api_cfg = DashboardConfig::default().with_bind_address(api_addr);
+    let server = DashboardServer::new(api_cfg, Arc::clone(&storage));
+    let router = server.build_router();
+    tokio::spawn(async move {
+        axum::serve(listener, router.into_make_service())
+            .await
+            .expect("API serve");
+    });
+    sleep(Duration::from_millis(50)).await;
+
+    // ── Query via ApiClient ───────────────────────────────────────────────────
+    let client = ApiClient::new(format!("http://{}", api_addr), Duration::from_secs(10)).unwrap();
+    let logs = client
+        .fetch_logs(vec![("limit", "50".to_string())])
+        .await
+        .expect("fetch_logs via ApiClient");
+
+    assert!(
+        !logs.logs.is_empty(),
+        "Expected at least one log from the OTLP payload, got none"
+    );
+    let found = logs.logs.iter().any(|l| l.body == "hello from e2e test");
+    assert!(
+        found,
+        "Log body 'hello from e2e test' not found in API response; got: {:?}",
+        logs.logs
+    );
+    // Keep temp_dir alive until the end of the test
+    drop(temp_dir);
+}

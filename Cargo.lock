@@ -2250,6 +2250,7 @@ dependencies = [
  "hyper",
  "opentelemetry-proto",
  "otelite-api",
+ "otelite-client",
  "otelite-core",
  "otelite-storage",
  "pretty_assertions",

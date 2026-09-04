@@ -58,4 +58,5 @@ tempfile = { workspace = true }
 flate2 = "1.0"
 reqwest = { workspace = true }
 otelite-api = { path = "../otelite-api", version = "0.1.0" }
+otelite-client = { path = "../otelite-client", version = "0.1.0" }
 otelite-storage = { path = "../otelite-storage", version = "0.1.0" }

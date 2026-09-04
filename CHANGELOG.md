@@ -29,6 +29,10 @@ have to work around), not implementation detail.
 
 ### Internal
 
+- **End-to-end wiring test** (#83): `test_e2e_otlp_http_receiver_to_api_client` boots a real OTLP HTTP
+  receiver and a real dashboard API on ephemeral ports, POSTs an OTLP JSON payload, and asserts the log
+  round-trips through `otelite_client::ApiClient`. Catches receiver → storage → API router regressions.
+
 - OpenAPI `schemas()` block updated to include `ToolFailureRow/Response`, `DailyToolMixRow/Response`,
   `SkillActivityRow/Response`.
 - Integration test `test_filters_applied_echoed_on_all_genai_endpoints` now covers the three new endpoints.
