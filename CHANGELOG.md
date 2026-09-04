@@ -11,6 +11,10 @@ have to work around), not implementation detail.
 
 ## [Unreleased]
 
+### Internal
+
+- Backlog issues filed for insight gaps identified from stored metrics analysis (#177–#184). No user-visible behaviour change.
+
 ## [0.1.112] - 2026-09-04
 
 ### Added
