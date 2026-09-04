@@ -11,6 +11,8 @@ have to work around), not implementation detail.
 
 ## [Unreleased]
 
+## [0.1.112] - 2026-09-04
+
 ### Added
 
 - **Session Quality** — every session in `/api/sessions/costs` and the Sessions tab now carries
