@@ -96,7 +96,7 @@ jobs:
         env:
           RELEASE_TOKEN: ${{ secrets.RELEASE_TOKEN }}
         run: |
-          git add Cargo.toml Cargo.lock CHANGELOG.md
+          git add Cargo.toml Cargo.lock CHANGELOG.md changelog/
           git commit -m "chore: release v${{ steps.bump.outputs.new }}"
           git tag "v${{ steps.bump.outputs.new }}"
           git push "https://x-access-token:${RELEASE_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" main "v${{ steps.bump.outputs.new }}"

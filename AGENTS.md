@@ -155,19 +155,29 @@ changes, CI/release plumbing, dependency bumps with no behaviour change.
   per [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 - Flag breaking changes prominently.
 
-**Workflow**:
+**Workflow (per-PR entry files)**:
 
-1. While working on an issue, append entries under `## [Unreleased]` in `CHANGELOG.md`.
-2. At release time, the bump-and-tag CI workflow runs `scripts/rotate-changelog.sh`
-   which rotates `[Unreleased]` → `[X.Y.Z] - YYYY-MM-DD` and prepends a fresh empty
-   `[Unreleased]` block. The script **fails the release** if `[Unreleased]` is empty.
-3. For pure-plumbing pushes with no user impact, add an `### Internal` bullet
-   (e.g. "CI workflow tweak — no user-visible change"). This satisfies the gate
-   without inventing fake user-facing copy.
-4. If the bump fails because `[Unreleased]` was empty, add the missing bullet and
+1. While working on a PR, add `changelog/<PR-number>.md` (start from
+   `changelog/.template.md`) with the entry bullets. Do not edit
+   `CHANGELOG.md` — it is the release-generated record, and concurrent
+   edits to it are what used to make open PRs clash on every release
+   rotation.
+2. At release time, the bump-and-tag CI workflow runs
+   `scripts/rotate-changelog.sh`, which merges any `[Unreleased]` bullets
+   and every `changelog/*.md` entry into `[X.Y.Z] - YYYY-MM-DD` (canonical
+   section order: Added, Changed, Fixed, Removed, Internal) and deletes the
+   consumed entry files. The script **fails the release** if neither source
+   has at least one bullet.
+3. Bullets may still be appended under `## [Unreleased]` directly for
+   changes made on main itself; both sources merge into the release section.
+4. For pure-plumbing pushes with no user impact, add an `### Internal`
+   bullet (entry file or `[Unreleased]`). This satisfies the gate without
+   inventing fake user-facing copy.
+5. If the bump fails because no notes were found, add the missing entry and
    push — the workflow retries automatically on the next push to main.
 
-You can dry-run the rotation locally:
+Test the script: `scripts/rotate-changelog.sh --selftest`.
+Dry-run the rotation locally:
 
 ```bash
 scripts/rotate-changelog.sh 0.1.99 2026-05-15  # writes to CHANGELOG.md — git restore after
