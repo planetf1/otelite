@@ -1168,6 +1168,20 @@ impl StorageBackend for SqliteBackend {
         .await
     }
 
+    async fn query_recent_errors(
+        &self,
+        start_time: Option<i64>,
+        end_time: Option<i64>,
+        tool: Option<String>,
+        limit: Option<usize>,
+    ) -> Result<otelite_core::api::RecentErrorsResponse> {
+        self.read_query(move |conn| {
+            reader::query_recent_errors(conn, start_time, end_time, tool.as_deref(), limit)
+                .map_err(StorageError::from)
+        })
+        .await
+    }
+
     async fn query_skill_outcomes(
         &self,
         start_time: Option<i64>,

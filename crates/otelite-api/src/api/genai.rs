@@ -3006,6 +3006,48 @@ pub async fn get_model_selection_heatmap(
     Ok(Json(response))
 }
 
+/// Query parameters for the `GET /api/genai/recent_errors` endpoint.
+#[derive(Debug, Deserialize, Serialize, utoipa::IntoParams, utoipa::ToSchema)]
+pub struct RecentErrorsQuery {
+    /// Start time (nanoseconds since Unix epoch)
+    pub start_time: Option<i64>,
+    /// End time (nanoseconds since Unix epoch)
+    pub end_time: Option<i64>,
+    /// Filter by tool harness label (`claude_code`, `opencode`, `codex`, `pi`, …)
+    pub tool: Option<String>,
+    /// Maximum number of rows to return (default 50, max 200)
+    pub limit: Option<usize>,
+}
+
+#[utoipa::path(
+    get,
+    path = "/api/genai/recent_errors",
+    params(RecentErrorsQuery),
+    responses(
+        (status = 200, description = "Most recent error events from spans and logs", body = otelite_core::api::RecentErrorsResponse),
+        (status = 500, description = "Internal server error", body = ErrorResponse)
+    ),
+    tag = "genai"
+)]
+pub async fn get_recent_errors(
+    State(state): State<AppState>,
+    Query(query): Query<RecentErrorsQuery>,
+) -> Result<Json<otelite_core::api::RecentErrorsResponse>, (StatusCode, Json<ErrorResponse>)> {
+    let response = state
+        .storage
+        .query_recent_errors(query.start_time, query.end_time, query.tool, query.limit)
+        .await
+        .map_err(|e| {
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(ErrorResponse::storage_error(format!(
+                    "query recent_errors: {e}"
+                ))),
+            )
+        })?;
+    Ok(Json(response))
+}
+
 genai_filter_impl!(TokenUsageQuery);
 genai_filter_impl!(CostSeriesQuery);
 genai_filter_impl!(FinishReasonsQuery);

@@ -13157,6 +13157,344 @@ pub fn query_session_quality_summary(
     })
 }
 
+/// Return the most recent error events from spans and logs.
+///
+/// Three error sources are unioned:
+///  1. Spans with OTel `status_code = 2` (ERROR status).
+///  2. Spans with a `finish_reason` attribute in `error` or `content_filter`.
+///  3. Log records with `severity_number >= 9` (OTel ERROR level).
+///
+/// The `tool` parameter filters on the CASE-mapped tool label derived from
+/// `scope.name`. Messages are truncated to 200 chars (privacy invariant #120).
+pub fn query_recent_errors(
+    conn: &Connection,
+    start_time: Option<i64>,
+    end_time: Option<i64>,
+    tool: Option<&str>,
+    limit: Option<usize>,
+) -> Result<otelite_core::api::RecentErrorsResponse> {
+    let cap = limit.unwrap_or(50).min(200);
+    let mut filters_applied: Vec<String> = Vec::new();
+
+    // Build optional time-range clauses (applied to both subqueries).
+    let mut span_time = String::new();
+    let mut log_time = String::new();
+    let mut params: Vec<Box<dyn rusqlite::ToSql>> = Vec::new();
+
+    if let Some(s) = start_time {
+        span_time.push_str(" AND start_time >= ?");
+        log_time.push_str(" AND timestamp >= ?");
+        params.push(Box::new(s));
+        filters_applied.push(format!("start_time>={s}"));
+    }
+    if let Some(e) = end_time {
+        span_time.push_str(" AND end_time <= ?");
+        log_time.push_str(" AND timestamp <= ?");
+        params.push(Box::new(e));
+        filters_applied.push(format!("end_time<={e}"));
+    }
+
+    // The tool CASE expression used in both span subqueries.
+    let tool_case = "CASE
+            WHEN json_extract(scope,'$.name') LIKE '%claude_code%'   THEN 'claude_code'
+            WHEN json_extract(scope,'$.name') = 'com.opencode'       THEN 'opencode'
+            WHEN json_extract(scope,'$.name') LIKE '%opencode%'      THEN 'opencode'
+            WHEN json_extract(scope,'$.name') = 'pi-otel'            THEN 'pi'
+            WHEN json_extract(scope,'$.name') LIKE '%codex%'         THEN 'codex'
+            WHEN json_extract(scope,'$.name') LIKE '%deekseek%'      THEN 'deepseek'
+            ELSE COALESCE(json_extract(scope,'$.name'), 'unknown')
+        END";
+
+    // Optional HAVING clause to filter by tool label.
+    let tool_filter = if let Some(t) = tool {
+        filters_applied.push(format!("tool={t}"));
+        // We push the value as a param so it's bound safely.
+        params.push(Box::new(t.to_string()));
+        // Note: we filter in a WHERE on the outer query so the param index
+        // is correct (time params come first). We use a derived-table trick.
+        " AND tool_label = ?".to_string()
+    } else {
+        String::new()
+    };
+
+    // We'll push `cap` as the LIMIT param at the very end.
+    params.push(Box::new(cap as i64));
+
+    let sql = format!(
+        "SELECT ts, name, tool_label, model, session_id, trace_id, message, source
+         FROM (
+             -- Source 1: span OTel ERROR status
+             SELECT
+                 start_time         AS ts,
+                 name               AS name,
+                 {tool_case}        AS tool_label,
+                 COALESCE(
+                     json_extract(attributes,'$.\"gen_ai.request.model\"'),
+                     json_extract(attributes,'$.\"gen_ai.response.model\"')
+                 )                  AS model,
+                 json_extract(attributes,'$.\"session.id\"')              AS session_id,
+                 trace_id           AS trace_id,
+                 substr(COALESCE(status_message, 'OTel ERROR'), 1, 200)  AS message,
+                 'span_status'      AS source
+             FROM spans
+             WHERE status_code = 2{span_time}
+
+             UNION ALL
+
+             -- Source 2: finish_reason in error / content_filter
+             SELECT
+                 start_time         AS ts,
+                 name               AS name,
+                 {tool_case}        AS tool_label,
+                 COALESCE(
+                     json_extract(attributes,'$.\"gen_ai.request.model\"'),
+                     json_extract(attributes,'$.\"gen_ai.response.model\"')
+                 )                  AS model,
+                 json_extract(attributes,'$.\"session.id\"')              AS session_id,
+                 trace_id           AS trace_id,
+                 substr(COALESCE(
+                     json_extract(attributes,'$.\"gen_ai.response.finish_reason\"'),
+                     json_extract(attributes,'$.\"gen_ai.response.finish_reasons\"'),
+                     'finish_reason error'
+                 ), 1, 200)         AS message,
+                 'finish_reason'    AS source
+             FROM spans
+             WHERE (
+                 LOWER(COALESCE(
+                     json_extract(attributes,'$.\"gen_ai.response.finish_reason\"'),
+                     json_extract(attributes,'$.\"gen_ai.response.finish_reasons\"'),
+                     ''
+                 )) LIKE '%error%'
+                 OR
+                 LOWER(COALESCE(
+                     json_extract(attributes,'$.\"gen_ai.response.finish_reason\"'),
+                     json_extract(attributes,'$.\"gen_ai.response.finish_reasons\"'),
+                     ''
+                 )) LIKE '%content_filter%'
+             )
+             AND status_code != 2{span_time}
+
+             UNION ALL
+
+             -- Source 3: log records at ERROR or above (severity_number >= 9)
+             SELECT
+                 timestamp          AS ts,
+                 COALESCE(severity_text, 'ERROR') AS name,
+                 COALESCE(
+                     CASE
+                         WHEN json_extract(scope,'$.name') LIKE '%claude_code%'   THEN 'claude_code'
+                         WHEN json_extract(scope,'$.name') = 'com.opencode'       THEN 'opencode'
+                         WHEN json_extract(scope,'$.name') LIKE '%opencode%'      THEN 'opencode'
+                         WHEN json_extract(scope,'$.name') = 'pi-otel'            THEN 'pi'
+                         WHEN json_extract(scope,'$.name') LIKE '%codex%'         THEN 'codex'
+                         WHEN json_extract(scope,'$.name') LIKE '%deekseek%'      THEN 'deepseek'
+                         ELSE json_extract(scope,'$.name')
+                     END,
+                     'unknown'
+                 )                  AS tool_label,
+                 NULL               AS model,
+                 json_extract(attributes,'$.\"session.id\"') AS session_id,
+                 trace_id           AS trace_id,
+                 substr(body, 1, 200) AS message,
+                 'log'              AS source
+             FROM logs
+             WHERE severity_number >= 9{log_time}
+         )
+         WHERE 1=1{tool_filter}
+         ORDER BY ts DESC
+         LIMIT ?"
+    );
+
+    let param_refs: Vec<&dyn rusqlite::ToSql> = params.iter().map(|p| p.as_ref()).collect();
+    let mut stmt = conn
+        .prepare(&sql)
+        .map_err(|e| StorageError::QueryError(format!("recent_errors prepare: {e}")))?;
+
+    let rows = stmt
+        .query_map(param_refs.as_slice(), |r| {
+            Ok(otelite_core::api::RecentErrorRow {
+                timestamp: r.get::<_, i64>(0)?,
+                name: r.get::<_, String>(1).unwrap_or_default(),
+                tool: r
+                    .get::<_, String>(2)
+                    .unwrap_or_else(|_| "unknown".to_string()),
+                model: r.get::<_, Option<String>>(3)?,
+                session_id: r.get::<_, Option<String>>(4)?,
+                trace_id: r.get::<_, Option<String>>(5)?,
+                message: r.get::<_, Option<String>>(6)?,
+                source: r
+                    .get::<_, String>(7)
+                    .unwrap_or_else(|_| "unknown".to_string()),
+            })
+        })
+        .map_err(|e| StorageError::QueryError(format!("recent_errors query: {e}")))?
+        .filter_map(|v| v.ok())
+        .collect();
+
+    Ok(otelite_core::api::RecentErrorsResponse {
+        rows,
+        filters_applied,
+    })
+}
+
+#[cfg(test)]
+mod recent_errors_tests {
+    use super::*;
+    use rusqlite::Connection;
+
+    fn make_conn() -> Connection {
+        let conn = Connection::open_in_memory().unwrap();
+        conn.execute_batch(
+            "CREATE TABLE spans (
+                id INTEGER PRIMARY KEY,
+                trace_id TEXT,
+                span_id TEXT NOT NULL,
+                name TEXT NOT NULL,
+                kind INTEGER,
+                start_time INTEGER NOT NULL,
+                end_time INTEGER,
+                attributes TEXT,
+                scope TEXT,
+                status_code INTEGER,
+                status_message TEXT,
+                flags INTEGER,
+                created_at INTEGER NOT NULL DEFAULT 0
+            );
+            CREATE TABLE logs (
+                id INTEGER PRIMARY KEY,
+                timestamp INTEGER NOT NULL,
+                observed_timestamp INTEGER,
+                trace_id TEXT,
+                span_id TEXT,
+                severity_number INTEGER NOT NULL,
+                severity_text TEXT,
+                body TEXT NOT NULL,
+                attributes TEXT,
+                resource TEXT,
+                scope TEXT,
+                flags INTEGER,
+                created_at INTEGER NOT NULL DEFAULT 0
+            );",
+        )
+        .unwrap();
+        conn
+    }
+
+    fn ins_span_status(conn: &Connection, ts: i64, status_code: i64, status_msg: &str) {
+        conn.execute(
+            "INSERT INTO spans (trace_id, span_id, name, kind, start_time, end_time, attributes, scope, status_code, status_message, flags, created_at)
+             VALUES ('tr1', 'sp1', 'llm', 1, ?, ?, '{}', NULL, ?, ?, 0, 0)",
+            rusqlite::params![ts, ts + 1_000_000, status_code, status_msg],
+        )
+        .unwrap();
+    }
+
+    fn ins_span_finish(conn: &Connection, ts: i64, finish: &str) {
+        let attrs = format!(r#"{{"gen_ai.response.finish_reason":"{finish}"}}"#);
+        conn.execute(
+            "INSERT INTO spans (trace_id, span_id, name, kind, start_time, end_time, attributes, scope, status_code, flags, created_at)
+             VALUES ('tr2', 'sp2', 'llm', 1, ?, ?, ?, NULL, 0, 0, 0)",
+            rusqlite::params![ts, ts + 1_000_000, attrs],
+        )
+        .unwrap();
+    }
+
+    fn ins_log(conn: &Connection, ts: i64, severity: i64, body: &str) {
+        conn.execute(
+            "INSERT INTO logs (timestamp, trace_id, span_id, severity_number, severity_text, body, attributes, scope, flags, created_at)
+             VALUES (?, 'tr3', 'sp3', ?, 'ERROR', ?, '{}', NULL, 0, 0)",
+            rusqlite::params![ts, severity, body],
+        )
+        .unwrap();
+    }
+
+    #[test]
+    fn test_recent_errors_from_span_status() {
+        let conn = make_conn();
+        ins_span_status(&conn, 1_000_000_000, 2, "rate limited");
+        let resp = query_recent_errors(&conn, None, None, None, None).unwrap();
+        assert_eq!(resp.rows.len(), 1);
+        assert_eq!(resp.rows[0].source, "span_status");
+        assert_eq!(resp.rows[0].message.as_deref(), Some("rate limited"));
+    }
+
+    #[test]
+    fn test_recent_errors_from_finish_reason() {
+        let conn = make_conn();
+        ins_span_finish(&conn, 2_000_000_000, "content_filter");
+        let resp = query_recent_errors(&conn, None, None, None, None).unwrap();
+        assert_eq!(resp.rows.len(), 1);
+        assert_eq!(resp.rows[0].source, "finish_reason");
+    }
+
+    #[test]
+    fn test_recent_errors_from_log() {
+        let conn = make_conn();
+        ins_log(&conn, 3_000_000_000, 9, "something went wrong");
+        let resp = query_recent_errors(&conn, None, None, None, None).unwrap();
+        assert_eq!(resp.rows.len(), 1);
+        assert_eq!(resp.rows[0].source, "log");
+        assert_eq!(
+            resp.rows[0].message.as_deref(),
+            Some("something went wrong")
+        );
+    }
+
+    #[test]
+    fn test_recent_errors_message_truncated_to_200() {
+        let conn = make_conn();
+        let long_msg = "x".repeat(300);
+        ins_span_status(&conn, 4_000_000_000, 2, &long_msg);
+        let resp = query_recent_errors(&conn, None, None, None, None).unwrap();
+        let msg = resp.rows[0].message.as_deref().unwrap_or("");
+        assert_eq!(msg.len(), 200);
+    }
+
+    #[test]
+    fn test_recent_errors_tool_filter_excludes_unknown() {
+        let conn = make_conn();
+        // One span with no scope (tool → 'unknown'), one log with no scope
+        ins_span_status(&conn, 5_000_000_000, 2, "err");
+        ins_log(&conn, 6_000_000_000, 9, "log err");
+        // Filter for 'claude_code' — neither row should match
+        let resp = query_recent_errors(&conn, None, None, Some("claude_code"), None).unwrap();
+        assert_eq!(resp.rows.len(), 0);
+    }
+
+    #[test]
+    fn test_recent_errors_limit() {
+        let conn = make_conn();
+        for i in 0..10i64 {
+            ins_span_status(&conn, 1_000_000_000 + i * 1_000_000, 2, "err");
+        }
+        let resp = query_recent_errors(&conn, None, None, None, Some(3)).unwrap();
+        assert_eq!(resp.rows.len(), 3);
+    }
+
+    #[test]
+    fn test_recent_errors_ordered_newest_first() {
+        let conn = make_conn();
+        ins_span_status(&conn, 1_000_000_000, 2, "old");
+        ins_span_status(&conn, 9_000_000_000, 2, "new");
+        let resp = query_recent_errors(&conn, None, None, None, None).unwrap();
+        assert!(resp.rows[0].timestamp > resp.rows[1].timestamp);
+    }
+
+    #[test]
+    fn test_recent_errors_clean_span_not_included() {
+        let conn = make_conn();
+        // status_code = 0 and no bad finish_reason → should not appear
+        conn.execute(
+            "INSERT INTO spans (trace_id, span_id, name, kind, start_time, end_time, attributes, scope, status_code, flags, created_at)
+             VALUES ('tr9', 'sp9', 'llm', 1, 1000, 2000, '{}', NULL, 0, 0, 0)",
+            [],
+        )
+        .unwrap();
+        let resp = query_recent_errors(&conn, None, None, None, None).unwrap();
+        assert!(resp.rows.is_empty());
+    }
+}
+
 #[cfg(test)]
 mod new_insight_tests_2 {
     use super::*;

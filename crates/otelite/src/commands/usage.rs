@@ -232,6 +232,14 @@ pub struct UsageCommand {
     /// Show model-selection heatmap: (role × tool × model) request counts (#169)
     #[arg(long)]
     pub model_selection_heatmap: bool,
+
+    /// Show the most recent error events from spans and logs (#175)
+    #[arg(long)]
+    pub recent_errors: bool,
+
+    /// Maximum number of rows when using --recent-errors (default 50)
+    #[arg(long, default_value = "50")]
+    pub recent_errors_limit: usize,
 }
 
 // ── serialisable output types (used for --format json) ───────────────────────
@@ -350,6 +358,8 @@ struct UsageOutput {
     skill_outcomes: Option<otelite_core::api::SkillOutcomesResponse>,
     #[serde(skip_serializing_if = "Option::is_none")]
     model_selection_heatmap: Option<otelite_core::api::ModelSelectionHeatmapResponse>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    recent_errors: Option<otelite_core::api::RecentErrorsResponse>,
 }
 
 // ── pricing fetch ─────────────────────────────────────────────────────────────
@@ -1121,6 +1131,25 @@ impl UsageCommand {
                 None
             };
 
+        // --recent-errors
+        let recent_errors: Option<otelite_core::api::RecentErrorsResponse> = if self.recent_errors {
+            Some(
+                storage
+                    .query_recent_errors(
+                        Some(start_time),
+                        Some(end_time),
+                        None,
+                        Some(self.recent_errors_limit),
+                    )
+                    .await
+                    .map_err(|e| {
+                        Error::ApiError(format!("Failed to query recent_errors: {}", e))
+                    })?,
+            )
+        } else {
+            None
+        };
+
         use crate::config::OutputFormat;
         match format {
             OutputFormat::Json | OutputFormat::JsonCompact => {
@@ -1166,6 +1195,7 @@ impl UsageCommand {
                     session_quality,
                     skill_outcomes,
                     model_selection_heatmap,
+                    recent_errors,
                 };
                 let json = if matches!(format, OutputFormat::JsonCompact) {
                     serde_json::to_string(&output)
@@ -1392,6 +1422,11 @@ impl UsageCommand {
 
                 if let Some(ref resp) = model_selection_heatmap {
                     display_model_selection_heatmap(resp);
+                    println!();
+                }
+
+                if let Some(ref resp) = recent_errors {
+                    display_recent_errors(resp);
                     println!();
                 }
 
@@ -3280,6 +3315,54 @@ fn display_model_selection_heatmap(resp: &otelite_core::api::ModelSelectionHeatm
         ]);
     }
     println!("Model Selection Heatmap (role × tool × model):");
+    println!("{}", table);
+}
+
+fn display_recent_errors(resp: &otelite_core::api::RecentErrorsResponse) {
+    if resp.rows.is_empty() {
+        println!("Recent Errors: no error events in window");
+        return;
+    }
+    let mut table = Table::new();
+    table
+        .load_preset(UTF8_FULL)
+        .set_content_arrangement(ContentArrangement::Dynamic);
+    table.set_header(vec![
+        Cell::new("Tool").fg(Color::Cyan),
+        Cell::new("Time").fg(Color::Cyan),
+        Cell::new("Source").fg(Color::Cyan),
+        Cell::new("Span / Event").fg(Color::Cyan),
+        Cell::new("Message").fg(Color::Cyan),
+    ]);
+    for r in &resp.rows {
+        let ts_str = {
+            let secs = r.timestamp / 1_000_000_000;
+            let dt = chrono::DateTime::from_timestamp(secs, 0)
+                .map(|d| d.format("%Y-%m-%d %H:%M:%S").to_string())
+                .unwrap_or_else(|| secs.to_string());
+            dt
+        };
+        let source_label = match r.source.as_str() {
+            "span_status" => "span error",
+            "finish_reason" => "finish rsn",
+            "log" => "log",
+            other => other,
+        };
+        table.add_row(vec![
+            Cell::new(r.tool.as_str()),
+            Cell::new(ts_str),
+            Cell::new(source_label).fg(if r.source == "span_status" {
+                Color::Red
+            } else if r.source == "finish_reason" {
+                Color::Yellow
+            } else {
+                Color::White
+            }),
+            Cell::new(r.name.as_str()),
+            Cell::new(r.message.as_deref().unwrap_or("—")),
+        ]);
+    }
+    println!("Recent Errors (newest first):");
     println!("{}", table);
 }
 

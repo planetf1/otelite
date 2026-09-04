@@ -722,6 +722,21 @@ impl ApiClient {
         Ok(response.json().await?)
     }
 
+    pub async fn fetch_recent_errors(
+        &self,
+        params: Vec<(&str, String)>,
+    ) -> Result<otelite_core::api::RecentErrorsResponse> {
+        let url = format!("{}/api/genai/recent_errors", self.base_url);
+        let response = self.client.get(&url).query(&params).send().await?;
+        if !response.status().is_success() {
+            return Err(non_success(
+                response.status(),
+                "Failed to fetch recent errors",
+            ));
+        }
+        Ok(response.json().await?)
+    }
+
     /// The GenAI list endpoints wrap their array payload in an
     /// `{ items, filters_applied }` envelope (#135). Parse it and return
     /// the items; the TUI has no filter bar, so the echo is discarded.

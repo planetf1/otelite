@@ -124,6 +124,7 @@ class AnalyticsView {
                 ${this._renderSectionShell('reasoning_share', 'Reasoning Token Share', 'Thinking tokens as a percentage of output tokens per model — opencode + Codex')}
                 ${this._renderSectionShell('skill_outcomes', 'Skill Outcomes', 'Token efficiency comparison: sessions that used each skill vs sessions that did not')}
                 ${this._renderSectionShell('model_selection_heatmap', 'Model Selection Heatmap', 'Which tool picked which model for which agent role — (role × tool × model) request counts')}
+                ${this._renderSectionShell('recent_errors', 'Recent Errors', 'Latest error events from spans and logs — OTel ERROR status, bad finish reasons, and log ERROR records')}
             </div>
         `;
 
@@ -698,6 +699,7 @@ class AnalyticsView {
             session_quality: () => this._loadSessionQualitySection(),
             skill_outcomes: () => this._loadSkillOutcomesSection(),
             model_selection_heatmap: () => this._loadModelSelectionHeatmapSection(),
+            recent_errors: () => this._loadRecentErrorsSection(),
         };
     }
 
@@ -3863,6 +3865,64 @@ class AnalyticsView {
             <h3>Model selection by role and tool</h3>
             <p class="table-hint">For each agent role (from <code>llm_request.context</code>) and tool harness, which model was selected and what share of output tokens it produced. Helps identify whether sub-agents are routing to different models than the orchestrator.</p>
             ${sections}`;
+    }
+
+    async _loadRecentErrorsSection() {
+        this._setSectionLoading('recent_errors');
+        try {
+            const data = await this.api.getRecentErrors(this._baseParams());
+            const rows = data.rows || [];
+            if (!rows.length) {
+                this._setSectionBody('recent_errors', '<div class="empty-state-hint">No error events in this window. Errors appear when a span has OTel ERROR status, a bad finish reason, or a log record at ERROR level or above.</div>');
+                this.loadedSections.add('recent_errors');
+                return;
+            }
+            this._setSectionBody('recent_errors', this._buildRecentErrors(rows));
+            this.loadedSections.add('recent_errors');
+        } catch (err) {
+            this._setSectionError('recent_errors', err);
+        }
+    }
+
+    _buildRecentErrors(rows) {
+        const fmtTs = ts => {
+            if (!ts) return '—';
+            try { return new Date(Math.round(ts / 1_000_000)).toLocaleString(); }
+            catch { return String(ts); }
+        };
+        const sourceLabel = s => {
+            if (s === 'span_status')  return '<span class="quality-badge quality-errored">span error</span>';
+            if (s === 'finish_reason') return '<span class="quality-badge quality-degraded">finish reason</span>';
+            if (s === 'log')           return '<span class="quality-badge">log</span>';
+            return this._esc(s);
+        };
+        const tableRows = rows.map(r => {
+            const traceLink = r.trace_id
+                ? `<a href="/traces/${encodeURIComponent(r.trace_id)}" class="trace-link" title="Open trace">${this._esc(r.trace_id.slice(0, 8))}…</a>`
+                : '—';
+            return `<tr>
+                <td>${this._esc(r.tool || '—')}</td>
+                <td class="ts-cell">${fmtTs(r.timestamp)}</td>
+                <td>${sourceLabel(r.source)}</td>
+                <td>${this._esc(r.name || '—')}</td>
+                <td class="msg-cell">${this._esc(r.message || '—')}</td>
+                <td>${traceLink}</td>
+            </tr>`;
+        }).join('');
+        return `
+            <h3>Recent error events (newest first)</h3>
+            <p class="table-hint">Up to 50 most recent errors from span OTel status, bad finish reasons (<code>error</code> / <code>content_filter</code>), and log records at ERROR level or above. Messages are truncated to 200 chars.</p>
+            <div class="table-scroll-x"><table class="data-table">
+                <thead><tr>
+                    <th>Tool</th>
+                    <th>Time</th>
+                    <th>Source</th>
+                    <th>Span / Event</th>
+                    <th>Message</th>
+                    <th>Trace</th>
+                </tr></thead>
+                <tbody>${tableRows}</tbody>
+            </table></div>`;
     }
 }
 

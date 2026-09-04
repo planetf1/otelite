@@ -13,9 +13,10 @@ use crate::api::{
     DistributionResponse, ErrorRateByModel, ErrorTypeBreakdown, FinishReasonCount,
     GenAiCapabilityResponse, LatencyByContextBin, LatencyPercentilesResponse, LatencySeriesPoint,
     LatencyStats, ModelDriftPair, ModelPerformanceQuery, ModelPerformanceResponse, ModelUsage,
-    ProjectRollupStorage, ProviderMixResponse, ReasoningShareResponse, RequestParamProfile,
-    RetrievalStats, RetryStats, SessionContextResponse, SessionCostRow, SessionCostStorage,
-    SystemUsage, TokenUsageSummary, ToolUsage, TopSpan, TopSpanSort, TruncationRateByModel,
+    ProjectRollupStorage, ProviderMixResponse, ReasoningShareResponse, RecentErrorsResponse,
+    RequestParamProfile, RetrievalStats, RetryStats, SessionContextResponse, SessionCostRow,
+    SessionCostStorage, SystemUsage, TokenUsageSummary, ToolUsage, TopSpan, TopSpanSort,
+    TruncationRateByModel,
 };
 use crate::filters::GenAiFilters;
 // New types referenced via crate::api:: in the trait methods below.
@@ -773,5 +774,23 @@ pub trait StorageBackend: Send + Sync {
     ) -> Result<crate::api::SessionQualitySummary> {
         let _ = (start_time, end_time);
         Err(StorageError::QueryError("not implemented".to_string()))
+    }
+
+    /// Most recent error events from spans and logs (#175).
+    ///
+    /// Returns up to `limit` rows (default 50) ordered by timestamp descending.
+    /// Errors are sourced from:
+    ///   - spans with `status_code = 2` (OTel ERROR)
+    ///   - spans with `finish_reason` in `error` / `content_filter`
+    ///   - log records with `severity_number >= 9` (ERROR)
+    async fn query_recent_errors(
+        &self,
+        start_time: Option<i64>,
+        end_time: Option<i64>,
+        tool: Option<String>,
+        limit: Option<usize>,
+    ) -> Result<RecentErrorsResponse> {
+        let _ = (start_time, end_time, tool, limit);
+        Ok(RecentErrorsResponse::default())
     }
 }

@@ -2804,6 +2804,47 @@ pub struct ModelSelectionHeatmapResponse {
     pub filters_applied: Vec<String>,
 }
 
+// ── Recent Errors (#175) ──────────────────────────────────────────────────────
+
+/// One recent error event from a span or log.
+///
+/// Error messages are truncated to 200 chars to satisfy the #120 privacy
+/// invariant — attribute values that look like prompts are never returned
+/// verbatim in full.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
+pub struct RecentErrorRow {
+    /// Tool harness that emitted this span (inferred from scope name).
+    pub tool: String,
+    /// Span start time in nanoseconds since Unix epoch.
+    pub timestamp: i64,
+    /// Span or log name.
+    pub name: String,
+    /// Model, when present on the span.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub model: Option<String>,
+    /// Session ID, when present.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub session_id: Option<String>,
+    /// Trace ID — allows drilling into `/traces/{trace_id}`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub trace_id: Option<String>,
+    /// Error message: `status_message`, finish reason, or log body,
+    /// truncated to 200 chars.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub message: Option<String>,
+    /// Source of the error: `"span_status"`, `"finish_reason"`, or `"log"`.
+    pub source: String,
+}
+
+/// Response for `GET /api/genai/recent_errors`.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
+pub struct RecentErrorsResponse {
+    pub rows: Vec<RecentErrorRow>,
+    pub filters_applied: Vec<String>,
+}
+
 #[cfg(test)]
 mod project_rollup_tests {
     use super::*;

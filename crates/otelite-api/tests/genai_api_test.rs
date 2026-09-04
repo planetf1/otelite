@@ -1540,6 +1540,7 @@ async fn test_filters_applied_echoed_on_all_genai_endpoints() {
         "/api/genai/session_quality_summary",
         "/api/genai/skill_outcomes",
         "/api/genai/model_selection_heatmap",
+        "/api/genai/recent_errors",
     ]
     .iter()
     .map(|s| s.to_string())

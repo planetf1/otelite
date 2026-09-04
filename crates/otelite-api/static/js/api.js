@@ -279,6 +279,7 @@ class ApiClient {
     async getSkillActivity(params = {})          { return this.get('/genai/skill_activity', params); }
     async getSkillOutcomes(params = {})          { return this.get('/genai/skill_outcomes', params); }
     async getModelSelectionHeatmap(params = {})  { return this.get('/genai/model_selection_heatmap', params); }
+    async getRecentErrors(params = {})           { return this.get('/genai/recent_errors', params); }
 
     /**
      * Fetch session diagnose report

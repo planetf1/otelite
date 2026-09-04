@@ -15,6 +15,13 @@ have to work around), not implementation detail.
 
 ### Added
 
+- **Recent Errors** — see the most recent error events from your LLM spans and logs in one place.
+  Surfaces three sources: OTel ERROR-status spans, spans with `error` or `content_filter` finish
+  reasons, and log records at ERROR level or above. Available via `GET /api/genai/recent_errors`
+  (with optional `tool`, `limit`, and time-range query params), `otelite usage --recent-errors`,
+  and a new Recent Errors accordion in the web analytics view. Messages are truncated to 200 chars.
+  (#175)
+
 - **Session Quality** — every session in `/api/sessions/costs` and the Sessions tab now carries
   a `clean` / `degraded` / `errored` quality badge derived from its spans: errored means an
   error-status span or a `content_filter` finish reason; degraded means truncation
