@@ -3,8 +3,9 @@
 
 use crate::commands::usage::{fetch_pricing, parse_time_range};
 use crate::error::{Error, Result};
+use crate::output::pretty::fit_to_terminal;
 use clap::Args;
-use comfy_table::{presets::UTF8_FULL, ContentArrangement, Table};
+use comfy_table::{presets::UTF8_FULL, Table};
 use otelite_core::api::ProjectRollupResponse;
 use otelite_storage::StorageBackend;
 use std::sync::Arc;
@@ -93,10 +94,14 @@ fn display_projects(response: &ProjectRollupResponse) {
 
     println!("\nProjects (codex/claude have no project label → unattributed):\n");
     let mut table = Table::new();
-    table
-        .load_preset(UTF8_FULL)
-        .set_content_arrangement(ContentArrangement::Dynamic)
-        .set_header(vec!["project", "sessions", "cost", "tokens", "top model"]);
+    fit_to_terminal(&mut table);
+    table.load_preset(UTF8_FULL).set_header(vec![
+        "project",
+        "sessions",
+        "cost",
+        "tokens",
+        "top model",
+    ]);
     for p in &response.projects {
         let top = p
             .top_models

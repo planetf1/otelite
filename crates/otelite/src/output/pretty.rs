@@ -6,7 +6,27 @@ use comfy_table::{presets::UTF8_FULL, Cell, ContentArrangement, Table};
 use otelite_client::models::{LogEntry, MetricResponse, SpanEntry, TraceDetail, TraceEntry};
 use otelite_core::telemetry::{format_attribute_value, GenAiSpanInfo};
 use std::collections::HashMap;
-use std::io;
+use std::io::{self, IsTerminal};
+
+/// Fit a table to an interactive terminal when one is actually usable;
+/// otherwise leave it at natural width.
+///
+/// comfy-table's `Dynamic` arrangement trusts the terminal size crossterm
+/// reports, which has two failure modes: a pty without a winsize (observed
+/// in the Nix build sandbox, where test stdout is a pty reporting 0x0)
+/// renders the table one character per column, and the `tput` fallback can
+/// report a width for a non-tty stdout, wrapping piped output and breaking
+/// scripted consumers. Only fit when stdout is a terminal and a usable
+/// width resolves.
+pub fn fit_to_terminal(table: &mut Table) {
+    if io::stdout().is_terminal() {
+        if let Ok((width, _)) = crossterm::terminal::size() {
+            if width >= 40 {
+                table.set_content_arrangement(ContentArrangement::Dynamic);
+            }
+        }
+    }
+}
 
 /// A span node in the tree for display
 #[derive(Debug, Clone)]
@@ -62,9 +82,8 @@ pub fn print_logs_table(logs: &[LogEntry], config: &Config) -> io::Result<()> {
     }
 
     let mut table = Table::new();
-    table
-        .load_preset(UTF8_FULL)
-        .set_content_arrangement(ContentArrangement::Dynamic);
+    table.load_preset(UTF8_FULL);
+    fit_to_terminal(&mut table);
 
     // Add header (unless disabled)
     if !config.no_header {
@@ -169,9 +188,8 @@ pub fn print_traces_table(traces: &[TraceEntry], config: &Config) -> io::Result<
     }
 
     let mut table = Table::new();
-    table
-        .load_preset(UTF8_FULL)
-        .set_content_arrangement(ContentArrangement::Dynamic);
+    table.load_preset(UTF8_FULL);
+    fit_to_terminal(&mut table);
 
     // Add header (unless disabled)
     if !config.no_header {
@@ -330,9 +348,8 @@ pub fn print_metrics_table(metrics: &[MetricResponse], config: &Config) -> io::R
     }
 
     let mut table = Table::new();
-    table
-        .load_preset(UTF8_FULL)
-        .set_content_arrangement(ContentArrangement::Dynamic);
+    table.load_preset(UTF8_FULL);
+    fit_to_terminal(&mut table);
 
     // Add header (unless disabled)
     if !config.no_header {
@@ -452,6 +469,18 @@ mod tests {
             no_header: false,
             no_pager: true,
         }
+    }
+
+    #[test]
+    fn fit_to_terminal_leaves_natural_width_when_piped() {
+        // cargo pipes test stdout, so the helper must not switch the
+        // table to Dynamic (which would wrap piped output).
+        let mut table = Table::new();
+        fit_to_terminal(&mut table);
+        assert!(
+            matches!(table.content_arrangement(), ContentArrangement::Disabled),
+            "piped stdout must keep natural table width"
+        );
     }
 
     #[test]

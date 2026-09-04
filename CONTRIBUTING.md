@@ -155,6 +155,7 @@ Ensure your PR:
 - [ ] Has a clear, descriptive title
 - [ ] References related issues (e.g., "Fixes #123")
 - [ ] Includes a summary of changes in the description
+- [ ] Includes a changelog entry: `changelog/<PR-number>.md` (see below)
 
 ### PR Template
 
@@ -187,8 +188,35 @@ Refs #456
 - [ ] Tests added/updated
 - [ ] Documentation updated
 - [ ] Breaking changes documented
-- [ ] Changelog updated (if applicable)
+- [ ] Changelog entry added: `changelog/<PR-number>.md`
 ```
+
+### Changelog Entry
+
+Ship your release notes as a separate entry file — **do not edit
+`CHANGELOG.md`**:
+
+1. Create `changelog/<PR-number>.md` in your branch (start from
+   `changelog/.template.md`), e.g. `changelog/145.md`.
+2. Write one bullet per user-visible change, phrased as what the user can
+   now do (or no longer has to work around). Group bullets under
+   `### Added` / `### Changed` / `### Fixed` / `### Removed` /
+   `### Internal`; a file with no heading defaults to Added.
+3. The release workflow merges entry files into the next release section of
+   `CHANGELOG.md` and deletes them.
+
+Why not edit `CHANGELOG.md` directly? Every push to main rotates the
+changelog (a new release is cut), so a PR holding a `CHANGELOG.md` hunk
+conflicts with every release that lands while it is open — and with any
+other open PR editing the same section. Each PR owning its own entry file
+removes the clash entirely.
+
+The PR template pre-checklists this, and the `Changelog Entry` CI check on
+every PR fails if neither an entry file (with at least one bullet) nor a
+direct `CHANGELOG.md` edit (maintainer flow) is present.
+
+Pure refactors, internal test changes and CI plumbing need no entry unless
+you want an `### Internal` note.
 
 ### Review Process
 

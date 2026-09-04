@@ -2,25 +2,17 @@
 //! file, which only `otelite start` writes. A service-managed or hand-run
 //! `serve` (no PID file) is discovered through its TCP listener instead.
 //!
-//! `serve` always owns OTLP port 4317, so the spawn-and-discover half only
-//! runs when 4317 is free (CI). When a real daemon holds 4317 — the common
-//! dev-machine state — the daemon itself is a no-PID-file listener (the
-//! launchd/service path never writes one), so discovery against it is
-//! asserted directly.
+//! The throwaway daemons run on ephemeral OTLP ports (via
+//! OTELITE_OTLP_GRPC_PORT / OTELITE_OTLP_HTTP_PORT), not the standard
+//! 4317/4318: nextest runs integration test binaries in parallel, so a
+//! sibling binary — or a real daemon on a dev machine — holding the
+//! standard ports would make a default-port `serve` die on its second bind
+//! and race the discovery assertions (observed CI failures 2026-09-04).
 
 use std::net::{TcpListener, TcpStream};
 use std::time::{Duration, Instant};
 
 use nix::unistd::Pid;
-
-/// Tests that spawn a throwaway `serve` on the standard OTLP port 4317 must
-/// not run concurrently: each probes 4317 first and spawns when it is free,
-/// so two racers can both spawn — one binds 4317 and the other test's
-/// `lsof` discovery then attributes the port to the *wrong* PID (observed CI
-/// failure 2026-09-04: assert_eq found-pid vs own-pid in the Coverage job,
-/// where `cargo test --tests` runs this file's tests in parallel threads).
-/// Hold this guard for the whole test, including spawn and teardown.
-static OTLP_PORT_MUTEX: std::sync::Mutex<()> = std::sync::Mutex::new(());
 
 fn wait_for_port(port: u16, deadline: Instant) {
     loop {
@@ -56,44 +48,33 @@ fn wait_for_otelite_attribution(port: u16, deadline: Instant) {
 
 #[test]
 fn test_discovery_finds_serve_without_pid_file() {
-    let _port_guard = OTLP_PORT_MUTEX.lock().unwrap_or_else(|e| e.into_inner());
-
-    // Probe 4317: if something owns it, a daemon (or another test) is
-    // already in the no-PID-file state and the regression is asserted
-    // against it below. Otherwise we can spawn a throwaway serve.
-    let probe = TcpStream::connect((std::net::IpAddr::from([127, 0, 0, 1]), 4317));
-    if probe.is_ok() {
-        let found = otelite::commands::service::local_otelite_pid(4317)
-            .unwrap()
-            .expect("a listening daemon on 4317 must be discovered");
-        assert!(
-            nix::sys::signal::kill(Pid::from_raw(found as i32), None).is_ok(),
-            "discovered PID must be alive"
-        );
-        return;
-    }
-
     let temp = tempfile::TempDir::new().unwrap();
     let data_dir = temp.path().join("data");
     let storage = data_dir.join("otelite.db");
     let pid_file = data_dir.join("otelite.pid");
 
+    let dashboard_port = free_port();
+    let grpc_port = free_port();
+    let http_port = free_port();
+
     let mut child = std::process::Command::new(env!("CARGO_BIN_EXE_otelite"))
         .args([
             "serve",
             "--addr",
-            "127.0.0.1:13999",
+            &format!("127.0.0.1:{dashboard_port}"),
             "--storage-path",
             &storage.to_string_lossy(),
         ])
         .env("OTELITE_DATA_DIR", data_dir.as_os_str())
+        .env("OTELITE_OTLP_GRPC_PORT", grpc_port.to_string())
+        .env("OTELITE_OTLP_HTTP_PORT", http_port.to_string())
         .stdout(std::process::Stdio::null())
         .stderr(std::process::Stdio::null())
         .spawn()
         .unwrap();
     let pid = child.id();
 
-    wait_for_port(4317, Instant::now() + Duration::from_secs(15));
+    wait_for_port(grpc_port, Instant::now() + Duration::from_secs(15));
 
     // The regression itself: no PID file, yet the listener is discovered
     // and the PID matches the serve process.
@@ -101,7 +82,7 @@ fn test_discovery_finds_serve_without_pid_file() {
         !pid_file.exists(),
         "serve must not write a PID file (premise of #107)"
     );
-    let found = otelite::commands::service::local_otelite_pid(4317)
+    let found = otelite::commands::service::local_otelite_pid(grpc_port)
         .unwrap()
         .expect("listener discovery must find the serve process");
     assert_eq!(found, pid, "discovered PID must be the serve process");
@@ -112,14 +93,28 @@ fn test_discovery_finds_serve_without_pid_file() {
     let status_out = std::process::Command::new(env!("CARGO_BIN_EXE_otelite"))
         .arg("status")
         .env("OTELITE_DATA_DIR", data_dir.as_os_str())
+        .env("OTELITE_OTLP_GRPC_PORT", grpc_port.to_string())
+        .env("OTELITE_OTLP_HTTP_PORT", http_port.to_string())
         .output()
         .unwrap();
+    let status_text = String::from_utf8_lossy(&status_out.stdout);
+
+    // On a dev machine with a launchd-managed daemon, `status` reports
+    // that daemon first — intended product behaviour, and `stop` would
+    // then signal the *real* daemon. The discovery regression is already
+    // asserted directly above; only run the e2e half where `status`
+    // reports the throwaway (i.e. CI, no launchd daemon).
+    if status_text.contains("Running (launchd") {
+        let _ = child.kill();
+        let _ = child.wait();
+        return;
+    }
+
     assert!(
         status_out.status.success(),
         "status must succeed: {}",
         String::from_utf8_lossy(&status_out.stderr)
     );
-    let status_text = String::from_utf8_lossy(&status_out.stdout);
     assert!(
         status_text.contains("Status: Running"),
         "status output: {status_text}"
@@ -132,6 +127,8 @@ fn test_discovery_finds_serve_without_pid_file() {
     let stop_out = std::process::Command::new(env!("CARGO_BIN_EXE_otelite"))
         .arg("stop")
         .env("OTELITE_DATA_DIR", data_dir.as_os_str())
+        .env("OTELITE_OTLP_GRPC_PORT", grpc_port.to_string())
+        .env("OTELITE_OTLP_HTTP_PORT", http_port.to_string())
         .output()
         .unwrap();
     assert!(
@@ -156,7 +153,7 @@ fn test_discovery_finds_serve_without_pid_file() {
             },
         }
     }
-    let _ = TcpListener::bind("127.0.0.1:4317");
+    let _ = TcpListener::bind(format!("127.0.0.1:{grpc_port}"));
 }
 
 fn free_port() -> u16 {
@@ -174,46 +171,45 @@ fn free_port_held() -> (u16, TcpListener) {
 /// one, instead of leaving a PID file for a process that dies on bind.
 #[test]
 fn test_start_refuses_when_daemon_has_no_pid_file() {
-    // Shares 4317 with test_discovery_finds_serve_without_pid_file —
-    // serialize so the two throwaway serves can't race the bind.
-    let _port_guard = OTLP_PORT_MUTEX.lock().unwrap_or_else(|e| e.into_inner());
-
-    let otelite_on_4317 = otelite::commands::service::local_otelite_pid(4317).unwrap();
+    let grpc_port = free_port();
+    let http_port = free_port();
 
     let temp = tempfile::TempDir::new().unwrap();
     let data_dir = temp.path().join("data");
 
-    // A throwaway serve so the test is self-contained on machines
-    // (CI) where no daemon holds 4317.
-    let mut throwaway = None;
+    // A throwaway serve on ephemeral OTLP ports, so the test is
+    // self-contained regardless of what else (a real daemon, a sibling
+    // test binary) runs on this machine.
+    let storage = data_dir.join("otelite.db");
     let dashboard_port = free_port();
-    if otelite_on_4317.is_none() {
-        let storage = data_dir.join("otelite.db");
-        let child = std::process::Command::new(env!("CARGO_BIN_EXE_otelite"))
-            .args([
-                "serve",
-                "--addr",
-                &format!("127.0.0.1:{dashboard_port}"),
-                "--storage-path",
-                &storage.to_string_lossy(),
-            ])
-            .env("OTELITE_DATA_DIR", data_dir.as_os_str())
-            .stdout(std::process::Stdio::null())
-            .stderr(std::process::Stdio::null())
-            .spawn()
-            .unwrap();
-        wait_for_port(4317, Instant::now() + Duration::from_secs(15));
-        wait_for_otelite_attribution(4317, Instant::now() + Duration::from_secs(15));
-        throwaway = Some(child);
-    }
+    let mut child = std::process::Command::new(env!("CARGO_BIN_EXE_otelite"))
+        .args([
+            "serve",
+            "--addr",
+            &format!("127.0.0.1:{dashboard_port}"),
+            "--storage-path",
+            &storage.to_string_lossy(),
+        ])
+        .env("OTELITE_DATA_DIR", data_dir.as_os_str())
+        .env("OTELITE_OTLP_GRPC_PORT", grpc_port.to_string())
+        .env("OTELITE_OTLP_HTTP_PORT", http_port.to_string())
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .spawn()
+        .unwrap();
+    wait_for_port(grpc_port, Instant::now() + Duration::from_secs(15));
+    wait_for_otelite_attribution(grpc_port, Instant::now() + Duration::from_secs(15));
 
     // `start` from a different (empty) data dir: no PID file to trip
-    // on, only port discovery can find the daemon.
+    // on, only port discovery can find the daemon. It sees the same OTLP
+    // ports via the environment, so discovery targets the throwaway.
     let start_data_dir = temp.path().join("start-data");
     let start_port = free_port();
     let out = std::process::Command::new(env!("CARGO_BIN_EXE_otelite"))
         .args(["start", "--addr", &format!("127.0.0.1:{start_port}")])
         .env("OTELITE_DATA_DIR", start_data_dir.as_os_str())
+        .env("OTELITE_OTLP_GRPC_PORT", grpc_port.to_string())
+        .env("OTELITE_OTLP_HTTP_PORT", http_port.to_string())
         .output()
         .unwrap();
 
@@ -237,10 +233,8 @@ fn test_start_refuses_when_daemon_has_no_pid_file() {
         "a refused start must not leave a PID file"
     );
 
-    if let Some(mut child) = throwaway {
-        let _ = child.kill();
-        let _ = child.wait();
-    }
+    let _ = child.kill();
+    let _ = child.wait();
 }
 
 /// #M12 regression: when the spawned daemon dies immediately (its
@@ -449,15 +443,24 @@ fn test_serve_exits_gracefully_on_sigterm() {
 
 /// M17 regression: the daemon's log must go through the daily-rotating
 /// appender (`--log-file`), not an ever-growing plain file. A throwaway
-/// `serve` must produce a dated log file in its data dir.
+/// `serve` must produce a dated log file in its data dir, and the startup
+/// lines must actually reach it — either while the worker thread is running
+/// or via the final flush when the appender's guard drops on clean shutdown.
 #[test]
 fn test_serve_writes_rotating_log_file() {
     let temp = tempfile::TempDir::new().unwrap();
     let data_dir = temp.path().join("data");
-    let storage = data_dir.join("otelite.db");
     let dashboard_port = free_port();
     let grpc_port = free_port();
     let http_port = free_port();
+
+    // Capture serve's stderr: with --log-file the tracing output goes to the
+    // log file, but panics and startup errors (e.g. the appender worker
+    // thread failing to spawn) land on stderr — exactly what a 0-byte log
+    // file in the Nix build sandbox needed to explain itself.
+    let stderr_path = data_dir.join("serve-stderr.log");
+    std::fs::create_dir_all(&data_dir).unwrap();
+    let stderr_file = std::fs::File::create(&stderr_path).unwrap();
 
     let mut child = std::process::Command::new(env!("CARGO_BIN_EXE_otelite"))
         .args([
@@ -465,40 +468,163 @@ fn test_serve_writes_rotating_log_file() {
             "--addr",
             &format!("127.0.0.1:{dashboard_port}"),
             "--storage-path",
-            &storage.to_string_lossy(),
+            &data_dir.to_string_lossy(),
             "--log-file",
             &data_dir.join("otelite.log").to_string_lossy(),
         ])
         .env("OTELITE_DATA_DIR", data_dir.as_os_str())
         .env("OTELITE_OTLP_GRPC_PORT", grpc_port.to_string())
         .env("OTELITE_OTLP_HTTP_PORT", http_port.to_string())
+        // Pin the child's logging filter: serve respects RUST_LOG, and an
+        // inherited value (e.g. from a build environment) would change what
+        // reaches the log file. Tests own their environment.
+        .env_remove("RUST_LOG")
         .stdout(std::process::Stdio::null())
-        .stderr(std::process::Stdio::null())
+        .stderr(std::process::Stdio::from(stderr_file))
         .spawn()
         .unwrap();
 
     wait_for_port(dashboard_port, Instant::now() + Duration::from_secs(15));
-    // Give the non-blocking appender a moment to flush the startup lines.
-    std::thread::sleep(Duration::from_secs(1));
 
-    // The rotating appender names its file otelite.log.YYYY-MM-DD.
-    let rotated = std::fs::read_dir(&data_dir)
-        .expect("data dir exists")
-        .filter_map(|e| e.ok())
-        .map(|e| e.file_name())
-        .find(|name| name.to_string_lossy().starts_with("otelite.log."));
-    assert!(
-        rotated.is_some(),
-        "expected a dated otelite.log.* file; data dir contents: {:?}",
-        std::fs::read_dir(&data_dir)
-            .map(|d| d.map(|e| e.unwrap().file_name()).collect::<Vec<_>>())
+    let dated_log = |dir: &std::path::Path| -> Option<std::path::PathBuf> {
+        std::fs::read_dir(dir)
+            .into_iter()
+            .flatten()
+            .filter_map(|e| e.ok())
+            .map(|e| e.path())
+            .find(|p| {
+                p.file_name()
+                    .map(|n| n.to_string_lossy().starts_with("otelite.log."))
+                    .unwrap_or(false)
+            })
+    };
+    let log_len = |dir: &std::path::Path| -> u64 {
+        dated_log(dir)
+            .and_then(|p| std::fs::metadata(p).ok())
+            .map(|m| m.len())
+            .unwrap_or(0)
+    };
+    let stderr_tail = |dir: &std::path::Path| -> String {
+        std::fs::read_to_string(dir.join("serve-stderr.log"))
             .unwrap_or_default()
-    );
-    let rotated_path = data_dir.join(rotated.unwrap());
-    assert!(
-        std::fs::metadata(&rotated_path).unwrap().len() > 0,
-        "the startup log lines must have been flushed"
-    );
+            .lines()
+            .take(20)
+            .collect::<Vec<_>>()
+            .join("\n")
+    };
+    // File sizes, not just names: a 0-byte sqlite db next to a 0-byte log
+    // is a very different story from a healthy db next to a 0-byte log.
+    let dir_listing = |dir: &std::path::Path| -> String {
+        std::fs::read_dir(dir)
+            .into_iter()
+            .flatten()
+            .filter_map(|e| e.ok())
+            .map(|e| {
+                format!(
+                    "{} ({} bytes)",
+                    e.file_name().to_string_lossy(),
+                    e.metadata().map(|m| m.len()).unwrap_or(0)
+                )
+            })
+            .collect::<Vec<_>>()
+            .join(", ")
+    };
+    // Linux-only forensics for environment-specific failures (the Nix build
+    // sandbox): the child's resource limits, thread states (where is the
+    // log-appender worker blocked?), and open file descriptors, so a
+    // 0-byte log file can say *why*.
+    let proc_snapshot = |pid: u32| -> String {
+        let mut s = String::new();
+        let limits = format!("/proc/{pid}/limits");
+        if let Ok(l) = std::fs::read_to_string(&limits) {
+            s.push_str(&format!("--- {limits} ---\n{l}\n"));
+        }
+        if let Ok(status) = std::fs::read_to_string(format!("/proc/{pid}/status")) {
+            for line in status.lines() {
+                if line.starts_with("Name:")
+                    || line.starts_with("Threads:")
+                    || line.starts_with("Voluntary")
+                {
+                    s.push_str(&format!("{line}\n"));
+                }
+            }
+        }
+        let task_dir = format!("/proc/{pid}/task");
+        if let Ok(tasks) = std::fs::read_dir(&task_dir) {
+            for t in tasks.filter_map(|e| e.ok()) {
+                let tid = t.file_name().to_string_lossy().to_string();
+                let name =
+                    std::fs::read_to_string(format!("{task_dir}/{tid}/comm")).unwrap_or_default();
+                let wchan = std::fs::read_to_string(format!("{task_dir}/{tid}/wchan"))
+                    .unwrap_or_else(|_| "<running>".into());
+                s.push_str(&format!("thread {tid}: {name} wchan={wchan}\n"));
+            }
+        }
+        let fd_dir = format!("/proc/{pid}/fd");
+        if let Ok(fds) = std::fs::read_dir(&fd_dir) {
+            for e in fds.filter_map(|e| e.ok()) {
+                if let Ok(link) = std::fs::read_link(e.path()) {
+                    s.push_str(&format!(
+                        "fd {} -> {}\n",
+                        e.file_name().to_string_lossy(),
+                        link.display()
+                    ));
+                }
+            }
+        }
+        if s.is_empty() {
+            s.push_str("(no /proc access — not Linux?)\n");
+        }
+        // The child's environment (log/otelite-relevant vars): an inherited
+        // RUST_LOG or similar would explain a healthy-looking process whose
+        // log file stays empty.
+        if let Ok(environ) = std::fs::read(format!("/proc/{pid}/environ")) {
+            let vars: Vec<&str> = environ
+                .split(|b| *b == 0)
+                .filter(|s| !s.is_empty())
+                .map(|s| std::str::from_utf8(s).unwrap_or(""))
+                .collect();
+            s.push_str("--- env (log/otelite-related) ---\n");
+            for v in &vars {
+                if v.starts_with("RUST_LOG")
+                    || v.starts_with("OTELITE_")
+                    || v.starts_with("TRACING")
+                    || v.starts_with("NO_COLOR")
+                    || v.starts_with("TERM")
+                {
+                    s.push_str(&format!("{v}\n"));
+                }
+            }
+            s.push_str(&format!("(total {} env vars)\n", vars.len()));
+        }
+        s
+    };
+
+    // The rotating appender names its file otelite.log.YYYY-MM-DD (the M17
+    // regression itself) and a background worker writes the lines into it.
+    // The worker is normally fast, but a loaded build sandbox may starve it
+    // for seconds; poll for live content, then fall back to the shutdown
+    // flush (the appender guard drops on clean exit) before failing.
+    let mut live_len = 0u64;
+    let deadline = Instant::now() + Duration::from_secs(15);
+    while Instant::now() < deadline {
+        live_len = log_len(&data_dir);
+        if live_len > 0 {
+            break;
+        }
+        assert!(
+            dated_log(&data_dir).is_some(),
+            "expected a dated otelite.log.* file (the M17 regression); data dir contents: {:?}, serve stderr:\n{}",
+            std::fs::read_dir(&data_dir)
+                .map(|d| d.map(|e| e.unwrap().file_name()).collect::<Vec<_>>())
+                .unwrap_or_default(),
+            stderr_tail(&data_dir)
+        );
+        std::thread::sleep(Duration::from_millis(200));
+    }
+
+    // Snapshot the child's environment while it is still alive.
+    let snapshot = proc_snapshot(child.id());
 
     nix::sys::signal::kill(
         Pid::from_raw(child.id() as i32),
@@ -515,4 +641,15 @@ fn test_serve_writes_rotating_log_file() {
             },
         }
     }
+
+    let final_len = log_len(&data_dir);
+    assert!(
+        final_len > 0,
+        "no log lines reached the dated file ({} bytes while running, {} bytes after clean shutdown);\ndata dir: {};\nserve stderr:\n{};\n{}",
+        live_len,
+        final_len,
+        dir_listing(&data_dir),
+        stderr_tail(&data_dir),
+        snapshot
+    );
 }

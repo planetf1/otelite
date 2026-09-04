@@ -3,8 +3,9 @@
 
 use crate::commands::usage::{fetch_pricing, parse_time_range};
 use crate::error::{Error, Result};
+use crate::output::pretty::fit_to_terminal;
 use clap::Args;
-use comfy_table::{presets::UTF8_FULL, ContentArrangement, Table};
+use comfy_table::{presets::UTF8_FULL, Table};
 use otelite_core::api::ReasoningShareResponse;
 use otelite_storage::StorageBackend;
 use std::sync::Arc;
@@ -105,16 +106,14 @@ fn display_reasoning_share(response: &ReasoningShareResponse) {
         println!("  No token activity in the window.\n");
     } else {
         let mut table = Table::new();
-        table
-            .load_preset(UTF8_FULL)
-            .set_content_arrangement(ContentArrangement::Dynamic)
-            .set_header(vec![
-                "model",
-                "reasoning",
-                "output",
-                "share",
-                "thinking cost",
-            ]);
+        fit_to_terminal(&mut table);
+        table.load_preset(UTF8_FULL).set_header(vec![
+            "model",
+            "reasoning",
+            "output",
+            "share",
+            "thinking cost",
+        ]);
         for m in &response.models {
             table.add_row(vec![
                 m.model.clone(),
@@ -133,8 +132,8 @@ fn display_reasoning_share(response: &ReasoningShareResponse) {
     if !response.effort.is_empty() {
         println!("By reasoning effort (codex):\n");
         let mut st = Table::new();
+        fit_to_terminal(&mut st);
         st.load_preset(UTF8_FULL)
-            .set_content_arrangement(ContentArrangement::Dynamic)
             .set_header(vec!["effort", "calls", "reasoning tokens"]);
         for e in &response.effort {
             st.add_row(vec![

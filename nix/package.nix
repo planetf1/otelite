@@ -90,12 +90,14 @@ rustPlatform.buildRustPackage {
       [
         "--workspace"
         "--all-features"
+        "--no-fail-fast"
       ]
     else
       [
         "-p"
         "otelite"
         "--all-features"
+        "--no-fail-fast"
       ];
   doCheck = true;
   checkType = "debug";

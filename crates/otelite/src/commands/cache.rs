@@ -3,8 +3,9 @@
 
 use crate::commands::usage::{fetch_pricing, parse_time_range};
 use crate::error::{Error, Result};
+use crate::output::pretty::fit_to_terminal;
 use clap::Args;
-use comfy_table::{presets::UTF8_FULL, ContentArrangement, Table};
+use comfy_table::{presets::UTF8_FULL, Table};
 use otelite_core::api::CacheEconomicsResponse;
 use otelite_storage::StorageBackend;
 use std::sync::Arc;
@@ -143,17 +144,15 @@ fn display_cache_economics(response: &CacheEconomicsResponse, show_series: bool,
     }
 
     let mut table = Table::new();
-    table
-        .load_preset(UTF8_FULL)
-        .set_content_arrangement(ContentArrangement::Dynamic)
-        .set_header(vec![
-            "model",
-            "cache rd",
-            "cache wr",
-            "read:write",
-            "hit rate",
-            "est. savings",
-        ]);
+    table.load_preset(UTF8_FULL).set_header(vec![
+        "model",
+        "cache rd",
+        "cache wr",
+        "read:write",
+        "hit rate",
+        "est. savings",
+    ]);
+    fit_to_terminal(&mut table);
     for m in &response.models {
         table.add_row(vec![
             m.model.clone(),
@@ -177,8 +176,8 @@ fn display_cache_economics(response: &CacheEconomicsResponse, show_series: bool,
         );
         let mut st = Table::new();
         st.load_preset(UTF8_FULL)
-            .set_content_arrangement(ContentArrangement::Dynamic)
             .set_header(vec!["bucket", "input", "cache rd", "cache wr", "hit rate"]);
+        fit_to_terminal(&mut st);
         for p in &response.series {
             st.add_row(vec![
                 fmt_ts(p.timestamp),

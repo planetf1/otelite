@@ -48,7 +48,7 @@
 <!-- Documentation updates -->
 - [ ] Code comments updated
 - [ ] README updated
-- [ ] CHANGELOG updated
+- [ ] Changelog entry added: `changelog/<PR-number>.md`
 - [ ] Architecture docs updated
 - [ ] API docs updated
 - [ ] No documentation needed
@@ -71,7 +71,7 @@ Refs #
 - [ ] Pre-commit hooks passing
 - [ ] No secrets or credentials in code
 - [ ] Breaking changes documented
-- [ ] CHANGELOG updated (if applicable)
+- [ ] Changelog entry added: `changelog/<PR-number>.md` (see CONTRIBUTING → Changelog Entry)
 
 ## Screenshots
 <!-- If applicable, add screenshots for UI changes -->

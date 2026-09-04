@@ -7,11 +7,10 @@
 use crate::commands::usage::parse_time_range;
 use crate::config::{Config, OutputFormat};
 use crate::error::{Error, Result};
+use crate::output::pretty::fit_to_terminal;
 use chrono::{DateTime, Local};
 use clap::Args;
-use comfy_table::{
-    modifiers::UTF8_ROUND_CORNERS, presets::UTF8_FULL, Cell, Color, ContentArrangement, Table,
-};
+use comfy_table::{modifiers::UTF8_ROUND_CORNERS, presets::UTF8_FULL, Cell, Color, Table};
 use otelite_client::ApiClient;
 use otelite_core::api::TopSpan;
 
@@ -122,8 +121,8 @@ fn display_llm_table(spans: &[&TopSpan], since: &str) {
     let mut table = Table::new();
     table
         .load_preset(UTF8_FULL)
-        .apply_modifier(UTF8_ROUND_CORNERS)
-        .set_content_arrangement(ContentArrangement::Dynamic);
+        .apply_modifier(UTF8_ROUND_CORNERS);
+    fit_to_terminal(&mut table);
     table.set_header(vec![
         Cell::new("Time").fg(Color::Cyan),
         Cell::new("Model").fg(Color::Cyan),
