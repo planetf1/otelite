@@ -11,6 +11,8 @@ have to work around), not implementation detail.
 
 ## [Unreleased]
 
+## [0.1.109] - 2026-09-04
+
 ### Added
 
 - **Tool Failure Rates** (`GET /api/genai/tool_failure_rates`): see which opencode tools are failing
