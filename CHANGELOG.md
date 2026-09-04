@@ -11,6 +11,10 @@ have to work around), not implementation detail.
 
 ## [Unreleased]
 
+### Internal
+
+- Nix flake check follow-up: the `lsof`/`procps` check inputs added for 0.1.117 were referenced without being declared `callPackage` arguments, which broke flake evaluation outright ("undefined variable 'lsof'"). Declared now, so `nix flake check` actually builds and the test suite runs with `ps` and `lsof` available.
+
 ## [0.1.117] - 2026-09-04
 
 ### Changed
