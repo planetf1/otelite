@@ -124,8 +124,13 @@ rustPlatform.buildRustPackage {
       --all-features
   '';
 
+  # ps (procps) and lsof are shelled out to by the service-command tests
+  # (is_otelite_process / local_otelite_pid); the Nix sandbox does not
+  # provide them otherwise, so the check phase panics on missing binaries.
   nativeBuildInputs = [
+    lsof
     pkg-config
+    procps
   ]
   ++ lib.optionals workspaceCheck [
     clippy

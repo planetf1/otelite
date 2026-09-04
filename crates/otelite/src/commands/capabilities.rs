@@ -130,6 +130,7 @@ fn display_capabilities(response: &GenAiCapabilityResponse) {
 /// evidence; this is a compact projection that keeps the same vocabulary.
 fn render_capabilities(response: &GenAiCapabilityResponse) -> String {
     use std::fmt::Write;
+    use std::io::IsTerminal;
     let mut out = String::new();
     let _ = writeln!(out, "\nTelemetry Capabilities");
     let _ = writeln!(
@@ -152,9 +153,15 @@ fn render_capabilities(response: &GenAiCapabilityResponse) -> String {
     }
 
     let mut table = Table::new();
-    table
-        .load_preset(UTF8_FULL)
-        .set_content_arrangement(ContentArrangement::Dynamic);
+    table.load_preset(UTF8_FULL);
+    // Fit interactive terminals; leave piped and redirected output at natural
+    // width. comfy-table's Dynamic mode resolves the width via /dev/tty or a
+    // `tput` fallback when stdout is not a TTY — the fallback can yield a
+    // bogus width that wraps cell contents, breaking scripted consumers
+    // (and the render assertions below).
+    if std::io::stdout().is_terminal() {
+        table.set_content_arrangement(ContentArrangement::Dynamic);
+    }
     table.set_header(vec![
         "Provider / Model",
         "Emitter",

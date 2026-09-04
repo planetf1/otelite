@@ -11,6 +11,14 @@ have to work around), not implementation detail.
 
 ## [Unreleased]
 
+### Changed
+
+- `otelite capabilities` pretty output now renders at natural width when piped or redirected instead of wrapping to a detected (or `tput`-fallback) terminal width — scripted consumers like `grep`/`jq` no longer see wrapped cell contents. Interactive terminal display is unchanged.
+
+### Internal
+
+- Nix flake check: provide `ps` and `lsof` in the check environment — the service-command tests shell out to them, and their absence made `nix flake check` fail in the sandbox.
+
 ## [0.1.116] - 2026-09-04
 
 ### Fixed
