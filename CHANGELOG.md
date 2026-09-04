@@ -22,6 +22,11 @@ have to work around), not implementation detail.
 - **TUI panels** for tool failure rates, daily tool mix, and skill activity: all three panels
   appear automatically in the Usage view when data is present.
 
+### Fixed
+
+- **`brew services start otelite`** now works: the release workflow injects a `service do` block into
+  the generated Homebrew formula so `otelite serve` is managed correctly by `brew services`. (#104)
+
 ### Internal
 
 - OpenAPI `schemas()` block updated to include `ToolFailureRow/Response`, `DailyToolMixRow/Response`,

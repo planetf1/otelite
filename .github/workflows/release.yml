@@ -328,6 +328,26 @@ jobs:
 
             export PATH="/home/linuxbrew/.linuxbrew/bin:$PATH"
             brew update
+
+            # Inject a service block so `brew services start otelite` works.
+            # The block is inserted before the final `end` that closes the class.
+            python3 - "Formula/${filename}" <<'PYEOF'
+import sys, re
+path = sys.argv[1]
+text = open(path).read()
+service_block = """
+  service do
+    run [opt_bin/"otelite", "serve"]
+    keep_alive true
+    log_path var/"log/otelite.log"
+    error_log_path var/"log/otelite.log"
+  end
+"""
+# Insert before the last bare `end` in the file (closes the Formula class)
+text = re.sub(r'\nend\s*$', service_block + '\nend\n', text)
+open(path, 'w').write(text)
+PYEOF
+
             # We avoid reformatting user-provided data such as the app description and homepage.
             brew style --except-cops FormulaAudit/Homepage,FormulaAudit/Desc,FormulaAuditStrict --fix "Formula/${filename}" || true
 
