@@ -11,13 +11,13 @@ have to work around), not implementation detail.
 
 ## [Unreleased]
 
-## [0.1.118] - 2026-09-04
-
 ### Internal
 
 - Test diagnostics: the two capabilities render tests now include the rendered table in their failure messages while the Nix sandbox failure is investigated. No user-visible behaviour change.
 - Test fix: serialised the two integration tests that spawn throwaway daemons on the standard OTLP port 4317 — run in parallel they could race the bind and make discovery attribute the port to the wrong PID (flaky CI failure in the Coverage job).
+- CI fix: the release workflow now pushes its bump commit with the dedicated RELEASE_TOKEN instead of GITHUB_TOKEN, so it keeps working once main requires changes via pull request (GITHUB_TOKEN pushes to a PR-protected branch are refused by design). No user-visible behaviour change.
 
+## [0.1.118] - 2026-09-04
 
 ### Internal
 
