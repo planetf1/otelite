@@ -12,11 +12,6 @@
 #
 # Note that the GitHub Release will be created with a generated
 # title/body based on your changelogs.
-#
-# 2026-09-04: touched to force GitHub to re-parse this workflow. The stored
-# definition had gone stale (after ddb8ace) and `gh workflow run release.yml`
-# failed with 422 "Workflow does not have 'workflow_dispatch' trigger" even
-# though the file declares it — bump-and-tag dispatches were silently blocked.
 
 name: Release
 permissions:
@@ -335,23 +330,10 @@ jobs:
             brew update
 
             # Inject a service block so `brew services start otelite` works.
-            # The block is inserted before the final `end` that closes the class.
-            python3 - "Formula/${filename}" <<'PYEOF'
-import sys, re
-path = sys.argv[1]
-text = open(path).read()
-service_block = """
-  service do
-    run [opt_bin/"otelite", "serve"]
-    keep_alive true
-    log_path var/"log/otelite.log"
-    error_log_path var/"log/otelite.log"
-  end
-"""
-# Insert before the last bare `end` in the file (closes the Formula class)
-text = re.sub(r'\nend\s*$', service_block + '\nend\n', text)
-open(path, 'w').write(text)
-PYEOF
+            # (Lives in scripts/ rather than an inline heredoc — an unindented
+            # heredoc body makes this file invalid YAML, which breaks the
+            # workflow definition and every binary release dispatch.)
+            python3 scripts/inject-homebrew-service.py "Formula/${filename}"
 
             # We avoid reformatting user-provided data such as the app description and homepage.
             brew style --except-cops FormulaAudit/Homepage,FormulaAudit/Desc,FormulaAuditStrict --fix "Formula/${filename}" || true
