@@ -467,6 +467,49 @@ class LogsView {
                 }
             });
         });
+
+        // JSON in-value search (#47)
+        container.querySelectorAll('.json-search').forEach(input => {
+            input.addEventListener('input', (e) => {
+                e.stopPropagation();
+                const term = input.value.trim().toLowerCase();
+                const treeBlock = input.closest('.attribute-value-json, .log-body-json').querySelector('.json-tree-block');
+                if (!treeBlock) return;
+                if (!term) {
+                    // Clear all highlights/hidden
+                    treeBlock.querySelectorAll('.json-tree-leaf, .json-tree-node').forEach(el => {
+                        el.classList.remove('json-match', 'json-no-match');
+                    });
+                    treeBlock.querySelectorAll('.json-match-hl').forEach(el => {
+                        el.outerHTML = el.textContent;
+                    });
+                    return;
+                }
+                // First pass: mark leaves
+                treeBlock.querySelectorAll('.json-tree-leaf').forEach(leaf => {
+                    const text = leaf.textContent.toLowerCase();
+                    if (text.includes(term)) {
+                        leaf.classList.add('json-match');
+                        leaf.classList.remove('json-no-match');
+                    } else {
+                        leaf.classList.add('json-no-match');
+                        leaf.classList.remove('json-match');
+                    }
+                });
+                // Second pass: any node with a matching descendant is also shown
+                treeBlock.querySelectorAll('.json-tree-node').forEach(node => {
+                    const hasMatch = node.querySelector('.json-match');
+                    if (hasMatch) {
+                        node.classList.add('json-match');
+                        node.classList.remove('json-no-match');
+                        node.open = true;
+                    } else {
+                        node.classList.add('json-no-match');
+                        node.classList.remove('json-match');
+                    }
+                });
+            });
+        });
     }
 
     /**
@@ -680,13 +723,18 @@ class LogsView {
         if (formatted) {
             const collapsed = formatted.autoExpand ? '' : 'json-collapsed';
             const toggleOpen = formatted.autoExpand ? ' json-toggle-open' : '';
+            const showSearch = formatted.pretty.length > 400;
+            const searchHtml = showSearch
+                ? `<input class="json-search" type="search" placeholder="Search JSON…" aria-label="Search within JSON value">`
+                : '';
             return `
                 <div class="attribute-value attribute-value-json">
                     <div class="json-header">
                         <span class="json-toggle${toggleOpen}">${this.escapeHtml(formatted.preview)}</span>
+                        ${searchHtml}
                         <span class="json-raw-btn" title="Toggle raw/formatted">[raw]</span>
                     </div>
-                    <pre class="json-block ${collapsed}"><code>${this.syntaxHighlightJson(formatted.pretty)}</code></pre>
+                    <div class="json-block json-tree-block ${collapsed}">${this.renderJsonTree(JSON.parse(value), 0)}</div>
                     <pre class="raw-block json-collapsed">${this.escapeHtml(String(value))}</pre>
                 </div>
             `;
@@ -719,13 +767,18 @@ class LogsView {
         if (formatted) {
             const collapsed = formatted.autoExpand ? '' : 'json-collapsed';
             const toggleOpen = formatted.autoExpand ? ' json-toggle-open' : '';
+            const showSearch = formatted.pretty.length > 400;
+            const searchHtml = showSearch
+                ? `<input class="json-search" type="search" placeholder="Search JSON…" aria-label="Search within JSON body">`
+                : '';
             return `
                 <div class="log-body log-body-json">
                     <div class="json-header">
                         <span class="json-toggle${toggleOpen}">${this.escapeHtml(formatted.preview)}</span>
+                        ${searchHtml}
                         <span class="json-raw-btn" title="Toggle raw/formatted">[raw]</span>
                     </div>
-                    <pre class="json-block ${collapsed}"><code>${this.syntaxHighlightJson(formatted.pretty)}</code></pre>
+                    <div class="json-block json-tree-block ${collapsed}">${this.renderJsonTree(JSON.parse(body), 0)}</div>
                     <pre class="raw-block json-collapsed">${this.escapeHtml(body)}</pre>
                 </div>
             `;
@@ -852,6 +905,54 @@ class LogsView {
             .replace(/\b(true|false)\b/g, '<span class="json-boolean">$1</span>')
             .replace(/\bnull\b/g, '<span class="json-null">null</span>')
             .replace(/(-?\b\d+(?:\.\d+)?(?:[eE][+-]?\d+)?\b)/g, '<span class="json-number">$1</span>');
+    }
+
+    /**
+     * Render a parsed JSON value as a collapsible tree.
+     * Objects and arrays become <details>/<summary> nodes; scalars are inline spans.
+     * Depth is limited to 8 levels to avoid enormous trees from deeply-nested bodies.
+     */
+    renderJsonTree(value, depth) {
+        const MAX_DEPTH = 8;
+        if (depth > MAX_DEPTH) {
+            return `<span class="json-scalar json-string">"…"</span>`;
+        }
+        if (value === null) {
+            return `<span class="json-scalar json-null">null</span>`;
+        }
+        if (typeof value === 'boolean') {
+            return `<span class="json-scalar json-boolean">${value}</span>`;
+        }
+        if (typeof value === 'number') {
+            return `<span class="json-scalar json-number">${value}</span>`;
+        }
+        if (typeof value === 'string') {
+            return `<span class="json-scalar json-string">${this.escapeHtml(JSON.stringify(value))}</span>`;
+        }
+        if (Array.isArray(value)) {
+            if (value.length === 0) return `<span class="json-scalar">[&thinsp;]</span>`;
+            return `<div class="json-tree-array">${value.map((item, i) => {
+                const isObj = item !== null && typeof item === 'object';
+                if (isObj) {
+                    const isOpen = depth < 2 ? ' open' : '';
+                    return `<details class="json-tree-node"${isOpen}><summary class="json-tree-summary"><span class="json-tree-key json-tree-idx">[${i}]</span></summary><div class="json-tree-children">${this.renderJsonTree(item, depth + 1)}</div></details>`;
+                }
+                return `<div class="json-tree-leaf"><span class="json-tree-key json-tree-idx">[${i}]</span><span class="json-tree-sep">:&nbsp;</span>${this.renderJsonTree(item, depth + 1)}</div>`;
+            }).join('')}</div>`;
+        }
+        // Plain object
+        const keys = Object.keys(value);
+        if (keys.length === 0) return `<span class="json-scalar">{&thinsp;}</span>`;
+        return `<div class="json-tree-obj">${keys.map(k => {
+            const v = value[k];
+            const isObj = v !== null && typeof v === 'object';
+            const keyHtml = `<span class="json-tree-key">${this.escapeHtml(k)}</span>`;
+            if (isObj) {
+                const isOpen = depth < 2 ? ' open' : '';
+                return `<details class="json-tree-node"${isOpen}><summary class="json-tree-summary">${keyHtml}</summary><div class="json-tree-children">${this.renderJsonTree(v, depth + 1)}</div></details>`;
+            }
+            return `<div class="json-tree-leaf">${keyHtml}<span class="json-tree-sep">:&nbsp;</span>${this.renderJsonTree(v, depth + 1)}</div>`;
+        }).join('')}</div>`;
     }
 
     /**

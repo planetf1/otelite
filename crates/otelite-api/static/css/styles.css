@@ -1170,6 +1170,111 @@ body {
     display: none;
 }
 
+/* JSON collapsible tree (#47) */
+.json-tree-block {
+    font-family: 'Courier New', monospace;
+    font-size: 0.75rem;
+    background-color: var(--bg-primary);
+    padding: 0.5rem 0.75rem;
+    border: 1px solid var(--border-color);
+    border-radius: 4px;
+    overflow-x: auto;
+    line-height: 1.6;
+}
+
+.json-tree-obj,
+.json-tree-array {
+    margin: 0;
+    padding: 0;
+}
+
+.json-tree-node {
+    margin: 0;
+    padding-left: 1.2em;
+    list-style: none;
+}
+
+.json-tree-node > summary {
+    cursor: pointer;
+    user-select: none;
+    list-style: none;
+    display: flex;
+    align-items: baseline;
+    gap: 0.25em;
+}
+
+.json-tree-node > summary::-webkit-details-marker { display: none; }
+
+.json-tree-summary::before {
+    content: '▶ ';
+    font-size: 0.65em;
+    color: var(--text-secondary);
+}
+
+details[open] > .json-tree-summary::before {
+    content: '▼ ';
+}
+
+.json-tree-children {
+    padding-left: 1.4em;
+    border-left: 1px solid var(--border-color);
+    margin-left: 0.3em;
+}
+
+.json-tree-leaf {
+    display: flex;
+    align-items: baseline;
+    flex-wrap: wrap;
+    gap: 0.2em;
+    padding-left: 1.2em;
+}
+
+.json-tree-key {
+    color: var(--json-key-color, #7ec8e3);
+    font-weight: 600;
+}
+
+.json-tree-idx {
+    color: var(--text-secondary);
+    font-weight: normal;
+}
+
+.json-tree-sep {
+    color: var(--text-secondary);
+}
+
+/* JSON in-value search box */
+.json-search {
+    font-family: inherit;
+    font-size: 0.7rem;
+    padding: 1px 5px;
+    border: 1px solid var(--border-color);
+    border-radius: 3px;
+    background: var(--bg-secondary);
+    color: var(--text-primary);
+    width: 14ch;
+    min-width: 8ch;
+    flex-shrink: 0;
+}
+
+.json-search:focus {
+    outline: 1px solid var(--accent-color);
+    border-color: var(--accent-color);
+    width: 22ch;
+    transition: width 0.15s;
+}
+
+/* Search hit / miss highlighting */
+.json-tree-leaf.json-no-match,
+.json-tree-node.json-no-match {
+    opacity: 0.2;
+}
+
+.json-tree-leaf.json-match {
+    background: color-mix(in srgb, var(--accent-color) 15%, transparent);
+    border-radius: 2px;
+}
+
 .trace-link {
     color: var(--accent-color);
     text-decoration: none;

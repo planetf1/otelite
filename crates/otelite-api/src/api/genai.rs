@@ -2918,6 +2918,65 @@ pub async fn get_skill_activity(
     Ok(Json(response))
 }
 
+#[utoipa::path(
+    get,
+    path = "/api/genai/skill_outcomes",
+    params(TimeRangeQuery),
+    responses(
+        (status = 200, description = "Token comparison for sessions with vs without each skill", body = otelite_core::api::SkillOutcomesResponse),
+        (status = 500, description = "Internal server error", body = ErrorResponse)
+    ),
+    tag = "genai"
+)]
+pub async fn get_skill_outcomes(
+    State(state): State<AppState>,
+    Query(query): Query<TimeRangeQuery>,
+) -> Result<Json<otelite_core::api::SkillOutcomesResponse>, (StatusCode, Json<ErrorResponse>)> {
+    let response = state
+        .storage
+        .query_skill_outcomes(query.start_time, query.end_time)
+        .await
+        .map_err(|e| {
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(ErrorResponse::storage_error(format!(
+                    "query skill_outcomes: {e}"
+                ))),
+            )
+        })?;
+    Ok(Json(response))
+}
+
+#[utoipa::path(
+    get,
+    path = "/api/genai/model_selection_heatmap",
+    params(TimeRangeQuery),
+    responses(
+        (status = 200, description = "Model-selection heatmap: (role, tool, model) → request count and token share", body = otelite_core::api::ModelSelectionHeatmapResponse),
+        (status = 500, description = "Internal server error", body = ErrorResponse)
+    ),
+    tag = "genai"
+)]
+pub async fn get_model_selection_heatmap(
+    State(state): State<AppState>,
+    Query(query): Query<TimeRangeQuery>,
+) -> Result<Json<otelite_core::api::ModelSelectionHeatmapResponse>, (StatusCode, Json<ErrorResponse>)>
+{
+    let response = state
+        .storage
+        .query_model_selection_heatmap(query.start_time, query.end_time)
+        .await
+        .map_err(|e| {
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(ErrorResponse::storage_error(format!(
+                    "query model_selection_heatmap: {e}"
+                ))),
+            )
+        })?;
+    Ok(Json(response))
+}
+
 genai_filter_impl!(TokenUsageQuery);
 genai_filter_impl!(CostSeriesQuery);
 genai_filter_impl!(FinishReasonsQuery);

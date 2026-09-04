@@ -1144,6 +1144,29 @@ impl StorageBackend for SqliteBackend {
         .await
     }
 
+    async fn query_skill_outcomes(
+        &self,
+        start_time: Option<i64>,
+        end_time: Option<i64>,
+    ) -> Result<otelite_core::api::SkillOutcomesResponse> {
+        self.read_query(move |conn| {
+            reader::query_skill_outcomes(conn, start_time, end_time).map_err(StorageError::from)
+        })
+        .await
+    }
+
+    async fn query_model_selection_heatmap(
+        &self,
+        start_time: Option<i64>,
+        end_time: Option<i64>,
+    ) -> Result<otelite_core::api::ModelSelectionHeatmapResponse> {
+        self.read_query(move |conn| {
+            reader::query_model_selection_heatmap(conn, start_time, end_time)
+                .map_err(StorageError::from)
+        })
+        .await
+    }
+
     async fn close(&mut self) -> Result<()> {
         if let Some(handle) = self.purge_handle.lock().take() {
             handle.abort();

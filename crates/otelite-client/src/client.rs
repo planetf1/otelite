@@ -677,6 +677,36 @@ impl ApiClient {
         Ok(response.json().await?)
     }
 
+    pub async fn fetch_skill_outcomes(
+        &self,
+        params: Vec<(&str, String)>,
+    ) -> Result<otelite_core::api::SkillOutcomesResponse> {
+        let url = format!("{}/api/genai/skill_outcomes", self.base_url);
+        let response = self.client.get(&url).query(&params).send().await?;
+        if !response.status().is_success() {
+            return Err(non_success(
+                response.status(),
+                "Failed to fetch skill outcomes",
+            ));
+        }
+        Ok(response.json().await?)
+    }
+
+    pub async fn fetch_model_selection_heatmap(
+        &self,
+        params: Vec<(&str, String)>,
+    ) -> Result<otelite_core::api::ModelSelectionHeatmapResponse> {
+        let url = format!("{}/api/genai/model_selection_heatmap", self.base_url);
+        let response = self.client.get(&url).query(&params).send().await?;
+        if !response.status().is_success() {
+            return Err(non_success(
+                response.status(),
+                "Failed to fetch model selection heatmap",
+            ));
+        }
+        Ok(response.json().await?)
+    }
+
     /// The GenAI list endpoints wrap their array payload in an
     /// `{ items, filters_applied }` envelope (#135). Parse it and return
     /// the items; the TUI has no filter bar, so the echo is discarded.

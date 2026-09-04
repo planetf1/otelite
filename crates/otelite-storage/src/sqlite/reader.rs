@@ -12753,6 +12753,302 @@ pub fn query_skill_activity(
     })
 }
 
+/// Skill outcome correlation (#168).
+///
+/// For each skill that fired in the window, computes the mean per-session token
+/// total (input + output) for sessions that received that skill vs sessions that
+/// did not. This is an observational correlation, not causation.
+///
+/// Algorithm:
+/// 1. Aggregate per-session input+output tokens from LLM spans.
+/// 2. Collect the set of sessions that received each skill injection.
+/// 3. For each skill: split the session-token list into "with" and "without" groups
+///    and compute means.
+pub fn query_skill_outcomes(
+    conn: &Connection,
+    start_time: Option<i64>,
+    end_time: Option<i64>,
+) -> Result<otelite_core::api::SkillOutcomesResponse> {
+    use otelite_core::api::{SkillOutcomeRow, SkillOutcomesResponse};
+    use otelite_core::semconv;
+
+    // ── 1. Per-session token totals from LLM spans ─────────────────────────
+    let llm_guard = semconv::llm_span_guard("attributes");
+    let mut where_clause = format!("WHERE {llm_guard}");
+    let mut params: Vec<Box<dyn rusqlite::ToSql>> = Vec::new();
+    if let Some(s) = start_time {
+        where_clause.push_str(" AND start_time >= ?");
+        params.push(Box::new(s));
+    }
+    if let Some(e) = end_time {
+        where_clause.push_str(" AND start_time <= ?");
+        params.push(Box::new(e));
+    }
+    let session_sql = format!(
+        r#"
+        SELECT
+            COALESCE(
+                json_extract(attributes,'$."session.id"'),
+                json_extract(attributes,'$.\"session.id\"'),
+                trace_id
+            ) AS session_id,
+            SUM(COALESCE(json_extract(attributes,'$.\"gen_ai.usage.input_tokens\"'), 0) +
+                COALESCE(json_extract(attributes,'$.\"gen_ai.usage.output_tokens\"'), 0)) AS tokens
+        FROM spans
+        {where_clause}
+        GROUP BY session_id
+        "#
+    );
+    let param_refs: Vec<&dyn rusqlite::ToSql> = params.iter().map(|p| p.as_ref()).collect();
+    let mut stmt = conn
+        .prepare(&session_sql)
+        .map_err(|e| StorageError::QueryError(format!("skill_outcomes session query: {e}")))?;
+    let session_rows: HashMap<String, u64> = stmt
+        .query_map(param_refs.as_slice(), |r| {
+            Ok((
+                r.get::<_, String>(0)?,
+                r.get::<_, i64>(1).unwrap_or(0) as u64,
+            ))
+        })
+        .map_err(|e| StorageError::QueryError(format!("{e}")))?
+        .collect::<std::result::Result<Vec<_>, _>>()
+        .map_err(|e| StorageError::QueryError(format!("{e}")))?
+        .into_iter()
+        .collect();
+
+    if session_rows.is_empty() {
+        return Ok(SkillOutcomesResponse::default());
+    }
+
+    // ── 2. Per-skill session sets from skill injection metrics ──────────────
+    let mut skill_where =
+        "WHERE name = 'codex.skill.injected' AND json_valid(attributes)".to_string();
+    let mut skill_params: Vec<Box<dyn rusqlite::ToSql>> = Vec::new();
+    if let Some(s) = start_time {
+        skill_where.push_str(" AND timestamp >= ?");
+        skill_params.push(Box::new(s));
+    }
+    if let Some(e) = end_time {
+        skill_where.push_str(" AND timestamp <= ?");
+        skill_params.push(Box::new(e));
+    }
+    let skill_sql = format!(
+        r#"
+        SELECT
+            json_extract(attributes,'$.skill') AS skill,
+            json_extract(attributes,'$."session.id"') AS session_id
+        FROM metrics
+        {skill_where}
+        AND json_extract(attributes,'$.skill') IS NOT NULL
+        "#
+    );
+    let skill_param_refs: Vec<&dyn rusqlite::ToSql> =
+        skill_params.iter().map(|p| p.as_ref()).collect();
+    let mut skill_stmt = conn
+        .prepare(&skill_sql)
+        .map_err(|e| StorageError::QueryError(format!("skill_outcomes skill query: {e}")))?;
+    // skill_name → set of session IDs
+    let mut skill_sessions: HashMap<String, std::collections::HashSet<String>> = HashMap::new();
+    skill_stmt
+        .query_map(skill_param_refs.as_slice(), |r| {
+            Ok((r.get::<_, String>(0)?, r.get::<_, Option<String>>(1)?))
+        })
+        .map_err(|e| StorageError::QueryError(format!("{e}")))?
+        .for_each(|row| {
+            if let Ok((skill, Some(session))) = row {
+                skill_sessions.entry(skill).or_default().insert(session);
+            }
+        });
+
+    if skill_sessions.is_empty() {
+        return Ok(SkillOutcomesResponse::default());
+    }
+
+    // ── 3. Compute per-skill means ──────────────────────────────────────────
+    let all_tokens: Vec<u64> = session_rows.values().copied().collect();
+    let total_sessions = all_tokens.len() as u64;
+    let without_sum: u64 = all_tokens.iter().sum();
+
+    let mut rows: Vec<SkillOutcomeRow> = skill_sessions
+        .iter()
+        .filter_map(|(skill, with_sessions)| {
+            let with_tokens: Vec<u64> = with_sessions
+                .iter()
+                .filter_map(|s| session_rows.get(s))
+                .copied()
+                .collect();
+            let sessions_with = with_tokens.len() as u64;
+            if sessions_with == 0 {
+                return None;
+            }
+            let avg_tokens_with = with_tokens.iter().sum::<u64>() as f64 / sessions_with as f64;
+
+            let sessions_without = total_sessions.saturating_sub(sessions_with);
+            let avg_tokens_without = if sessions_without > 0 {
+                let without_sum_skill = without_sum - with_tokens.iter().sum::<u64>();
+                without_sum_skill as f64 / sessions_without as f64
+            } else {
+                0.0
+            };
+            let token_ratio = if avg_tokens_without > 0.0 {
+                Some(avg_tokens_with / avg_tokens_without)
+            } else {
+                None
+            };
+            Some(SkillOutcomeRow {
+                skill: skill.clone(),
+                sessions_with,
+                sessions_without,
+                avg_tokens_with,
+                avg_tokens_without,
+                token_ratio,
+            })
+        })
+        .collect();
+    rows.sort_by(|a, b| {
+        b.token_ratio
+            .unwrap_or(0.0)
+            .partial_cmp(&a.token_ratio.unwrap_or(0.0))
+            .unwrap_or(std::cmp::Ordering::Equal)
+    });
+
+    Ok(SkillOutcomesResponse {
+        rows,
+        filters_applied: Vec::new(),
+    })
+}
+
+/// Model-selection heatmap (#169).
+///
+/// Cross-tab of (agent_role, tool, model) → request count + token share,
+/// derived entirely from LLM spans. Tool is inferred from `scope.name`
+/// (same mapping as `query_daily_tool_mix`). Role comes from the
+/// `llm_request.context` or `opencode.agent` attribute; falls back to "(all)".
+pub fn query_model_selection_heatmap(
+    conn: &Connection,
+    start_time: Option<i64>,
+    end_time: Option<i64>,
+) -> Result<otelite_core::api::ModelSelectionHeatmapResponse> {
+    use otelite_core::api::{ModelSelectionHeatmapResponse, ModelSelectionRow};
+    use otelite_core::semconv;
+
+    let llm_guard = semconv::llm_span_guard("attributes");
+    let mut where_clause = format!("WHERE {llm_guard}");
+    let mut params: Vec<Box<dyn rusqlite::ToSql>> = Vec::new();
+    if let Some(s) = start_time {
+        where_clause.push_str(" AND start_time >= ?");
+        params.push(Box::new(s));
+    }
+    if let Some(e) = end_time {
+        where_clause.push_str(" AND start_time <= ?");
+        params.push(Box::new(e));
+    }
+
+    let sql = format!(
+        r#"
+        SELECT
+            COALESCE(
+                json_extract(attributes,'$.\"llm_request.context\"'),
+                json_extract(attributes,'$.opencode_agent'),
+                '(all)'
+            ) AS role,
+            CASE
+                WHEN json_extract(scope,'$.name') LIKE '%claude_code%'   THEN 'claude_code'
+                WHEN json_extract(scope,'$.name') = 'com.opencode'       THEN 'opencode'
+                WHEN json_extract(scope,'$.name') LIKE '%opencode%'      THEN 'opencode'
+                WHEN json_extract(scope,'$.name') = 'pi-otel'            THEN 'pi'
+                WHEN json_extract(scope,'$.name') LIKE '%codex%'         THEN 'codex'
+                WHEN json_extract(scope,'$.name') LIKE '%deekseek%'      THEN 'deepseek'
+                ELSE COALESCE(json_extract(scope,'$.name'), 'unknown')
+            END AS tool,
+            COALESCE(
+                json_extract(attributes,'$.\"gen_ai.request.model\"'),
+                json_extract(attributes,'$.\"gen_ai.response.model\"'),
+                'unknown'
+            ) AS model,
+            COUNT(*) AS requests,
+            COALESCE(SUM(json_extract(attributes,'$.\"gen_ai.usage.output_tokens\"')), 0) AS output_tokens
+        FROM spans
+        {where_clause}
+        GROUP BY role, tool, model
+        ORDER BY role, output_tokens DESC
+        "#
+    );
+
+    let param_refs: Vec<&dyn rusqlite::ToSql> = params.iter().map(|p| p.as_ref()).collect();
+    let mut stmt = conn
+        .prepare(&sql)
+        .map_err(|e| StorageError::QueryError(format!("model_selection_heatmap: {e}")))?;
+
+    struct RawRow {
+        role: String,
+        tool: String,
+        model: String,
+        requests: u64,
+        output_tokens: u64,
+    }
+
+    let raw: Vec<RawRow> = stmt
+        .query_map(param_refs.as_slice(), |r| {
+            Ok(RawRow {
+                role: r.get(0)?,
+                tool: r.get(1)?,
+                model: r.get(2)?,
+                requests: r.get::<_, i64>(3).unwrap_or(0) as u64,
+                output_tokens: r.get::<_, i64>(4).unwrap_or(0) as u64,
+            })
+        })
+        .map_err(|e| StorageError::QueryError(format!("{e}")))?
+        .collect::<std::result::Result<Vec<_>, _>>()
+        .map_err(|e| StorageError::QueryError(format!("{e}")))?;
+
+    if raw.is_empty() {
+        return Ok(ModelSelectionHeatmapResponse::default());
+    }
+
+    // Compute per-role total output tokens for share %
+    let mut role_totals: HashMap<String, u64> = HashMap::new();
+    for r in &raw {
+        *role_totals.entry(r.role.clone()).or_default() += r.output_tokens;
+    }
+
+    let mut roles_seen: Vec<String> = Vec::new();
+    let mut tools_seen: Vec<String> = Vec::new();
+
+    let rows: Vec<ModelSelectionRow> = raw
+        .into_iter()
+        .map(|r| {
+            let role_total = *role_totals.get(&r.role).unwrap_or(&1);
+            let token_share_pct = if role_total > 0 {
+                r.output_tokens as f64 / role_total as f64 * 100.0
+            } else {
+                0.0
+            };
+            if !roles_seen.contains(&r.role) {
+                roles_seen.push(r.role.clone());
+            }
+            if !tools_seen.contains(&r.tool) {
+                tools_seen.push(r.tool.clone());
+            }
+            ModelSelectionRow {
+                role: r.role,
+                tool: r.tool,
+                model: r.model,
+                requests: r.requests,
+                output_tokens: r.output_tokens,
+                token_share_pct,
+            }
+        })
+        .collect();
+
+    Ok(ModelSelectionHeatmapResponse {
+        rows,
+        roles: roles_seen,
+        tools: tools_seen,
+        filters_applied: Vec::new(),
+    })
+}
+
 #[cfg(test)]
 mod new_insight_tests_2 {
     use super::*;
@@ -12874,5 +13170,74 @@ mod new_insight_tests_2 {
             .find(|r| r.skill == "inbox-triage")
             .unwrap();
         assert_eq!(triage.injections, 1);
+    }
+    fn make_conn_with_spans() -> Connection {
+        let conn = make_conn();
+        conn.execute_batch(
+            "CREATE TABLE spans (
+                id INTEGER PRIMARY KEY,
+                trace_id TEXT NOT NULL,
+                span_id TEXT NOT NULL,
+                parent_span_id TEXT,
+                name TEXT NOT NULL,
+                kind INTEGER,
+                start_time INTEGER NOT NULL,
+                end_time INTEGER NOT NULL,
+                attributes TEXT,
+                events TEXT,
+                links TEXT,
+                status TEXT,
+                resource TEXT,
+                scope TEXT,
+                flags INTEGER,
+                created_at INTEGER NOT NULL DEFAULT (strftime('%s','now'))
+            );",
+        )
+        .unwrap();
+        conn
+    }
+
+    #[test]
+    fn test_skill_outcomes_empty() {
+        // With no data the query should return an empty response rather than error.
+        let conn = make_conn_with_spans();
+        let result = query_skill_outcomes(&conn, None, None).unwrap();
+        assert!(result.rows.is_empty());
+    }
+
+    #[test]
+    fn test_model_selection_heatmap_empty() {
+        let conn = make_conn_with_spans();
+        let result = query_model_selection_heatmap(&conn, None, None).unwrap();
+        assert!(result.rows.is_empty());
+        assert!(result.roles.is_empty());
+        assert!(result.tools.is_empty());
+    }
+
+    #[test]
+    fn test_model_selection_heatmap_basic() {
+        let conn = make_conn_with_spans();
+        // Insert two LLM request spans: same role, two different tools, same model.
+        for (scope_name, model) in &[
+            ("com.anthropic.claude_code", "claude-opus-4-5"),
+            ("com.opencode", "claude-sonnet-4-5"),
+        ] {
+            let attrs = format!(
+                r#"{{"gen_ai.system":"anthropic","gen_ai.operation.name":"chat","gen_ai.request.model":"{model}","gen_ai.usage.output_tokens":100}}"#
+            );
+            let scope = format!(r#"{{"name":"{scope_name}"}}"#);
+            conn.execute(
+                "INSERT INTO spans (trace_id, span_id, name, kind, start_time, end_time, attributes, scope, flags, created_at)
+                 VALUES ('tr1', 'sp1', 'llm', 1, 1000000000, 2000000000, ?, ?, 0, 1000000000)",
+                rusqlite::params![attrs, scope],
+            )
+            .unwrap();
+        }
+        let result = query_model_selection_heatmap(&conn, None, None).unwrap();
+        assert_eq!(result.rows.len(), 2);
+        assert!(result.tools.contains(&"claude_code".to_string()));
+        assert!(result.tools.contains(&"opencode".to_string()));
+        // Both spans use role "(all)" since no llm_request.context attribute is set.
+        assert_eq!(result.roles, vec!["(all)".to_string()]);
     }
 }

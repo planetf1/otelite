@@ -1537,6 +1537,8 @@ async fn test_filters_applied_echoed_on_all_genai_endpoints() {
         "/api/genai/tool_failure_rates",
         "/api/genai/daily_tool_mix",
         "/api/genai/skill_activity",
+        "/api/genai/skill_outcomes",
+        "/api/genai/model_selection_heatmap",
     ]
     .iter()
     .map(|s| s.to_string())

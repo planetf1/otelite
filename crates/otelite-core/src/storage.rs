@@ -735,4 +735,22 @@ pub trait StorageBackend: Send + Sync {
         let _ = (start_time, end_time);
         Err(StorageError::QueryError("not implemented".to_string()))
     }
+
+    async fn query_skill_outcomes(
+        &self,
+        start_time: Option<i64>,
+        end_time: Option<i64>,
+    ) -> Result<crate::api::SkillOutcomesResponse> {
+        let _ = (start_time, end_time);
+        Err(StorageError::QueryError("not implemented".to_string()))
+    }
+
+    async fn query_model_selection_heatmap(
+        &self,
+        start_time: Option<i64>,
+        end_time: Option<i64>,
+    ) -> Result<crate::api::ModelSelectionHeatmapResponse> {
+        let _ = (start_time, end_time);
+        Err(StorageError::QueryError("not implemented".to_string()))
+    }
 }

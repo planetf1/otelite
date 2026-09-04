@@ -85,6 +85,11 @@ use utoipa::OpenApi;
         crate::api::genai::get_speed_distribution,
         crate::api::genai::get_cross_tool_ttft,
         crate::api::genai::get_hook_overhead,
+        crate::api::genai::get_tool_failure_rates,
+        crate::api::genai::get_daily_tool_mix,
+        crate::api::genai::get_skill_activity,
+        crate::api::genai::get_skill_outcomes,
+        crate::api::genai::get_model_selection_heatmap,
         crate::api::sessions::get_session_costs,
         crate::api::sessions::get_session_cost_distribution,
         crate::api::sessions::get_session_context,
@@ -217,6 +222,10 @@ use utoipa::OpenApi;
             otelite_core::api::DailyToolMixResponse,
             otelite_core::api::SkillActivityRow,
             otelite_core::api::SkillActivityResponse,
+            otelite_core::api::SkillOutcomeRow,
+            otelite_core::api::SkillOutcomesResponse,
+            otelite_core::api::ModelSelectionRow,
+            otelite_core::api::ModelSelectionHeatmapResponse,
         )
     ),
     tags(
@@ -437,6 +446,8 @@ impl DashboardServer {
             .route("/api/genai/tool_failure_rates", get(crate::api::genai::get_tool_failure_rates))
             .route("/api/genai/daily_tool_mix", get(crate::api::genai::get_daily_tool_mix))
             .route("/api/genai/skill_activity", get(crate::api::genai::get_skill_activity))
+            .route("/api/genai/skill_outcomes", get(crate::api::genai::get_skill_outcomes))
+            .route("/api/genai/model_selection_heatmap", get(crate::api::genai::get_model_selection_heatmap))
             // API routes - Sessions
             .route("/api/sessions", get(crate::api::sessions::list_sessions))
             .route("/api/sessions/costs", get(crate::api::sessions::get_session_costs))

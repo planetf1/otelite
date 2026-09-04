@@ -2699,6 +2699,67 @@ pub struct SkillActivityResponse {
     pub filters_applied: Vec<String>,
 }
 
+// ── Skill Outcome Correlation (#168) ─────────────────────────────────────────
+
+/// Correlation row: token/turn comparison for sessions with vs without a skill.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
+pub struct SkillOutcomeRow {
+    /// Skill name.
+    pub skill: String,
+    /// Sessions that fired this skill in the window.
+    pub sessions_with: u64,
+    /// Sessions that did NOT fire this skill in the window.
+    pub sessions_without: u64,
+    /// Mean total tokens (input+output) per session that used this skill.
+    pub avg_tokens_with: f64,
+    /// Mean total tokens (input+output) per session that did not use this skill.
+    pub avg_tokens_without: f64,
+    /// avg_tokens_with / avg_tokens_without (None when no "without" sessions exist).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub token_ratio: Option<f64>,
+}
+
+/// Response for `GET /api/genai/skill_outcomes`.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
+pub struct SkillOutcomesResponse {
+    pub rows: Vec<SkillOutcomeRow>,
+    pub filters_applied: Vec<String>,
+}
+
+// ── Model-Selection Heatmap (#169) ───────────────────────────────────────────
+
+/// One cell of the model-selection heatmap: (role, tool, model) tuple.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
+pub struct ModelSelectionRow {
+    /// Agent role (e.g. "orchestrator", "researcher") or "(all)" when role is absent.
+    pub role: String,
+    /// Short tool label: "claude_code", "opencode", "codex", "pi", etc.
+    pub tool: String,
+    /// Model name as reported by the span.
+    pub model: String,
+    /// Number of LLM requests for this (role, tool, model) combination.
+    pub requests: u64,
+    /// Total output tokens for this combination.
+    pub output_tokens: u64,
+    /// Share of total output tokens in this role (0.0–100.0).
+    pub token_share_pct: f64,
+}
+
+/// Response for `GET /api/genai/model_selection_heatmap`.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
+pub struct ModelSelectionHeatmapResponse {
+    pub rows: Vec<ModelSelectionRow>,
+    /// Distinct roles present.
+    pub roles: Vec<String>,
+    /// Distinct tools present.
+    pub tools: Vec<String>,
+    pub filters_applied: Vec<String>,
+}
+
 #[cfg(test)]
 mod project_rollup_tests {
     use super::*;

@@ -11,6 +11,18 @@ have to work around), not implementation detail.
 
 ## [Unreleased]
 
+### Added
+
+- **Skill Outcomes** — see at a glance whether sessions that fired a Codex skill consumed
+  more or fewer tokens than sessions without it; ratio &gt; 1 means the skill drives longer
+  responses on average. Available in the web analytics accordion, `otelite usage --skill-outcomes`,
+  and via `GET /api/genai/skill_outcomes`. (#168)
+
+- **Model Selection Heatmap** — cross-tab of (agent role × tool × model) showing request counts
+  and output-token share per cell; reveals whether sub-agents route to different models than the
+  orchestrator. Available in the web analytics accordion, `otelite usage --model-selection-heatmap`,
+  and via `GET /api/genai/model_selection_heatmap`. (#169)
+
 ## [0.1.110] - 2026-09-04
 
 ### Added

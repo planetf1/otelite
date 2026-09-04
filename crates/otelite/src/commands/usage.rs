@@ -220,6 +220,14 @@ pub struct UsageCommand {
     /// Show Codex skill injection counts — which skills fire implicitly and how often
     #[arg(long)]
     pub skill_activity: bool,
+
+    /// Show token efficiency comparison: sessions with vs without each skill (#168)
+    #[arg(long)]
+    pub skill_outcomes: bool,
+
+    /// Show model-selection heatmap: (role × tool × model) request counts (#169)
+    #[arg(long)]
+    pub model_selection_heatmap: bool,
 }
 
 // ── serialisable output types (used for --format json) ───────────────────────
@@ -332,6 +340,10 @@ struct UsageOutput {
     daily_tool_mix: Option<otelite_core::api::DailyToolMixResponse>,
     #[serde(skip_serializing_if = "Option::is_none")]
     skill_activity: Option<otelite_core::api::SkillActivityResponse>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    skill_outcomes: Option<otelite_core::api::SkillOutcomesResponse>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    model_selection_heatmap: Option<otelite_core::api::ModelSelectionHeatmapResponse>,
 }
 
 // ── pricing fetch ─────────────────────────────────────────────────────────────
@@ -1054,6 +1066,39 @@ impl UsageCommand {
                 None
             };
 
+        // --skill-outcomes
+        let skill_outcomes: Option<otelite_core::api::SkillOutcomesResponse> =
+            if self.skill_outcomes {
+                Some(
+                    storage
+                        .query_skill_outcomes(Some(start_time), Some(end_time))
+                        .await
+                        .map_err(|e| {
+                            Error::ApiError(format!("Failed to query skill_outcomes: {}", e))
+                        })?,
+                )
+            } else {
+                None
+            };
+
+        // --model-selection-heatmap
+        let model_selection_heatmap: Option<otelite_core::api::ModelSelectionHeatmapResponse> =
+            if self.model_selection_heatmap {
+                Some(
+                    storage
+                        .query_model_selection_heatmap(Some(start_time), Some(end_time))
+                        .await
+                        .map_err(|e| {
+                            Error::ApiError(format!(
+                                "Failed to query model_selection_heatmap: {}",
+                                e
+                            ))
+                        })?,
+                )
+            } else {
+                None
+            };
+
         use crate::config::OutputFormat;
         match format {
             OutputFormat::Json | OutputFormat::JsonCompact => {
@@ -1096,6 +1141,8 @@ impl UsageCommand {
                     tool_failures,
                     daily_tool_mix,
                     skill_activity,
+                    skill_outcomes,
+                    model_selection_heatmap,
                 };
                 let json = if matches!(format, OutputFormat::JsonCompact) {
                     serde_json::to_string(&output)
@@ -1307,6 +1354,16 @@ impl UsageCommand {
 
                 if let Some(ref resp) = skill_activity {
                     display_skill_activity(resp);
+                    println!();
+                }
+
+                if let Some(ref resp) = skill_outcomes {
+                    display_skill_outcomes(resp);
+                    println!();
+                }
+
+                if let Some(ref resp) = model_selection_heatmap {
+                    display_model_selection_heatmap(resp);
                     println!();
                 }
 
@@ -3084,6 +3141,72 @@ fn display_skill_activity(resp: &otelite_core::api::SkillActivityResponse) {
         "Skill Activity (total injections: {}):",
         resp.total_injections
     );
+    println!("{}", table);
+}
+
+fn display_skill_outcomes(resp: &otelite_core::api::SkillOutcomesResponse) {
+    if resp.rows.is_empty() {
+        println!("Skill Outcomes: no data");
+        return;
+    }
+    let mut table = Table::new();
+    table
+        .load_preset(UTF8_FULL)
+        .set_content_arrangement(ContentArrangement::Dynamic);
+    table.set_header(vec![
+        Cell::new("Skill").fg(Color::Cyan),
+        Cell::new("Sessions with").fg(Color::Cyan),
+        Cell::new("Sessions without").fg(Color::Cyan),
+        Cell::new("Avg tokens (with)").fg(Color::Cyan),
+        Cell::new("Avg tokens (without)").fg(Color::Cyan),
+        Cell::new("Ratio").fg(Color::Cyan),
+    ]);
+    for r in &resp.rows {
+        let ratio = r
+            .token_ratio
+            .map(|v| format!("{:.2}", v))
+            .unwrap_or_else(|| "—".to_string());
+        table.add_row(vec![
+            Cell::new(r.skill.as_str()),
+            Cell::new(r.sessions_with.to_string()),
+            Cell::new(r.sessions_without.to_string()),
+            Cell::new(format_number(r.avg_tokens_with as u64)),
+            Cell::new(format_number(r.avg_tokens_without as u64)),
+            Cell::new(ratio),
+        ]);
+    }
+    println!("Skill Outcomes (token efficiency with vs without each skill):");
+    println!("{}", table);
+}
+
+fn display_model_selection_heatmap(resp: &otelite_core::api::ModelSelectionHeatmapResponse) {
+    if resp.rows.is_empty() {
+        println!("Model Selection Heatmap: no data");
+        return;
+    }
+    let mut table = Table::new();
+    table
+        .load_preset(UTF8_FULL)
+        .set_content_arrangement(ContentArrangement::Dynamic);
+    table.set_header(vec![
+        Cell::new("Role").fg(Color::Cyan),
+        Cell::new("Tool").fg(Color::Cyan),
+        Cell::new("Model").fg(Color::Cyan),
+        Cell::new("Requests").fg(Color::Cyan),
+        Cell::new("Output tokens").fg(Color::Cyan),
+        Cell::new("Token share %").fg(Color::Cyan),
+    ]);
+    for r in &resp.rows {
+        table.add_row(vec![
+            Cell::new(r.role.as_str()),
+            Cell::new(r.tool.as_str()),
+            Cell::new(r.model.as_str()),
+            Cell::new(format_number(r.requests)),
+            Cell::new(format_number(r.output_tokens)),
+            Cell::new(format!("{:.1}%", r.token_share_pct)),
+        ]);
+    }
+    println!("Model Selection Heatmap (role × tool × model):");
     println!("{}", table);
 }
 

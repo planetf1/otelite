@@ -121,6 +121,8 @@ class AnalyticsView {
                 ${this._renderSectionShell('cross_tool_ttft', 'Cross-Tool TTFT', 'First-token latency by model across all tools (Claude Code, opencode, pi) from span attributes')}
                 ${this._renderSectionShell('hook_overhead', 'Hook Overhead', 'Codex hook total and average invocation time per event type — how much latency hooks add')}
                 ${this._renderSectionShell('reasoning_share', 'Reasoning Token Share', 'Thinking tokens as a percentage of output tokens per model — opencode + Codex')}
+                ${this._renderSectionShell('skill_outcomes', 'Skill Outcomes', 'Token efficiency comparison: sessions that used each skill vs sessions that did not')}
+                ${this._renderSectionShell('model_selection_heatmap', 'Model Selection Heatmap', 'Which tool picked which model for which agent role — (role × tool × model) request counts')}
             </div>
         `;
 
@@ -692,6 +694,8 @@ class AnalyticsView {
             tool_failure_rates: () => this._loadToolFailureRatesSection(),
             daily_tool_mix: () => this._loadDailyToolMixSection(),
             skill_activity: () => this._loadSkillActivitySection(),
+            skill_outcomes: () => this._loadSkillOutcomesSection(),
+            model_selection_heatmap: () => this._loadModelSelectionHeatmapSection(),
         };
     }
 
@@ -3715,6 +3719,104 @@ class AnalyticsView {
                 </tr></thead>
                 <tbody>${tableRows}</tbody>
             </table></div>`;
+    }
+
+    // ── Skill Outcomes (#168) ─────────────────────────────────────────────────
+
+    async _loadSkillOutcomesSection() {
+        this._setSectionLoading('skill_outcomes');
+        try {
+            const data = await this.api.getSkillOutcomes(this._baseParams());
+            const rows = data.rows || [];
+            if (!rows.length) {
+                this._setSectionBody('skill_outcomes', '<div class="empty-state-hint">No skill outcome data in this window. Requires sessions with and without Codex skill injections.</div>');
+                this.loadedSections.add('skill_outcomes');
+                return;
+            }
+            this._setSectionBody('skill_outcomes', this._buildSkillOutcomes(rows));
+            this.loadedSections.add('skill_outcomes');
+        } catch (err) {
+            this._setSectionError('skill_outcomes', err);
+        }
+    }
+
+    _buildSkillOutcomes(rows) {
+        const fmt = n => Number(n || 0).toLocaleString();
+        const fmtTokens = n => (n || 0) < 1000 ? fmt(n) : `${(n / 1000).toFixed(1)}k`;
+        const tableRows = rows.map(r => {
+            const ratio = r.token_ratio != null ? r.token_ratio.toFixed(2) : 'n/a';
+            const ratioClass = r.token_ratio != null && r.token_ratio > 1.0 ? 'text-warn' : '';
+            return `<tr>
+                <td>${this._esc(r.skill)}</td>
+                <td class="num">${fmt(r.sessions_with)}</td>
+                <td class="num">${fmt(r.sessions_without)}</td>
+                <td class="num">${fmtTokens(r.avg_tokens_with)}</td>
+                <td class="num">${fmtTokens(r.avg_tokens_without)}</td>
+                <td class="num ${ratioClass}">${ratio}</td>
+            </tr>`;
+        }).join('');
+        return `
+            <h3>Skill token efficiency</h3>
+            <p class="table-hint">Average tokens per session, split by whether each skill was injected. A ratio &gt; 1 means sessions <em>with</em> the skill consumed more tokens on average. High ratios may indicate the skill is adding context that drives longer responses.</p>
+            <div class="table-scroll-x"><table class="data-table">
+                <thead><tr>
+                    <th>Skill</th>
+                    <th>Sessions with</th><th>Sessions without</th>
+                    <th>Avg tokens (with)</th><th>Avg tokens (without)</th>
+                    <th>Ratio (with/without)</th>
+                </tr></thead>
+                <tbody>${tableRows}</tbody>
+            </table></div>`;
+    }
+
+    // ── Model Selection Heatmap (#169) ────────────────────────────────────────
+
+    async _loadModelSelectionHeatmapSection() {
+        this._setSectionLoading('model_selection_heatmap');
+        try {
+            const data = await this.api.getModelSelectionHeatmap(this._baseParams());
+            const rows = data.rows || [];
+            if (!rows.length) {
+                this._setSectionBody('model_selection_heatmap', '<div class="empty-state-hint">No model selection data in this window. Requires LLM spans with scope and model attributes.</div>');
+                this.loadedSections.add('model_selection_heatmap');
+                return;
+            }
+            this._setSectionBody('model_selection_heatmap', this._buildModelSelectionHeatmap(rows, data.roles || [], data.tools || []));
+            this.loadedSections.add('model_selection_heatmap');
+        } catch (err) {
+            this._setSectionError('model_selection_heatmap', err);
+        }
+    }
+
+    _buildModelSelectionHeatmap(rows, roles, tools) {
+        const fmt = n => Number(n || 0).toLocaleString();
+        // Group by role for display
+        const byRole = {};
+        for (const r of rows) {
+            if (!byRole[r.role]) byRole[r.role] = [];
+            byRole[r.role].push(r);
+        }
+        const sections = Object.entries(byRole).map(([role, roleRows]) => {
+            const tableRows = roleRows.map(r => `<tr>
+                <td>${this._esc(r.tool)}</td>
+                <td>${this._esc(r.model)}</td>
+                <td class="num">${fmt(r.requests)}</td>
+                <td class="num">${fmt(r.output_tokens)}</td>
+                <td class="num">${(r.token_share_pct || 0).toFixed(1)}%</td>
+            </tr>`).join('');
+            return `
+                <h4>Role: ${this._esc(role)}</h4>
+                <div class="table-scroll-x"><table class="data-table">
+                    <thead><tr>
+                        <th>Tool</th><th>Model</th><th>Requests</th><th>Output tokens</th><th>Token share %</th>
+                    </tr></thead>
+                    <tbody>${tableRows}</tbody>
+                </table></div>`;
+        }).join('');
+        return `
+            <h3>Model selection by role and tool</h3>
+            <p class="table-hint">For each agent role (from <code>llm_request.context</code>) and tool harness, which model was selected and what share of output tokens it produced. Helps identify whether sub-agents are routing to different models than the orchestrator.</p>
+            ${sections}`;
     }
 }
 
