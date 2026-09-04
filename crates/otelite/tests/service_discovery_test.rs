@@ -472,27 +472,36 @@ fn test_serve_writes_rotating_log_file() {
         .unwrap();
 
     wait_for_port(dashboard_port, Instant::now() + Duration::from_secs(15));
-    // Give the non-blocking appender a moment to flush the startup lines.
-    std::thread::sleep(Duration::from_secs(1));
 
-    // The rotating appender names its file otelite.log.YYYY-MM-DD.
-    let rotated = std::fs::read_dir(&data_dir)
-        .expect("data dir exists")
-        .filter_map(|e| e.ok())
-        .map(|e| e.file_name())
-        .find(|name| name.to_string_lossy().starts_with("otelite.log."));
-    assert!(
-        rotated.is_some(),
-        "expected a dated otelite.log.* file; data dir contents: {:?}",
-        std::fs::read_dir(&data_dir)
-            .map(|d| d.map(|e| e.unwrap().file_name()).collect::<Vec<_>>())
-            .unwrap_or_default()
-    );
-    let rotated_path = data_dir.join(rotated.unwrap());
-    assert!(
-        std::fs::metadata(&rotated_path).unwrap().len() > 0,
-        "the startup log lines must have been flushed"
-    );
+    // The rotating appender names its file otelite.log.YYYY-MM-DD. The
+    // non-blocking writer flushes from a background thread, so poll for a
+    // dated file with content instead of assuming a fixed delay — a 1-second
+    // sleep was not enough in the Nix build sandbox (observed 2026-09-04).
+    let deadline = Instant::now() + Duration::from_secs(15);
+    loop {
+        let ready = std::fs::read_dir(&data_dir)
+            .expect("data dir exists")
+            .filter_map(|e| e.ok())
+            .map(|e| e.file_name())
+            .find(|name| name.to_string_lossy().starts_with("otelite.log."))
+            .map(|name| {
+                std::fs::metadata(data_dir.join(name))
+                    .map(|m| m.len() > 0)
+                    .unwrap_or(false)
+            })
+            .unwrap_or(false);
+        if ready {
+            break;
+        }
+        assert!(
+            Instant::now() < deadline,
+            "expected a dated otelite.log.* file with flushed startup lines; data dir contents: {:?}",
+            std::fs::read_dir(&data_dir)
+                .map(|d| d.map(|e| e.unwrap().file_name()).collect::<Vec<_>>())
+                .unwrap_or_default()
+        );
+        std::thread::sleep(Duration::from_millis(200));
+    }
 
     nix::sys::signal::kill(
         Pid::from_raw(child.id() as i32),
