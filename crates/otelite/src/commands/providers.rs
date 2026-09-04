@@ -3,8 +3,9 @@
 
 use crate::commands::usage::{fetch_pricing, parse_time_range};
 use crate::error::{Error, Result};
+use crate::output::pretty::fit_to_terminal;
 use clap::Args;
-use comfy_table::{presets::UTF8_FULL, ContentArrangement, Table};
+use comfy_table::{presets::UTF8_FULL, Table};
 use otelite_core::api::ProviderMixResponse;
 use otelite_core::pricing::TokenUsage;
 use otelite_storage::StorageBackend;
@@ -115,13 +116,11 @@ fn display_provider_mix(response: &ProviderMixResponse, pricing_source: &str) {
     }
 
     let mut table = Table::new();
-    table
-        .load_preset(UTF8_FULL)
-        .set_content_arrangement(ContentArrangement::Dynamic)
-        .set_header(vec![
-            "provider", "model", "tokens", "in", "out", "cache rd", "cache wr", "reason",
-            "sessions", "cost", "share",
-        ]);
+    fit_to_terminal(&mut table);
+    table.load_preset(UTF8_FULL).set_header(vec![
+        "provider", "model", "tokens", "in", "out", "cache rd", "cache wr", "reason", "sessions",
+        "cost", "share",
+    ]);
 
     for provider in &response.providers {
         for (i, m) in provider.models.iter().enumerate() {

@@ -25,6 +25,7 @@ path = "src/lib.rs"
 [dependencies]
 clap = { workspace = true, features = ["env"] }
 comfy-table = "7.1"
+crossterm = "0.29"
 minus = { version = "5.6", features = ["static_output", "search"] }
 terminal_size = "0.4"
 reqwest = { workspace = true }

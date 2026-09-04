@@ -2159,6 +2159,7 @@ dependencies = [
  "chrono-tz",
  "clap",
  "comfy-table",
+ "crossterm 0.29.0",
  "csv",
  "minus",
  "mockito",

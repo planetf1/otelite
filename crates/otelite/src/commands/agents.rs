@@ -3,8 +3,9 @@
 
 use crate::commands::usage::{fetch_pricing, parse_time_range};
 use crate::error::{Error, Result};
+use crate::output::pretty::fit_to_terminal;
 use clap::Args;
-use comfy_table::{presets::UTF8_FULL, ContentArrangement, Table};
+use comfy_table::{presets::UTF8_FULL, Table};
 use otelite_core::api::AgentRollupResponse;
 use otelite_storage::StorageBackend;
 use std::sync::Arc;
@@ -93,17 +94,15 @@ fn display_agents(response: &AgentRollupResponse) {
 
     println!("\nAgents:\n");
     let mut table = Table::new();
-    table
-        .load_preset(UTF8_FULL)
-        .set_content_arrangement(ContentArrangement::Dynamic)
-        .set_header(vec![
-            "agent",
-            "sessions",
-            "cost",
-            "tokens",
-            "tool calls",
-            "retries",
-        ]);
+    table.load_preset(UTF8_FULL).set_header(vec![
+        "agent",
+        "sessions",
+        "cost",
+        "tokens",
+        "tool calls",
+        "retries",
+    ]);
+    fit_to_terminal(&mut table);
     for a in &response.agents {
         table.add_row(vec![
             a.agent.clone(),

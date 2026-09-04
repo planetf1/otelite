@@ -3,8 +3,9 @@
 
 use crate::commands::usage::{fetch_pricing, parse_time_range, validate_since};
 use crate::error::{Error, Result};
+use crate::output::pretty::fit_to_terminal;
 use clap::{Args, Subcommand};
-use comfy_table::{presets::UTF8_FULL, ContentArrangement, Table};
+use comfy_table::{presets::UTF8_FULL, Table};
 use otelite_core::session_cost;
 use otelite_storage::StorageBackend;
 use std::sync::Arc;
@@ -167,9 +168,8 @@ fn display_context(resp: &otelite_core::api::SessionContextResponse) {
         resp.spans_total
     );
     let mut table = Table::new();
-    table
-        .load_preset(UTF8_FULL)
-        .set_content_arrangement(ContentArrangement::Dynamic);
+    table.load_preset(UTF8_FULL);
+    fit_to_terminal(&mut table);
     table.set_header(vec!["time", "span", "model", "duration"]);
     for span in &resp.spans {
         table.add_row(vec![
@@ -182,9 +182,8 @@ fn display_context(resp: &otelite_core::api::SessionContextResponse) {
     println!("{table}");
     println!("\nLogs ({} shown of {}):", resp.logs.len(), resp.logs_total);
     let mut table = Table::new();
-    table
-        .load_preset(UTF8_FULL)
-        .set_content_arrangement(ContentArrangement::Dynamic);
+    table.load_preset(UTF8_FULL);
+    fit_to_terminal(&mut table);
     table.set_header(vec!["time", "severity", "body"]);
     for log in &resp.logs {
         table.add_row(vec![
@@ -197,9 +196,8 @@ fn display_context(resp: &otelite_core::api::SessionContextResponse) {
     if !resp.metrics.is_empty() {
         println!("\nMetrics (aggregated):");
         let mut table = Table::new();
-        table
-            .load_preset(UTF8_FULL)
-            .set_content_arrangement(ContentArrangement::Dynamic);
+        table.load_preset(UTF8_FULL);
+        fit_to_terminal(&mut table);
         table.set_header(vec!["name", "type", "count", "sum", "min", "max"]);
         for m in &resp.metrics {
             table.add_row(vec![
@@ -285,12 +283,10 @@ fn display_costs(response: &otelite_core::api::SessionCostResponse) {
 
     println!("\nSessions by cost ({}):\n", response.anomaly_rule);
     let mut table = Table::new();
-    table
-        .load_preset(UTF8_FULL)
-        .set_content_arrangement(ContentArrangement::Dynamic)
-        .set_header(vec![
-            "session", "agent", "cost", "tokens", "duration", "anomaly",
-        ]);
+    table.load_preset(UTF8_FULL).set_header(vec![
+        "session", "agent", "cost", "tokens", "duration", "anomaly",
+    ]);
+    fit_to_terminal(&mut table);
     for s in &response.sessions {
         table.add_row(vec![
             s.session_id.clone(),

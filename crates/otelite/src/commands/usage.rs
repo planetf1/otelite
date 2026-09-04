@@ -1,8 +1,9 @@
 //! Token usage command for GenAI/LLM spans
 
 use crate::error::{Error, Result};
+use crate::output::pretty::fit_to_terminal;
 use clap::Args;
-use comfy_table::{presets::UTF8_FULL, Cell, Color, ContentArrangement, Table};
+use comfy_table::{presets::UTF8_FULL, Cell, Color, Table};
 use otelite_core::filters::GenAiFilters;
 use otelite_core::pricing::{PricingDatabase, TokenUsage};
 use otelite_storage::StorageBackend;
@@ -1555,9 +1556,8 @@ fn format_header(range: &str, start: Option<&str>, end: Option<&str>) -> String 
 
 fn display_summary(summary: &otelite_core::api::TokenUsageSummary) {
     let mut table = Table::new();
-    table
-        .load_preset(UTF8_FULL)
-        .set_content_arrangement(ContentArrangement::Dynamic);
+    fit_to_terminal(&mut table);
+    table.load_preset(UTF8_FULL);
 
     table.set_header(vec![
         Cell::new("Metric").fg(Color::Cyan),
@@ -1601,9 +1601,8 @@ fn display_by_model(models: &[ModelRow]) {
     }
 
     let mut table = Table::new();
-    table
-        .load_preset(UTF8_FULL)
-        .set_content_arrangement(ContentArrangement::Dynamic);
+    fit_to_terminal(&mut table);
+    table.load_preset(UTF8_FULL);
 
     // Rerouting columns are only meaningful when some identity shows them.
     let show_rerouting = models
@@ -1660,9 +1659,8 @@ fn display_by_system(systems: &[SystemRow]) {
     }
 
     let mut table = Table::new();
-    table
-        .load_preset(UTF8_FULL)
-        .set_content_arrangement(ContentArrangement::Dynamic);
+    fit_to_terminal(&mut table);
+    table.load_preset(UTF8_FULL);
 
     table.set_header(vec![
         Cell::new("System").fg(Color::Cyan),
@@ -1696,9 +1694,8 @@ fn display_top_spans(spans: &[otelite_core::api::TopSpan], n: usize) {
     }
 
     let mut table = Table::new();
-    table
-        .load_preset(UTF8_FULL)
-        .set_content_arrangement(ContentArrangement::Dynamic);
+    fit_to_terminal(&mut table);
+    table.load_preset(UTF8_FULL);
 
     table.set_header(vec![
         Cell::new("#").fg(Color::Cyan),
@@ -1738,9 +1735,8 @@ fn display_by_session(rows: &[SessionRow]) {
     }
 
     let mut table = Table::new();
-    table
-        .load_preset(UTF8_FULL)
-        .set_content_arrangement(ContentArrangement::Dynamic);
+    fit_to_terminal(&mut table);
+    table.load_preset(UTF8_FULL);
 
     table.set_header(vec![
         Cell::new("Session ID").fg(Color::Cyan),
@@ -1800,9 +1796,8 @@ fn display_latency_stats(stats: &[otelite_core::api::LatencyStats]) {
     }
 
     let mut table = Table::new();
-    table
-        .load_preset(UTF8_FULL)
-        .set_content_arrangement(ContentArrangement::Dynamic);
+    fit_to_terminal(&mut table);
+    table.load_preset(UTF8_FULL);
 
     table.set_header(vec![
         Cell::new("Model").fg(Color::Cyan),
@@ -1907,9 +1902,8 @@ fn display_latency_series(
     }
 
     let mut table = Table::new();
-    table
-        .load_preset(UTF8_FULL)
-        .set_content_arrangement(ContentArrangement::Dynamic);
+    fit_to_terminal(&mut table);
+    table.load_preset(UTF8_FULL);
 
     let mut header: Vec<Cell> = vec![
         Cell::new("Bucket").fg(Color::Cyan),
@@ -1998,9 +1992,8 @@ fn display_latency_context(bins: &[otelite_core::api::LatencyByContextBin]) {
     }
 
     let mut table = Table::new();
-    table
-        .load_preset(UTF8_FULL)
-        .set_content_arrangement(ContentArrangement::Dynamic);
+    fit_to_terminal(&mut table);
+    table.load_preset(UTF8_FULL);
 
     table.set_header(vec![
         Cell::new("Context Bin").fg(Color::Cyan),
@@ -2088,9 +2081,8 @@ fn display_latency_percentiles<'a>(
                 continue;
             }
             let mut table = Table::new();
-            table
-                .load_preset(UTF8_FULL)
-                .set_content_arrangement(ContentArrangement::Dynamic);
+            fit_to_terminal(&mut table);
+            table.load_preset(UTF8_FULL);
             table.set_header(vec![
                 Cell::new("Bucket").fg(Color::Cyan),
                 Cell::new("Model").fg(Color::Cyan),
@@ -2151,9 +2143,8 @@ fn display_truncation_rate(rows: &[otelite_core::api::TruncationRateByModel]) {
     }
 
     let mut table = Table::new();
-    table
-        .load_preset(UTF8_FULL)
-        .set_content_arrangement(ContentArrangement::Dynamic);
+    fit_to_terminal(&mut table);
+    table.load_preset(UTF8_FULL);
 
     table.set_header(vec![
         Cell::new("Model").fg(Color::Cyan),
@@ -2192,9 +2183,8 @@ fn display_cache_hit_rate(rows: &[otelite_core::api::CacheHitRateByModel]) {
     }
 
     let mut table = Table::new();
-    table
-        .load_preset(UTF8_FULL)
-        .set_content_arrangement(ContentArrangement::Dynamic);
+    fit_to_terminal(&mut table);
+    table.load_preset(UTF8_FULL);
 
     table.set_header(vec![
         Cell::new("Model").fg(Color::Cyan),
@@ -2230,9 +2220,8 @@ fn display_cache_hit_rate(rows: &[otelite_core::api::CacheHitRateByModel]) {
 fn display_request_params(profile: &otelite_core::api::RequestParamProfile) {
     if !profile.temperature_buckets.is_empty() {
         let mut table = Table::new();
-        table
-            .load_preset(UTF8_FULL)
-            .set_content_arrangement(ContentArrangement::Dynamic);
+        fit_to_terminal(&mut table);
+        table.load_preset(UTF8_FULL);
 
         table.set_header(vec![
             Cell::new("Temperature").fg(Color::Cyan),
@@ -2250,9 +2239,8 @@ fn display_request_params(profile: &otelite_core::api::RequestParamProfile) {
 
     if !profile.max_tokens_buckets.is_empty() {
         let mut table = Table::new();
-        table
-            .load_preset(UTF8_FULL)
-            .set_content_arrangement(ContentArrangement::Dynamic);
+        fit_to_terminal(&mut table);
+        table.load_preset(UTF8_FULL);
 
         table.set_header(vec![
             Cell::new("max_tokens").fg(Color::Cyan),
@@ -2276,9 +2264,8 @@ fn display_conv_depth(depth: &otelite_core::api::ConversationDepthStats) {
     }
 
     let mut table = Table::new();
-    table
-        .load_preset(UTF8_FULL)
-        .set_content_arrangement(ContentArrangement::Dynamic);
+    fit_to_terminal(&mut table);
+    table.load_preset(UTF8_FULL);
 
     table.set_header(vec![
         Cell::new("Metric").fg(Color::Cyan),
@@ -2305,9 +2292,8 @@ fn display_tool_usage(rows: &[otelite_core::api::ToolUsage]) {
     }
 
     let mut table = Table::new();
-    table
-        .load_preset(UTF8_FULL)
-        .set_content_arrangement(ContentArrangement::Dynamic);
+    fit_to_terminal(&mut table);
+    table.load_preset(UTF8_FULL);
 
     table.set_header(vec![
         Cell::new("Tool").fg(Color::Cyan),
@@ -2350,9 +2336,8 @@ fn display_error_types(rows: &[otelite_core::api::ErrorTypeBreakdown]) {
     }
 
     let mut table = Table::new();
-    table
-        .load_preset(UTF8_FULL)
-        .set_content_arrangement(ContentArrangement::Dynamic);
+    fit_to_terminal(&mut table);
+    table.load_preset(UTF8_FULL);
 
     table.set_header(vec![
         Cell::new("Bucket").fg(Color::Red),
@@ -2383,9 +2368,8 @@ fn display_model_drift(rows: &[otelite_core::api::ModelDriftPair]) {
     }
 
     let mut table = Table::new();
-    table
-        .load_preset(UTF8_FULL)
-        .set_content_arrangement(ContentArrangement::Dynamic);
+    fit_to_terminal(&mut table);
+    table.load_preset(UTF8_FULL);
 
     table.set_header(vec![
         Cell::new("Requested Model").fg(Color::Cyan),
@@ -2417,9 +2401,8 @@ fn display_tool_approvals(stats: &otelite_core::api::ToolApprovalStats) {
     let reject_pct = stats.rejected as f64 / total as f64 * 100.0;
 
     let mut table = Table::new();
-    table
-        .load_preset(UTF8_FULL)
-        .set_content_arrangement(ContentArrangement::Dynamic);
+    fit_to_terminal(&mut table);
+    table.load_preset(UTF8_FULL);
     table.set_header(vec![
         Cell::new("Decision").fg(Color::Cyan),
         Cell::new("Count").fg(Color::Cyan),
@@ -2450,8 +2433,8 @@ fn display_tool_approvals(stats: &otelite_core::api::ToolApprovalStats) {
 
     if !stats.top_rejected.is_empty() {
         let mut t2 = Table::new();
-        t2.load_preset(UTF8_FULL)
-            .set_content_arrangement(ContentArrangement::Dynamic);
+        fit_to_terminal(&mut t2);
+        t2.load_preset(UTF8_FULL);
         t2.set_header(vec![
             Cell::new("Tool").fg(Color::Cyan),
             Cell::new("Rejections").fg(Color::Cyan),
@@ -2471,9 +2454,8 @@ fn display_stop_reasons(rows: &[otelite_core::api::StopReasonCount]) {
     }
     let total: usize = rows.iter().map(|r| r.count).sum();
     let mut table = Table::new();
-    table
-        .load_preset(UTF8_FULL)
-        .set_content_arrangement(ContentArrangement::Dynamic);
+    fit_to_terminal(&mut table);
+    table.load_preset(UTF8_FULL);
     table.set_header(vec![
         Cell::new("Reason").fg(Color::Cyan),
         Cell::new("Count").fg(Color::Cyan),
@@ -2501,9 +2483,8 @@ fn display_context_split(rows: &[otelite_core::api::ContextTypeSplit]) {
         return;
     }
     let mut table = Table::new();
-    table
-        .load_preset(UTF8_FULL)
-        .set_content_arrangement(ContentArrangement::Dynamic);
+    fit_to_terminal(&mut table);
+    table.load_preset(UTF8_FULL);
     table.set_header(vec![
         Cell::new("Context").fg(Color::Cyan),
         Cell::new("Calls").fg(Color::Cyan),
@@ -2535,9 +2516,8 @@ fn display_tool_errors(rows: &[otelite_core::api::ToolErrorEntry]) {
         return;
     }
     let mut table = Table::new();
-    table
-        .load_preset(UTF8_FULL)
-        .set_content_arrangement(ContentArrangement::Dynamic);
+    fit_to_terminal(&mut table);
+    table.load_preset(UTF8_FULL);
     table.set_header(vec![
         Cell::new("Tool").fg(Color::Cyan),
         Cell::new("Error (truncated)").fg(Color::Cyan),
@@ -2559,9 +2539,8 @@ fn display_hour_of_day(buckets: &[otelite_core::api::HourOfDayBucket]) {
         .unwrap_or(1)
         .max(1);
     let mut table = Table::new();
-    table
-        .load_preset(UTF8_FULL)
-        .set_content_arrangement(ContentArrangement::Dynamic);
+    fit_to_terminal(&mut table);
+    table.load_preset(UTF8_FULL);
     table.set_header(vec![
         Cell::new("Hour (UTC)").fg(Color::Cyan),
         Cell::new("LLM calls").fg(Color::Cyan),
@@ -2588,9 +2567,8 @@ fn display_agent_roles(response: &otelite_core::api::AgentRolesResponse) {
         return;
     }
     let mut table = Table::new();
-    table
-        .load_preset(UTF8_FULL)
-        .set_content_arrangement(ContentArrangement::Dynamic);
+    fit_to_terminal(&mut table);
+    table.load_preset(UTF8_FULL);
     table.set_header(vec![
         Cell::new("Role").fg(Color::Cyan),
         Cell::new("Sessions").fg(Color::Cyan),
@@ -2657,9 +2635,8 @@ fn display_calls_series(points: &[otelite_core::api::CallsSeriesPoint]) {
     }
 
     let mut table = Table::new();
-    table
-        .load_preset(UTF8_FULL)
-        .set_content_arrangement(ContentArrangement::Dynamic);
+    fit_to_terminal(&mut table);
+    table.load_preset(UTF8_FULL);
 
     table.set_header(vec![
         Cell::new("Bucket").fg(Color::Cyan),
@@ -2685,9 +2662,8 @@ fn display_session_models(breakdown: &otelite_core::api::SessionModelBreakdown) 
         return;
     }
     let mut table = Table::new();
-    table
-        .load_preset(UTF8_FULL)
-        .set_content_arrangement(ContentArrangement::Dynamic);
+    fit_to_terminal(&mut table);
+    table.load_preset(UTF8_FULL);
     table.set_header(vec![
         Cell::new("Session ID").fg(Color::Cyan),
         Cell::new("Model").fg(Color::Cyan),
@@ -2716,9 +2692,8 @@ fn display_speed_distribution(dist: &otelite_core::api::SpeedDistribution) {
         return;
     }
     let mut table = Table::new();
-    table
-        .load_preset(UTF8_FULL)
-        .set_content_arrangement(ContentArrangement::Dynamic);
+    fit_to_terminal(&mut table);
+    table.load_preset(UTF8_FULL);
     table.set_header(vec![
         Cell::new("Speed / mode").fg(Color::Cyan),
         Cell::new("Model").fg(Color::Cyan),
@@ -2745,9 +2720,8 @@ fn display_effort_breakdown(resp: &otelite_core::api::EffortBreakdownResponse) {
         return;
     }
     let mut table = Table::new();
-    table
-        .load_preset(UTF8_FULL)
-        .set_content_arrangement(ContentArrangement::Dynamic);
+    fit_to_terminal(&mut table);
+    table.load_preset(UTF8_FULL);
     table.set_header(vec![
         Cell::new("Effort").fg(Color::Cyan),
         Cell::new("Model").fg(Color::Cyan),
@@ -2785,9 +2759,8 @@ fn display_efficiency(stats: &otelite_core::api::EfficiencyStats) {
     }
     if !stats.by_agent.is_empty() {
         let mut table = Table::new();
-        table
-            .load_preset(UTF8_FULL)
-            .set_content_arrangement(ContentArrangement::Dynamic);
+        fit_to_terminal(&mut table);
+        table.load_preset(UTF8_FULL);
         table.set_header(vec![
             Cell::new("Agent").fg(Color::Cyan),
             Cell::new("Tokens").fg(Color::Cyan),
@@ -2815,9 +2788,8 @@ fn display_reasoning_share(resp: &otelite_core::api::ReasoningShareResponse) {
     }
     if !resp.models.is_empty() {
         let mut table = Table::new();
-        table
-            .load_preset(UTF8_FULL)
-            .set_content_arrangement(ContentArrangement::Dynamic);
+        fit_to_terminal(&mut table);
+        table.load_preset(UTF8_FULL);
         table.set_header(vec![
             Cell::new("Model").fg(Color::Cyan),
             Cell::new("Reasoning tok").fg(Color::Cyan),
@@ -2843,9 +2815,8 @@ fn display_reasoning_share(resp: &otelite_core::api::ReasoningShareResponse) {
     }
     if !resp.effort.is_empty() {
         let mut table = Table::new();
-        table
-            .load_preset(UTF8_FULL)
-            .set_content_arrangement(ContentArrangement::Dynamic);
+        fit_to_terminal(&mut table);
+        table.load_preset(UTF8_FULL);
         table.set_header(vec![
             Cell::new("Effort level").fg(Color::Cyan),
             Cell::new("Reasoning tok").fg(Color::Cyan),
@@ -2875,9 +2846,8 @@ fn display_guardian(resp: &otelite_core::api::GuardianStatsResponse) {
     );
     {
         let mut table = Table::new();
-        table
-            .load_preset(UTF8_FULL)
-            .set_content_arrangement(ContentArrangement::Dynamic);
+        fit_to_terminal(&mut table);
+        table.load_preset(UTF8_FULL);
         table.set_header(vec![
             Cell::new("Risk level").fg(Color::Cyan),
             Cell::new("Count").fg(Color::Cyan),
@@ -2894,9 +2864,8 @@ fn display_guardian(resp: &otelite_core::api::GuardianStatsResponse) {
     }
     if !resp.by_action.is_empty() {
         let mut table = Table::new();
-        table
-            .load_preset(UTF8_FULL)
-            .set_content_arrangement(ContentArrangement::Dynamic);
+        fit_to_terminal(&mut table);
+        table.load_preset(UTF8_FULL);
         table.set_header(vec![
             Cell::new("Action").fg(Color::Cyan),
             Cell::new("Count").fg(Color::Cyan),
@@ -2925,9 +2894,8 @@ fn display_multi_agent(resp: &otelite_core::api::MultiAgentStatsResponse) {
     );
     if !resp.roles.is_empty() {
         let mut table = Table::new();
-        table
-            .load_preset(UTF8_FULL)
-            .set_content_arrangement(ContentArrangement::Dynamic);
+        fit_to_terminal(&mut table);
+        table.load_preset(UTF8_FULL);
         table.set_header(vec![
             Cell::new("Role").fg(Color::Cyan),
             Cell::new("Spawns").fg(Color::Cyan),
@@ -2952,9 +2920,8 @@ fn display_codex_ttft(resp: &otelite_core::api::CodexTtftResponse) {
         return;
     }
     let mut table = Table::new();
-    table
-        .load_preset(UTF8_FULL)
-        .set_content_arrangement(ContentArrangement::Dynamic);
+    fit_to_terminal(&mut table);
+    table.load_preset(UTF8_FULL);
     table.set_header(vec![
         Cell::new("Model").fg(Color::Cyan),
         Cell::new("Count").fg(Color::Cyan),
@@ -2985,9 +2952,8 @@ fn display_codex_turns(resp: &otelite_core::api::CodexTurnBreakdownResponse) {
         return;
     }
     let mut table = Table::new();
-    table
-        .load_preset(UTF8_FULL)
-        .set_content_arrangement(ContentArrangement::Dynamic);
+    fit_to_terminal(&mut table);
+    table.load_preset(UTF8_FULL);
     table.set_header(vec![
         Cell::new("Model").fg(Color::Cyan),
         Cell::new("Project").fg(Color::Cyan),
@@ -3018,9 +2984,8 @@ fn display_cross_tool_ttft(resp: &otelite_core::api::CrossToolTtftResponse) {
         return;
     }
     let mut table = Table::new();
-    table
-        .load_preset(UTF8_FULL)
-        .set_content_arrangement(ContentArrangement::Dynamic);
+    fit_to_terminal(&mut table);
+    table.load_preset(UTF8_FULL);
     table.set_header(vec![
         Cell::new("Tool").fg(Color::Cyan),
         Cell::new("Model").fg(Color::Cyan),
@@ -3077,9 +3042,8 @@ fn display_hook_overhead(resp: &otelite_core::api::HookOverheadResponse) {
         resp.grand_total_ms / 1000.0,
     );
     let mut table = Table::new();
-    table
-        .load_preset(UTF8_FULL)
-        .set_content_arrangement(ContentArrangement::Dynamic);
+    fit_to_terminal(&mut table);
+    table.load_preset(UTF8_FULL);
     table.set_header(vec![
         Cell::new("Hook event").fg(Color::Cyan),
         Cell::new("Invocations").fg(Color::Cyan),
@@ -3103,9 +3067,8 @@ fn display_tool_failure_rates(resp: &otelite_core::api::ToolFailureRatesResponse
         return;
     }
     let mut table = Table::new();
-    table
-        .load_preset(UTF8_FULL)
-        .set_content_arrangement(ContentArrangement::Dynamic);
+    fit_to_terminal(&mut table);
+    table.load_preset(UTF8_FULL);
     table.set_header(vec![
         Cell::new("Tool").fg(Color::Cyan),
         Cell::new("Total").fg(Color::Cyan),
@@ -3151,9 +3114,8 @@ fn display_daily_tool_mix(resp: &otelite_core::api::DailyToolMixResponse) {
         header.push(Cell::new(t.as_str()).fg(Color::Cyan));
     }
     let mut table = Table::new();
-    table
-        .load_preset(UTF8_FULL)
-        .set_content_arrangement(ContentArrangement::Dynamic);
+    fit_to_terminal(&mut table);
+    table.load_preset(UTF8_FULL);
     table.set_header(header);
     for (day, by_tool) in &pivot {
         let total: u64 = by_tool.values().sum();
@@ -3178,9 +3140,8 @@ fn display_skill_activity(resp: &otelite_core::api::SkillActivityResponse) {
         return;
     }
     let mut table = Table::new();
-    table
-        .load_preset(UTF8_FULL)
-        .set_content_arrangement(ContentArrangement::Dynamic);
+    fit_to_terminal(&mut table);
+    table.load_preset(UTF8_FULL);
     table.set_header(vec![
         Cell::new("Skill").fg(Color::Cyan),
         Cell::new("Invoke type").fg(Color::Cyan),
@@ -3220,9 +3181,8 @@ fn display_session_quality(resp: &otelite_core::api::SessionQualitySummary) {
         }
     };
     let mut table = Table::new();
-    table
-        .load_preset(UTF8_FULL)
-        .set_content_arrangement(ContentArrangement::Dynamic);
+    fit_to_terminal(&mut table);
+    table.load_preset(UTF8_FULL);
     table.set_header(vec![
         Cell::new("Grade").fg(Color::Cyan),
         Cell::new("Sessions").fg(Color::Cyan),
@@ -3258,9 +3218,8 @@ fn display_skill_outcomes(resp: &otelite_core::api::SkillOutcomesResponse) {
         return;
     }
     let mut table = Table::new();
-    table
-        .load_preset(UTF8_FULL)
-        .set_content_arrangement(ContentArrangement::Dynamic);
+    fit_to_terminal(&mut table);
+    table.load_preset(UTF8_FULL);
     table.set_header(vec![
         Cell::new("Skill").fg(Color::Cyan),
         Cell::new("Sessions with").fg(Color::Cyan),
@@ -3293,9 +3252,8 @@ fn display_model_selection_heatmap(resp: &otelite_core::api::ModelSelectionHeatm
         return;
     }
     let mut table = Table::new();
-    table
-        .load_preset(UTF8_FULL)
-        .set_content_arrangement(ContentArrangement::Dynamic);
+    fit_to_terminal(&mut table);
+    table.load_preset(UTF8_FULL);
     table.set_header(vec![
         Cell::new("Role").fg(Color::Cyan),
         Cell::new("Tool").fg(Color::Cyan),
@@ -3324,9 +3282,8 @@ fn display_recent_errors(resp: &otelite_core::api::RecentErrorsResponse) {
         return;
     }
     let mut table = Table::new();
-    table
-        .load_preset(UTF8_FULL)
-        .set_content_arrangement(ContentArrangement::Dynamic);
+    fit_to_terminal(&mut table);
+    table.load_preset(UTF8_FULL);
     table.set_header(vec![
         Cell::new("Tool").fg(Color::Cyan),
         Cell::new("Time").fg(Color::Cyan),
