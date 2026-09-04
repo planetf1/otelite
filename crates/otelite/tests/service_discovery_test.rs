@@ -2,25 +2,17 @@
 //! file, which only `otelite start` writes. A service-managed or hand-run
 //! `serve` (no PID file) is discovered through its TCP listener instead.
 //!
-//! `serve` always owns OTLP port 4317, so the spawn-and-discover half only
-//! runs when 4317 is free (CI). When a real daemon holds 4317 — the common
-//! dev-machine state — the daemon itself is a no-PID-file listener (the
-//! launchd/service path never writes one), so discovery against it is
-//! asserted directly.
+//! The throwaway daemons run on ephemeral OTLP ports (via
+//! OTELITE_OTLP_GRPC_PORT / OTELITE_OTLP_HTTP_PORT), not the standard
+//! 4317/4318: nextest runs integration test binaries in parallel, so a
+//! sibling binary — or a real daemon on a dev machine — holding the
+//! standard ports would make a default-port `serve` die on its second bind
+//! and race the discovery assertions (observed CI failures 2026-09-04).
 
 use std::net::{TcpListener, TcpStream};
 use std::time::{Duration, Instant};
 
 use nix::unistd::Pid;
-
-/// Tests that spawn a throwaway `serve` on the standard OTLP port 4317 must
-/// not run concurrently: each probes 4317 first and spawns when it is free,
-/// so two racers can both spawn — one binds 4317 and the other test's
-/// `lsof` discovery then attributes the port to the *wrong* PID (observed CI
-/// failure 2026-09-04: assert_eq found-pid vs own-pid in the Coverage job,
-/// where `cargo test --tests` runs this file's tests in parallel threads).
-/// Hold this guard for the whole test, including spawn and teardown.
-static OTLP_PORT_MUTEX: std::sync::Mutex<()> = std::sync::Mutex::new(());
 
 fn wait_for_port(port: u16, deadline: Instant) {
     loop {
@@ -56,44 +48,33 @@ fn wait_for_otelite_attribution(port: u16, deadline: Instant) {
 
 #[test]
 fn test_discovery_finds_serve_without_pid_file() {
-    let _port_guard = OTLP_PORT_MUTEX.lock().unwrap_or_else(|e| e.into_inner());
-
-    // Probe 4317: if something owns it, a daemon (or another test) is
-    // already in the no-PID-file state and the regression is asserted
-    // against it below. Otherwise we can spawn a throwaway serve.
-    let probe = TcpStream::connect((std::net::IpAddr::from([127, 0, 0, 1]), 4317));
-    if probe.is_ok() {
-        let found = otelite::commands::service::local_otelite_pid(4317)
-            .unwrap()
-            .expect("a listening daemon on 4317 must be discovered");
-        assert!(
-            nix::sys::signal::kill(Pid::from_raw(found as i32), None).is_ok(),
-            "discovered PID must be alive"
-        );
-        return;
-    }
-
     let temp = tempfile::TempDir::new().unwrap();
     let data_dir = temp.path().join("data");
     let storage = data_dir.join("otelite.db");
     let pid_file = data_dir.join("otelite.pid");
 
+    let dashboard_port = free_port();
+    let grpc_port = free_port();
+    let http_port = free_port();
+
     let mut child = std::process::Command::new(env!("CARGO_BIN_EXE_otelite"))
         .args([
             "serve",
             "--addr",
-            "127.0.0.1:13999",
+            &format!("127.0.0.1:{dashboard_port}"),
             "--storage-path",
             &storage.to_string_lossy(),
         ])
         .env("OTELITE_DATA_DIR", data_dir.as_os_str())
+        .env("OTELITE_OTLP_GRPC_PORT", grpc_port.to_string())
+        .env("OTELITE_OTLP_HTTP_PORT", http_port.to_string())
         .stdout(std::process::Stdio::null())
         .stderr(std::process::Stdio::null())
         .spawn()
         .unwrap();
     let pid = child.id();
 
-    wait_for_port(4317, Instant::now() + Duration::from_secs(15));
+    wait_for_port(grpc_port, Instant::now() + Duration::from_secs(15));
 
     // The regression itself: no PID file, yet the listener is discovered
     // and the PID matches the serve process.
@@ -101,7 +82,7 @@ fn test_discovery_finds_serve_without_pid_file() {
         !pid_file.exists(),
         "serve must not write a PID file (premise of #107)"
     );
-    let found = otelite::commands::service::local_otelite_pid(4317)
+    let found = otelite::commands::service::local_otelite_pid(grpc_port)
         .unwrap()
         .expect("listener discovery must find the serve process");
     assert_eq!(found, pid, "discovered PID must be the serve process");
@@ -112,14 +93,28 @@ fn test_discovery_finds_serve_without_pid_file() {
     let status_out = std::process::Command::new(env!("CARGO_BIN_EXE_otelite"))
         .arg("status")
         .env("OTELITE_DATA_DIR", data_dir.as_os_str())
+        .env("OTELITE_OTLP_GRPC_PORT", grpc_port.to_string())
+        .env("OTELITE_OTLP_HTTP_PORT", http_port.to_string())
         .output()
         .unwrap();
+    let status_text = String::from_utf8_lossy(&status_out.stdout);
+
+    // On a dev machine with a launchd-managed daemon, `status` reports
+    // that daemon first — intended product behaviour, and `stop` would
+    // then signal the *real* daemon. The discovery regression is already
+    // asserted directly above; only run the e2e half where `status`
+    // reports the throwaway (i.e. CI, no launchd daemon).
+    if status_text.contains("Running (launchd") {
+        let _ = child.kill();
+        let _ = child.wait();
+        return;
+    }
+
     assert!(
         status_out.status.success(),
         "status must succeed: {}",
         String::from_utf8_lossy(&status_out.stderr)
     );
-    let status_text = String::from_utf8_lossy(&status_out.stdout);
     assert!(
         status_text.contains("Status: Running"),
         "status output: {status_text}"
@@ -132,6 +127,8 @@ fn test_discovery_finds_serve_without_pid_file() {
     let stop_out = std::process::Command::new(env!("CARGO_BIN_EXE_otelite"))
         .arg("stop")
         .env("OTELITE_DATA_DIR", data_dir.as_os_str())
+        .env("OTELITE_OTLP_GRPC_PORT", grpc_port.to_string())
+        .env("OTELITE_OTLP_HTTP_PORT", http_port.to_string())
         .output()
         .unwrap();
     assert!(
@@ -156,7 +153,7 @@ fn test_discovery_finds_serve_without_pid_file() {
             },
         }
     }
-    let _ = TcpListener::bind("127.0.0.1:4317");
+    let _ = TcpListener::bind(format!("127.0.0.1:{grpc_port}"));
 }
 
 fn free_port() -> u16 {
@@ -174,46 +171,45 @@ fn free_port_held() -> (u16, TcpListener) {
 /// one, instead of leaving a PID file for a process that dies on bind.
 #[test]
 fn test_start_refuses_when_daemon_has_no_pid_file() {
-    // Shares 4317 with test_discovery_finds_serve_without_pid_file —
-    // serialize so the two throwaway serves can't race the bind.
-    let _port_guard = OTLP_PORT_MUTEX.lock().unwrap_or_else(|e| e.into_inner());
-
-    let otelite_on_4317 = otelite::commands::service::local_otelite_pid(4317).unwrap();
+    let grpc_port = free_port();
+    let http_port = free_port();
 
     let temp = tempfile::TempDir::new().unwrap();
     let data_dir = temp.path().join("data");
 
-    // A throwaway serve so the test is self-contained on machines
-    // (CI) where no daemon holds 4317.
-    let mut throwaway = None;
+    // A throwaway serve on ephemeral OTLP ports, so the test is
+    // self-contained regardless of what else (a real daemon, a sibling
+    // test binary) runs on this machine.
+    let storage = data_dir.join("otelite.db");
     let dashboard_port = free_port();
-    if otelite_on_4317.is_none() {
-        let storage = data_dir.join("otelite.db");
-        let child = std::process::Command::new(env!("CARGO_BIN_EXE_otelite"))
-            .args([
-                "serve",
-                "--addr",
-                &format!("127.0.0.1:{dashboard_port}"),
-                "--storage-path",
-                &storage.to_string_lossy(),
-            ])
-            .env("OTELITE_DATA_DIR", data_dir.as_os_str())
-            .stdout(std::process::Stdio::null())
-            .stderr(std::process::Stdio::null())
-            .spawn()
-            .unwrap();
-        wait_for_port(4317, Instant::now() + Duration::from_secs(15));
-        wait_for_otelite_attribution(4317, Instant::now() + Duration::from_secs(15));
-        throwaway = Some(child);
-    }
+    let mut child = std::process::Command::new(env!("CARGO_BIN_EXE_otelite"))
+        .args([
+            "serve",
+            "--addr",
+            &format!("127.0.0.1:{dashboard_port}"),
+            "--storage-path",
+            &storage.to_string_lossy(),
+        ])
+        .env("OTELITE_DATA_DIR", data_dir.as_os_str())
+        .env("OTELITE_OTLP_GRPC_PORT", grpc_port.to_string())
+        .env("OTELITE_OTLP_HTTP_PORT", http_port.to_string())
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .spawn()
+        .unwrap();
+    wait_for_port(grpc_port, Instant::now() + Duration::from_secs(15));
+    wait_for_otelite_attribution(grpc_port, Instant::now() + Duration::from_secs(15));
 
     // `start` from a different (empty) data dir: no PID file to trip
-    // on, only port discovery can find the daemon.
+    // on, only port discovery can find the daemon. It sees the same OTLP
+    // ports via the environment, so discovery targets the throwaway.
     let start_data_dir = temp.path().join("start-data");
     let start_port = free_port();
     let out = std::process::Command::new(env!("CARGO_BIN_EXE_otelite"))
         .args(["start", "--addr", &format!("127.0.0.1:{start_port}")])
         .env("OTELITE_DATA_DIR", start_data_dir.as_os_str())
+        .env("OTELITE_OTLP_GRPC_PORT", grpc_port.to_string())
+        .env("OTELITE_OTLP_HTTP_PORT", http_port.to_string())
         .output()
         .unwrap();
 
@@ -237,10 +233,8 @@ fn test_start_refuses_when_daemon_has_no_pid_file() {
         "a refused start must not leave a PID file"
     );
 
-    if let Some(mut child) = throwaway {
-        let _ = child.kill();
-        let _ = child.wait();
-    }
+    let _ = child.kill();
+    let _ = child.wait();
 }
 
 /// #M12 regression: when the spawned daemon dies immediately (its
