@@ -450,7 +450,6 @@ fn test_serve_exits_gracefully_on_sigterm() {
 fn test_serve_writes_rotating_log_file() {
     let temp = tempfile::TempDir::new().unwrap();
     let data_dir = temp.path().join("data");
-    let storage = data_dir.join("otelite.db");
     let dashboard_port = free_port();
     let grpc_port = free_port();
     let http_port = free_port();
@@ -469,7 +468,7 @@ fn test_serve_writes_rotating_log_file() {
             "--addr",
             &format!("127.0.0.1:{dashboard_port}"),
             "--storage-path",
-            &storage.to_string_lossy(),
+            &data_dir.to_string_lossy(),
             "--log-file",
             &data_dir.join("otelite.log").to_string_lossy(),
         ])
@@ -527,13 +526,35 @@ fn test_serve_writes_rotating_log_file() {
             .join(", ")
     };
     // Linux-only forensics for environment-specific failures (the Nix build
-    // sandbox): the child's resource limits and open file descriptors, so a
+    // sandbox): the child's resource limits, thread states (where is the
+    // log-appender worker blocked?), and open file descriptors, so a
     // 0-byte log file can say *why*.
     let proc_snapshot = |pid: u32| -> String {
         let mut s = String::new();
         let limits = format!("/proc/{pid}/limits");
         if let Ok(l) = std::fs::read_to_string(&limits) {
             s.push_str(&format!("--- {limits} ---\n{l}\n"));
+        }
+        if let Ok(status) = std::fs::read_to_string(format!("/proc/{pid}/status")) {
+            for line in status.lines() {
+                if line.starts_with("Name:")
+                    || line.starts_with("Threads:")
+                    || line.starts_with("Voluntary")
+                {
+                    s.push_str(&format!("{line}\n"));
+                }
+            }
+        }
+        let task_dir = format!("/proc/{pid}/task");
+        if let Ok(tasks) = std::fs::read_dir(&task_dir) {
+            for t in tasks.filter_map(|e| e.ok()) {
+                let tid = t.file_name().to_string_lossy().to_string();
+                let name =
+                    std::fs::read_to_string(format!("{task_dir}/{tid}/comm")).unwrap_or_default();
+                let wchan = std::fs::read_to_string(format!("{task_dir}/{tid}/wchan"))
+                    .unwrap_or_else(|_| "<running>".into());
+                s.push_str(&format!("thread {tid}: {name} wchan={wchan}\n"));
+            }
         }
         let fd_dir = format!("/proc/{pid}/fd");
         if let Ok(fds) = std::fs::read_dir(&fd_dir) {
