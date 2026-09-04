@@ -16,6 +16,8 @@ have to work around), not implementation detail.
 ### Internal
 
 - Test diagnostics: the two capabilities render tests now include the rendered table in their failure messages while the Nix sandbox failure is investigated. No user-visible behaviour change.
+- Test fix: serialised the two integration tests that spawn throwaway daemons on the standard OTLP port 4317 — run in parallel they could race the bind and make discovery attribute the port to the wrong PID (flaky CI failure in the Coverage job).
+
 
 ### Internal
 

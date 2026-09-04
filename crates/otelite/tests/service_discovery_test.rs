@@ -13,6 +13,15 @@ use std::time::{Duration, Instant};
 
 use nix::unistd::Pid;
 
+/// Tests that spawn a throwaway `serve` on the standard OTLP port 4317 must
+/// not run concurrently: each probes 4317 first and spawns when it is free,
+/// so two racers can both spawn — one binds 4317 and the other test's
+/// `lsof` discovery then attributes the port to the *wrong* PID (observed CI
+/// failure 2026-09-04: assert_eq found-pid vs own-pid in the Coverage job,
+/// where `cargo test --tests` runs this file's tests in parallel threads).
+/// Hold this guard for the whole test, including spawn and teardown.
+static OTLP_PORT_MUTEX: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
 fn wait_for_port(port: u16, deadline: Instant) {
     loop {
         if TcpStream::connect((std::net::IpAddr::from([127, 0, 0, 1]), port)).is_ok() {
@@ -47,6 +56,8 @@ fn wait_for_otelite_attribution(port: u16, deadline: Instant) {
 
 #[test]
 fn test_discovery_finds_serve_without_pid_file() {
+    let _port_guard = OTLP_PORT_MUTEX.lock().unwrap_or_else(|e| e.into_inner());
+
     // Probe 4317: if something owns it, a daemon (or another test) is
     // already in the no-PID-file state and the regression is asserted
     // against it below. Otherwise we can spawn a throwaway serve.
@@ -163,6 +174,10 @@ fn free_port_held() -> (u16, TcpListener) {
 /// one, instead of leaving a PID file for a process that dies on bind.
 #[test]
 fn test_start_refuses_when_daemon_has_no_pid_file() {
+    // Shares 4317 with test_discovery_finds_serve_without_pid_file —
+    // serialize so the two throwaway serves can't race the bind.
+    let _port_guard = OTLP_PORT_MUTEX.lock().unwrap_or_else(|e| e.into_inner());
+
     let otelite_on_4317 = otelite::commands::service::local_otelite_pid(4317).unwrap();
 
     let temp = tempfile::TempDir::new().unwrap();
