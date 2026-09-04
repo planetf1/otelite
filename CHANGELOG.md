@@ -11,6 +11,8 @@ have to work around), not implementation detail.
 
 ## [Unreleased]
 
+## [0.1.115] - 2026-09-04
+
 ### Internal
 
 - CI fix: repair invalid YAML in `release.yml` — an unindented Python heredoc (added in the Homebrew service-block commit) made the file unparseable, so GitHub's workflow definition lost its triggers and every binary release since v0.1.110 was blocked (no GitHub Release, Homebrew and crates.io stuck at 0.1.110). The service injection now lives in `scripts/inject-homebrew-service.py`. No user-visible behaviour change.
