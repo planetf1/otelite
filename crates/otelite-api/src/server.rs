@@ -211,6 +211,12 @@ use utoipa::OpenApi;
             otelite_core::api::CrossToolTtftResponse,
             otelite_core::api::HookOverheadRow,
             otelite_core::api::HookOverheadResponse,
+            otelite_core::api::ToolFailureRow,
+            otelite_core::api::ToolFailureRatesResponse,
+            otelite_core::api::DailyToolMixRow,
+            otelite_core::api::DailyToolMixResponse,
+            otelite_core::api::SkillActivityRow,
+            otelite_core::api::SkillActivityResponse,
         )
     ),
     tags(

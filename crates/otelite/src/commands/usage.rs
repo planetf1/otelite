@@ -208,6 +208,18 @@ pub struct UsageCommand {
     /// Show Codex hook overhead: total and average invocation time per hook event type
     #[arg(long)]
     pub hook_overhead: bool,
+
+    /// Show opencode tool failure rates — which tools fail most and at what percentage
+    #[arg(long)]
+    pub tool_failures: bool,
+
+    /// Show daily activity mix: Claude Code / opencode / Codex datapoints per calendar day
+    #[arg(long)]
+    pub daily_tool_mix: bool,
+
+    /// Show Codex skill injection counts — which skills fire implicitly and how often
+    #[arg(long)]
+    pub skill_activity: bool,
 }
 
 // ── serialisable output types (used for --format json) ───────────────────────
@@ -314,6 +326,12 @@ struct UsageOutput {
     cross_tool_ttft: Option<otelite_core::api::CrossToolTtftResponse>,
     #[serde(skip_serializing_if = "Option::is_none")]
     hook_overhead: Option<otelite_core::api::HookOverheadResponse>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    tool_failures: Option<otelite_core::api::ToolFailureRatesResponse>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    daily_tool_mix: Option<otelite_core::api::DailyToolMixResponse>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    skill_activity: Option<otelite_core::api::SkillActivityResponse>,
 }
 
 // ── pricing fetch ─────────────────────────────────────────────────────────────
@@ -991,6 +1009,51 @@ impl UsageCommand {
             None
         };
 
+        // --tool-failures
+        let tool_failures: Option<otelite_core::api::ToolFailureRatesResponse> =
+            if self.tool_failures {
+                Some(
+                    storage
+                        .query_tool_failure_rates(Some(start_time), Some(end_time))
+                        .await
+                        .map_err(|e| {
+                            Error::ApiError(format!("Failed to query tool_failure_rates: {}", e))
+                        })?,
+                )
+            } else {
+                None
+            };
+
+        // --daily-tool-mix
+        let daily_tool_mix: Option<otelite_core::api::DailyToolMixResponse> = if self.daily_tool_mix
+        {
+            Some(
+                storage
+                    .query_daily_tool_mix(Some(start_time), Some(end_time))
+                    .await
+                    .map_err(|e| {
+                        Error::ApiError(format!("Failed to query daily_tool_mix: {}", e))
+                    })?,
+            )
+        } else {
+            None
+        };
+
+        // --skill-activity
+        let skill_activity: Option<otelite_core::api::SkillActivityResponse> =
+            if self.skill_activity {
+                Some(
+                    storage
+                        .query_skill_activity(Some(start_time), Some(end_time))
+                        .await
+                        .map_err(|e| {
+                            Error::ApiError(format!("Failed to query skill_activity: {}", e))
+                        })?,
+                )
+            } else {
+                None
+            };
+
         use crate::config::OutputFormat;
         match format {
             OutputFormat::Json | OutputFormat::JsonCompact => {
@@ -1030,6 +1093,9 @@ impl UsageCommand {
                     codex_turns,
                     cross_tool_ttft,
                     hook_overhead,
+                    tool_failures,
+                    daily_tool_mix,
+                    skill_activity,
                 };
                 let json = if matches!(format, OutputFormat::JsonCompact) {
                     serde_json::to_string(&output)
@@ -1226,6 +1292,21 @@ impl UsageCommand {
 
                 if let Some(ref resp) = hook_overhead {
                     display_hook_overhead(resp);
+                    println!();
+                }
+
+                if let Some(ref resp) = tool_failures {
+                    display_tool_failure_rates(resp);
+                    println!();
+                }
+
+                if let Some(ref resp) = daily_tool_mix {
+                    display_daily_tool_mix(resp);
+                    println!();
+                }
+
+                if let Some(ref resp) = skill_activity {
+                    display_skill_activity(resp);
                     println!();
                 }
 
@@ -2893,6 +2974,116 @@ fn display_hook_overhead(resp: &otelite_core::api::HookOverheadResponse) {
             &format!("{:.1} ms", r.avg_ms),
         ]);
     }
+    println!("{}", table);
+}
+
+fn display_tool_failure_rates(resp: &otelite_core::api::ToolFailureRatesResponse) {
+    if resp.rows.is_empty() {
+        println!("Tool Failure Rates: no data");
+        return;
+    }
+    let mut table = Table::new();
+    table
+        .load_preset(UTF8_FULL)
+        .set_content_arrangement(ContentArrangement::Dynamic);
+    table.set_header(vec![
+        Cell::new("Tool").fg(Color::Cyan),
+        Cell::new("Total").fg(Color::Cyan),
+        Cell::new("Failures").fg(Color::Cyan),
+        Cell::new("Fail %").fg(Color::Cyan),
+    ]);
+    for r in &resp.rows {
+        let fail_cell = if r.fail_pct >= 20.0 {
+            Cell::new(format!("{:.1}%", r.fail_pct)).fg(Color::Red)
+        } else if r.fail_pct >= 5.0 {
+            Cell::new(format!("{:.1}%", r.fail_pct)).fg(Color::Yellow)
+        } else {
+            Cell::new(format!("{:.1}%", r.fail_pct))
+        };
+        table.add_row(vec![
+            Cell::new(r.tool.as_str()),
+            Cell::new(r.total.to_string()),
+            Cell::new(r.failures.to_string()),
+            fail_cell,
+        ]);
+    }
+    println!("Tool Failure Rates:");
+    println!("{}", table);
+}
+
+fn display_daily_tool_mix(resp: &otelite_core::api::DailyToolMixResponse) {
+    if resp.rows.is_empty() {
+        println!("Daily Tool Mix: no data");
+        return;
+    }
+    // Pivot: day → tool → datapoints
+    use std::collections::BTreeMap;
+    let mut pivot: BTreeMap<String, BTreeMap<String, u64>> = BTreeMap::new();
+    for r in &resp.rows {
+        pivot
+            .entry(r.day.clone())
+            .or_default()
+            .insert(r.tool.clone(), r.datapoints);
+    }
+    let tools = &resp.tools;
+    let mut header = vec![Cell::new("Day").fg(Color::Cyan)];
+    for t in tools {
+        header.push(Cell::new(t.as_str()).fg(Color::Cyan));
+    }
+    let mut table = Table::new();
+    table
+        .load_preset(UTF8_FULL)
+        .set_content_arrangement(ContentArrangement::Dynamic);
+    table.set_header(header);
+    for (day, by_tool) in &pivot {
+        let total: u64 = by_tool.values().sum();
+        let mut row = vec![Cell::new(day.as_str())];
+        for t in tools {
+            let dp = by_tool.get(t).copied().unwrap_or(0);
+            let pct = dp
+                .checked_mul(100)
+                .and_then(|v| v.checked_div(total))
+                .unwrap_or(0);
+            row.push(Cell::new(format!("{dp} ({pct}%)")));
+        }
+        table.add_row(row);
+    }
+    println!("Daily Tool Mix:");
+    println!("{}", table);
+}
+
+fn display_skill_activity(resp: &otelite_core::api::SkillActivityResponse) {
+    if resp.rows.is_empty() {
+        println!("Skill Activity: no data");
+        return;
+    }
+    let mut table = Table::new();
+    table
+        .load_preset(UTF8_FULL)
+        .set_content_arrangement(ContentArrangement::Dynamic);
+    table.set_header(vec![
+        Cell::new("Skill").fg(Color::Cyan),
+        Cell::new("Invoke type").fg(Color::Cyan),
+        Cell::new("Injections").fg(Color::Cyan),
+        Cell::new("Share %").fg(Color::Cyan),
+    ]);
+    for r in &resp.rows {
+        let pct = if resp.total_injections > 0 {
+            r.injections as f64 / resp.total_injections as f64 * 100.0
+        } else {
+            0.0
+        };
+        table.add_row(vec![
+            Cell::new(r.skill.as_str()),
+            Cell::new(r.invoke_type.as_str()),
+            Cell::new(r.injections.to_string()),
+            Cell::new(format!("{:.1}%", pct)),
+        ]);
+    }
+    println!(
+        "Skill Activity (total injections: {}):",
+        resp.total_injections
+    );
     println!("{}", table);
 }
 

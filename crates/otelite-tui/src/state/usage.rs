@@ -1,7 +1,8 @@
 use otelite_core::api::{
     CacheHitRateByModel, CallsSeriesPoint, ContextTypeSplit, ConversationDepthStats,
-    ErrorTypeBreakdown, HourOfDayBucket, LatencyStats, ModelDriftPair, StopReasonCount,
-    TokenUsageResponse, ToolApprovalStats, ToolErrorEntry, ToolUsage, TruncationRateByModel,
+    DailyToolMixResponse, ErrorTypeBreakdown, HourOfDayBucket, LatencyStats, ModelDriftPair,
+    SkillActivityResponse, StopReasonCount, TokenUsageResponse, ToolApprovalStats, ToolErrorEntry,
+    ToolFailureRatesResponse, ToolUsage, TruncationRateByModel,
 };
 
 /// One day × model row of the daily throughput panel (issue #119 slice #144).
@@ -100,6 +101,12 @@ pub struct UsageState {
     /// Model-performance fetch failure text; the panel is optional, so a
     /// failure blanks it rather than erroring the view.
     pub model_perf_error: Option<String>,
+    /// Tool failure rates; `None` until fetched.
+    pub tool_failure_rates: Option<ToolFailureRatesResponse>,
+    /// Daily tool mix; `None` until fetched.
+    pub daily_tool_mix: Option<DailyToolMixResponse>,
+    /// Skill activity; `None` until fetched.
+    pub skill_activity: Option<SkillActivityResponse>,
     pub error: Option<String>,
     pub is_loading: bool,
 }

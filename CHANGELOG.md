@@ -11,6 +11,22 @@ have to work around), not implementation detail.
 
 ## [Unreleased]
 
+### Added
+
+- **CLI flags** for tool failure rates, daily tool mix, and skill activity:
+  `otelite usage --tool-failures`, `--daily-tool-mix`, `--skill-activity` — all three panels
+  are now reachable from the command line with colour-coded output and JSON export support.
+
+- **TUI panels** for tool failure rates, daily tool mix, and skill activity: all three panels
+  appear automatically in the Usage view when data is present.
+
+### Internal
+
+- OpenAPI `schemas()` block updated to include `ToolFailureRow/Response`, `DailyToolMixRow/Response`,
+  `SkillActivityRow/Response`.
+- Integration test `test_filters_applied_echoed_on_all_genai_endpoints` now covers the three new endpoints.
+- Guardian storage test now asserts `denied` field and `approval_rate` on the high-risk level row.
+
 ## [0.1.109] - 2026-09-04
 
 ### Added

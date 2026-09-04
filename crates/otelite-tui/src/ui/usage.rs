@@ -367,6 +367,21 @@ fn render_tables(frame: &mut Frame, area: Rect, state: &UsageState) {
     // Model performance (#154): shown once its first fetch has completed
     // (rows or an explicit no-data state) so the empty window stays visible.
     let show_perf = !state.model_perf.is_empty() || state.model_perf_fetched;
+    let show_tool_failures = state
+        .tool_failure_rates
+        .as_ref()
+        .map(|r| !r.rows.is_empty())
+        .unwrap_or(false);
+    let show_daily_mix = state
+        .daily_tool_mix
+        .as_ref()
+        .map(|r| !r.rows.is_empty())
+        .unwrap_or(false);
+    let show_skill_act = state
+        .skill_activity
+        .as_ref()
+        .map(|r| !r.rows.is_empty())
+        .unwrap_or(false);
 
     let mut constraints = vec![Constraint::Min(5)]; // latency always shown
     if show_daily {
@@ -401,6 +416,15 @@ fn render_tables(frame: &mut Frame, area: Rect, state: &UsageState) {
     }
     if show_calls {
         constraints.push(Constraint::Length(8));
+    }
+    if show_tool_failures {
+        constraints.push(Constraint::Length(6));
+    }
+    if show_daily_mix {
+        constraints.push(Constraint::Length(9));
+    }
+    if show_skill_act {
+        constraints.push(Constraint::Length(6));
     }
 
     let sections = Layout::default()
@@ -453,6 +477,18 @@ fn render_tables(frame: &mut Frame, area: Rect, state: &UsageState) {
     }
     if show_calls {
         render_calls_series(frame, sections[idx], state);
+        idx += 1;
+    }
+    if show_tool_failures {
+        render_tool_failure_rates(frame, sections[idx], state);
+        idx += 1;
+    }
+    if show_daily_mix {
+        render_daily_tool_mix(frame, sections[idx], state);
+        idx += 1;
+    }
+    if show_skill_act {
+        render_skill_activity(frame, sections[idx], state);
         // idx += 1; // last section
     }
     let _ = idx; // suppress unused warning if all sections are omitted
@@ -1710,6 +1746,200 @@ fn render_calls_series(frame: &mut Frame, area: Rect, state: &UsageState) {
             Constraint::Min(15),
             Constraint::Length(10),
             Constraint::Min(10),
+        ],
+    )
+    .header(header)
+    .block(block);
+    frame.render_widget(table, area);
+}
+
+fn render_tool_failure_rates(frame: &mut Frame, area: Rect, state: &UsageState) {
+    let block = Block::default()
+        .borders(Borders::ALL)
+        .title(" Tool Failure Rates ");
+    let Some(ref resp) = state.tool_failure_rates else {
+        frame.render_widget(Paragraph::new("No data").block(block), area);
+        return;
+    };
+    if resp.rows.is_empty() {
+        frame.render_widget(Paragraph::new("No tool failure data").block(block), area);
+        return;
+    }
+    let header = Row::new(vec![
+        Cell::from("Tool").style(
+            Style::default()
+                .fg(Color::Cyan)
+                .add_modifier(Modifier::BOLD),
+        ),
+        Cell::from("Total").style(
+            Style::default()
+                .fg(Color::Cyan)
+                .add_modifier(Modifier::BOLD),
+        ),
+        Cell::from("Failures").style(
+            Style::default()
+                .fg(Color::Cyan)
+                .add_modifier(Modifier::BOLD),
+        ),
+        Cell::from("Fail%").style(
+            Style::default()
+                .fg(Color::Yellow)
+                .add_modifier(Modifier::BOLD),
+        ),
+    ]);
+    let rows: Vec<Row> = resp
+        .rows
+        .iter()
+        .map(|r| {
+            let fail_style = if r.fail_pct >= 20.0 {
+                Style::default().fg(Color::Red)
+            } else if r.fail_pct >= 5.0 {
+                Style::default().fg(Color::Yellow)
+            } else {
+                Style::default()
+            };
+            Row::new(vec![
+                Cell::from(truncate(&r.tool, 20)),
+                Cell::from(r.total.to_string()),
+                Cell::from(r.failures.to_string()),
+                Cell::from(format!("{:.1}%", r.fail_pct)).style(fail_style),
+            ])
+        })
+        .collect();
+    let table = Table::new(
+        rows,
+        [
+            Constraint::Min(16),
+            Constraint::Length(7),
+            Constraint::Length(9),
+            Constraint::Length(7),
+        ],
+    )
+    .header(header)
+    .block(block);
+    frame.render_widget(table, area);
+}
+
+fn render_daily_tool_mix(frame: &mut Frame, area: Rect, state: &UsageState) {
+    let block = Block::default()
+        .borders(Borders::ALL)
+        .title(" Daily Tool Mix ");
+    let Some(ref resp) = state.daily_tool_mix else {
+        frame.render_widget(Paragraph::new("No data").block(block), area);
+        return;
+    };
+    if resp.rows.is_empty() {
+        frame.render_widget(Paragraph::new("No daily mix data").block(block), area);
+        return;
+    }
+    use std::collections::BTreeMap;
+    // pivot: day → tool → datapoints
+    let mut pivot: BTreeMap<String, BTreeMap<String, u64>> = BTreeMap::new();
+    for r in &resp.rows {
+        pivot
+            .entry(r.day.clone())
+            .or_default()
+            .insert(r.tool.clone(), r.datapoints);
+    }
+    let tools = &resp.tools;
+    let mut header_cells = vec![Cell::from("Day").style(
+        Style::default()
+            .fg(Color::Cyan)
+            .add_modifier(Modifier::BOLD),
+    )];
+    for t in tools {
+        header_cells.push(
+            Cell::from(t.as_str()).style(
+                Style::default()
+                    .fg(Color::Cyan)
+                    .add_modifier(Modifier::BOLD),
+            ),
+        );
+    }
+    let header = Row::new(header_cells);
+    let rows: Vec<Row> = pivot
+        .iter()
+        .map(|(day, by_tool)| {
+            let total: u64 = by_tool.values().sum();
+            let mut cells = vec![Cell::from(day.clone())];
+            for t in tools {
+                let dp = by_tool.get(t).copied().unwrap_or(0);
+                let pct = dp
+                    .checked_mul(100)
+                    .and_then(|v| v.checked_div(total))
+                    .unwrap_or(0);
+                cells.push(Cell::from(format!("{dp}({pct}%)")));
+            }
+            Row::new(cells)
+        })
+        .collect();
+    let mut widths: Vec<Constraint> = vec![Constraint::Length(11)];
+    for _ in tools {
+        widths.push(Constraint::Min(10));
+    }
+    let table = Table::new(rows, widths).header(header).block(block);
+    frame.render_widget(table, area);
+}
+
+fn render_skill_activity(frame: &mut Frame, area: Rect, state: &UsageState) {
+    let block = Block::default()
+        .borders(Borders::ALL)
+        .title(" Skill Activity ");
+    let Some(ref resp) = state.skill_activity else {
+        frame.render_widget(Paragraph::new("No data").block(block), area);
+        return;
+    };
+    if resp.rows.is_empty() {
+        frame.render_widget(Paragraph::new("No skill activity data").block(block), area);
+        return;
+    }
+    let header = Row::new(vec![
+        Cell::from("Skill").style(
+            Style::default()
+                .fg(Color::Cyan)
+                .add_modifier(Modifier::BOLD),
+        ),
+        Cell::from("Type").style(
+            Style::default()
+                .fg(Color::Cyan)
+                .add_modifier(Modifier::BOLD),
+        ),
+        Cell::from("N").style(
+            Style::default()
+                .fg(Color::Cyan)
+                .add_modifier(Modifier::BOLD),
+        ),
+        Cell::from("Share").style(
+            Style::default()
+                .fg(Color::Yellow)
+                .add_modifier(Modifier::BOLD),
+        ),
+    ]);
+    let total = resp.total_injections;
+    let rows: Vec<Row> = resp
+        .rows
+        .iter()
+        .map(|r| {
+            let pct = if total > 0 {
+                r.injections as f64 / total as f64 * 100.0
+            } else {
+                0.0
+            };
+            Row::new(vec![
+                Cell::from(truncate(&r.skill, 24)),
+                Cell::from(r.invoke_type.as_str()),
+                Cell::from(r.injections.to_string()),
+                Cell::from(format!("{:.1}%", pct)),
+            ])
+        })
+        .collect();
+    let table = Table::new(
+        rows,
+        [
+            Constraint::Min(18),
+            Constraint::Length(10),
+            Constraint::Length(6),
+            Constraint::Length(7),
         ],
     )
     .header(header)

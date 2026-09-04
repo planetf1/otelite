@@ -623,6 +623,51 @@ impl ApiClient {
         Self::read_items(response, "hour of day").await
     }
 
+    pub async fn fetch_tool_failure_rates(
+        &self,
+        params: Vec<(&str, String)>,
+    ) -> Result<otelite_core::api::ToolFailureRatesResponse> {
+        let url = format!("{}/api/genai/tool_failure_rates", self.base_url);
+        let response = self.client.get(&url).query(&params).send().await?;
+        if !response.status().is_success() {
+            return Err(non_success(
+                response.status(),
+                "Failed to fetch tool failure rates",
+            ));
+        }
+        Ok(response.json().await?)
+    }
+
+    pub async fn fetch_daily_tool_mix(
+        &self,
+        params: Vec<(&str, String)>,
+    ) -> Result<otelite_core::api::DailyToolMixResponse> {
+        let url = format!("{}/api/genai/daily_tool_mix", self.base_url);
+        let response = self.client.get(&url).query(&params).send().await?;
+        if !response.status().is_success() {
+            return Err(non_success(
+                response.status(),
+                "Failed to fetch daily tool mix",
+            ));
+        }
+        Ok(response.json().await?)
+    }
+
+    pub async fn fetch_skill_activity(
+        &self,
+        params: Vec<(&str, String)>,
+    ) -> Result<otelite_core::api::SkillActivityResponse> {
+        let url = format!("{}/api/genai/skill_activity", self.base_url);
+        let response = self.client.get(&url).query(&params).send().await?;
+        if !response.status().is_success() {
+            return Err(non_success(
+                response.status(),
+                "Failed to fetch skill activity",
+            ));
+        }
+        Ok(response.json().await?)
+    }
+
     /// The GenAI list endpoints wrap their array payload in an
     /// `{ items, filters_applied }` envelope (#135). Parse it and return
     /// the items; the TUI has no filter bar, so the echo is discarded.

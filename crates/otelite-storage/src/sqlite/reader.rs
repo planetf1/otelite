@@ -12084,6 +12084,11 @@ mod tests {
             .find(|r| r.risk_level == "high")
             .unwrap();
         assert_eq!(high.count, 2);
+        assert_eq!(high.denied, 1, "high risk level should have 1 denied");
+        assert!(
+            high.approval_rate < 1.0,
+            "approval_rate should be < 1 when there is a denial"
+        );
     }
 
     #[test]

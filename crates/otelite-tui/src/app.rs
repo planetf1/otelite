@@ -734,6 +734,15 @@ impl App {
                 if let Ok(resp) = self.api_client.fetch_calls_series(vec![]).await {
                     self.usage_state.calls_series = resp;
                 }
+                if let Ok(resp) = self.api_client.fetch_tool_failure_rates(vec![]).await {
+                    self.usage_state.tool_failure_rates = Some(resp);
+                }
+                if let Ok(resp) = self.api_client.fetch_daily_tool_mix(vec![]).await {
+                    self.usage_state.daily_tool_mix = Some(resp);
+                }
+                if let Ok(resp) = self.api_client.fetch_skill_activity(vec![]).await {
+                    self.usage_state.skill_activity = Some(resp);
+                }
 
                 if !had_error {
                     self.usage_state.clear_error();
