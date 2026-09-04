@@ -11,6 +11,8 @@ have to work around), not implementation detail.
 
 ## [Unreleased]
 
+## [0.1.110] - 2026-09-04
+
 ### Added
 
 - **CLI flags** for tool failure rates, daily tool mix, and skill activity:
