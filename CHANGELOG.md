@@ -11,6 +11,8 @@ have to work around), not implementation detail.
 
 ## [Unreleased]
 
+## [0.1.111] - 2026-09-04
+
 ### Added
 
 - **Skill Outcomes** — see at a glance whether sessions that fired a Codex skill consumed
