@@ -15,6 +15,10 @@ have to work around), not implementation detail.
 
 ### Internal
 
+- Test diagnostics: the two capabilities render tests now include the rendered table in their failure messages while the Nix sandbox failure is investigated. No user-visible behaviour change.
+
+### Internal
+
 - Nix flake check follow-up: the `lsof`/`procps` check inputs added for 0.1.117 were referenced without being declared `callPackage` arguments, which broke flake evaluation outright ("undefined variable 'lsof'"). Declared now, so `nix flake check` actually builds and the test suite runs with `ps` and `lsof` available.
 
 ## [0.1.117] - 2026-09-04

@@ -336,7 +336,10 @@ mod tests {
             unidentified: vec![],
         };
         let out = render_capabilities(&response);
-        assert!(out.contains("openai/gpt-4o"));
+        assert!(
+            out.contains("openai/gpt-4o"),
+            "rendered output:\n{out}"
+        );
         assert!(out.contains("12"));
         assert!(out.contains("2 duplicate deliveries collapsed"));
         assert!(out.contains("available/degenerate"));
@@ -376,7 +379,10 @@ mod tests {
             unidentified: vec![],
         };
         let out = render_capabilities(&response);
-        assert!(out.contains("5/3/1/2"));
+        assert!(
+            out.contains("5/3/1/2"),
+            "rendered output:\n{out}"
+        );
         assert!(out.contains("sparse/reliable/correlated"));
         assert!(out.contains("matched/unmatched/rejected/ambiguous"));
     }
