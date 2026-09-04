@@ -443,7 +443,9 @@ fn test_serve_exits_gracefully_on_sigterm() {
 
 /// M17 regression: the daemon's log must go through the daily-rotating
 /// appender (`--log-file`), not an ever-growing plain file. A throwaway
-/// `serve` must produce a dated log file in its data dir.
+/// `serve` must produce a dated log file in its data dir, and the startup
+/// lines must actually reach it — either while the worker thread is running
+/// or via the final flush when the appender's guard drops on clean shutdown.
 #[test]
 fn test_serve_writes_rotating_log_file() {
     let temp = tempfile::TempDir::new().unwrap();
@@ -452,6 +454,14 @@ fn test_serve_writes_rotating_log_file() {
     let dashboard_port = free_port();
     let grpc_port = free_port();
     let http_port = free_port();
+
+    // Capture serve's stderr: with --log-file the tracing output goes to the
+    // log file, but panics and startup errors (e.g. the appender worker
+    // thread failing to spawn) land on stderr — exactly what a 0-byte log
+    // file in the Nix build sandbox needed to explain itself.
+    let stderr_path = data_dir.join("serve-stderr.log");
+    std::fs::create_dir_all(&data_dir).unwrap();
+    let stderr_file = std::fs::File::create(&stderr_path).unwrap();
 
     let mut child = std::process::Command::new(env!("CARGO_BIN_EXE_otelite"))
         .args([
@@ -467,38 +477,58 @@ fn test_serve_writes_rotating_log_file() {
         .env("OTELITE_OTLP_GRPC_PORT", grpc_port.to_string())
         .env("OTELITE_OTLP_HTTP_PORT", http_port.to_string())
         .stdout(std::process::Stdio::null())
-        .stderr(std::process::Stdio::null())
+        .stderr(std::process::Stdio::from(stderr_file))
         .spawn()
         .unwrap();
 
     wait_for_port(dashboard_port, Instant::now() + Duration::from_secs(15));
 
-    // The rotating appender names its file otelite.log.YYYY-MM-DD. The
-    // non-blocking writer flushes from a background thread, so poll for a
-    // dated file with content instead of assuming a fixed delay — a 1-second
-    // sleep was not enough in the Nix build sandbox (observed 2026-09-04).
-    let deadline = Instant::now() + Duration::from_secs(15);
-    loop {
-        let ready = std::fs::read_dir(&data_dir)
-            .expect("data dir exists")
+    let dated_log = |dir: &std::path::Path| -> Option<std::path::PathBuf> {
+        std::fs::read_dir(dir)
+            .into_iter()
+            .flatten()
             .filter_map(|e| e.ok())
-            .map(|e| e.file_name())
-            .find(|name| name.to_string_lossy().starts_with("otelite.log."))
-            .map(|name| {
-                std::fs::metadata(data_dir.join(name))
-                    .map(|m| m.len() > 0)
+            .map(|e| e.path())
+            .find(|p| {
+                p.file_name()
+                    .map(|n| n.to_string_lossy().starts_with("otelite.log."))
                     .unwrap_or(false)
             })
-            .unwrap_or(false);
-        if ready {
+    };
+    let log_len = |dir: &std::path::Path| -> u64 {
+        dated_log(dir)
+            .and_then(|p| std::fs::metadata(p).ok())
+            .map(|m| m.len())
+            .unwrap_or(0)
+    };
+    let stderr_tail = |dir: &std::path::Path| -> String {
+        std::fs::read_to_string(dir.join("serve-stderr.log"))
+            .unwrap_or_default()
+            .lines()
+            .take(20)
+            .collect::<Vec<_>>()
+            .join("\n")
+    };
+
+    // The rotating appender names its file otelite.log.YYYY-MM-DD (the M17
+    // regression itself) and a background worker writes the lines into it.
+    // The worker is normally fast, but a loaded build sandbox may starve it
+    // for seconds; poll for live content, then fall back to the shutdown
+    // flush (the appender guard drops on clean exit) before failing.
+    let mut live_len = 0u64;
+    let deadline = Instant::now() + Duration::from_secs(15);
+    while Instant::now() < deadline {
+        live_len = log_len(&data_dir);
+        if live_len > 0 {
             break;
         }
         assert!(
-            Instant::now() < deadline,
-            "expected a dated otelite.log.* file with flushed startup lines; data dir contents: {:?}",
+            dated_log(&data_dir).is_some(),
+            "expected a dated otelite.log.* file (the M17 regression); data dir contents: {:?}, serve stderr:\n{}",
             std::fs::read_dir(&data_dir)
                 .map(|d| d.map(|e| e.unwrap().file_name()).collect::<Vec<_>>())
-                .unwrap_or_default()
+                .unwrap_or_default(),
+            stderr_tail(&data_dir)
         );
         std::thread::sleep(Duration::from_millis(200));
     }
@@ -518,4 +548,13 @@ fn test_serve_writes_rotating_log_file() {
             },
         }
     }
+
+    let final_len = log_len(&data_dir);
+    assert!(
+        final_len > 0,
+        "no log lines reached the dated file ({} bytes while running, {} bytes after clean shutdown); serve stderr:\n{}",
+        live_len,
+        final_len,
+        stderr_tail(&data_dir)
+    );
 }

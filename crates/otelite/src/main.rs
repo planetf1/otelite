@@ -512,8 +512,12 @@ async fn run_cli() -> Result<()> {
     let env_filter =
         EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new(level.to_string()));
 
-    // Configure output destination and format
-    if let Some(log_file) = &cli.log_file {
+    // Configure output destination and format. The non-blocking appender's
+    // guard is held for the process lifetime: dropping it at exit signals
+    // the worker to flush buffered lines, so a clean shutdown doesn't lose
+    // the tail of the log (the previous `mem::forget` skipped that final
+    // flush).
+    let _appender_guard = if let Some(log_file) = &cli.log_file {
         // Log to file with daily rotation
         let file_appender = tracing_appender::rolling::daily(
             log_file
@@ -523,7 +527,7 @@ async fn run_cli() -> Result<()> {
                 .file_name()
                 .unwrap_or_else(|| std::ffi::OsStr::new("otelite.log")),
         );
-        let (non_blocking, _guard) = tracing_appender::non_blocking(file_appender);
+        let (non_blocking, guard) = tracing_appender::non_blocking(file_appender);
 
         // Choose format based on --log-format flag
         if cli.log_format.to_lowercase() == "json" {
@@ -538,8 +542,7 @@ async fn run_cli() -> Result<()> {
                 .init();
         }
 
-        // Keep the guard alive by leaking it - this is intentional for the lifetime of the program
-        std::mem::forget(_guard);
+        Some(guard)
     } else {
         // Log to stderr (default)
         if cli.log_format.to_lowercase() == "json" {
@@ -553,7 +556,8 @@ async fn run_cli() -> Result<()> {
                 .with(fmt::layer())
                 .init();
         }
-    }
+        None
+    };
 
     // Build config from config file, then apply CLI args on top.
     // Precedence: CLI flags > OTELITE_ENDPOINT > config file > defaults.

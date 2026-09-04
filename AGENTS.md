@@ -99,6 +99,23 @@ If the count is the same as before and you added production code, you missed tes
 
 **Run tests after writing them.** Don't just add test functions — run `cargo test -p <crate>` and confirm they appear in the output and pass.
 
+### Test isolation — test data and test ports only
+
+- Tests never touch the developer's real otelite data (`~/.otelite/data`) or
+  the running daemon. Every spawned `serve`/`start` process gets a `tempfile`
+  data dir (`OTELITE_DATA_DIR` / `--storage-path`).
+- Tests never bind or probe the standard ports (OTLP 4317/4318, or any fixed
+  port). Every port a test process listens on is ephemeral (a `free_port()`
+  helper), passed through `--addr` / `OTELITE_OTLP_GRPC_PORT` /
+  `OTELITE_OTLP_HTTP_PORT` so both the spawned process and any discovery
+  assert agree on it. Fixed-port tests race with the dev daemon and with
+  parallel test binaries (observed CI failures 2026-09-04).
+- The UI stays runnable for testing on a test port with test data:
+  `otelite serve --addr 127.0.0.1:<free-port> --storage-path
+  <tempdir>/otelite.db` (plus the OTLP env overrides). Anything that
+  hardcodes a default port or data path in a way that prevents this is a
+  bug, not a test limitation.
+
 ## Picking What to Work On
 
 - **type:bug** before **type:feature** at the same priority
