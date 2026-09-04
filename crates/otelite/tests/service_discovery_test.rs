@@ -509,6 +509,49 @@ fn test_serve_writes_rotating_log_file() {
             .collect::<Vec<_>>()
             .join("\n")
     };
+    // File sizes, not just names: a 0-byte sqlite db next to a 0-byte log
+    // is a very different story from a healthy db next to a 0-byte log.
+    let dir_listing = |dir: &std::path::Path| -> String {
+        std::fs::read_dir(dir)
+            .into_iter()
+            .flatten()
+            .filter_map(|e| e.ok())
+            .map(|e| {
+                format!(
+                    "{} ({} bytes)",
+                    e.file_name().to_string_lossy(),
+                    e.metadata().map(|m| m.len()).unwrap_or(0)
+                )
+            })
+            .collect::<Vec<_>>()
+            .join(", ")
+    };
+    // Linux-only forensics for environment-specific failures (the Nix build
+    // sandbox): the child's resource limits and open file descriptors, so a
+    // 0-byte log file can say *why*.
+    let proc_snapshot = |pid: u32| -> String {
+        let mut s = String::new();
+        let limits = format!("/proc/{pid}/limits");
+        if let Ok(l) = std::fs::read_to_string(&limits) {
+            s.push_str(&format!("--- {limits} ---\n{l}\n"));
+        }
+        let fd_dir = format!("/proc/{pid}/fd");
+        if let Ok(fds) = std::fs::read_dir(&fd_dir) {
+            for e in fds.filter_map(|e| e.ok()) {
+                if let Ok(link) = std::fs::read_link(e.path()) {
+                    s.push_str(&format!(
+                        "fd {} -> {}\n",
+                        e.file_name().to_string_lossy(),
+                        link.display()
+                    ));
+                }
+            }
+        }
+        if s.is_empty() {
+            s.push_str("(no /proc access — not Linux?)\n");
+        }
+        s
+    };
 
     // The rotating appender names its file otelite.log.YYYY-MM-DD (the M17
     // regression itself) and a background worker writes the lines into it.
@@ -533,6 +576,9 @@ fn test_serve_writes_rotating_log_file() {
         std::thread::sleep(Duration::from_millis(200));
     }
 
+    // Snapshot the child's environment while it is still alive.
+    let snapshot = proc_snapshot(child.id());
+
     nix::sys::signal::kill(
         Pid::from_raw(child.id() as i32),
         nix::sys::signal::Signal::SIGTERM,
@@ -552,9 +598,11 @@ fn test_serve_writes_rotating_log_file() {
     let final_len = log_len(&data_dir);
     assert!(
         final_len > 0,
-        "no log lines reached the dated file ({} bytes while running, {} bytes after clean shutdown); serve stderr:\n{}",
+        "no log lines reached the dated file ({} bytes while running, {} bytes after clean shutdown);\ndata dir: {};\nserve stderr:\n{};\n{}",
         live_len,
         final_len,
-        stderr_tail(&data_dir)
+        dir_listing(&data_dir),
+        stderr_tail(&data_dir),
+        snapshot
     );
 }
