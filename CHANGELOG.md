@@ -11,6 +11,8 @@ have to work around), not implementation detail.
 
 ## [Unreleased]
 
+## [0.1.119] - 2026-09-04
+
 ### Internal
 
 - Test diagnostics: the two capabilities render tests now include the rendered table in their failure messages while the Nix sandbox failure is investigated. No user-visible behaviour change.
