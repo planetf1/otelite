@@ -475,6 +475,10 @@ fn test_serve_writes_rotating_log_file() {
         .env("OTELITE_DATA_DIR", data_dir.as_os_str())
         .env("OTELITE_OTLP_GRPC_PORT", grpc_port.to_string())
         .env("OTELITE_OTLP_HTTP_PORT", http_port.to_string())
+        // Pin the child's logging filter: serve respects RUST_LOG, and an
+        // inherited value (e.g. from a build environment) would change what
+        // reaches the log file. Tests own their environment.
+        .env_remove("RUST_LOG")
         .stdout(std::process::Stdio::null())
         .stderr(std::process::Stdio::from(stderr_file))
         .spawn()
@@ -570,6 +574,28 @@ fn test_serve_writes_rotating_log_file() {
         }
         if s.is_empty() {
             s.push_str("(no /proc access — not Linux?)\n");
+        }
+        // The child's environment (log/otelite-relevant vars): an inherited
+        // RUST_LOG or similar would explain a healthy-looking process whose
+        // log file stays empty.
+        if let Ok(environ) = std::fs::read(format!("/proc/{pid}/environ")) {
+            let vars: Vec<&str> = environ
+                .split(|b| *b == 0)
+                .filter(|s| !s.is_empty())
+                .map(|s| std::str::from_utf8(s).unwrap_or(""))
+                .collect();
+            s.push_str("--- env (log/otelite-related) ---\n");
+            for v in &vars {
+                if v.starts_with("RUST_LOG")
+                    || v.starts_with("OTELITE_")
+                    || v.starts_with("TRACING")
+                    || v.starts_with("NO_COLOR")
+                    || v.starts_with("TERM")
+                {
+                    s.push_str(&format!("{v}\n"));
+                }
+            }
+            s.push_str(&format!("(total {} env vars)\n", vars.len()));
         }
         s
     };
