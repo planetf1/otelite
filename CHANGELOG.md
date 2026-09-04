@@ -11,6 +11,10 @@ have to work around), not implementation detail.
 
 ## [Unreleased]
 
+### Fixed
+
+- Restored Homebrew formula publishing — the service-block injection step ran against the tap checkout, which doesn't contain the otelite script, so releases failed after the GitHub Release was already created. The formula is now post-processed at build time; this release's `brew install planetf1/tap/otelite` formula includes the `service do` block (`brew services start otelite` works).
+
 ## [0.1.115] - 2026-09-04
 
 ### Internal

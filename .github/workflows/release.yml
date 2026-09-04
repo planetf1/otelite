@@ -216,6 +216,12 @@ jobs:
           echo "EOF" >> "$GITHUB_OUTPUT"
 
           cp dist-manifest.json "$BUILD_MANIFEST_NAME"
+      - name: Inject Homebrew service block
+        # Runs while the otelite checkout (with scripts/) is available — the
+        # formula job checks out the tap repo, not otelite. Must precede the
+        # upload so the published formula carries the `service do` block that
+        # makes `brew services start otelite` work.
+        run: python3 scripts/inject-homebrew-service.py target/distrib/otelite.rb
       - name: "Upload artifacts"
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
@@ -329,11 +335,9 @@ jobs:
             export PATH="/home/linuxbrew/.linuxbrew/bin:$PATH"
             brew update
 
-            # Inject a service block so `brew services start otelite` works.
-            # (Lives in scripts/ rather than an inline heredoc — an unindented
-            # heredoc body makes this file invalid YAML, which breaks the
-            # workflow definition and every binary release dispatch.)
-            python3 scripts/inject-homebrew-service.py "Formula/${filename}"
+            # The `service do` block is injected in build-global-artifacts —
+            # this job checks out the tap repo, not otelite, so the script
+            # (and anything else from this repo) isn't available here.
 
             # We avoid reformatting user-provided data such as the app description and homepage.
             brew style --except-cops FormulaAudit/Homepage,FormulaAudit/Desc,FormulaAuditStrict --fix "Formula/${filename}" || true
