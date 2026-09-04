@@ -11,6 +11,8 @@ have to work around), not implementation detail.
 
 ## [Unreleased]
 
+## [0.1.114] - 2026-09-04
+
 ### Internal
 
 - CI fix: force GitHub to re-parse `release.yml` — its stored workflow definition had gone stale and binary releases (GitHub Release, Homebrew, crates.io) were failing with a dispatch 422. No user-visible behaviour change.
