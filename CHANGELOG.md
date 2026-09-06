@@ -11,6 +11,14 @@ have to work around), not implementation detail.
 
 ## [Unreleased]
 
+## [0.1.121] - 2026-09-06
+
+### Added
+
+- GenAI Analytics reports are grouped into five collapsible categories (Cost, Latency, Reliability, Behaviour, Ecosystem & Diagnostics) — the page opens as five rows instead of a 28-section scroll
+- Filter GenAI Analytics reports by name, description, or category name; matching categories open automatically and clearing restores your previous layout
+- Pin GenAI Analytics reports to the top with the 📌 button — pins survive reloads and pinned reports open expanded
+
 ## [0.1.120] - 2026-09-04
 
 ### Added
