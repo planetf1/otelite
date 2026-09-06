@@ -2423,6 +2423,115 @@ details[open] > .json-tree-summary::before {
     pointer-events: none;
 }
 
+/* --- Analytics report categories, filter box, and pins (#186) --- */
+
+.analytics-report-tools {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    margin-bottom: 0.75rem;
+}
+
+.analytics-report-tools .filter-input {
+    max-width: 320px;
+}
+
+.analytics-filter-count {
+    color: var(--text-secondary);
+    font-size: 0.85rem;
+    white-space: nowrap;
+}
+
+.analytics-group {
+    margin-bottom: 0.75rem;
+    border: 1px solid var(--border-color);
+    border-radius: 4px;
+    background-color: var(--bg-primary);
+}
+
+.analytics-group-pinned {
+    border-color: var(--accent-color);
+}
+
+.analytics-group-summary {
+    display: flex;
+    align-items: baseline;
+    gap: 0.75rem;
+    padding: 0.65rem 1rem;
+    background-color: var(--bg-tertiary);
+    cursor: pointer;
+    user-select: none;
+    list-style: none;
+    transition: background-color 0.15s;
+}
+
+.analytics-group-summary::-webkit-details-marker { display: none; }
+.analytics-group-summary::marker { content: ''; }
+
+.analytics-group-summary::before {
+    content: '▸';
+    display: inline-block;
+    font-size: 0.9em;
+    color: var(--text-secondary);
+    transition: transform 0.15s;
+    width: 0.9em;
+}
+
+.analytics-group[open] > .analytics-group-summary::before {
+    transform: rotate(90deg);
+}
+
+.analytics-group-summary:hover {
+    background-color: rgba(129, 140, 248, 0.1);
+}
+
+.analytics-group-title {
+    font-weight: 700;
+    font-size: 1.05rem;
+    color: var(--text-primary);
+}
+
+.analytics-group-count {
+    color: var(--text-secondary);
+    font-size: 0.8rem;
+}
+
+.analytics-group-body {
+    padding: 0.75rem 1rem;
+    background-color: var(--bg-secondary);
+    border-top: 1px solid var(--border-color);
+}
+
+/* Nested report sections inside a category */
+.analytics-group-body .analytics-section {
+    margin-bottom: 0.5rem;
+}
+
+.analytics-group-body .analytics-section:last-child {
+    margin-bottom: 0;
+}
+
+.pin-btn {
+    background: none;
+    border: none;
+    padding: 0;
+    margin-right: 0.1rem;
+    font-size: 0.85em;
+    line-height: 1;
+    cursor: pointer;
+    opacity: 0.3;
+    transition: opacity 0.15s, transform 0.15s;
+}
+
+.pin-btn:hover {
+    opacity: 1;
+    transform: scale(1.15);
+}
+
+.pin-btn.pinned {
+    opacity: 1;
+}
+
 .usage-summary-cards {
     display: flex;
     gap: 1rem;

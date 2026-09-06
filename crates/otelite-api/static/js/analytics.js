@@ -1,8 +1,11 @@
 // GenAI analytics view
 //
-// Replaces the old "Usage" tab. The page is organised as 4 collapsed
-// <details> accordion sections grouped by question:
-//   Cost · Latency · Reliability · Behavior
+// The page is organised as 5 collapsed <details> category groups
+// (Cost · Latency · Reliability · Behaviour · Ecosystem & Diagnostics),
+// each holding its report sections as nested accordions — the flat
+// 28-section stack predates the grouping (#186). A filter box narrows the
+// reports by title, hint, or category name, and 📌 pins reports to a
+// top-level Pinned group (persisted in localStorage).
 // On initial load only a single cheap getTokenUsage summary call (plus the
 // static pricing metadata) is made — every chart inside a section is fetched
 // lazily on first expand and cached thereafter.
@@ -31,6 +34,49 @@ function chartAxisLabel(tsNs, multiDay) {
 }
 
 class AnalyticsView {
+    // Report registry — every analytics report with its title and hint.
+    // Categories (GROUPS) organise these into the page's top-level groups.
+    static REPORTS = [
+        { id: 'cost',                    title: 'Cost',                    hint: 'Tokens spent · pricing · most expensive calls' },
+        { id: 'providers',               title: 'Provider Mix',            hint: 'Tokens & estimated cost by provider × model (opencode · codex · claude)' },
+        { id: 'roles',                   title: 'Agent Roles',             hint: 'Sub-agent attribution · cost & tokens per role · role × model routing matrix (opencode)' },
+        { id: 'session_model',           title: 'Session × Model',         hint: 'Token and cost breakdown per (session, model) pair — spot opus spend in specific sessions' },
+        { id: 'effort',                  title: 'Effort Breakdown',        hint: 'Claude Code token usage by effort level (low/medium/high/xhigh) × model × type' },
+        { id: 'efficiency',              title: 'Agent Efficiency',        hint: 'Tokens per commit · tokens per line of code · cross-agent comparison' },
+        { id: 'skill_outcomes',          title: 'Skill Outcomes',          hint: 'Token efficiency comparison: sessions that used each skill vs sessions that did not' },
+        { id: 'latency',                 title: 'Latency',                 hint: 'Response time · throughput · context size' },
+        { id: 'model_performance',       title: 'Model Performance',       hint: 'Per-model duration · throughput · TTFT · error diagnosis vs preceding & rolling baselines' },
+        { id: 'codex_ttft',              title: 'Codex TTFT',              hint: 'First-token latency percentiles (p50/p90/p95) per model from histogram metrics' },
+        { id: 'cross_tool_ttft',         title: 'Cross-Tool TTFT',         hint: 'First-token latency by model across all tools (Claude Code, opencode, pi) from span attributes' },
+        { id: 'codex_turns',             title: 'Codex Busy/Idle',         hint: 'Average busy vs idle time per turn by model and project' },
+        { id: 'speed_dist',              title: 'Speed / Effort Mode',     hint: 'Distribution of the Claude Code speed attribute (normal / extended thinking) by model' },
+        { id: 'reliability',             title: 'Reliability',             hint: 'Errors · retries · truncation · drift' },
+        { id: 'recent_errors',           title: 'Recent Errors',           hint: 'Latest error events from spans and logs — OTel ERROR status, bad finish reasons, and log ERROR records' },
+        { id: 'session_quality',         title: 'Session Quality',         hint: 'Clean / degraded / errored breakdown — spot sessions that truncated, retried, or failed' },
+        { id: 'mcp_health',              title: 'MCP Health',              hint: 'Call success/error rates per MCP server and tool — spot flaky integrations' },
+        { id: 'tool_failure_rates',      title: 'Tool Failure Rates',      hint: 'Failure % per opencode tool — spot flaky or broken integrations at a glance' },
+        { id: 'guardian',                title: 'Guardian Reviews',        hint: 'Risk levels · denial rate by action type · what the guardian is actually blocking' },
+        { id: 'behavior',                title: 'Behavior',                hint: 'Tool use · retrieval · request volume' },
+        { id: 'multi_agent',             title: 'Multi-Agent Topology',    hint: 'Sub-agent spawn and resume counts by role' },
+        { id: 'daily_tool_mix',          title: 'Daily Tool Mix',          hint: 'Claude Code / opencode / Codex activity per calendar day — when you use each tool' },
+        { id: 'model_selection_heatmap', title: 'Model Selection Heatmap', hint: 'Which tool picked which model for which agent role — (role × tool × model) request counts' },
+        { id: 'reasoning_share',         title: 'Reasoning Token Share',   hint: 'Thinking tokens as a percentage of output tokens per model — opencode + Codex' },
+        { id: 'skill_activity',          title: 'Skills Activity',         hint: 'Which Codex skills fire most — implicit injection counts by skill name' },
+        { id: 'hook_overhead',           title: 'Hook Overhead',           hint: 'Codex hook total and average invocation time per event type — how much latency hooks add' },
+        { id: 'capabilities',            title: 'Telemetry Capabilities',  hint: 'Which metrics each emitter actually provides · availability & quality' },
+        { id: 'project_rollup',          title: 'Project Rollup',          hint: 'Token activity and turn counts per project across all agents' },
+    ];
+
+    // Top-level categories. A report appears in exactly one group; pinned
+    // reports move to the Pinned group while pinned.
+    static GROUPS = [
+        { id: 'cost',        label: 'Cost',                    reports: ['cost', 'providers', 'roles', 'session_model', 'effort', 'efficiency', 'skill_outcomes'] },
+        { id: 'latency',     label: 'Latency',                 reports: ['latency', 'model_performance', 'codex_ttft', 'cross_tool_ttft', 'codex_turns', 'speed_dist'] },
+        { id: 'reliability', label: 'Reliability',             reports: ['reliability', 'recent_errors', 'session_quality', 'mcp_health', 'tool_failure_rates', 'guardian'] },
+        { id: 'behavior',    label: 'Behaviour',               reports: ['behavior', 'multi_agent', 'daily_tool_mix', 'model_selection_heatmap', 'reasoning_share'] },
+        { id: 'ecosystem',   label: 'Ecosystem & Diagnostics', reports: ['skill_activity', 'hook_overhead', 'capabilities', 'project_rollup'] },
+    ];
+
     constructor(apiClient) {
         this.api = apiClient;
         this.refreshInterval = null;
@@ -63,6 +109,15 @@ class AnalyticsView {
         // Track open state across re-renders
         this.openSections = new Set();
         this.lastSummary = null;
+        // Pinned reports (#186) — persisted in localStorage; rendered in a
+        // top-level Pinned group and open by default.
+        this.pinned = this._loadPins();
+        // Active report-filter query ('' = unfiltered) + the group open-state
+        // snapshot taken at the start of a filter session, so clearing the
+        // filter restores the previous layout.
+        this._filterQuery = '';
+        this._groupOpenSnapshot = null;
+        this._sectionsEl = null;
     }
 
     async render() {
@@ -97,34 +152,18 @@ class AnalyticsView {
             <div id="analytics-summary-cards"></div>
             <div id="analytics-empty-state"></div>
             <div id="analytics-sections">
-                ${this._renderSectionShell('cost', 'Cost', 'Tokens spent · pricing · most expensive calls')}
-                ${this._renderSectionShell('tool_failure_rates', 'Tool Failure Rates', 'Failure % per opencode tool — spot flaky or broken integrations at a glance')}
-                ${this._renderSectionShell('daily_tool_mix', 'Daily Tool Mix', 'Claude Code / opencode / Codex activity per calendar day — when you use each tool')}
-                ${this._renderSectionShell('roles', 'Agent Roles', 'Sub-agent attribution · cost & tokens per role · role × model routing matrix (opencode)')}
-                ${this._renderSectionShell('providers', 'Provider Mix', 'Tokens & estimated cost by provider × model (opencode · codex · claude)')}
-                ${this._renderSectionShell('latency', 'Latency', 'Response time · throughput · context size')}
-                ${this._renderSectionShell('reliability', 'Reliability', 'Errors · retries · truncation · drift')}
-                ${this._renderSectionShell('behavior', 'Behavior', 'Tool use · retrieval · request volume')}
-                ${this._renderSectionShell('skill_activity', 'Skills Activity', 'Which Codex skills fire most — implicit injection counts by skill name')}
-                ${this._renderSectionShell('capabilities', 'Telemetry Capabilities', 'Which metrics each emitter actually provides · availability & quality')}
-                ${this._renderSectionShell('model_performance', 'Model Performance', 'Per-model duration · throughput · TTFT · error diagnosis vs preceding & rolling baselines')}
-                ${this._renderSectionShell('effort', 'Effort Breakdown', 'Claude Code token usage by effort level (low/medium/high/xhigh) × model × type')}
-                ${this._renderSectionShell('efficiency', 'Agent Efficiency', 'Tokens per commit · tokens per line of code · cross-agent comparison')}
-                ${this._renderSectionShell('codex_ttft', 'Codex TTFT', 'First-token latency percentiles (p50/p90/p95) per model from histogram metrics')}
-                ${this._renderSectionShell('project_rollup', 'Project Rollup', 'Token activity and turn counts per project across all agents')}
-                ${this._renderSectionShell('mcp_health', 'MCP Health', 'Call success/error rates per MCP server and tool — spot flaky integrations')}
-                ${this._renderSectionShell('guardian', 'Guardian Reviews', 'Risk levels · denial rate by action type · what the guardian is actually blocking')}
-                ${this._renderSectionShell('multi_agent', 'Multi-Agent Topology', 'Sub-agent spawn and resume counts by role')}
-                ${this._renderSectionShell('codex_turns', 'Codex Busy/Idle', 'Average busy vs idle time per turn by model and project')}
-                ${this._renderSectionShell('session_model', 'Session × Model', 'Token and cost breakdown per (session, model) pair — spot opus spend in specific sessions')}
-                ${this._renderSectionShell('speed_dist', 'Speed / Effort Mode', 'Distribution of the Claude Code speed attribute (normal / extended thinking) by model')}
-                ${this._renderSectionShell('cross_tool_ttft', 'Cross-Tool TTFT', 'First-token latency by model across all tools (Claude Code, opencode, pi) from span attributes')}
-                ${this._renderSectionShell('session_quality', 'Session Quality', 'Clean / degraded / errored breakdown — spot sessions that truncated, retried, or failed')}
-                ${this._renderSectionShell('hook_overhead', 'Hook Overhead', 'Codex hook total and average invocation time per event type — how much latency hooks add')}
-                ${this._renderSectionShell('reasoning_share', 'Reasoning Token Share', 'Thinking tokens as a percentage of output tokens per model — opencode + Codex')}
-                ${this._renderSectionShell('skill_outcomes', 'Skill Outcomes', 'Token efficiency comparison: sessions that used each skill vs sessions that did not')}
-                ${this._renderSectionShell('model_selection_heatmap', 'Model Selection Heatmap', 'Which tool picked which model for which agent role — (role × tool × model) request counts')}
-                ${this._renderSectionShell('recent_errors', 'Recent Errors', 'Latest error events from spans and logs — OTel ERROR status, bad finish reasons, and log ERROR records')}
+                <div class="analytics-report-tools">
+                    <input type="search" id="analytics-report-filter" class="filter-input"
+                           placeholder="Filter reports… (e.g. ttft, cost, mcp)" autocomplete="off">
+                    <span id="analytics-filter-count" class="analytics-filter-count"></span>
+                </div>
+                ${[
+                    (this.pinned.size ? this._renderGroupShell('pinned', 'Pinned', [...this.pinned], true) : ''),
+                    ...AnalyticsView.GROUPS.map(g => {
+                        const ids = g.reports.filter(id => !this.pinned.has(id));
+                        return ids.length ? this._renderGroupShell(g.id, g.label, ids) : '';
+                    }),
+                ].join('')}
             </div>
         `;
 
@@ -137,6 +176,16 @@ class AnalyticsView {
 
         this._registerSectionLoaders();
         this._attachSectionToggleHandlers();
+        this._attachReportTools();
+        // Pinned sections mount already open; the toggle event that would
+        // lazy-load them doesn't fire on initial creation, so fire their
+        // loaders explicitly.
+        for (const id of this.pinned) {
+            this.openSections.add(id);
+            if (!this.loadedSections.has(id)) {
+                this.sectionLoaders[id]();
+            }
+        }
 
         await this._loadSummary();
 
@@ -145,19 +194,198 @@ class AnalyticsView {
         }
     }
 
-    _renderSectionShell(id, title, hint) {
-        const open = this.openSections.has(id);
+    _renderGroupShell(gid, label, reportIds, open = false) {
+        // reportIds may be empty (a freshly created Pinned group) — the
+        // caller then appends the moved <details> element itself.
+        const sections = (reportIds || []).map(id => this._renderSectionShell(id)).join('');
+        const n = (reportIds || []).length;
+        return `
+            <details class="analytics-group${gid === 'pinned' ? ' analytics-group-pinned' : ''}" id="analytics-group-${gid}"${open ? ' open' : ''}>
+                <summary class="analytics-group-summary">
+                    <span class="analytics-group-title">${label}</span>
+                    <span class="analytics-group-count" id="analytics-group-count-${gid}">${n} report${n === 1 ? '' : 's'}</span>
+                </summary>
+                <div class="analytics-group-body" id="analytics-group-body-${gid}">${sections}</div>
+            </details>`;
+    }
+
+    _renderSectionShell(id) {
+        const r = AnalyticsView.REPORTS.find(x => x.id === id);
+        if (!r) return '';
+        const pinned = this.pinned.has(id);
+        const open = pinned || this.openSections.has(id);
         return `
             <details class="analytics-section" id="analytics-section-${id}"${open ? ' open' : ''}>
                 <summary class="analytics-section-summary">
-                    <span class="analytics-section-title">${title}</span>
-                    <span class="analytics-section-hint">${hint}</span>
+                    <button type="button" class="pin-btn${pinned ? ' pinned' : ''}" data-pin="${id}"
+                            aria-pressed="${pinned}" title="${pinned ? 'Unpin report' : 'Pin report to top'}">&#128204;</button>
+                    <span class="analytics-section-title">${r.title}</span>
+                    <span class="analytics-section-hint">${r.hint}</span>
                     <span class="analytics-section-stat" id="analytics-section-stat-${id}">—</span>
                 </summary>
                 <div class="analytics-section-body" id="analytics-section-body-${id}">
                     <div class="empty-state-hint">Loading…</div>
                 </div>
             </details>`;
+    }
+
+    _loadPins() {
+        try {
+            const raw = JSON.parse(localStorage.getItem('otelite.analytics.pinned') || '[]');
+            const valid = new Set(AnalyticsView.REPORTS.map(r => r.id));
+            return new Set(Array.isArray(raw) ? raw.filter(id => valid.has(id)) : []);
+        } catch {
+            // Corrupt storage — start unpinned rather than failing the view.
+            return new Set();
+        }
+    }
+
+    _savePins() {
+        try {
+            localStorage.setItem('otelite.analytics.pinned', JSON.stringify([...this.pinned]));
+        } catch {
+            // Storage unavailable (e.g. private browsing) — pins stay
+            // session-only; nothing else depends on them.
+        }
+    }
+
+    _attachReportTools() {
+        this._sectionsEl = document.getElementById('analytics-sections');
+        const filterInput = document.getElementById('analytics-report-filter');
+        if (filterInput) {
+            filterInput.addEventListener('input', () => this._applyReportFilter(filterInput.value));
+        }
+        // Pin buttons live inside <summary>; intercept the click before it
+        // toggles the details element.
+        this._sectionsEl.addEventListener('click', (e) => {
+            const btn = e.target.closest('.pin-btn');
+            if (!btn) return;
+            e.preventDefault();
+            e.stopPropagation();
+            this._togglePin(btn.dataset.pin);
+        });
+        this._applyReportFilter(this._filterQuery);
+    }
+
+    _applyReportFilter(query) {
+        const q = (query || '').trim().toLowerCase();
+        this._filterQuery = q;
+        const groups = [...document.querySelectorAll('.analytics-group')];
+        // Snapshot group open-state at the start of a filter session so
+        // clearing the filter restores the previous layout.
+        let restore = null;
+        if (q && !this._groupOpenSnapshot) {
+            this._groupOpenSnapshot = groups.filter(g => g.open).map(g => g.id);
+        }
+        if (!q) {
+            restore = this._groupOpenSnapshot;
+            this._groupOpenSnapshot = null;
+        }
+
+        const total = Object.keys(this.sectionLoaders).length;
+        let visible = 0;
+        for (const id of Object.keys(this.sectionLoaders)) {
+            const el = document.getElementById(`analytics-section-${id}`);
+            if (!el) continue;
+            const title = (el.querySelector('.analytics-section-title')?.textContent || '').toLowerCase();
+            const hint = (el.querySelector('.analytics-section-hint')?.textContent || '').toLowerCase();
+            // A query matching a category name shows every report in it.
+            const hostGroup = el.closest('.analytics-group');
+            const groupMatch = hostGroup &&
+                (hostGroup.querySelector('.analytics-group-title')?.textContent || '').toLowerCase().includes(q);
+            const match = !q || title.includes(q) || hint.includes(q) || groupMatch;
+            el.hidden = !match;
+            if (match) visible++;
+        }
+        for (const g of groups) {
+            const hasVisible = [...g.querySelectorAll('.analytics-section')].some(s => !s.hidden);
+            g.hidden = !hasVisible;
+            if (q) {
+                // While filtering, matching categories open automatically.
+                g.open = hasVisible;
+            } else if (restore) {
+                // Filter cleared — restore the pre-filter layout.
+                g.open = restore.includes(g.id);
+            }
+            // No filter and no snapshot: leave open state untouched (initial
+            // render — e.g. the Pinned group mounts open).
+        }
+        const count = document.getElementById('analytics-filter-count');
+        if (count) count.textContent = q ? `${visible} of ${total} reports` : `${total} reports`;
+    }
+
+    _recountGroups() {
+        for (const g of document.querySelectorAll('.analytics-group')) {
+            const body = g.querySelector('.analytics-group-body');
+            const countEl = g.querySelector('.analytics-group-count');
+            if (!body || !countEl) continue;
+            const n = body.querySelectorAll('.analytics-section').length;
+            countEl.textContent = n ? `${n} report${n === 1 ? '' : 's'}` : 'no reports';
+        }
+    }
+
+    _ensureCategoryGroupBody(group) {
+        let body = document.getElementById(`analytics-group-body-${group.id}`);
+        if (body) return body;
+        // The category was empty when the page rendered (all of its reports
+        // were pinned) — recreate its shell, keeping category order.
+        const wrap = document.createElement('div');
+        wrap.innerHTML = this._renderGroupShell(group.id, group.label, []);
+        const newGroup = wrap.firstElementChild;
+        const myOrder = AnalyticsView.GROUPS.findIndex(g => g.id === group.id);
+        let anchor = null;
+        for (const g of AnalyticsView.GROUPS) {
+            if (AnalyticsView.GROUPS.findIndex(x => x.id === g.id) <= myOrder) continue;
+            const el = document.getElementById(`analytics-group-${g.id}`);
+            if (el) {
+                anchor = el;
+                break;
+            }
+        }
+        if (anchor) this._sectionsEl.insertBefore(newGroup, anchor);
+        else this._sectionsEl.appendChild(newGroup);
+        return newGroup.querySelector('.analytics-group-body');
+    }
+
+    _togglePin(id) {
+        const sectionEl = document.getElementById(`analytics-section-${id}`);
+        if (!sectionEl) return;
+        if (this.pinned.has(id)) {
+            this.pinned.delete(id);
+            // Move the report back into its category.
+            const group = AnalyticsView.GROUPS.find(g => g.reports.includes(id));
+            if (group) this._ensureCategoryGroupBody(group).appendChild(sectionEl);
+            // Drop the Pinned group once it is empty.
+            const pinnedGroup = document.getElementById('analytics-group-pinned');
+            if (pinnedGroup && !pinnedGroup.querySelector('.analytics-section')) {
+                pinnedGroup.remove();
+            }
+        } else {
+            this.pinned.add(id);
+            let pinnedGroup = document.getElementById('analytics-group-pinned');
+            if (!pinnedGroup) {
+                const wrap = document.createElement('div');
+                wrap.innerHTML = this._renderGroupShell('pinned', 'Pinned', [], true);
+                pinnedGroup = wrap.firstElementChild;
+                const tools = document.querySelector('.analytics-report-tools');
+                if (tools) this._sectionsEl.insertBefore(pinnedGroup, tools.nextSibling);
+                else this._sectionsEl.prepend(pinnedGroup);
+            }
+            pinnedGroup.querySelector('.analytics-group-body').appendChild(sectionEl);
+            // Pinned reports open by default; setting .open fires the
+            // toggle handler, which records the state and lazy-loads.
+            sectionEl.open = true;
+        }
+        this._savePins();
+        const btn = sectionEl.querySelector('.pin-btn');
+        if (btn) {
+            const on = this.pinned.has(id);
+            btn.classList.toggle('pinned', on);
+            btn.setAttribute('aria-pressed', String(on));
+            btn.title = on ? 'Unpin report' : 'Pin report to top';
+        }
+        this._recountGroups();
+        this._applyReportFilter(this._filterQuery);
     }
 
     _renderTipsPanel() {
@@ -170,8 +398,9 @@ class AnalyticsView {
                         <div class="tips-col">
                             <strong>Layout</strong>
                             <ul>
-                                <li>Sections lazy-load on first expand</li>
-                                <li>Top-spans table is under <strong>Cost</strong> — sort dropdown switches view</li>
+                                <li>Reports are grouped into categories; all lazy-load on first expand</li>
+                                <li>The filter box matches report titles, hints, and category names; matching categories open automatically</li>
+                                <li>&#128204; pins a report to the top (saved in your browser); Top-spans table is under <strong>Cost</strong> — sort dropdown switches view</li>
                             </ul>
                             <strong>Widgets</strong>
                             <ul>
