@@ -11,6 +11,24 @@ have to work around), not implementation detail.
 
 ## [Unreleased]
 
+## [0.1.125] - 2026-09-08
+
+### Internal
+
+- Releases no longer require an admin-bypass credential: the version
+  bump and changelog rotation now ship as an auto-merged release PR
+  (`chore: release vX.Y.Z`) that goes through the normal
+  protected-branch flow, then the merged commit is tagged and the
+  binary release + crates.io publish are triggered. Override (an
+  owner-key push to main) is reserved for bootstrap and incident
+  recovery only (#188).
+
+
+- Release pipeline fix: the auto-merged release PR flow now sets
+  `GH_TOKEN` for the GitHub CLI (the first 0.1.125 attempt failed at
+  the `gh pr create` step) and force-pushes the release branch so a
+  re-run replaces a branch left behind by a failed attempt.
+
 ## [0.1.124] - 2026-09-08
 
 ### Fixed
