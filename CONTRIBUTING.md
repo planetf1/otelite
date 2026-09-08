@@ -203,7 +203,10 @@ Ship your release notes as a separate entry file — **do not edit
    `### Added` / `### Changed` / `### Fixed` / `### Removed` /
    `### Internal`; a file with no heading defaults to Added.
 3. The release workflow merges entry files into the next release section of
-   `CHANGELOG.md` and deletes them.
+   `CHANGELOG.md` and deletes them. This ships as an auto-merged
+   `chore: release vX.Y.Z` PR (version bump + rotation) that merges itself
+   once checks pass — leave it alone; if it gets stuck, see the incident
+   note in `.github/workflows/bump-and-tag.yml`.
 
 Why not edit `CHANGELOG.md` directly? Every push to main rotates the
 changelog (a new release is cut), so a PR holding a `CHANGELOG.md` hunk

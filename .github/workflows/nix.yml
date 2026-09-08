@@ -50,7 +50,15 @@ jobs:
   nix-check:
     name: Flake Check
     needs: changes
-    if: github.event_name != 'pull_request' || needs.changes.outputs.changed == 'true'
+    # Release PRs (chore/release-v*) carry only the version bump and the
+    # changelog rotation on top of an already-green main — no new code —
+    # yet the flake check is the longest, most variable required check
+    # (14-40 min observed), so it is excluded from the release critical
+    # path. A skipped required check does not block the merge (same
+    # mechanism as the self-skip above).
+    if: >
+      github.event_name != 'pull_request' ||
+      (needs.changes.outputs.changed == 'true' && !startsWith(github.head_ref, 'chore/release-v'))
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code

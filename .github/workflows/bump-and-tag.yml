@@ -1,17 +1,33 @@
 name: Bump version and tag
 
-# Bumps version, creates a tag, publishes to crates.io, and triggers the dist
-# release workflow (binary builds + Homebrew formula update).
+# Release pipeline — no-override design (2026-09-08, closes #188):
 #
-# Triggers:
-#   - Every push to main bumps a patch version automatically.
-#   - Manual dispatch: Actions → Bump version and tag → Run workflow (patch/minor/major).
-#     CLI: gh workflow run bump-and-tag.yml --field bump=patch
+#   1. A push to main that ships release notes (bullets under
+#      '## [Unreleased]' or per-PR changelog/*.md entries) triggers a
+#      release.
+#   2. The release job opens a "chore: release vX.Y.Z" pull request
+#      carrying the version bump and the CHANGELOG rotation, waits for
+#      the required checks, and squash-merges it with GITHUB_TOKEN —
+#      the sanctioned path under branch protection. No admin-bypass
+#      credential is involved anywhere in a normal release.
+#   3. The merged commit is tagged vX.Y.Z (tags are not branch
+#      protected), release.yml is dispatched for the binary builds,
+#      GitHub release and Homebrew formula, and the crates.io publish
+#      runs as the reusable job below.
 #
-# Note: GITHUB_TOKEN tag pushes do NOT trigger other workflow `push: tags:` listeners
-# (GitHub design). Binary releases are triggered via `gh workflow run dist-release.yml`.
-# This requires RELEASE_TOKEN (PAT with `repo` + `workflow` scopes) to be set as a secret.
-# Without RELEASE_TOKEN, binary builds must be started manually after the tag is created.
+#   Runs are serialised (concurrency group `release`) and always build
+#   the release from the *latest* main, so back-to-back merges either
+#   combine into one release or chain cleanly.
+#
+#   Manual dispatch (patch/minor/major) cuts a release on demand when
+#   main carries notes a push did not release; with no notes it exits
+#   cleanly.
+#
+#   Incident recovery (the only place override belongs): if a release
+#   PR gets stuck, re-run the failed jobs (Actions → run → Re-run
+#   failed) and merge by hand (`gh pr merge <n> --squash
+#   --delete-branch`), tag the merged commit and dispatch release.yml —
+#   or push the tagged commit to main with owner credentials.
 
 on:
   push:
@@ -33,17 +49,22 @@ env:
 
 permissions:
   contents: write
+  actions: write
+  pull-requests: write
+
+concurrency:
+  group: release
+  cancel-in-progress: false
 
 jobs:
   release:
-    name: Bump version and tag
+    name: Open and merge release PR
     runs-on: ubuntu-latest
-    # Guard: the version-bump commit must not re-trigger this workflow.
+    timeout-minutes: 90
+    # Guard: a release PR's own merge must not re-trigger this workflow.
     if: "!startsWith(github.event.head_commit.message, 'chore: release v')"
     outputs:
       new_version: ${{ steps.bump.outputs.new }}
-    env:
-      RELEASE_TOKEN: ${{ secrets.RELEASE_TOKEN }}
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
@@ -55,11 +76,36 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
 
+      - name: Sync to latest main and gate on release notes
+        # Always build the release from the *latest* main, not this
+        # push's commit: under the concurrency group a later run can
+        # start after an earlier release already consumed this push's
+        # notes, in which case there is nothing to release.
+        id: gate
+        run: |
+          set -euo pipefail
+          git fetch -q origin main
+          git checkout -q -B release-base origin/main
+          unreleased_has=0
+          awk '/^## \[Unreleased\]/{f=1;next} f&&/^## /{f=0} f' CHANGELOG.md | grep -qE '^- ' && unreleased_has=1
+          entry_has=0
+          for f in $(find changelog -maxdepth 1 -name '*.md' ! -name '.*' 2>/dev/null | sort); do
+            if grep -qE '^- ' "$f"; then entry_has=1; break; fi
+          done
+          if [[ "$unreleased_has" -eq 0 && "$entry_has" -eq 0 ]]; then
+            echo "main carries no release notes — nothing to release (skipping)."
+            echo "proceed=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "proceed=true" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Bump version in Cargo.toml
         id: bump
+        if: steps.gate.outputs.proceed == 'true'
         env:
           BUMP_KIND: ${{ inputs.bump || 'patch' }}
         run: |
+          set -euo pipefail
           current=$(grep '^version' Cargo.toml | head -1 | sed 's/.*"\(.*\)".*/\1/')
           IFS='.' read -r major minor patch <<< "$current"
           case "$BUMP_KIND" in
@@ -72,55 +118,157 @@ jobs:
           echo "new=$new" >> "$GITHUB_OUTPUT"
 
       - uses: actions-rust-lang/setup-rust-toolchain@166cdcfd11aee3cb47222f9ddb555ce30ddb9659 # v1
+        if: steps.gate.outputs.proceed == 'true'
         with:
           toolchain: stable
 
-      - name: Check formatting
-        run: cargo fmt --all -- --check
-
       - name: Update Cargo.lock
+        if: steps.gate.outputs.proceed == 'true'
         run: cargo metadata --format-version 1 > /dev/null
 
       - name: Rotate CHANGELOG [Unreleased] → [X.Y.Z]
         # Fails if [Unreleased] is empty — every release must ship with notes.
         # See AGENTS.md → Changelog discipline.
-        run: |
-          ./scripts/rotate-changelog.sh "${{ steps.bump.outputs.new }}"
+        if: steps.gate.outputs.proceed == 'true'
+        run: ./scripts/rotate-changelog.sh "${{ steps.bump.outputs.new }}"
 
-      - name: Commit, tag, and push
-        # GITHUB_TOKEN pushes are refused on a PR-protected main (by design:
-        # any collaborator could otherwise route a workflow to push to main),
-        # so the release commit goes out with the PAT that already carries
-        # `repo` scope for this workflow — the same token used for the
-        # release dispatch below.
+      - name: Commit and open release PR
+        id: pr
+        if: steps.gate.outputs.proceed == 'true'
         env:
-          RELEASE_TOKEN: ${{ secrets.RELEASE_TOKEN }}
+          NEW_VERSION: ${{ steps.bump.outputs.new }}
         run: |
+          set -euo pipefail
+          branch="chore/release-v${NEW_VERSION}"
+          git checkout -q -b "$branch"
           git add Cargo.toml Cargo.lock CHANGELOG.md changelog/
-          git commit -m "chore: release v${{ steps.bump.outputs.new }}"
-          git tag "v${{ steps.bump.outputs.new }}"
-          git push "https://x-access-token:${RELEASE_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" main "v${{ steps.bump.outputs.new }}"
+          git commit -m "chore: release v${NEW_VERSION}"
+          git push -q origin "$branch"
+          body=$(printf 'Automatic release PR opened by the *Bump version and tag* workflow.\n\nCarries the version bump (Cargo.toml / Cargo.lock) and the CHANGELOG rotation for v%s. It merges by itself once the required checks pass — no manual action needed.\n\nIf a required check fails spuriously it is re-run once automatically; if it fails again, re-run it (Actions → run → Re-run failed jobs) and the merge will proceed, or merge by hand (gh pr merge <n> --squash --delete-branch), then tag the merged commit and dispatch release.yml.' "$NEW_VERSION")
+          url=$(gh pr create --title "chore: release v${NEW_VERSION}" --body "$body")
+          pr_number=${url##*/}
+          echo "pr_number=$pr_number" >> "$GITHUB_OUTPUT"
+          echo "branch=$branch" >> "$GITHUB_OUTPUT"
+          echo "opened $url"
+
+      - name: Wait for checks, rebase if stale, squash-merge
+        id: merge
+        if: steps.gate.outputs.proceed == 'true'
+        env:
+          PR_NUMBER: ${{ steps.pr.outputs.pr_number }}
+          BRANCH: ${{ steps.pr.outputs.branch }}
+        run: |
+          set -uo pipefail
+          merged=0
+          reran=0
+          for i in $(seq 1 50); do
+            status=$(gh pr view "$PR_NUMBER" --json mergeStateStatus -q .mergeStateStatus 2>/dev/null || echo UNKNOWN)
+            case "$status" in
+              CLEAN|UNSTABLE)
+                # Capture main's head immediately before merging so the
+                # tag step can prove it tagged the exact squash commit.
+                git fetch -q origin main
+                echo "base_before=$(git rev-parse origin/main)" >> "$GITHUB_OUTPUT"
+                gh pr merge "$PR_NUMBER" --squash --delete-branch
+                echo "release PR #$PR_NUMBER squash-merged"
+                merged=1
+                break
+                ;;
+              BEHIND|HAS_COMMITS_BEHIND)
+                echo "main moved — rebasing $BRANCH onto latest main (checks re-run)"
+                git fetch -q origin main
+                if ! git rebase -q origin/main; then
+                  echo "rebase conflict — release needs manual intervention"
+                  exit 1
+                fi
+                git push -q -f origin "$BRANCH"
+                ;;
+              DIRTY)
+                echo "merge conflict on $BRANCH — release needs manual intervention"
+                exit 1
+                ;;
+              BLOCKED)
+                # Required checks not met. Conclude failure only once
+                # every check has settled (stale conclusions from a
+                # superseded head must not count).
+                head_oid=$(gh pr view "$PR_NUMBER" --json headRefOid -q .headRefOid 2>/dev/null || echo "")
+                if [[ -n "$head_oid" ]]; then
+                  runs=$(gh api "repos/${GITHUB_REPOSITORY}/commits/${head_oid}/check-runs" \
+                    -q '[.check_runs[] | {status: .status, conclusion: (.conclusion // "none")}]' 2>/dev/null || echo "[]")
+                  in_progress=$(jq '[.[] | select(.status != "completed")] | length' <<<"$runs")
+                  settled_failures=$(jq '[.[] | select(.status == "completed" and (.conclusion | ascii_downcase | IN("failure","error","timed_out","cancelled")))] | length' <<<"$runs")
+                  if [[ "$in_progress" -eq 0 && "$settled_failures" -gt 0 ]]; then
+                    if [[ "$reran" -eq 0 ]]; then
+                      echo "settled failure — re-running failed jobs once, then waiting again"
+                      gh run list --branch "$BRANCH" --limit 25 --json databaseId,conclusion \
+                        -q '.[] | select(.conclusion == "failure") | .databaseId' | while read -r id; do
+                        gh run rerun "$id" --failed || true
+                      done
+                      reran=1
+                    else
+                      echo "check(s) still failing after re-run — release needs manual intervention:"
+                      jq -r '.[] | select(.status == "completed" and (.conclusion | ascii_downcase | IN("failure","error","timed_out","cancelled"))) | .conclusion' <<<"$runs" | sort | uniq -c
+                      exit 1
+                    fi
+                  else
+                    echo "checks in flight — waiting (attempt $i/50)"
+                  fi
+                else
+                  echo "checks in flight — waiting (attempt $i/50)"
+                fi
+                ;;
+              *)
+                echo "merge state '$status' — waiting (attempt $i/50)"
+                ;;
+            esac
+            sleep 60
+          done
+          if [[ "$merged" -ne 1 ]]; then
+            echo "timed out waiting for the release PR to go green — manual intervention"
+            exit 1
+          fi
+
+      - name: Tag merged commit and push
+        if: steps.gate.outputs.proceed == 'true'
+        env:
+          NEW_VERSION: ${{ steps.bump.outputs.new }}
+          BASE_BEFORE: ${{ steps.merge.outputs.base_before }}
+        run: |
+          set -euo pipefail
+          git fetch -q origin main
+          # The squash commit's parent must be exactly the main head we
+          # captured pre-merge — otherwise main advanced in the window
+          # and we would tag the wrong commit.
+          if [[ "$(git rev-parse origin/main^)" != "$BASE_BEFORE" ]]; then
+            echo "main advanced between merge and tag — manual intervention"
+            exit 1
+          fi
+          git tag "v${NEW_VERSION}" origin/main
+          git push -q origin "v${NEW_VERSION}"
+          echo "tagged v${NEW_VERSION} at $(git rev-parse --short origin/main)"
 
       - name: Trigger binary release workflow
-        # Requires RELEASE_TOKEN (PAT with repo + workflow scopes).
-        # Without it, binary builds must be triggered manually.
-        if: ${{ env.RELEASE_TOKEN != '' }}
-        env:
-          GH_TOKEN: ${{ secrets.RELEASE_TOKEN }}
+        # GITHUB_TOKEN with `actions: write` (see workflow permissions).
+        # Tag pushes do not trigger `push: tags:` listeners (GitHub
+        # design), so the dispatch is explicit.
+        if: steps.gate.outputs.proceed == 'true'
         run: |
-          gh workflow run release.yml \
-            --ref "v${{ steps.bump.outputs.new }}" \
-            --repo "${{ github.repository }}"
+          gh workflow run release.yml --ref "v${{ steps.bump.outputs.new }}" --repo "${{ github.repository }}"
+          echo "release.yml dispatched for v${{ steps.bump.outputs.new }}"
 
       - name: Summary
+        if: steps.gate.outputs.proceed == 'true'
         run: |
-          echo "### Released v${{ steps.bump.outputs.new }}" >> "$GITHUB_STEP_SUMMARY"
-          echo "Bumped \`${{ steps.bump.outputs.old }}\` → \`${{ steps.bump.outputs.new }}\`" >> "$GITHUB_STEP_SUMMARY"
-          echo "Tag \`v${{ steps.bump.outputs.new }}\` pushed — publish workflow triggered." >> "$GITHUB_STEP_SUMMARY"
+          {
+            echo "### Released v${{ steps.bump.outputs.new }}"
+            echo "Bumped \`${{ steps.bump.outputs.old }}\` → \`${{ steps.bump.outputs.new }}\`"
+            echo "Release PR #${{ steps.pr.outputs.pr_number }} squash-merged, tag pushed, release.yml dispatched."
+          } >> "$GITHUB_STEP_SUMMARY"
 
   publish:
     name: Publish to crates.io
     needs: release
+    if: needs.release.result == 'success' && needs.release.outputs.new_version != ''
     uses: ./.github/workflows/publish.yml
     with:
       ref: "v${{ needs.release.outputs.new_version }}"

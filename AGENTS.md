@@ -179,19 +179,27 @@ changes, CI/release plumbing, dependency bumps with no behaviour change.
    `CHANGELOG.md` — it is the release-generated record, and concurrent
    edits to it are what used to make open PRs clash on every release
    rotation.
-2. At release time, the bump-and-tag CI workflow runs
-   `scripts/rotate-changelog.sh`, which merges any `[Unreleased]` bullets
-   and every `changelog/*.md` entry into `[X.Y.Z] - YYYY-MM-DD` (canonical
-   section order: Added, Changed, Fixed, Removed, Internal) and deletes the
-   consumed entry files. The script **fails the release** if neither source
-   has at least one bullet.
+2. At release time, the bump-and-tag CI workflow opens an auto-merged
+   **release PR** (`chore: release vX.Y.Z`) carrying the
+   `Cargo.toml`/`Cargo.lock` version bump and the
+   `scripts/rotate-changelog.sh` rotation (merges any `[Unreleased]`
+   bullets and every `changelog/*.md` entry into `[X.Y.Z] - YYYY-MM-DD`,
+   canonical section order: Added, Changed, Fixed, Removed, Internal, and
+   deletes the consumed entry files). The release PR merges by itself once
+   the required checks pass, then the merged commit is tagged and the
+   binary release + crates.io publish are triggered — no admin-bypass
+   credential is used (see #188). The script **fails the release** if
+   neither source has at least one bullet. Leave release PRs alone; if one
+   gets stuck, re-run the failed checks or merge it by hand (the incident
+   path is documented in `bump-and-tag.yml`).
 3. Bullets may still be appended under `## [Unreleased]` directly for
    changes made on main itself; both sources merge into the release section.
 4. For pure-plumbing pushes with no user impact, add an `### Internal`
    bullet (entry file or `[Unreleased]`). This satisfies the gate without
    inventing fake user-facing copy.
-5. If the bump fails because no notes were found, add the missing entry and
-   push — the workflow retries automatically on the next push to main.
+5. A push with no release notes exits the workflow cleanly (nothing to
+   release) — if you expected a release, check the bump-and-tag run's gate
+   step, or trigger one manually (Actions → Bump version and tag).
 
 Test the script: `scripts/rotate-changelog.sh --selftest`.
 Dry-run the rotation locally:
