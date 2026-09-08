@@ -11,6 +11,16 @@ have to work around), not implementation detail.
 
 ## [Unreleased]
 
+## [0.1.124] - 2026-09-08
+
+### Fixed
+
+- GenAI Analytics and Sessions views no longer take tens of seconds per
+  report on large databases — the daemon now maintains SQLite query
+  planner statistics automatically (ANALYZE in quiet maintenance
+  windows), so report queries stay in the millisecond–second range as
+  the database grows
+
 ## [0.1.123] - 2026-09-08
 
 ### Fixed
