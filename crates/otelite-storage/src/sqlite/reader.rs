@@ -13176,21 +13176,26 @@ pub fn query_recent_errors(
     let cap = limit.unwrap_or(50).min(200);
     let mut filters_applied: Vec<String> = Vec::new();
 
-    // Build optional time-range clauses (applied to both subqueries).
+    // Named parameters: the time clauses are interpolated into three
+    // subqueries (two span branches plus the logs branch), so a positional
+    // `?` per occurrence would need every value bound multiple times in
+    // statement order. Named parameters bind once and are referenced by
+    // name — a mismatch between clause count and bound values can no longer
+    // produce "Wrong number of parameters passed to query".
     let mut span_time = String::new();
     let mut log_time = String::new();
-    let mut params: Vec<Box<dyn rusqlite::ToSql>> = Vec::new();
+    let mut named: Vec<(&'static str, Box<dyn rusqlite::ToSql>)> = Vec::new();
 
     if let Some(s) = start_time {
-        span_time.push_str(" AND start_time >= ?");
-        log_time.push_str(" AND timestamp >= ?");
-        params.push(Box::new(s));
+        span_time.push_str(" AND start_time >= :start_time");
+        log_time.push_str(" AND timestamp >= :start_time");
+        named.push((":start_time", Box::new(s)));
         filters_applied.push(format!("start_time>={s}"));
     }
     if let Some(e) = end_time {
-        span_time.push_str(" AND end_time <= ?");
-        log_time.push_str(" AND timestamp <= ?");
-        params.push(Box::new(e));
+        span_time.push_str(" AND end_time <= :end_time");
+        log_time.push_str(" AND timestamp <= :end_time");
+        named.push((":end_time", Box::new(e)));
         filters_applied.push(format!("end_time<={e}"));
     }
 
@@ -13208,17 +13213,13 @@ pub fn query_recent_errors(
     // Optional HAVING clause to filter by tool label.
     let tool_filter = if let Some(t) = tool {
         filters_applied.push(format!("tool={t}"));
-        // We push the value as a param so it's bound safely.
-        params.push(Box::new(t.to_string()));
-        // Note: we filter in a WHERE on the outer query so the param index
-        // is correct (time params come first). We use a derived-table trick.
-        " AND tool_label = ?".to_string()
+        named.push((":tool", Box::new(t.to_string())));
+        " AND tool_label = :tool".to_string()
     } else {
         String::new()
     };
 
-    // We'll push `cap` as the LIMIT param at the very end.
-    params.push(Box::new(cap as i64));
+    named.push((":limit", Box::new(cap as i64)));
 
     let sql = format!(
         "SELECT ts, name, tool_label, model, session_id, trace_id, message, source
@@ -13302,16 +13303,19 @@ pub fn query_recent_errors(
          )
          WHERE 1=1{tool_filter}
          ORDER BY ts DESC
-         LIMIT ?"
+         LIMIT :limit"
     );
 
-    let param_refs: Vec<&dyn rusqlite::ToSql> = params.iter().map(|p| p.as_ref()).collect();
+    // rusqlite 0.31 binds named parameters from a slice of (name, value)
+    // pairs (names may include the leading ':').
+    let named_refs: Vec<(&str, &dyn rusqlite::ToSql)> =
+        named.iter().map(|(k, v)| (*k, v.as_ref())).collect();
     let mut stmt = conn
         .prepare(&sql)
         .map_err(|e| StorageError::QueryError(format!("recent_errors prepare: {e}")))?;
 
     let rows = stmt
-        .query_map(param_refs.as_slice(), |r| {
+        .query_map(&named_refs[..], |r| {
             Ok(otelite_core::api::RecentErrorRow {
                 timestamp: r.get::<_, i64>(0)?,
                 name: r.get::<_, String>(1).unwrap_or_default(),
@@ -13492,6 +13496,72 @@ mod recent_errors_tests {
         .unwrap();
         let resp = query_recent_errors(&conn, None, None, None, None).unwrap();
         assert!(resp.rows.is_empty());
+    }
+
+    // Regression (issue #190): the time clauses are interpolated into three
+    // subqueries, so passing both time bounds used to fail with
+    // "Wrong number of parameters passed to query. Got 3, needed 7" —
+    // every pre-#190 test called with (None, None) and never hit the bug.
+    #[test]
+    fn test_recent_errors_time_filter_bounds_applied() {
+        let conn = make_conn();
+        // Span rows carry a 1 s duration (end = start + 1_000_000), so the
+        // window is in ns-scale values wide enough to contain them.
+        ins_span_status(&conn, 500_000_000, 2, "too early");
+        ins_span_status(&conn, 2_000_000_000, 2, "in window");
+        ins_span_status(&conn, 6_000_000_000, 2, "too late");
+        ins_log(&conn, 50_000_000, 9, "log too early");
+        ins_log(&conn, 3_000_000_000, 9, "log in window");
+        ins_log(&conn, 7_000_000_000, 9, "log too late");
+
+        let resp = query_recent_errors(&conn, Some(1_000_000_000), Some(5_000_000_000), None, None)
+            .unwrap();
+        assert_eq!(
+            resp.rows.len(),
+            2,
+            "only the in-window rows should remain: {:?}",
+            resp.rows
+        );
+        assert!(resp
+            .rows
+            .iter()
+            .all(|r| (1_000_000_000..=5_000_000_000).contains(&r.timestamp)));
+        assert_eq!(
+            resp.rows
+                .iter()
+                .map(|r| r.source.as_str())
+                .collect::<Vec<_>>(),
+            vec!["log", "span_status"],
+            "newest first: the log (3e9) precedes the span (2e9)"
+        );
+        assert_eq!(resp.filters_applied.len(), 2);
+    }
+
+    #[test]
+    fn test_recent_errors_time_and_tool_filter() {
+        let conn = make_conn();
+        // In-window error span with a claude_code scope, plus an in-window
+        // error span with no scope (tool → 'unknown').
+        conn.execute(
+            "INSERT INTO spans (trace_id, span_id, name, kind, start_time, end_time, attributes, scope, status_code, status_message, flags, created_at)
+             VALUES ('tr10', 'sp10', 'llm', 1, 2000000000, 3000000000, '{}', '{\"name\":\"claude_code\"}', 2, 'cc err', 0, 0)",
+            [],
+        )
+        .unwrap();
+        ins_span_status(&conn, 2_500_000_000, 2, "no scope err");
+
+        let resp = query_recent_errors(
+            &conn,
+            Some(1_000_000_000),
+            Some(5_000_000_000),
+            Some("claude_code"),
+            Some(10),
+        )
+        .unwrap();
+        assert_eq!(resp.rows.len(), 1);
+        assert_eq!(resp.rows[0].timestamp, 2_000_000_000);
+        assert_eq!(resp.rows[0].tool, "claude_code");
+        assert_eq!(resp.filters_applied.len(), 3);
     }
 }
 
