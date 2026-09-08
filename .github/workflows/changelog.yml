@@ -22,7 +22,10 @@ jobs:
         run: |
           set -euo pipefail
           base=$(git merge-base origin/main HEAD)
-          changed=$(git diff --name-only "$base" HEAD)
+          # ACM only: the auto-merged release PR *deletes* the consumed
+          # changelog/*.md entries, and 'git show HEAD:<deleted>' would
+          # error. Release PRs pass via the CHANGELOG.md branch below.
+          changed=$(git diff --name-only --diff-filter=ACM "$base" HEAD)
 
           entry=$(printf '%s\n' "$changed" | grep -E '^changelog/[^/]+\.md$' | head -1 || true)
           if [[ -n "$entry" ]]; then
