@@ -3673,7 +3673,7 @@ class AnalyticsView {
     async _loadCrossToolTtftSection() {
         this._setSectionLoading('cross_tool_ttft');
         try {
-            const data = await this.api.getCrossToolTtft(this._timeParams());
+            const data = await this.api.getCrossToolTtft(this._baseParams());
             const rows = data.rows || [];
             if (!rows.length) {
                 this._setSectionBody('cross_tool_ttft', '<div class="empty-state-hint">No TTFT span data in this window. Only Claude Code and opencode spans carry ttft_ms.</div>');
@@ -3707,7 +3707,7 @@ class AnalyticsView {
     async _loadHookOverheadSection() {
         this._setSectionLoading('hook_overhead');
         try {
-            const data = await this.api.getHookOverhead(this._timeParams());
+            const data = await this.api.getHookOverhead(this._baseParams());
             const rows = data.rows || [];
             if (!rows.length) {
                 this._setSectionBody('hook_overhead', '<div class="empty-state-hint">No Codex hook data in this window.</div>');
@@ -3739,7 +3739,7 @@ class AnalyticsView {
     async _loadReasoningShareSection() {
         this._setSectionLoading('reasoning_share');
         try {
-            const data = await this.api.getReasoningShare(this._timeParams());
+            const data = await this.api.getReasoningShare(this._baseParams());
             const models = data.models || [];
             const effort = data.effort || [];
             if (!models.length && !effort.length) {
