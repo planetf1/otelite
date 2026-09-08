@@ -11,6 +11,12 @@ have to work around), not implementation detail.
 
 ## [Unreleased]
 
+## [0.1.122] - 2026-09-08
+
+### Fixed
+
+- Three GenAI Analytics reports (Cross-Tool TTFT, Hook Overhead, Reasoning Token Share) that failed to load on every expand now work
+
 ## [0.1.121] - 2026-09-06
 
 ### Added
