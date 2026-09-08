@@ -17,6 +17,7 @@ pub mod pool;
 pub mod purge;
 pub mod reader;
 pub mod schema;
+pub mod stats;
 pub mod writer;
 
 /// Number of dedicated read connections in the pool. Sized so a full
@@ -34,6 +35,7 @@ pub struct SqliteBackend {
     read_pool: std::sync::OnceLock<Arc<pool::ReadPool>>,
     purge_lock: Arc<purge::PurgeLock>,
     purge_handle: Arc<Mutex<Option<tokio::task::JoinHandle<()>>>>,
+    stats_handle: Arc<Mutex<Option<tokio::task::JoinHandle<()>>>>,
 }
 
 impl SqliteBackend {
@@ -45,6 +47,7 @@ impl SqliteBackend {
             read_pool: std::sync::OnceLock::new(),
             purge_lock: Arc::new(purge::PurgeLock::new()),
             purge_handle: Arc::new(Mutex::new(None)),
+            stats_handle: Arc::new(Mutex::new(None)),
         }
     }
 
@@ -183,6 +186,15 @@ impl StorageBackend for SqliteBackend {
             self.read_pool
                 .set(pool::ReadPool::new(db_path.clone(), READ_POOL_SIZE))
                 .ok();
+            // Planner-statistics maintenance on its own connection: a
+            // database that never ran ANALYZE makes the query planner
+            // guess, which is 10-100× slower on large databases (#191).
+            // Runs regardless of retention configuration, unlike the purge
+            // scheduler below. Disabled for short-lived CLI invocations
+            // (see StorageConfig::stats_maintenance_enabled).
+            if self.config.stats_maintenance_enabled {
+                self.start_stats_maintenance(db_path.clone());
+            }
         }
 
         if self.config.retention_days > 0 {
@@ -1209,6 +1221,9 @@ impl StorageBackend for SqliteBackend {
         if let Some(handle) = self.purge_handle.lock().take() {
             handle.abort();
         }
+        if let Some(handle) = self.stats_handle.lock().take() {
+            handle.abort();
+        }
 
         if let Some(pool) = self.read_pool.take() {
             pool.close_all();
@@ -1294,6 +1309,84 @@ impl SqliteBackend {
         });
 
         *self.purge_handle.lock() = Some(handle);
+    }
+
+    /// Background planner-statistics maintenance (issue #191): a dedicated
+    /// connection (ANALYZE must not hold the main-connection mutex) that
+    /// refreshes `sqlite_stat1` when it is stale — checked every 60 s, and
+    /// performed only when [`stats::should_refresh_now`] holds: the database
+    /// must be quiet (no ingest/purge in the last minute) and either small
+    /// (ANALYZE takes <1 s) or in the nightly 02:00–04:30 window after the
+    /// 02:00 purge. On a large active database the first refresh therefore
+    /// happens at the next quiet nightly window — deliberately, because
+    /// `ANALYZE` holds the write lock for its whole duration (up to ~96 s on
+    /// a 35 GB database, far beyond a writer's busy timeout) and must never
+    /// race with ingest.
+    ///
+    /// All SQLite work runs on the blocking pool (`spawn_blocking`), like
+    /// [`Self::write_in_transaction`]: a rusqlite busy-handler wait must
+    /// never block an async runtime worker — on a single-threaded runtime
+    /// that starvation breaks concurrent write tests.
+    fn start_stats_maintenance(&self, db_path: PathBuf) {
+        let handle = tokio::spawn(async move {
+            let mut conn = match tokio::task::spawn_blocking(move || {
+                let c = match Connection::open(&db_path) {
+                    Ok(c) => c,
+                    Err(e) => {
+                        panic!("stats maintenance: failed to open DB connection: {e}");
+                    },
+                };
+                if let Err(e) =
+                    c.execute_batch("PRAGMA journal_mode=WAL; PRAGMA busy_timeout=10000;")
+                {
+                    panic!("stats maintenance: failed to configure connection: {e}");
+                }
+                c
+            })
+            .await
+            {
+                Ok(c) => c,
+                Err(_) => return,
+            };
+
+            loop {
+                tokio::time::sleep(std::time::Duration::from_secs(60)).await;
+
+                // The (idle) connection moves into the blocking task for the
+                // check + optional refresh and back out — its lifetime spans
+                // the whole loop.
+                conn = match tokio::task::spawn_blocking(move || {
+                    let mut c = conn;
+                    match stats::should_refresh_now(&mut c) {
+                        Ok(true) => {
+                            match stats::maybe_refresh_planner_stats(&mut c, stats::STATS_MAX_AGE) {
+                                Ok(true) => {
+                                    tracing::info!(
+                                    "Planner statistics refreshed (ANALYZE, maintenance window)"
+                                );
+                                },
+                                Ok(false) => {},
+                                Err(e) => {
+                                    tracing::warn!("Stats maintenance: ANALYZE failed: {e}");
+                                },
+                            }
+                        },
+                        Ok(false) => {},
+                        Err(e) => {
+                            tracing::warn!("Stats maintenance: refresh check failed: {e}");
+                        },
+                    }
+                    c
+                })
+                .await
+                {
+                    Ok(c) => c,
+                    Err(_) => return,
+                };
+            }
+        });
+
+        *self.stats_handle.lock() = Some(handle);
     }
 }
 

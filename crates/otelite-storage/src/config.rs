@@ -21,6 +21,12 @@ pub struct StorageConfig {
 
     /// Batch size for purge operations
     pub purge_batch_size: usize,
+
+    /// Enable background planner-statistics maintenance (ANALYZE). Long-lived
+    /// processes (serve/daemon) keep this on; short-lived CLI invocations
+    /// disable it — a background task in a CLI process logs to stdout and
+    /// pollutes machine-readable output (#191).
+    pub stats_maintenance_enabled: bool,
 }
 
 impl Default for StorageConfig {
@@ -31,6 +37,7 @@ impl Default for StorageConfig {
             purge_schedule: "0 2 * * *".to_string(), // Daily at 2 AM
             auto_purge_enabled: true,
             purge_batch_size: 1000,
+            stats_maintenance_enabled: true,
         }
     }
 }
@@ -63,6 +70,10 @@ impl StorageConfig {
 
         if let Ok(auto_purge) = std::env::var("OTELITE_AUTO_PURGE_ENABLED") {
             config.auto_purge_enabled = auto_purge.parse().unwrap_or(true);
+        }
+
+        if let Ok(stats_maintenance) = std::env::var("OTELITE_STATS_MAINTENANCE_ENABLED") {
+            config.stats_maintenance_enabled = stats_maintenance.parse().unwrap_or(true);
         }
 
         config.validate()?;
@@ -107,6 +118,11 @@ impl StorageConfig {
     /// Builder method to enable/disable auto purge
     pub fn with_auto_purge(mut self, enabled: bool) -> Self {
         self.auto_purge_enabled = enabled;
+        self
+    }
+
+    pub fn with_stats_maintenance(mut self, enabled: bool) -> Self {
+        self.stats_maintenance_enabled = enabled;
         self
     }
 }

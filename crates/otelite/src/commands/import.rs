@@ -68,7 +68,11 @@ pub async fn handle_import(
 
     let config = StorageConfig::default()
         .with_data_dir(data_dir)
-        .with_auto_purge(false);
+        .with_auto_purge(false)
+        // Short-lived CLI: no background maintenance task (its startup log
+        // would pollute stdout, and a fire-and-forget ANALYZE would be
+        // aborted at exit). See #191.
+        .with_stats_maintenance(false);
 
     let mut storage = SqliteBackend::new(config);
     storage.initialize().await?;

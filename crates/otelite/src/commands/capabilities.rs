@@ -69,6 +69,9 @@ impl CapabilitiesCommand {
                         Error::ApiError(format!("Failed to build storage configuration: {e}"))
                     })?;
                 storage_config.data_dir = dir.clone();
+                // Short-lived CLI path: no background maintenance task
+                // (its startup log would pollute the JSON on stdout, #191).
+                storage_config.stats_maintenance_enabled = false;
                 let mut storage = otelite_storage::sqlite::SqliteBackend::new(storage_config);
                 storage
                     .initialize()

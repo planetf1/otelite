@@ -688,8 +688,13 @@ async fn run_cli() -> Result<()> {
 /// issue #144); with the variable unset it resolves to the same default
 /// directory as before.
 async fn create_storage(_config: &Config) -> Result<Arc<dyn StorageBackend>> {
-    let storage_config = StorageConfig::from_env()
+    let mut storage_config = StorageConfig::from_env()
         .map_err(|e| Error::ApiError(format!("Failed to build storage configuration: {}", e)))?;
+    // CLI invocations are short-lived: no background maintenance task. Its
+    // startup log line would pollute stdout (which carries JSON output) and
+    // a fire-and-forget ANALYZE here would be aborted mid-run at exit.
+    // Long-lived processes (serve/daemon) keep the default (enabled).
+    storage_config.stats_maintenance_enabled = false;
 
     let mut storage = SqliteBackend::new(storage_config);
     storage
