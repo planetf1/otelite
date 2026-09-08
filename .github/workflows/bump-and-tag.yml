@@ -61,6 +61,10 @@ jobs:
     name: Open and merge release PR
     runs-on: ubuntu-latest
     timeout-minutes: 90
+    # The gh CLI does not auto-use GITHUB_TOKEN in Actions; point it at the
+    # workflow token so pr create / pr view / pr merge / workflow run work.
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
     # Guard: a release PR's own merge must not re-trigger this workflow.
     if: "!startsWith(github.event.head_commit.message, 'chore: release v')"
     outputs:
@@ -143,7 +147,9 @@ jobs:
           git checkout -q -b "$branch"
           git add Cargo.toml Cargo.lock CHANGELOG.md changelog/
           git commit -m "chore: release v${NEW_VERSION}"
-          git push -q origin "$branch"
+          # Force: a re-run after a mid-release failure pushes a fresh
+          # commit (new timestamp) onto the branch the failed run left.
+          git push -q -f origin "$branch"
           body=$(printf 'Automatic release PR opened by the *Bump version and tag* workflow.\n\nCarries the version bump (Cargo.toml / Cargo.lock) and the CHANGELOG rotation for v%s. It merges by itself once the required checks pass — no manual action needed.\n\nIf a required check fails spuriously it is re-run once automatically; if it fails again, re-run it (Actions → run → Re-run failed jobs) and the merge will proceed, or merge by hand (gh pr merge <n> --squash --delete-branch), then tag the merged commit and dispatch release.yml.' "$NEW_VERSION")
           url=$(gh pr create --title "chore: release v${NEW_VERSION}" --body "$body")
           pr_number=${url##*/}
