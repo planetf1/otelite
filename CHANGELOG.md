@@ -11,6 +11,14 @@ have to work around), not implementation detail.
 
 ## [Unreleased]
 
+## [0.1.123] - 2026-09-08
+
+### Fixed
+
+- The Recent Errors report on the GenAI Analytics page (and the
+  `/api/genai/recent_errors` endpoint) no longer fails whenever a time
+  window is applied
+
 ## [0.1.122] - 2026-09-08
 
 ### Fixed
