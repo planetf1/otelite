@@ -1427,7 +1427,7 @@ class AnalyticsView {
                             const session = r.session_id
                                 ? `<a class="trace-link" href="#" onclick="window.app.navigateToTracesBySession('${this._esc(r.session_id)}');return false;" title="All traces for session ${this._esc(r.session_id)}">${r.session_id.slice(0, 8)}</a>`
                                 : '—';
-                            const trace = `<a class="trace-link" href="#" onclick="window.app.switchView('traces');window.app.views.traces.selectTrace('${this._esc(r.trace_id)}');return false;" title="Open trace ${this._esc(r.trace_id)} — spans, logs, session report">${r.trace_id.slice(0, 8)}</a>`;
+                            const trace = `<a class="trace-link" href="#" onclick="window.app.switchView('traces');window.app.views.traces.selectTrace('${this._esc(r.trace_id)}','${this._esc(r.span_id)}');return false;" title="Open trace ${this._esc(r.trace_id)} — jumps to the retried span (attempt events, logs, session report)">${r.trace_id.slice(0, 8)}</a>`;
                             return `<div class="retry-recent-row" style="display:flex;gap:10px;padding:1px 0;font-size:0.85em">
                                 <span style="min-width:9ch">${when}</span>
                                 <span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${this._esc(model)}</span>

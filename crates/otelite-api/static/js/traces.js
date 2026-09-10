@@ -851,7 +851,7 @@ class TracesView {
     /**
      * Select and display trace details
      */
-    async selectTrace(traceId) {
+    async selectTrace(traceId, spanId) {
         try {
             // Mark the selected entry
             document.querySelectorAll('.trace-entry').forEach(el => {
@@ -862,10 +862,27 @@ class TracesView {
             this.collapsedSpans = new Set();
             this._updateObservedSpanKinds();
             this.renderTraceDetail(trace);
+            if (spanId) {
+                this._focusSpanRow(spanId);
+            }
         } catch (error) {
             console.error('Failed to load trace details:', error);
             this.showError('Failed to load trace details');
         }
+    }
+
+    /**
+     * Scroll a span row into view and flash-highlight it (deep-link target,
+     * e.g. jumping to the retried llm_request span from the analytics view).
+     */
+    _focusSpanRow(spanId) {
+        requestAnimationFrame(() => {
+            const row = document.querySelector(`.span-row[data-row-span-id="${spanId}"]`);
+            if (!row) return;
+            row.scrollIntoView({ block: 'center' });
+            row.classList.add('span-row-flash');
+            setTimeout(() => row.classList.remove('span-row-flash'), 3000);
+        });
     }
 
     /**
@@ -1085,6 +1102,15 @@ class TracesView {
                 : '';
             const genAiBadge = this.buildGenAiWaterfallBadge(span);
 
+            // Retried LLM call: the span carries one gen_ai.request.attempt
+            // event per attempt. The first attempt failed before any complete
+            // data (e.g. a dropped stream); the retry succeeded, so the span
+            // status is OK and would otherwise look unremarkable.
+            const attemptEvents = (span.events || []).filter(e => e && e.name === 'gen_ai.request.attempt');
+            const retryBadge = attemptEvents.length > 1
+                ? `<span class="span-retry-badge" title="Retried: ${attemptEvents.length} attempts — the first failed before any complete data was received; the retry succeeded. Open the span to see the attempt events.">↻${attemptEvents.length}</span>`
+                : '';
+
             const spanDurMs = span.duration / 1_000_000;
             const isSlowSpan = spanDurMs > 5_000;
             const slowBadge = isSlowSpan
@@ -1096,6 +1122,7 @@ class TracesView {
                         ${toggleBtn}
                         <span class="span-name ${hasError ? 'span-error' : ''}" title="${this.escapeHtml(span.name)}">${this.escapeHtml(span.name)}${collapsedCountEl}</span>
                         ${genAiBadge}
+                        ${retryBadge}
                         <span class="span-kind">${this.escapeHtml(kindLabel)}</span>
                         ${slowBadge}
                         <span class="span-duration${isSlowSpan ? ' span-duration-slow' : ''}">${duration}ms</span>

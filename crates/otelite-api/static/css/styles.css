@@ -3409,6 +3409,30 @@ details[open] > .json-tree-summary::before {
     margin: 0 0.1rem;
 }
 
+/* Retried-call badge in span info column (first attempt failed, retry OK) */
+.span-retry-badge {
+    display: inline-block;
+    padding: 0 0.3rem;
+    border-radius: 3px;
+    font-size: 0.65rem;
+    font-weight: 600;
+    background: rgba(245, 158, 11, 0.18);
+    color: var(--warning-color, #f59e0b);
+    border: 1px solid rgba(245, 158, 11, 0.35);
+    vertical-align: middle;
+    margin: 0 0.1rem;
+    cursor: help;
+}
+
+/* Deep-link flash: highlight the focused span row briefly */
+@keyframes span-row-flash-anim {
+    0%   { background: rgba(245, 158, 11, 0.35); }
+    100% { background: transparent; }
+}
+.span-row-flash {
+    animation: span-row-flash-anim 2.5s ease-out 1;
+}
+
 /* Slow span duration text */
 .span-duration-slow {
     color: var(--warning-color, #f59e0b);
