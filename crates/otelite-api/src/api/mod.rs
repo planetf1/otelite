@@ -49,3 +49,24 @@ fn time_range_error(message: &'static str) -> (StatusCode, Json<ErrorResponse>) 
         Json(ErrorResponse::bad_request(message)),
     )
 }
+
+/// Parse a `query` parameter: one structured predicate, or several joined
+/// with `&&` (serde_urlencoded rejects repeated keys, so the wire format
+/// is a single parameter). Returns a 400 on any parse failure — never a
+/// silently-ignored filter.
+pub(crate) fn parse_query_param(
+    raw: &str,
+) -> Result<Vec<otelite_core::query::QueryPredicate>, (StatusCode, Json<ErrorResponse>)> {
+    let mut out = Vec::new();
+    for part in raw.split("&&").map(str::trim).filter(|p| !p.is_empty()) {
+        out.extend(otelite_core::query::parse_query(part).map_err(|e| {
+            (
+                StatusCode::BAD_REQUEST,
+                Json(ErrorResponse::bad_request(format!(
+                    "Invalid query '{part}': {e}"
+                ))),
+            )
+        })?);
+    }
+    Ok(out)
+}

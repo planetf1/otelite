@@ -45,14 +45,14 @@ pub async fn handle_list(
         let predicates = otelite_core::query::parse_query(&query_str)
             .map_err(|e| crate::error::Error::InvalidArgument(format!("Invalid query: {}", e)))?;
 
-        // Convert predicates to query parameters
-        for predicate in predicates {
-            let param_value = format!(
-                "{} {} {}",
-                predicate.field, predicate.operator, predicate.value
-            );
-            params.push(("query", param_value));
-        }
+        // Convert predicates to a single query parameter; multiple
+        // predicates are joined with "&&".
+        let joined = predicates
+            .iter()
+            .map(|p| format!("{} {} {}", p.field, p.operator, p.value))
+            .collect::<Vec<_>>()
+            .join(" && ");
+        params.push(("query", joined));
     }
 
     let traces_response = client.fetch_traces(params).await?;

@@ -50,6 +50,12 @@ pub struct TracesQuery {
     #[serde(default)]
     pub attrs: Option<String>,
 
+    /// Structured query predicate; multiple predicates joined with `&&`,
+    /// e.g. `name = "claude_code.llm_request" && attributes.attempt >= 2`.
+    /// A malformed expression returns 400.
+    #[serde(default)]
+    pub query: Option<String>,
+
     /// Start time (Unix timestamp in nanoseconds)
     #[serde(default)]
     pub start_time: Option<i64>,
@@ -168,6 +174,47 @@ pub async fn list_traces(
         }
     }
 
+    // `search` filters on span names and `service`/`resource` on resource
+    // attributes — both via the structured-predicate path so they constrain
+    // trace selection exactly as any other predicate does.
+    if let Some(ref s) = params.search {
+        if !s.is_empty() {
+            query.predicates.push(QueryPredicate {
+                field: "name".to_string(),
+                operator: Operator::Contains,
+                value: QueryValue::String(s.clone()),
+            });
+        }
+    }
+    if let Some(ref svc) = params.service {
+        if !svc.is_empty() {
+            query.predicates.push(QueryPredicate {
+                field: "resource.service.name".to_string(),
+                operator: Operator::Equal,
+                value: QueryValue::String(svc.clone()),
+            });
+        }
+    }
+    if let Some(ref kv) = params.resource {
+        if let Some((k, v)) = kv.split_once('=') {
+            if !k.is_empty() && !v.is_empty() {
+                query.predicates.push(QueryPredicate {
+                    field: format!("resource.{k}"),
+                    operator: Operator::Equal,
+                    value: QueryValue::String(v.to_string()),
+                });
+            }
+        }
+    }
+
+    // Structured `query` predicate(s). Parse errors are a 400, never a
+    // silently-ignored filter.
+    if let Some(ref q) = params.query {
+        if !q.is_empty() {
+            query.predicates.extend(super::parse_query_param(q)?);
+        }
+    }
+
     // Query spans from storage — two-step: get N most-recent trace IDs, then all their spans
     let spans = state
         .storage
@@ -180,9 +227,8 @@ pub async fn list_traces(
             )
         })?;
 
-    // Note: spans do not carry resource attributes in the current data model
-    // (resource is on Trace, not Span). The resource query param is accepted
-    // for forward compatibility but no filtering is applied here.
+    // Spans carry resource attributes on the current data model; the
+    // `service` and `resource` params above filter on them via predicates.
 
     // Group spans by trace_id
     let mut traces_map: std::collections::HashMap<String, Vec<Span>> =

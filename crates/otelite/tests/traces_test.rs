@@ -78,6 +78,40 @@ async fn test_traces_list_command() {
 }
 
 #[tokio::test]
+async fn test_traces_list_query_sends_single_joined_param() {
+    let mut server = Server::new_async().await;
+    let mock = server
+        .mock("GET", "/api/traces")
+        .match_query(Matcher::UrlEncoded(
+            "query".into(),
+            "name = \"root\" && attributes.attempt >= 2".into(),
+        ))
+        .with_status(200)
+        .with_header("content-type", "application/json")
+        .with_body(r#"{"traces": [], "total": 0, "limit": 10, "offset": 0}"#)
+        .create_async()
+        .await;
+
+    let client = create_test_client(server.url()).await;
+    let config = create_test_config(server.url(), otelite::config::OutputFormat::Json);
+
+    let result = otelite::commands::traces::handle_list(
+        &client,
+        &config,
+        Some(10),
+        None,
+        None,
+        Some("name = \"root\" AND attributes.attempt >= 2".to_string()),
+        None,
+        None,
+    )
+    .await;
+
+    mock.assert_async().await;
+    assert!(result.is_ok());
+}
+
+#[tokio::test]
 async fn test_traces_list_empty() {
     let mut server = Server::new_async().await;
     let mock = server

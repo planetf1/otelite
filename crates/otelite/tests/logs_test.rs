@@ -72,6 +72,38 @@ async fn test_logs_list_command() {
 }
 
 #[tokio::test]
+async fn test_logs_list_query_sends_single_joined_param() {
+    let mut server = Server::new_async().await;
+    let mock = server
+        .mock("GET", "/api/logs")
+        .match_query(Matcher::UrlEncoded(
+            "query".into(),
+            "body contains \"timeout\" && attributes.session.id = \"abc\"".into(),
+        ))
+        .with_status(200)
+        .with_header("content-type", "application/json")
+        .with_body(r#"{"logs": [], "total": 0, "limit": 10, "offset": 0}"#)
+        .create_async()
+        .await;
+
+    let client = create_test_client(server.url()).await;
+    let config = create_test_config(server.url(), otelite::config::OutputFormat::Json);
+
+    let result = otelite::commands::logs::handle_list(
+        &client,
+        &config,
+        Some(10),
+        None,
+        None,
+        Some("body contains \"timeout\" AND attributes.session.id = \"abc\"".to_string()),
+    )
+    .await;
+
+    mock.assert_async().await;
+    assert!(result.is_ok());
+}
+
+#[tokio::test]
 async fn test_logs_list_with_severity_filter() {
     let mut server = Server::new_async().await;
     let mock = server

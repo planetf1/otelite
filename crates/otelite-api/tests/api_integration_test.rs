@@ -730,6 +730,225 @@ async fn test_list_traces_with_data() {
 }
 
 #[tokio::test]
+async fn test_list_traces_with_query_predicate() {
+    let (storage, _tmp) = setup_test_storage().await;
+
+    let mut retried = create_test_span("trace-retried", "span1", "root", 1000, 2000);
+    retried
+        .attributes
+        .insert("attempt".to_string(), "2".to_string());
+    storage.write_span(&retried).await.unwrap();
+    storage
+        .write_span(&create_test_span(
+            "trace-plain",
+            "span2",
+            "root",
+            3000,
+            4000,
+        ))
+        .await
+        .unwrap();
+
+    let app = build_test_router(storage);
+    let body = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .uri("/api/traces?query=attributes.attempt%20%3E%3D%202")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(body.status(), StatusCode::OK);
+    let traces_response: TracesResponse =
+        serde_json::from_slice(&body.into_body().collect().await.unwrap().to_bytes()).unwrap();
+
+    assert_eq!(traces_response.traces.len(), 1);
+    assert_eq!(traces_response.traces[0].trace_id, "trace-retried");
+
+    // Multiple predicates joined with "&&" in one parameter must compose
+    // with AND.
+    let body = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .uri("/api/traces?query=name%20%3D%20%22root%22%20%26%26%20attributes.attempt%20%3E%3D%202")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(body.status(), StatusCode::OK);
+    let traces_response: TracesResponse =
+        serde_json::from_slice(&body.into_body().collect().await.unwrap().to_bytes()).unwrap();
+    assert_eq!(traces_response.traces.len(), 1);
+    assert_eq!(traces_response.traces[0].trace_id, "trace-retried");
+}
+
+#[tokio::test]
+async fn test_list_traces_with_name_search() {
+    let (storage, _tmp) = setup_test_storage().await;
+
+    storage
+        .write_span(&create_test_span("trace1", "span1", "root", 1000, 2000))
+        .await
+        .unwrap();
+    storage
+        .write_span(&create_test_span(
+            "trace1",
+            "span2",
+            "child.handler",
+            1100,
+            1900,
+        ))
+        .await
+        .unwrap();
+    storage
+        .write_span(&create_test_span("trace2", "span3", "root", 3000, 4000))
+        .await
+        .unwrap();
+
+    let app = build_test_router(storage);
+    let body = app
+        .oneshot(
+            Request::builder()
+                .uri("/api/traces?search=handler")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(body.status(), StatusCode::OK);
+    let traces_response: TracesResponse =
+        serde_json::from_slice(&body.into_body().collect().await.unwrap().to_bytes()).unwrap();
+
+    // Only trace1 has a span whose name contains "handler".
+    assert_eq!(traces_response.traces.len(), 1);
+    assert_eq!(traces_response.traces[0].trace_id, "trace1");
+}
+
+#[tokio::test]
+async fn test_list_traces_with_service_filter() {
+    let (storage, _tmp) = setup_test_storage().await;
+
+    let with_resource = |trace_id: &str, span_id: &str, service: &str, start: i64, end: i64| {
+        let mut span = create_test_span(trace_id, span_id, "root", start, end);
+        span.resource = Some(Resource {
+            attributes: {
+                let mut attrs = HashMap::new();
+                attrs.insert("service.name".to_string(), service.to_string());
+                attrs
+            },
+        });
+        span
+    };
+    storage
+        .write_span(&with_resource("trace-a", "span1", "svc-a", 1000, 2000))
+        .await
+        .unwrap();
+    storage
+        .write_span(&with_resource("trace-b", "span2", "svc-b", 3000, 4000))
+        .await
+        .unwrap();
+
+    let app = build_test_router(storage);
+    let body = app
+        .oneshot(
+            Request::builder()
+                .uri("/api/traces?service=svc-a")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(body.status(), StatusCode::OK);
+    let traces_response: TracesResponse =
+        serde_json::from_slice(&body.into_body().collect().await.unwrap().to_bytes()).unwrap();
+
+    assert_eq!(traces_response.traces.len(), 1);
+    assert_eq!(traces_response.traces[0].trace_id, "trace-a");
+}
+
+#[tokio::test]
+async fn test_list_traces_rejects_malformed_query() {
+    let (storage, _tmp) = setup_test_storage().await;
+    storage
+        .write_span(&create_test_span("trace1", "span1", "root", 1000, 2000))
+        .await
+        .unwrap();
+
+    let app = build_test_router(storage);
+    // Missing operator: must be a 400, not a silently-unfiltered list.
+    let body = app
+        .oneshot(
+            Request::builder()
+                .uri("/api/traces?query=severity%20ERROR")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(body.status(), StatusCode::BAD_REQUEST);
+}
+
+#[tokio::test]
+async fn test_list_logs_with_query_predicate() {
+    let (storage, _tmp) = setup_test_storage().await;
+
+    storage
+        .write_log(&create_test_log(
+            1000,
+            SeverityLevel::Error,
+            "request timed out: timeout",
+        ))
+        .await
+        .unwrap();
+    storage
+        .write_log(&create_test_log(2000, SeverityLevel::Info, "request ok"))
+        .await
+        .unwrap();
+
+    let app = build_test_router(storage);
+    let body = app
+        .oneshot(
+            Request::builder()
+                .uri("/api/logs?query=body%20contains%20%22timeout%22")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(body.status(), StatusCode::OK);
+    let logs_response: LogsResponse =
+        serde_json::from_slice(&body.into_body().collect().await.unwrap().to_bytes()).unwrap();
+
+    assert_eq!(logs_response.logs.len(), 1);
+    assert!(logs_response.logs[0].body.contains("timeout"));
+}
+
+#[tokio::test]
+async fn test_list_logs_rejects_malformed_query() {
+    let (storage, _tmp) = setup_test_storage().await;
+    storage
+        .write_log(&create_test_log(1000, SeverityLevel::Error, "boom"))
+        .await
+        .unwrap();
+
+    let app = build_test_router(storage);
+    let body = app
+        .oneshot(
+            Request::builder()
+                .uri("/api/logs?query=severity%20ERROR")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(body.status(), StatusCode::BAD_REQUEST);
+}
+
+#[tokio::test]
 async fn test_get_trace_by_id() {
     let (storage, _tmp) = setup_test_storage().await;
 

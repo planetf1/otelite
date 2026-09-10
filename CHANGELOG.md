@@ -11,6 +11,12 @@ have to work around), not implementation detail.
 
 ## [Unreleased]
 
+### Added
+
+- `otelite traces list --query` and `otelite logs list --query` now filter
+  server-side — e.g. `--query 'attributes.attempt >= 2'` lists only traces
+  with retried LLM calls, and several predicates can be joined with `AND`
+
 ### Changed
 
 - GenAI analytics time filters now attribute each LLM call to when it
@@ -18,6 +24,16 @@ have to work around), not implementation detail.
   Sub-window stats (e.g. hourly) no longer silently miss long or retried
   calls that cross a boundary — you can now bisect "when did X happen"
   with per-hour ranges and the sums add up
+
+### Fixed
+
+- The Traces view search box (`/api/traces?search=...`) and `?service=`
+  filter now actually filter instead of being silently ignored
+- Query predicates comparing an attribute to a number (e.g.
+  `attributes.attempt = 2`) now compare numerically; previously the stored
+  text value never matched a number
+- Malformed `--query` / `query=` expressions now return an error instead
+  of being dropped
 
 ## [0.1.125] - 2026-09-08
 

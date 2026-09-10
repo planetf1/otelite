@@ -27,6 +27,7 @@ GET /logs?severity=ERROR&search=timeout&limit=100&offset=0
     - severity: Filter by severity (TRACE, DEBUG, INFO, WARN, ERROR, FATAL)
     - resource: Filter by resource attribute (format: key=value)
     - search: Full-text search in log body
+    - query: Structured predicate; join several with '&&', e.g. 'body contains "timeout" && attributes.session.id = "abc"'. Returns 400 if malformed.
     - start_time: Start time (Unix timestamp in nanoseconds)
     - end_time: End time (Unix timestamp in nanoseconds)
     - limit: Maximum results (default: 100, max: 1000)
@@ -45,6 +46,7 @@ GET /traces?trace_id=abc123&service=my-service&limit=100
     - trace_id: Filter by trace ID
     - service: Filter by service name
     - search: Full-text search in span names
+    - query: Structured predicate; join several with '&&', e.g. 'name = "claude_code.llm_request" && attributes.attempt >= 2'. Returns 400 if malformed.
     - start_time: Start time (Unix timestamp in nanoseconds)
     - end_time: End time (Unix timestamp in nanoseconds)
     - limit: Maximum results (default: 100, max: 1000)

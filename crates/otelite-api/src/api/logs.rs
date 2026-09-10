@@ -60,6 +60,12 @@ pub struct LogsQuery {
     #[serde(default)]
     pub attrs: Option<String>,
 
+    /// Structured query predicate; multiple predicates joined with `&&`,
+    /// e.g. `body contains "timeout" && attributes.session.id = "abc"`.
+    /// A malformed expression returns 400.
+    #[serde(default)]
+    pub query: Option<String>,
+
     /// Maximum number of results (default: 100, max: 1000)
     #[serde(default = "default_limit")]
     pub limit: usize,
@@ -184,6 +190,14 @@ pub async fn list_logs(
                     }
                 }
             }
+        }
+    }
+
+    // Structured `query` predicate(s). Parse errors are a 400, never a
+    // silently-ignored filter.
+    if let Some(ref q) = params.query {
+        if !q.is_empty() {
+            query.predicates.extend(super::parse_query_param(q)?);
         }
     }
 

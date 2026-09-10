@@ -479,11 +479,11 @@ fn predicate_to_sql(
         },
         (_, _, QueryValue::Number(value)) => {
             sql_params.push(Box::new(*value));
-            Ok(format!("{} {} ?", lhs, operator))
+            Ok(format!("{} {} ?", numeric_lhs(&lhs), operator))
         },
         (_, _, QueryValue::Duration(value)) => {
             sql_params.push(Box::new(*value as i64));
-            Ok(format!("{} {} ?", lhs, operator))
+            Ok(format!("{} {} ?", numeric_lhs(&lhs), operator))
         },
     }?;
 
@@ -575,6 +575,22 @@ fn sql_operator(operator: &Operator) -> &'static str {
         Operator::GreaterThanOrEqual => ">=",
         Operator::LessThanOrEqual => "<=",
         Operator::Contains => "LIKE",
+    }
+}
+
+/// Wrap a JSON-extracted LHS in `CAST(... AS REAL)` for numeric comparisons.
+///
+/// Attribute and resource values are stored as JSON *text*, and SQLite's
+/// type ordering sorts every TEXT value above every numeric one — so
+/// `json_extract(...) >= 2` matches every row (and `= 2` matches none)
+/// when the value is a REAL. Casting the LHS makes the comparison numeric;
+/// rows without the attribute yield NULL and are excluded, as intended.
+/// Direct column LHSs (already numeric) pass through unchanged.
+fn numeric_lhs(lhs: &str) -> String {
+    if lhs.starts_with("json_extract") {
+        format!("CAST({lhs} AS REAL)")
+    } else {
+        lhs.to_string()
     }
 }
 
@@ -11997,6 +12013,51 @@ mod tests {
         );
         assert_eq!(parent.total_llm_calls, 2);
         assert_eq!(parent.retried_calls, 1);
+    }
+
+    #[test]
+    fn test_predicate_numeric_comparison_on_text_attributes() {
+        let conn = setup_test_db();
+        // Attribute values are stored as JSON text. Without the CAST in
+        // predicate_to_sql, SQLite's TEXT-above-numeric ordering makes
+        // `attributes.attempt >= 2` match every row and `= 2` match none.
+        insert_span_simple(&conn, "x", 1_000, 2_000, r#"{"attempt":"1"}"#);
+        insert_span_simple(&conn, "x", 2_000, 3_000, r#"{"attempt":"2"}"#);
+        insert_span_simple(&conn, "x", 3_000, 4_000, r#"{"attempt":"10"}"#);
+        insert_span_simple(&conn, "x", 4_000, 5_000, r#"{}"#);
+
+        let gte = QueryParams {
+            predicates: vec![QueryPredicate {
+                field: "attributes.attempt".to_string(),
+                operator: Operator::GreaterThanOrEqual,
+                value: QueryValue::Number(2.0),
+            }],
+            ..Default::default()
+        };
+        let spans = query_spans(&conn, &gte).unwrap();
+        // "2" and "10" match numerically (lexicographic "10" < "2" would
+        // drop the ten); "1" and the absent attribute do not.
+        assert_eq!(
+            spans.len(),
+            2,
+            "gte on text attributes must compare numerically"
+        );
+
+        let eq = QueryParams {
+            predicates: vec![QueryPredicate {
+                field: "attributes.attempt".to_string(),
+                operator: Operator::Equal,
+                value: QueryValue::Number(2.0),
+            }],
+            ..Default::default()
+        };
+        let spans = query_spans(&conn, &eq).unwrap();
+        assert_eq!(
+            spans.len(),
+            1,
+            "equality on a numeric value must match the text '2'"
+        );
+        assert_eq!(spans[0].start_time, 2_000);
     }
 
     #[test]

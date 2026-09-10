@@ -32,19 +32,18 @@ pub async fn handle_list(
         params.push(("since", since));
     }
 
-    // Parse and add query predicates if provided
+    // Parse and add query predicates if provided. The server accepts one
+    // `query` parameter; multiple predicates are joined with "&&".
     if let Some(query_str) = query {
         let predicates = otelite_core::query::parse_query(&query_str)
             .map_err(|e| crate::error::Error::InvalidArgument(format!("Invalid query: {}", e)))?;
 
-        // Convert predicates to query parameters
-        for predicate in predicates {
-            let param_value = format!(
-                "{} {} {}",
-                predicate.field, predicate.operator, predicate.value
-            );
-            params.push(("query", param_value));
-        }
+        let joined = predicates
+            .iter()
+            .map(|p| format!("{} {} {}", p.field, p.operator, p.value))
+            .collect::<Vec<_>>()
+            .join(" && ");
+        params.push(("query", joined));
     }
 
     let logs_response = client.fetch_logs(params).await?;
