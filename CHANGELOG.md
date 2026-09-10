@@ -11,6 +11,8 @@ have to work around), not implementation detail.
 
 ## [Unreleased]
 
+## [0.1.126] - 2026-09-10
+
 ### Added
 
 - `otelite retries` — lists retried LLM calls (a failed first attempt that
