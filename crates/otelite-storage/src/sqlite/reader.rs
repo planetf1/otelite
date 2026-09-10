@@ -1524,7 +1524,7 @@ pub fn query_genai_capabilities(
         params.push(Box::new(start));
     }
     if let Some(end) = end_time {
-        where_clause.push_str(" AND end_time <= ?");
+        where_clause.push_str(" AND start_time <= ?");
         params.push(Box::new(end));
     }
     push_scope(&mut where_clause, &mut params, filters.span_scope());
@@ -1895,7 +1895,7 @@ pub fn query_token_usage(
         params.push(Box::new(start));
     }
     if let Some(end) = end_time {
-        where_clause.push_str(" AND end_time <= ?");
+        where_clause.push_str(" AND start_time <= ?");
         params.push(Box::new(end));
     }
     push_scope(&mut where_clause, &mut params, filters.span_scope());
@@ -2075,7 +2075,7 @@ pub fn query_cost_series(
         params.push(Box::new(start));
     }
     if let Some(end) = end_time {
-        where_clause.push_str(" AND end_time <= ?");
+        where_clause.push_str(" AND start_time <= ?");
         params.push(Box::new(end));
     }
     push_scope(&mut where_clause, &mut params, filters.span_scope());
@@ -2158,7 +2158,7 @@ pub fn query_top_spans(
         params.push(Box::new(start));
     }
     if let Some(end) = end_time {
-        where_clause.push_str(" AND end_time <= ?");
+        where_clause.push_str(" AND start_time <= ?");
         params.push(Box::new(end));
     }
     push_scope(&mut where_clause, &mut params, filters.span_scope());
@@ -2278,7 +2278,7 @@ pub fn query_top_sessions(
         params.push(Box::new(start));
     }
     if let Some(end) = end_time {
-        where_clause.push_str(" AND end_time <= ?");
+        where_clause.push_str(" AND start_time <= ?");
         params.push(Box::new(end));
     }
     push_scope(&mut where_clause, &mut params, filters.span_scope());
@@ -2351,7 +2351,7 @@ pub fn query_top_conversations(
         params.push(Box::new(start));
     }
     if let Some(end) = end_time {
-        where_clause.push_str(" AND end_time <= ?");
+        where_clause.push_str(" AND start_time <= ?");
         params.push(Box::new(end));
     }
     push_scope(&mut where_clause, &mut params, filters.span_scope());
@@ -2428,7 +2428,7 @@ pub fn query_finish_reasons(
         params.push(Box::new(start));
     }
     if let Some(end) = end_time {
-        spans_time_filter.push_str(" AND end_time <= ?");
+        spans_time_filter.push_str(" AND start_time <= ?");
         params.push(Box::new(end));
     }
     // The span filter scope applies to both spans branches (they share the
@@ -2661,7 +2661,7 @@ pub fn query_latency_stats(
         params.push(Box::new(start));
     }
     if let Some(end) = end_time {
-        where_clause.push_str(" AND end_time <= ?");
+        where_clause.push_str(" AND start_time <= ?");
         params.push(Box::new(end));
     }
     push_scope(&mut where_clause, &mut params, filters.span_scope());
@@ -2935,7 +2935,7 @@ fn collect_llm_request_values(
         params.push(Box::new(start));
     }
     if let Some(end) = end_time {
-        where_clause.push_str(" AND end_time <= ?");
+        where_clause.push_str(" AND start_time <= ?");
         params.push(Box::new(end));
     }
     push_scope(&mut where_clause, &mut params, filters.span_scope());
@@ -3464,7 +3464,7 @@ pub fn query_distribution(
                 params.push(Box::new(start));
             }
             if let Some(end) = end_time {
-                where_clause.push_str(" AND end_time <= ?");
+                where_clause.push_str(" AND start_time <= ?");
                 params.push(Box::new(end));
             }
             push_scope(&mut where_clause, &mut params, filters.span_scope());
@@ -3586,7 +3586,7 @@ pub fn query_error_rate(
         params.push(Box::new(start));
     }
     if let Some(end) = end_time {
-        where_clause.push_str(" AND end_time <= ?");
+        where_clause.push_str(" AND start_time <= ?");
         params.push(Box::new(end));
     }
     push_scope(&mut where_clause, &mut params, filters.span_scope());
@@ -3658,7 +3658,7 @@ pub fn query_tool_usage(
         params.push(Box::new(start));
     }
     if let Some(end) = end_time {
-        where_clause.push_str(" AND end_time <= ?");
+        where_clause.push_str(" AND start_time <= ?");
         params.push(Box::new(end));
     }
     push_scope(&mut where_clause, &mut params, filters.span_scope());
@@ -3739,7 +3739,7 @@ pub fn query_retry_stats(
         params.push(Box::new(start));
     }
     if let Some(end) = end_time {
-        where_clause.push_str(" AND end_time <= ?");
+        where_clause.push_str(" AND start_time <= ?");
         params.push(Box::new(end));
     }
     push_scope(&mut where_clause, &mut params, filters.span_scope());
@@ -3822,7 +3822,7 @@ pub fn query_retrieval_stats(
         params.push(Box::new(start));
     }
     if let Some(end) = end_time {
-        time_filter.push_str(" AND end_time <= ?");
+        time_filter.push_str(" AND start_time <= ?");
         params.push(Box::new(end));
     }
     if let Some((frag, fp)) = filters.span_scope() {
@@ -4014,7 +4014,7 @@ pub fn query_truncation_rate(
         params.push(Box::new(start));
     }
     if let Some(end) = end_time {
-        where_clause.push_str(" AND end_time <= ?");
+        where_clause.push_str(" AND start_time <= ?");
         params.push(Box::new(end));
     }
     push_scope(&mut where_clause, &mut params, filters.span_scope());
@@ -4085,7 +4085,7 @@ pub fn query_cache_hit_rate(
         params.push(Box::new(start));
     }
     if let Some(end) = end_time {
-        where_clause.push_str(" AND end_time <= ?");
+        where_clause.push_str(" AND start_time <= ?");
         params.push(Box::new(end));
     }
     push_scope(&mut where_clause, &mut params, filters.span_scope());
@@ -4682,7 +4682,7 @@ pub fn query_cache_economics(
             params.push(Box::new(start));
         }
         if let Some(end) = end_time {
-            where_clause.push_str(&format!(" AND end_time <= ?{}", params.len() + 1));
+            where_clause.push_str(&format!(" AND start_time <= ?{}", params.len() + 1));
             params.push(Box::new(end));
         }
         let sql = format!(
@@ -4938,7 +4938,7 @@ pub fn query_reasoning_share(
             params.push(Box::new(start));
         }
         if let Some(end) = end_time {
-            where_clause.push_str(&format!(" AND end_time <= ?{}", params.len() + 1));
+            where_clause.push_str(&format!(" AND start_time <= ?{}", params.len() + 1));
             params.push(Box::new(end));
         }
         let sql = format!(
@@ -4987,7 +4987,7 @@ pub fn query_reasoning_share(
         params.push(Box::new(start));
     }
     if let Some(end) = end_time {
-        where_clause.push_str(&format!(" AND end_time <= ?{}", params.len() + 1));
+        where_clause.push_str(&format!(" AND start_time <= ?{}", params.len() + 1));
         params.push(Box::new(end));
     }
     let effort_sql = format!(
@@ -6869,7 +6869,7 @@ pub fn query_provider_mix(
             params.push(Box::new(s));
         }
         if let Some(e) = end_time {
-            where_clause.push_str(" AND end_time <= ?");
+            where_clause.push_str(" AND start_time <= ?");
             params.push(Box::new(e));
         }
         let sql = format!(
@@ -7055,7 +7055,7 @@ pub fn query_request_param_profile(
         params.push(Box::new(start));
     }
     if let Some(end) = end_time {
-        where_clause.push_str(" AND end_time <= ?");
+        where_clause.push_str(" AND start_time <= ?");
         params.push(Box::new(end));
     }
     push_scope(&mut where_clause, &mut params, filters.span_scope());
@@ -7142,7 +7142,7 @@ pub fn query_conversation_depth(
         params.push(Box::new(start));
     }
     if let Some(end) = end_time {
-        where_clause.push_str(" AND end_time <= ?");
+        where_clause.push_str(" AND start_time <= ?");
         params.push(Box::new(end));
     }
     push_scope(&mut where_clause, &mut params, filters.span_scope());
@@ -7256,7 +7256,7 @@ pub fn query_latency_series(
         params.push(Box::new(start));
     }
     if let Some(end) = end_time {
-        where_clause.push_str(" AND end_time <= ?");
+        where_clause.push_str(" AND start_time <= ?");
         params.push(Box::new(end));
     }
     push_scope(&mut where_clause, &mut params, filters.span_scope());
@@ -7457,7 +7457,7 @@ pub fn query_calls_series(
         params.push(Box::new(start));
     }
     if let Some(end) = end_time {
-        where_clause.push_str(" AND end_time <= ?");
+        where_clause.push_str(" AND start_time <= ?");
         params.push(Box::new(end));
     }
     push_scope(&mut where_clause, &mut params, filters.span_scope());
@@ -7529,7 +7529,7 @@ pub fn query_latency_by_context(
         params.push(Box::new(start));
     }
     if let Some(end) = end_time {
-        where_clause.push_str(" AND end_time <= ?");
+        where_clause.push_str(" AND start_time <= ?");
         params.push(Box::new(end));
     }
     push_scope(&mut where_clause, &mut params, filters.span_scope());
@@ -7693,7 +7693,7 @@ pub fn query_error_types(
         params.push(Box::new(start));
     }
     if let Some(end) = end_time {
-        where_clause.push_str(" AND end_time <= ?");
+        where_clause.push_str(" AND start_time <= ?");
         params.push(Box::new(end));
     }
     push_scope(&mut where_clause, &mut params, filters.span_scope());
@@ -7787,7 +7787,7 @@ pub fn query_model_drift(
         params.push(Box::new(start));
     }
     if let Some(end) = end_time {
-        where_clause.push_str(" AND end_time <= ?");
+        where_clause.push_str(" AND start_time <= ?");
         params.push(Box::new(end));
     }
     push_scope(&mut where_clause, &mut params, filters.span_scope());
@@ -7858,7 +7858,7 @@ pub fn query_tool_approvals(
         params.push(Box::new(s));
     }
     if let Some(e) = end_time {
-        where_clause.push_str(" AND end_time <= ?");
+        where_clause.push_str(" AND start_time <= ?");
         params.push(Box::new(e));
     }
     push_scope(&mut where_clause, &mut params, filters.span_scope());
@@ -7945,7 +7945,7 @@ pub fn query_stop_reasons(
         params.push(Box::new(s));
     }
     if let Some(e) = end_time {
-        where_clause.push_str(" AND end_time <= ?");
+        where_clause.push_str(" AND start_time <= ?");
         params.push(Box::new(e));
     }
     push_scope(&mut where_clause, &mut params, filters.span_scope());
@@ -7997,7 +7997,7 @@ pub fn query_context_type_split(
         params.push(Box::new(s));
     }
     if let Some(e) = end_time {
-        where_clause.push_str(" AND end_time <= ?");
+        where_clause.push_str(" AND start_time <= ?");
         params.push(Box::new(e));
     }
     push_scope(&mut where_clause, &mut params, filters.span_scope());
@@ -8066,7 +8066,7 @@ pub fn query_tool_errors(
         params.push(Box::new(s));
     }
     if let Some(e) = end_time {
-        where_clause.push_str(" AND end_time <= ?");
+        where_clause.push_str(" AND start_time <= ?");
         params.push(Box::new(e));
     }
     push_scope(&mut where_clause, &mut params, filters.span_scope());
@@ -8119,7 +8119,7 @@ pub fn query_hour_of_day(
         params.push(Box::new(s));
     }
     if let Some(e) = end_time {
-        time_filter.push_str(" AND end_time <= ?");
+        time_filter.push_str(" AND start_time <= ?");
         params.push(Box::new(e));
     }
     // Shared by both sub-queries; each statement binds its own copy of params.
@@ -8511,7 +8511,7 @@ pub fn query_agent_project_rollup(
             params.push(Box::new(s));
         }
         if let Some(e) = end_time {
-            where_clause.push_str(" AND end_time <= ?");
+            where_clause.push_str(" AND start_time <= ?");
             params.push(Box::new(e));
         }
 
@@ -8955,7 +8955,7 @@ pub fn query_codex_turn_breakdown(
         params.push(Box::new(s));
     }
     if let Some(e) = end_time {
-        where_clause.push_str(" AND end_time <= ?");
+        where_clause.push_str(" AND start_time <= ?");
         params.push(Box::new(e));
     }
 
@@ -9063,7 +9063,7 @@ pub fn query_session_model_breakdown(
         params.push(Box::new(s));
     }
     if let Some(e) = end_time {
-        where_clause.push_str(" AND end_time <= ?");
+        where_clause.push_str(" AND start_time <= ?");
         params.push(Box::new(e));
     }
 
@@ -9143,7 +9143,7 @@ pub fn query_speed_distribution(
         params.push(Box::new(s));
     }
     if let Some(e) = end_time {
-        where_clause.push_str(" AND end_time <= ?");
+        where_clause.push_str(" AND start_time <= ?");
         params.push(Box::new(e));
     }
 
@@ -11933,6 +11933,73 @@ mod tests {
     }
 
     #[test]
+    fn test_query_retry_stats_counts_spans_by_start_time() {
+        let conn = setup_test_db();
+        let hour = 3_600_000_000_000i64; // one hour in nanoseconds
+        let t0 = 1_700_000_000_000_000_000i64;
+
+        // A regular call fully contained in the first hour.
+        insert_span_simple(
+            &conn,
+            "claude_code.llm_request",
+            t0 + 600_000_000_000,
+            t0 + 700_000_000_000,
+            r#"{"gen_ai.system":"anthropic","gen_ai.request.model":"claude-sonnet-5[1m]","attempt":1}"#,
+        );
+        // A retried call (streaming attempt 1 fails, non-streaming attempt 2
+        // succeeds) that starts near the end of the first hour and runs for
+        // over a minute, crossing the hour boundary. Under the old
+        // fully-contained window semantics (start_time >= S AND end_time <= E)
+        // this span vanished from BOTH hourly windows and only appeared in
+        // wider parent windows (issue #203, observed 2026-09-10).
+        insert_span_simple(
+            &conn,
+            "claude_code.llm_request",
+            t0 + 3_540_000_000_000,
+            t0 + 3_660_000_000_000,
+            r#"{"gen_ai.system":"anthropic","gen_ai.request.model":"claude-sonnet-5[1m]","attempt":2}"#,
+        );
+
+        // First hour: both calls started here, so both are attributed here.
+        let first =
+            query_retry_stats(&conn, Some(t0), Some(t0 + hour), &GenAiFilters::default()).unwrap();
+        assert_eq!(first.total_llm_calls, 2);
+        assert_eq!(first.retried_calls, 1);
+        assert_eq!(first.extra_attempts, 1);
+
+        // Second hour: nothing started here, so adjacent sub-windows tile the
+        // parent exactly (no double count, no drop).
+        let second = query_retry_stats(
+            &conn,
+            Some(t0 + hour),
+            Some(t0 + 2 * hour),
+            &GenAiFilters::default(),
+        )
+        .unwrap();
+        assert_eq!(second.total_llm_calls, 0);
+        assert_eq!(second.retried_calls, 0);
+
+        // Parent window equals the sum of its sub-windows.
+        let parent = query_retry_stats(
+            &conn,
+            Some(t0),
+            Some(t0 + 2 * hour),
+            &GenAiFilters::default(),
+        )
+        .unwrap();
+        assert_eq!(
+            parent.total_llm_calls,
+            first.total_llm_calls + second.total_llm_calls
+        );
+        assert_eq!(
+            parent.retried_calls,
+            first.retried_calls + second.retried_calls
+        );
+        assert_eq!(parent.total_llm_calls, 2);
+        assert_eq!(parent.retried_calls, 1);
+    }
+
+    #[test]
     fn test_query_efficiency_stats_empty() {
         let conn = setup_test_db();
         let result = query_efficiency_stats(&conn, None, None).unwrap();
@@ -13076,7 +13143,7 @@ pub fn query_session_quality_map(
         params.push(Box::new(s));
     }
     if let Some(e) = end_time {
-        where_clause.push_str(" AND end_time <= ?");
+        where_clause.push_str(" AND start_time <= ?");
         params.push(Box::new(e));
     }
 
@@ -13193,7 +13260,7 @@ pub fn query_recent_errors(
         filters_applied.push(format!("start_time>={s}"));
     }
     if let Some(e) = end_time {
-        span_time.push_str(" AND end_time <= :end_time");
+        span_time.push_str(" AND start_time <= :end_time");
         log_time.push_str(" AND timestamp <= :end_time");
         named.push((":end_time", Box::new(e)));
         filters_applied.push(format!("end_time<={e}"));

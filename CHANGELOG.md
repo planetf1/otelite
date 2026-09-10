@@ -11,6 +11,14 @@ have to work around), not implementation detail.
 
 ## [Unreleased]
 
+### Changed
+
+- GenAI analytics time filters now attribute each LLM call to when it
+  *started* instead of requiring the whole call to fit inside the window.
+  Sub-window stats (e.g. hourly) no longer silently miss long or retried
+  calls that cross a boundary — you can now bisect "when did X happen"
+  with per-hour ranges and the sums add up
+
 ## [0.1.125] - 2026-09-08
 
 ### Internal
@@ -28,7 +36,6 @@ have to work around), not implementation detail.
   `GH_TOKEN` for the GitHub CLI (the first 0.1.125 attempt failed at
   the `gh pr create` step) and force-pushes the release branch so a
   re-run replaces a branch left behind by a failed attempt.
-
 ## [0.1.124] - 2026-09-08
 
 ### Fixed
