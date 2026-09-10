@@ -3409,6 +3409,30 @@ details[open] > .json-tree-summary::before {
     margin: 0 0.1rem;
 }
 
+/* Retry-incident list under the retry-rate gauge (GenAI cost section).
+   Header and data rows share these classes — fixed widths (not min-width,
+   which lets content stretch a column) and one font-size so the ch units
+   are identical in both, keeping the columns aligned. */
+.retry-recent-row {
+    display: flex;
+    gap: 10px;
+    padding: 1px 0;
+    font-size: 0.85em;
+    align-items: baseline;
+}
+.retry-recent-head {
+    color: var(--text-secondary, #8b949e);
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    padding-bottom: 2px;
+}
+.retry-recent .rrc-time  { width: 11ch; flex: none; }
+.retry-recent .rrc-model { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.retry-recent .rrc-att   { width: 3ch; flex: none; text-align: right; }
+.retry-recent .rrc-ttft  { width: 7ch; flex: none; text-align: right; }
+.retry-recent .rrc-sess  { width: 8ch; flex: none; }
+.retry-recent .rrc-trace { width: 8ch; flex: none; }
+
 /* Retried-call badge in span info column (first attempt failed, retry OK) */
 .span-retry-badge {
     display: inline-block;

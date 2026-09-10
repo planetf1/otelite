@@ -1418,13 +1418,13 @@ class AnalyticsView {
         const rows = Array.isArray(recentRetries) ? recentRetries : [];
         const listHtml = rows.length ? `
                     <div class="retry-recent" style="margin-top:8px">
-                        <div class="retry-recent-head" style="display:flex;gap:10px;padding:0 0 2px;font-size:0.7rem;color:var(--text-secondary,#8b949e);text-transform:uppercase;letter-spacing:0.04em">
-                            <span style="min-width:9ch">Time</span>
-                            <span style="flex:1">Model</span>
-                            <span style="min-width:5ch">Att</span>
-                            <span style="min-width:7ch">TTFT</span>
-                            <span style="min-width:9ch">Session</span>
-                            <span style="min-width:9ch">Trace</span>
+                        <div class="retry-recent-row retry-recent-head">
+                            <span class="rrc-time">Time</span>
+                            <span class="rrc-model">Model</span>
+                            <span class="rrc-att">Att</span>
+                            <span class="rrc-ttft">TTFT</span>
+                            <span class="rrc-sess">Session</span>
+                            <span class="rrc-trace">Trace</span>
                         </div>
                         ${rows.map(r => {
                             const when = new Date(r.start_time / 1e6).toISOString().slice(5, 16).replace('T', ' ');
@@ -1436,16 +1436,16 @@ class AnalyticsView {
                                 ? `<a class="trace-link" href="#" onclick="window.app.navigateToTracesBySession('${this._esc(r.session_id)}');return false;" title="All traces for session ${this._esc(r.session_id)}">${r.session_id.slice(0, 8)}</a>`
                                 : '—';
                             const trace = `<a class="trace-link" href="#" onclick="window.app.switchView('traces');window.app.views.traces.selectTrace('${this._esc(r.trace_id)}','${this._esc(r.span_id)}');return false;" title="Open trace ${this._esc(r.trace_id)} — jumps to the retried span (attempt events, logs, session report)">${r.trace_id.slice(0, 8)}</a>`;
-                            return `<div class="retry-recent-row" style="display:flex;gap:10px;padding:1px 0;font-size:0.85em">
-                                <span style="min-width:9ch">${when}</span>
-                                <span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${this._esc(model)}</span>
-                                <span style="min-width:5ch">${r.attempt}×</span>
-                                <span style="min-width:7ch">${ttft}</span>
-                                <span style="min-width:9ch">${session}</span>
-                                <span style="min-width:9ch">${trace}</span>
+                            return `<div class="retry-recent-row">
+                                <span class="rrc-time">${when}</span>
+                                <span class="rrc-model" title="${this._esc(r.model || '')}">${this._esc(model)}</span>
+                                <span class="rrc-att">${r.attempt}×</span>
+                                <span class="rrc-ttft">${ttft}</span>
+                                <span class="rrc-sess">${session}</span>
+                                <span class="rrc-trace">${trace}</span>
                             </div>`;
                         }).join('')}
-                        <div class="gauge-hint" style="margin-top:4px">session → traces for that session · trace → span detail (attempt events, logs, session report)</div>
+                        <div class="gauge-hint" style="margin-top:4px">session → traces for that session · trace → the retried span (attempt events, logs, session report)</div>
                     </div>` : '';
         return `
                 <div class="usage-gauge-card">
