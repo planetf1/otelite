@@ -13,6 +13,12 @@ have to work around), not implementation detail.
 
 ### Added
 
+- `otelite retries` — lists retried LLM calls (a failed first attempt that
+  was retried, e.g. a dropped streaming response): when, which model, how
+  many attempts, first-token time of the retry, and the session/trace ids
+  for drill-down. The same list appears under the retry-rate gauge on the
+  GenAI Analytics page (`/api/genai/retries`), so "when did my streaming
+  retries happen" is one command instead of a bisection
 - `otelite traces list --query` and `otelite logs list --query` now filter
   server-side — e.g. `--query 'attributes.attempt >= 2'` lists only traces
   with retried LLM calls, and several predicates can be joined with `AND`

@@ -1173,6 +1173,74 @@ pub async fn get_tool_usage(
     }))
 }
 
+/// Query parameters for the recent-retries endpoint
+#[derive(Debug, Deserialize, Serialize, utoipa::IntoParams, utoipa::ToSchema)]
+pub struct RecentRetriesQuery {
+    /// Start time (nanoseconds since Unix epoch)
+    pub start_time: Option<i64>,
+    /// End time (nanoseconds since Unix epoch)
+    pub end_time: Option<i64>,
+    /// Maximum number of incidents to return (default 20, capped at 100)
+    pub limit: Option<usize>,
+    /// Agent family filter: `claude`, `opencode`, or `codex`
+    pub agent: Option<String>,
+    /// Model name filter
+    pub model: Option<String>,
+    /// Provider filter
+    pub provider: Option<String>,
+    /// Project id filter (opencode data only)
+    pub project: Option<String>,
+    /// Session id filter
+    pub session: Option<String>,
+}
+
+/// Get recent retry incidents: LLM calls whose final attempt marker is > 1,
+/// newest first. The one-call answer to "when did my streaming retries
+/// happen" — previously required bisecting retry_stats and scanning traces.
+#[utoipa::path(
+    get,
+    path = "/api/genai/retries",
+    params(RecentRetriesQuery),
+    responses(
+        (status = 200, description = "Retried LLM calls, newest first", body = GenAiItemsResponse),
+        (status = 500, description = "Internal server error", body = ErrorResponse)
+    ),
+    tag = "genai"
+)]
+pub async fn get_recent_retries(
+    State(state): State<AppState>,
+    Query(query): Query<RecentRetriesQuery>,
+) -> Result<Json<GenAiItemsResponse>, (StatusCode, Json<ErrorResponse>)> {
+    let limit = query.limit.unwrap_or(20).clamp(1, 100);
+    let filters = query.filters();
+
+    let rows = state
+        .storage
+        .query_recent_retries(query.start_time, query.end_time, &filters, limit)
+        .await
+        .map_err(|e| {
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(ErrorResponse::storage_error(format!(
+                    "query recent retries: {}",
+                    e
+                ))),
+            )
+        })?;
+
+    Ok(Json(GenAiItemsResponse {
+        items: serde_json::to_value(&rows).map_err(|e| {
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(ErrorResponse::storage_error(format!(
+                    "serialize recent retries: {e}"
+                ))),
+            )
+        })?,
+        filters_applied: filters.applied(&FILTER_DIMENSIONS),
+    }))
+}
+
 /// Query parameters for retry-stats endpoint
 #[derive(Debug, Deserialize, Serialize, utoipa::IntoParams, utoipa::ToSchema)]
 pub struct RetryStatsQuery {
@@ -3062,6 +3130,7 @@ genai_filter_impl!(LatencyPercentileQuery);
 genai_filter_impl!(DistributionQuery);
 genai_filter_impl!(ToolUsageQuery);
 genai_filter_impl!(RetryStatsQuery);
+genai_filter_impl!(RecentRetriesQuery);
 genai_filter_impl!(RetrievalStatsQuery);
 genai_filter_impl!(TimeRangeQuery);
 genai_filter_impl!(TimeSeriesQuery);

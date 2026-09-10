@@ -681,6 +681,21 @@ impl StorageBackend for SqliteBackend {
         .await
     }
 
+    async fn query_recent_retries(
+        &self,
+        start_time: Option<i64>,
+        end_time: Option<i64>,
+        filters: &GenAiFilters,
+        limit: usize,
+    ) -> Result<Vec<otelite_core::api::RetryIncident>> {
+        let filters = filters.clone();
+        self.read_query(move |conn| {
+            reader::query_recent_retries(conn, start_time, end_time, &filters, limit)
+                .map_err(StorageError::from)
+        })
+        .await
+    }
+
     async fn query_retrieval_stats(
         &self,
         start_time: Option<i64>,

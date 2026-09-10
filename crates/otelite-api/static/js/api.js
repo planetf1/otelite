@@ -27,7 +27,7 @@ class ApiClient {
         '/genai/latency_series', '/genai/calls_series', '/genai/latency_by_context',
         '/genai/error_types', '/genai/model_drift', '/genai/stop_reasons',
         '/genai/context_type_split', '/genai/tool_errors', '/genai/hour_of_day',
-        '/genai/agent_framework_defs', '/genai/cache_hit_rate',
+        '/genai/agent_framework_defs', '/genai/cache_hit_rate', '/genai/retries',
     ]);
 
     /**
@@ -230,6 +230,7 @@ class ApiClient {
     async getErrorRate(params = {}) { return this.get('/genai/error_rate', params); }
     async getToolUsage(params = {}) { return this.get('/genai/tool_usage', params); }
     async getRetryStats(params = {}) { return this.get('/genai/retry_stats', params); }
+    async getRecentRetries(params = {}) { return this.get('/genai/retries', params); }
     async getRetrievalStats(params = {}) { return this.get('/genai/retrieval_stats', params); }
     async getPricingMetadata() { return this.get('/genai/pricing_metadata'); }
     async getAgentFrameworkDefs() { return this.get('/genai/agent_framework_defs'); }

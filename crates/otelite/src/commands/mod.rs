@@ -13,6 +13,7 @@ pub mod model_performance;
 pub mod projects;
 pub mod providers;
 pub mod reasoning;
+pub mod retries;
 pub mod service;
 pub mod sessions;
 pub mod traces;

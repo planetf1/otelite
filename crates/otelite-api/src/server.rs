@@ -40,6 +40,7 @@ use utoipa::OpenApi;
         crate::api::genai::get_token_usage,
         crate::api::genai::get_cost_series,
         crate::api::genai::get_top_spans,
+        crate::api::genai::get_recent_retries,
         crate::api::genai::get_top_sessions,
         crate::api::genai::get_top_conversations,
         crate::api::genai::get_finish_reasons,
@@ -150,6 +151,7 @@ use utoipa::OpenApi;
             otelite_core::api::ErrorRateByModel,
             otelite_core::api::ToolUsage,
             otelite_core::api::RetryStats,
+            otelite_core::api::RetryIncident,
             otelite_core::api::RetrievalStats,
             otelite_core::api::TopRetrievalQuery,
             crate::api::health::HealthResponse,
@@ -167,6 +169,7 @@ use utoipa::OpenApi;
             crate::api::genai::ErrorRateQuery,
             crate::api::genai::ToolUsageQuery,
             crate::api::genai::RetryStatsQuery,
+            crate::api::genai::RecentRetriesQuery,
             crate::api::genai::RetrievalStatsQuery,
             crate::api::genai::PricingMetadata,
             otelite_core::agent_frameworks::AgentFrameworkRecognizer,
@@ -396,6 +399,7 @@ impl DashboardServer {
             .route("/api/genai/usage", get(crate::api::get_token_usage))
             .route("/api/genai/cost_series", get(crate::api::genai::get_cost_series))
             .route("/api/genai/top_spans", get(crate::api::genai::get_top_spans))
+            .route("/api/genai/retries", get(crate::api::genai::get_recent_retries))
             .route("/api/genai/top_sessions", get(crate::api::genai::get_top_sessions))
             .route("/api/genai/top_conversations", get(crate::api::genai::get_top_conversations))
             .route("/api/genai/finish_reasons", get(crate::api::genai::get_finish_reasons))

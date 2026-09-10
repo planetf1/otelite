@@ -990,7 +990,8 @@ class AnalyticsView {
             const params = this._baseParams();
             const bucket = this._chooseBucket();
             const [costSeries, topSpans, cacheHitRate, cacheEconomics, reasoningShare,
-                   retryStats, errorRate, contextTypeSplit, agentsRollup, projectsRollup] =
+                   retryStats, recentRetries, errorRate, contextTypeSplit, agentsRollup,
+                   projectsRollup] =
                 await Promise.all([
                     this.api.getCostSeries({ ...params, bucket }),
                     this.api.getTopSpans({ ...params, limit: 20 }),
@@ -998,6 +999,7 @@ class AnalyticsView {
                     this.api.getCacheEconomics({ ...params, bucket_secs: bucket }).catch(() => null),
                     this.api.getReasoningShare(params).catch(() => null),
                     this.api.getRetryStats(params).catch(() => null),
+                    this.api.getRecentRetries({ ...params, limit: 10 }).catch(() => null),
                     this.api.getErrorRate(params).catch(() => []),
                     this.api.getContextTypeSplit(params).catch(() => null),
                     this.api.getAgents({ ...params, bucket_secs: bucket }).catch(() => null),
@@ -1031,7 +1033,7 @@ class AnalyticsView {
                         <div class="gauge-bar"><div class="gauge-fill" style="width:${cachePct.toFixed(2)}%"></div></div>
                         <div class="gauge-hint">${fmt(cacheRead)} / ${fmt(cacheDenom)} tokens served from cache</div>
                     </div>
-                    ${this._buildRetryGauge(retryStats)}
+                    ${this._buildRetryGauge(retryStats, recentRetries)}
                 </div>
                 ${zeroCacheModels.length ? `<p class="table-hint insight-alert">⚠ No caching observed for: ${zeroCacheModels.map(m => `<strong>${this._esc(m)}</strong>`).join(', ')} — these models send full context every turn.</p>` : ''}`;
 
@@ -1406,17 +1408,40 @@ class AnalyticsView {
         return ms < 10000 ? `${Number(ms).toLocaleString()} ms` : `${(ms / 1000).toFixed(1)} s`;
     }
 
-    _buildRetryGauge(retryStats) {
+    _buildRetryGauge(retryStats, recentRetries) {
         if (!retryStats || !retryStats.total_llm_calls) return '';
         const rate = retryStats.retry_rate || 0;
         const pct = rate * 100;
         const fmt = n => Number(n).toLocaleString();
+        // #205: give the gauge a face — the most recent retry incidents
+        // (a dropped stream that was retried without streaming).
+        const rows = Array.isArray(recentRetries) ? recentRetries : [];
+        const listHtml = rows.length ? `
+                    <div class="retry-recent" style="margin-top:8px">
+                        ${rows.map(r => {
+                            const when = new Date(r.start_time / 1e6).toISOString().slice(5, 16).replace('T', ' ');
+                            const model = (r.model || '?').split('/').pop();
+                            const ttft = r.ttft_ms != null
+                                ? (r.ttft_ms < 10000 ? r.ttft_ms + ' ms' : (r.ttft_ms / 1000).toFixed(1) + ' s')
+                                : '—';
+                            const session = r.session_id ? r.session_id.slice(0, 8) : '—';
+                            return `<div class="retry-recent-row" style="display:flex;gap:10px;padding:1px 0;font-size:0.85em" title="trace ${this._esc(r.trace_id)}">
+                                <span style="min-width:9ch">${when}</span>
+                                <span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${this._esc(model)}</span>
+                                <span style="min-width:7ch">${r.attempt}× attempts</span>
+                                <span style="min-width:7ch">${ttft}</span>
+                                <span style="min-width:9ch" title="session ${this._esc(r.session_id || '')}">${session}</span>
+                            </div>`;
+                        }).join('')}
+                        <div class="gauge-hint" style="margin-top:4px">first attempt failed and was retried — click a row's trace id in the title for drill-down</div>
+                    </div>` : '';
         return `
                 <div class="usage-gauge-card">
                     <div class="usage-card-label">Retry rate</div>
                     <div class="usage-card-value">${pct.toFixed(1)}%</div>
                     <div class="gauge-bar"><div class="gauge-fill ${pct > 0 ? 'gauge-fill-warning' : ''}" style="width:${pct.toFixed(2)}%"></div></div>
                     <div class="gauge-hint">${fmt(retryStats.retried_calls || 0)} of ${fmt(retryStats.total_llm_calls)} calls retried (${fmt(retryStats.extra_attempts || 0)} extra attempts)</div>
+                    ${listHtml}
                 </div>`;
     }
 

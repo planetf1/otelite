@@ -224,6 +224,11 @@ enum Commands {
         after_help = "Examples:\n  otelite llm\n  otelite llm --since 1h --limit 50\n  otelite llm --model claude-sonnet --status error\n  otelite llm --trace <trace-id>"
     )]
     Llm(commands::llm::LlmCommand),
+    /// Recent retried LLM calls (failed first attempt, then a retry)
+    #[command(
+        after_help = "Examples:\n  otelite retries\n  otelite retries --since 7d\n  otelite retries --model claude-sonnet --limit 50"
+    )]
+    Retries(commands::retries::RetriesCommand),
     /// One-shot forensic report for an AI agent session
     #[command(
         after_help = "Examples:\n  otelite diagnose e023c577-8f96-4de8-a86c-6ce3080519b5\n  otelite diagnose <session-id> --suggest"
@@ -661,6 +666,7 @@ async fn run_cli() -> Result<()> {
             debug,
         }) => handle_tui_command(api_url, refresh_interval, view, debug).await,
         Some(Commands::Llm(cmd)) => cmd.execute(config).await,
+        Some(Commands::Retries(cmd)) => cmd.execute(config).await,
         Some(Commands::Diagnose {
             session_id,
             suggest,

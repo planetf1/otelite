@@ -14,9 +14,9 @@ use crate::api::{
     GenAiCapabilityResponse, LatencyByContextBin, LatencyPercentilesResponse, LatencySeriesPoint,
     LatencyStats, ModelDriftPair, ModelPerformanceQuery, ModelPerformanceResponse, ModelUsage,
     ProjectRollupStorage, ProviderMixResponse, ReasoningShareResponse, RecentErrorsResponse,
-    RequestParamProfile, RetrievalStats, RetryStats, SessionContextResponse, SessionCostRow,
-    SessionCostStorage, SystemUsage, TokenUsageSummary, ToolUsage, TopSpan, TopSpanSort,
-    TruncationRateByModel,
+    RequestParamProfile, RetrievalStats, RetryIncident, RetryStats, SessionContextResponse,
+    SessionCostRow, SessionCostStorage, SystemUsage, TokenUsageSummary, ToolUsage, TopSpan,
+    TopSpanSort, TruncationRateByModel,
 };
 use crate::filters::GenAiFilters;
 // New types referenced via crate::api:: in the trait methods below.
@@ -379,6 +379,22 @@ pub trait StorageBackend: Send + Sync {
         end_time: Option<i64>,
         filters: &GenAiFilters,
     ) -> Result<RetryStats>;
+
+    /// Retried LLM calls, newest first (attempt marker > 1).
+    ///
+    /// Backends without this optional analytic can retain source
+    /// compatibility.
+    async fn query_recent_retries(
+        &self,
+        _start_time: Option<i64>,
+        _end_time: Option<i64>,
+        _filters: &GenAiFilters,
+        _limit: usize,
+    ) -> Result<Vec<RetryIncident>> {
+        Err(StorageError::QueryError(
+            "Recent-retries listing is not supported by this backend".to_string(),
+        ))
+    }
 
     /// Aggregated retrieval / RAG statistics across retriever spans.
     async fn query_retrieval_stats(

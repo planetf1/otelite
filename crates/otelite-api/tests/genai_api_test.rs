@@ -1026,6 +1026,80 @@ fn llm_request_span(
 }
 
 #[tokio::test]
+async fn test_recent_retries_empty() {
+    let (server, _storage, _temp_dir) = setup_test_server().await;
+    let app = server.build_router();
+
+    let (status, v) = get_json(
+        &app,
+        &format!("/api/genai/retries?start_time={R0}&end_time={R1}"),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    let items = v.get("items").expect("items");
+    assert!(items.is_array());
+    assert_eq!(items.as_array().unwrap().len(), 0);
+    assert!(v.get("filters_applied").is_some());
+}
+
+#[tokio::test]
+async fn test_recent_retries_lists_only_retried_spans() {
+    let (server, storage, _temp_dir) = setup_test_server().await;
+
+    // A retried call (attempt 2) inside the window.
+    let mut retried = llm_request_span(
+        "sp-retry",
+        "claude-sonnet-5[1m]",
+        R0 + 100_000_000,
+        12_000,
+        Some(11_700),
+    );
+    retried
+        .attributes
+        .insert("attempt".to_string(), "2".to_string());
+    storage.write_span(&retried).await.unwrap();
+
+    // A normal call (attempt 1) — excluded.
+    let normal = llm_request_span(
+        "sp-normal",
+        "claude-sonnet-5[1m]",
+        R0 + 200_000_000,
+        5_000,
+        None,
+    );
+    storage.write_span(&normal).await.unwrap();
+
+    // A retried call that started before the window — excluded (spans are
+    // attributed by start time, #203).
+    let mut old = llm_request_span(
+        "sp-old",
+        "claude-sonnet-5[1m]",
+        R0 - 500_000_000,
+        1_000,
+        None,
+    );
+    old.attributes
+        .insert("attempt".to_string(), "3".to_string());
+    storage.write_span(&old).await.unwrap();
+
+    let app = server.build_router();
+    let (status, v) = get_json(
+        &app,
+        &format!("/api/genai/retries?start_time={R0}&end_time={R1}"),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    let items = v["items"].as_array().expect("items array");
+    assert_eq!(items.len(), 1);
+    assert_eq!(items[0]["span_id"], "sp-retry");
+    assert_eq!(items[0]["attempt"], 2);
+    assert_eq!(items[0]["ttft_ms"], 11_700);
+    assert_eq!(items[0]["session_id"], "s1");
+    assert_eq!(items[0]["model"], "claude-sonnet-5[1m]");
+    assert_eq!(items[0]["trace_id"], "t");
+}
+
+#[tokio::test]
 async fn test_get_latency_percentiles_empty() {
     let (server, _storage, _temp_dir) = setup_test_server().await;
     let app = server.build_router();
@@ -1524,6 +1598,7 @@ async fn test_filters_applied_echoed_on_all_genai_endpoints() {
         "/api/genai/latency_percentiles",
         "/api/genai/capabilities",
         "/api/genai/retry_stats",
+        "/api/genai/retries",
         "/api/genai/retrieval_stats",
         "/api/genai/request_param_profile",
         "/api/genai/conversation_depth",

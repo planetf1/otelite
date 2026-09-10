@@ -3813,6 +3813,95 @@ pub fn query_retry_stats(
     })
 }
 
+/// Retried LLM calls, newest first.
+///
+/// Same attempt detection as `query_retry_stats` (so the aggregate and the
+/// listing always agree), with spans attributed by start time (#203).
+pub fn query_recent_retries(
+    conn: &Connection,
+    start_time: Option<i64>,
+    end_time: Option<i64>,
+    filters: &GenAiFilters,
+    limit: usize,
+) -> Result<Vec<otelite_core::api::RetryIncident>> {
+    let exprs = token_exprs();
+    let attempt = "COALESCE(\
+        CAST(json_extract(attributes, '$.\"attempt\"') AS INTEGER), \
+        CAST(json_extract(attributes, '$.\"retry_count\"') AS INTEGER), \
+        CAST(json_extract(attributes, '$.\"gen_ai.request.attempt\"') AS INTEGER), 1)";
+    let mut where_clause = format!("WHERE {} AND {} > 1", exprs.llm_span_guard, attempt);
+    let mut params: Vec<Box<dyn rusqlite::ToSql>> = Vec::new();
+
+    if let Some(start) = start_time {
+        where_clause.push_str(" AND start_time >= ?");
+        params.push(Box::new(start));
+    }
+    if let Some(end) = end_time {
+        where_clause.push_str(" AND start_time <= ?");
+        params.push(Box::new(end));
+    }
+    push_scope(&mut where_clause, &mut params, filters.span_scope());
+
+    let sql = format!(
+        "SELECT
+            trace_id,
+            span_id,
+            start_time,
+            (end_time - start_time) as duration,
+            {model} as model,
+            {system} as system,
+            json_extract(attributes, '$.\"session.id\"') as session_id,
+            {attempt} as attempt,
+            CAST(json_extract(attributes, '$.\"ttft_ms\"') AS INTEGER) as ttft_ms,
+            COALESCE(
+                json_extract(attributes, '$.\"gen_ai.response.finish_reason\"'),
+                CASE WHEN json_type(attributes, '$.\"gen_ai.response.finish_reasons\"') = 'array'
+                     THEN json_extract(json_extract(attributes, '$.\"gen_ai.response.finish_reasons\"'), '$[0]')
+                     ELSE NULL END,
+                json_extract(attributes, '$.\"stop_reason\"')
+            ) as finish_reason
+        FROM spans
+        {where_clause}
+        ORDER BY start_time DESC
+        LIMIT ?",
+        model = exprs.identity,
+        system = exprs.system,
+        attempt = attempt,
+    );
+
+    params.push(Box::new(limit as i64));
+    let param_refs: Vec<&dyn rusqlite::ToSql> = params.iter().map(|p| p.as_ref()).collect();
+
+    let mut stmt = conn.prepare(&sql).map_err(|e| {
+        StorageError::QueryError(format!("Failed to prepare recent_retries query: {}", e))
+    })?;
+
+    let rows = stmt
+        .query_map(param_refs.as_slice(), |row| {
+            Ok(otelite_core::api::RetryIncident {
+                trace_id: row.get(0)?,
+                span_id: row.get(1)?,
+                start_time: row.get::<_, i64>(2)?,
+                duration: row.get::<_, i64>(3)?,
+                model: row.get::<_, Option<String>>(4)?,
+                system: row.get::<_, Option<String>>(5)?,
+                session_id: row.get::<_, Option<String>>(6)?,
+                attempt: row.get::<_, i64>(7).unwrap_or(2),
+                ttft_ms: row.get::<_, Option<i64>>(8)?,
+                finish_reason: row.get::<_, Option<String>>(9)?,
+            })
+        })
+        .map_err(|e| {
+            StorageError::QueryError(format!("Failed to execute recent_retries query: {}", e))
+        })?
+        .collect::<std::result::Result<Vec<_>, _>>()
+        .map_err(|e| {
+            StorageError::QueryError(format!("Failed to parse recent_retries results: {}", e))
+        })?;
+
+    Ok(rows)
+}
+
 /// Aggregated retrieval / RAG statistics across retriever spans.
 ///
 /// Retriever spans are identified by either:
@@ -12058,6 +12147,75 @@ mod tests {
             "equality on a numeric value must match the text '2'"
         );
         assert_eq!(spans[0].start_time, 2_000);
+    }
+
+    #[test]
+    fn test_query_recent_retries_empty() {
+        let conn = setup_test_db();
+        let rows = query_recent_retries(&conn, None, None, &GenAiFilters::default(), 20).unwrap();
+        assert!(rows.is_empty());
+    }
+
+    #[test]
+    fn test_query_recent_retries_lists_retried_llm_spans() {
+        let conn = setup_test_db();
+        let t0 = 1_700_000_000_000_000_000i64;
+        // Retried span with ttft (the 2026-09-09 incident shape).
+        insert_span_simple(
+            &conn,
+            "claude_code.llm_request",
+            t0 + 1_000_000_000,
+            t0 + 12_000_000_000,
+            r#"{"gen_ai.system":"anthropic","gen_ai.request.model":"claude-sonnet-5[1m]","attempt":"2","ttft_ms":"11728","stop_reason":"tool_use"}"#,
+        );
+        // Normal span (attempt 1) — excluded.
+        insert_span_simple(
+            &conn,
+            "claude_code.llm_request",
+            t0 + 2_000_000_000,
+            t0 + 3_000_000_000,
+            r#"{"gen_ai.system":"anthropic","gen_ai.request.model":"claude-sonnet-5[1m]","attempt":"1"}"#,
+        );
+        // Retried span that started before the window — excluded (attribution
+        // is by start time, #203).
+        insert_span_simple(
+            &conn,
+            "claude_code.llm_request",
+            t0 - 1_000_000_000,
+            t0 + 1_000_000_000,
+            r#"{"gen_ai.system":"anthropic","gen_ai.request.model":"claude-sonnet-5[1m]","attempt":"3"}"#,
+        );
+        // Retried span crossing the window end (starts inside, ends after) —
+        // included.
+        insert_span_simple(
+            &conn,
+            "claude_code.llm_request",
+            t0 + 50_000_000_000,
+            t0 + 61_000_000_000,
+            r#"{"gen_ai.system":"anthropic","gen_ai.request.model":"claude-sonnet-5[1m]","attempt":"2"}"#,
+        );
+
+        let rows = query_recent_retries(
+            &conn,
+            Some(t0),
+            Some(t0 + 60_000_000_000),
+            &GenAiFilters::default(),
+            20,
+        )
+        .unwrap();
+        assert_eq!(rows.len(), 2);
+        // Newest first.
+        assert_eq!(rows[0].start_time, t0 + 50_000_000_000);
+        assert_eq!(rows[0].attempt, 2);
+        assert_eq!(rows[1].start_time, t0 + 1_000_000_000);
+        assert_eq!(
+            rows[1].model.as_deref(),
+            Some("anthropic/claude-sonnet-5[1m]")
+        );
+        assert_eq!(rows[1].ttft_ms, Some(11_728));
+        assert_eq!(rows[1].finish_reason.as_deref(), Some("tool_use"));
+        assert_eq!(rows[1].duration, 11_000_000_000);
+        assert!(rows[1].session_id.is_none());
     }
 
     #[test]

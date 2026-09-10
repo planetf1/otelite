@@ -1070,6 +1070,36 @@ pub struct RetryStats {
     pub filters_applied: Vec<String>,
 }
 
+/// One retried LLM call, newest first. A row is any LLM span whose final
+/// attempt marker (`attempt` / `retry_count` / `gen_ai.request.attempt`)
+/// is greater than 1 — the same detection `retry_stats` uses, so the
+/// aggregate and the list always agree.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
+pub struct RetryIncident {
+    pub trace_id: String,
+    pub span_id: String,
+    /// Span start time (nanoseconds since Unix epoch)
+    pub start_time: i64,
+    /// Span duration in nanoseconds
+    pub duration: i64,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub model: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub system: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub session_id: Option<String>,
+    /// Final attempt number (2 = one retry).
+    pub attempt: i64,
+    /// Time to first token of the successful attempt, in milliseconds, if
+    /// the instrumentation recorded it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub ttft_ms: Option<i64>,
+    /// First finish/stop reason of the successful attempt, if present.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub finish_reason: Option<String>,
+}
+
 /// Retrieval / RAG statistics aggregated across retriever spans.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
