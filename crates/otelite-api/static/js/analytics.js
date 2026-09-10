@@ -1424,16 +1424,20 @@ class AnalyticsView {
                             const ttft = r.ttft_ms != null
                                 ? (r.ttft_ms < 10000 ? r.ttft_ms + ' ms' : (r.ttft_ms / 1000).toFixed(1) + ' s')
                                 : '—';
-                            const session = r.session_id ? r.session_id.slice(0, 8) : '—';
-                            return `<div class="retry-recent-row" style="display:flex;gap:10px;padding:1px 0;font-size:0.85em" title="trace ${this._esc(r.trace_id)}">
+                            const session = r.session_id
+                                ? `<a class="trace-link" href="#" onclick="window.app.navigateToTracesBySession('${this._esc(r.session_id)}');return false;" title="All traces for session ${this._esc(r.session_id)}">${r.session_id.slice(0, 8)}</a>`
+                                : '—';
+                            const trace = `<a class="trace-link" href="#" onclick="window.app.switchView('traces');window.app.views.traces.selectTrace('${this._esc(r.trace_id)}');return false;" title="Open trace ${this._esc(r.trace_id)} — spans, logs, session report">${r.trace_id.slice(0, 8)}</a>`;
+                            return `<div class="retry-recent-row" style="display:flex;gap:10px;padding:1px 0;font-size:0.85em">
                                 <span style="min-width:9ch">${when}</span>
                                 <span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${this._esc(model)}</span>
-                                <span style="min-width:7ch">${r.attempt}× attempts</span>
+                                <span style="min-width:5ch">${r.attempt}×</span>
                                 <span style="min-width:7ch">${ttft}</span>
-                                <span style="min-width:9ch" title="session ${this._esc(r.session_id || '')}">${session}</span>
+                                <span style="min-width:9ch">${session}</span>
+                                <span style="min-width:9ch">${trace}</span>
                             </div>`;
                         }).join('')}
-                        <div class="gauge-hint" style="margin-top:4px">first attempt failed and was retried — click a row's trace id in the title for drill-down</div>
+                        <div class="gauge-hint" style="margin-top:4px">session → traces for that session · trace → span detail (attempt events, logs, session report)</div>
                     </div>` : '';
         return `
                 <div class="usage-gauge-card">
