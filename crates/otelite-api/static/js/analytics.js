@@ -1418,6 +1418,14 @@ class AnalyticsView {
         const rows = Array.isArray(recentRetries) ? recentRetries : [];
         const listHtml = rows.length ? `
                     <div class="retry-recent" style="margin-top:8px">
+                        <div class="retry-recent-head" style="display:flex;gap:10px;padding:0 0 2px;font-size:0.7rem;color:var(--text-secondary,#8b949e);text-transform:uppercase;letter-spacing:0.04em">
+                            <span style="min-width:9ch">Time</span>
+                            <span style="flex:1">Model</span>
+                            <span style="min-width:5ch">Att</span>
+                            <span style="min-width:7ch">TTFT</span>
+                            <span style="min-width:9ch">Session</span>
+                            <span style="min-width:9ch">Trace</span>
+                        </div>
                         ${rows.map(r => {
                             const when = new Date(r.start_time / 1e6).toISOString().slice(5, 16).replace('T', ' ');
                             const model = (r.model || '?').split('/').pop();
