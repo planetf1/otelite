@@ -11,6 +11,14 @@ have to work around), not implementation detail.
 
 ## [Unreleased]
 
+### Added
+
+- GenAI report index: an at-a-glance grid of all 28 reports (one column
+  per group) above the report list — click any report to open and
+  highlight it. The "Filter reports…" box now also matches metric keywords
+  (type "retry", "truncation", "ttft", …) and jumps to the first match
+  instead of just hiding the rest
+
 ### Changed
 
 - The recent retry-incident list moved from the Cost report's retry-rate

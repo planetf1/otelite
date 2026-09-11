@@ -2498,6 +2498,60 @@ details[open] > .json-tree-summary::before {
     color: var(--text-secondary, #8b949e);
 }
 
+/* Report index: at-a-glance map of all reports, one column per group. */
+.analytics-index {
+    display: grid;
+    grid-template-columns: repeat(5, minmax(0, 1fr));
+    gap: 0.6rem;
+    padding: 0.4rem 0.25rem 0.75rem;
+}
+.analytics-index-col {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    min-width: 0;
+}
+.analytics-index-group {
+    font-size: 0.7rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--text-secondary, #8b949e);
+    padding: 0 0.25rem 2px;
+    border-bottom: 1px solid var(--border-color, #30363d);
+    margin-bottom: 3px;
+}
+.analytics-index-cell {
+    text-align: left;
+    background: transparent;
+    border: 1px solid transparent;
+    border-radius: 4px;
+    color: var(--text-primary);
+    font-size: 0.8rem;
+    padding: 2px 0.4rem;
+    cursor: pointer;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+.analytics-index-cell:hover {
+    background: var(--bg-tertiary);
+    border-color: var(--border-color, #30363d);
+}
+.analytics-index-cell-dim {
+    opacity: 0.3;
+}
+
+/* Flash a report section when jumped to (index cell or filter match). */
+@keyframes analytics-section-flash-anim {
+    0%   { box-shadow: 0 0 0 2px rgba(245, 158, 11, 0.8); }
+    100% { box-shadow: 0 0 0 2px rgba(245, 158, 11, 0); }
+}
+.analytics-section-flash {
+    animation: analytics-section-flash-anim 2.5s ease-out 1;
+    border-radius: 6px;
+}
+
 .analytics-group-count {
     color: var(--text-secondary);
     font-size: 0.8rem;

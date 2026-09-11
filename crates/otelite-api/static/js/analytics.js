@@ -77,6 +77,41 @@ class AnalyticsView {
         { id: 'ecosystem',   label: 'Ecosystem & Diagnostics', sub: "What's the tooling actually doing?",   reports: ['skill_activity', 'hook_overhead', 'capabilities', 'project_rollup'] },
     ];
 
+    // Extra vocabulary per report for the jump-to filter: metric names and
+    // user words that do not appear in the report's title or hint (e.g.
+    // 'retry' did not match anything before the incident list moved to
+    // Reliability, so it lives here).
+    static REPORT_KEYWORDS = {
+        cost: ['cost', 'pricing', 'spend', 'expensive', 'tokens spent'],
+        providers: ['provider', 'mix', 'anthropic', 'openai', 'amazon', 'bedrock'],
+        roles: ['role', 'sub-agent', 'subagent', 'attribution', 'routing matrix'],
+        session_model: ['per-session', 'session spend', 'model pair'],
+        effort: ['effort', 'low', 'medium', 'high', 'xhigh'],
+        efficiency: ['efficiency', 'commits', 'lines of code', 'loc', 'tokens per commit'],
+        skill_outcomes: ['skill efficiency', 'with vs without'],
+        latency: ['latency', 'p50', 'p95', 'p99', 'response time', 'throughput', 'context size'],
+        model_performance: ['baseline', 'regression', 'performance', 'diagnosis'],
+        codex_ttft: ['ttft', 'codex', 'first token', 'percentiles'],
+        cross_tool_ttft: ['ttft', 'first token', 'all tools', 'cross-tool'],
+        codex_turns: ['busy', 'idle', 'turn', 'codex'],
+        speed_dist: ['speed', 'extended thinking', 'effort mode', 'normal'],
+        reliability: ['reliability', 'finish reason', 'stop reason', 'truncation', 'max_tokens', 'error rate', 'drift', 'retry', 'retried', 'retries', 'incident'],
+        recent_errors: ['errors', 'error', 'failed', 'recent', 'failures'],
+        session_quality: ['quality', 'degraded', 'clean', 'errored sessions'],
+        mcp_health: ['mcp', 'flaky server', 'server health'],
+        tool_failure_rates: ['tool failure', 'tool error', 'flaky tool', 'opencode tool'],
+        guardian: ['guardian', 'risk', 'blocked', 'denial'],
+        behavior: ['tool use', 'retrieval', 'request volume', 'behaviour'],
+        multi_agent: ['multi-agent', 'topology', 'spawn', 'resume'],
+        daily_tool_mix: ['daily', 'per day', 'calendar', 'tool mix'],
+        model_selection_heatmap: ['heatmap', 'selection', 'which tool picked'],
+        reasoning_share: ['reasoning', 'thinking tokens', 'thinking'],
+        skill_activity: ['skill activity', 'injection', 'codex skills'],
+        hook_overhead: ['hook', 'overhead', 'pre_prompt', 'stop hook'],
+        capabilities: ['telemetry', 'availability', 'emitter', 'capability coverage'],
+        project_rollup: ['project', 'per project', 'rollup'],
+    };
+
     constructor(apiClient) {
         this.api = apiClient;
         this.refreshInterval = null;
@@ -154,8 +189,18 @@ class AnalyticsView {
             <div id="analytics-sections">
                 <div class="analytics-report-tools">
                     <input type="search" id="analytics-report-filter" class="filter-input"
-                           placeholder="Filter reports… (e.g. ttft, cost, mcp)" autocomplete="off">
+                           placeholder="Filter reports… (e.g. ttft, cost, mcp, retry)" autocomplete="off">
                     <span id="analytics-filter-count" class="analytics-filter-count"></span>
+                </div>
+                <div class="analytics-index" id="analytics-index">
+                    ${AnalyticsView.GROUPS.map(g => `
+                        <div class="analytics-index-col">
+                            <div class="analytics-index-group">${g.label}</div>
+                            ${g.reports.map(id => {
+                                const r = AnalyticsView.REPORTS.find(x => x.id === id);
+                                return r ? `<button type="button" class="analytics-index-cell" data-report="${id}" title="${this._esc(r.hint)}" onclick="window.app.views.analytics._jumpToReport('${id}');return false;">${r.title}</button>` : '';
+                            }).join('')}
+                        </div>`).join('')}
                 </div>
                 ${[
                     (this.pinned.size ? this._renderGroupShell('pinned', 'Pinned', [...this.pinned], true) : ''),
@@ -267,6 +312,26 @@ class AnalyticsView {
         this._applyReportFilter(this._filterQuery);
     }
 
+    // Jump to a report: expand its group and the report itself (opening the
+    // details fires the toggle handler, which lazily loads the section),
+    // scroll it into view and flash it. Used by the index grid and the
+    // jump-to filter.
+    _jumpToReport(id) {
+        const el = document.getElementById(`analytics-section-${id}`);
+        if (!el) return;
+        const group = el.closest('.analytics-group');
+        if (group) group.open = true;
+        el.open = true;
+        requestAnimationFrame(() => {
+            el.scrollIntoView({ block: 'center' });
+            el.classList.remove('analytics-section-flash');
+            // Restart the animation if it was already running.
+            void el.offsetWidth;
+            el.classList.add('analytics-section-flash');
+            setTimeout(() => el.classList.remove('analytics-section-flash'), 3000);
+        });
+    }
+
     _applyReportFilter(query) {
         const q = (query || '').trim().toLowerCase();
         this._filterQuery = q;
@@ -293,8 +358,11 @@ class AnalyticsView {
             const hostGroup = el.closest('.analytics-group');
             const groupMatch = hostGroup &&
                 (hostGroup.querySelector('.analytics-group-title')?.textContent || '').toLowerCase().includes(q);
-            const match = !q || title.includes(q) || hint.includes(q) || groupMatch;
+            const keywords = (AnalyticsView.REPORT_KEYWORDS[id] || []).some(k => k.includes(q));
+            const match = !q || title.includes(q) || hint.includes(q) || keywords || groupMatch;
             el.hidden = !match;
+            const cell = document.querySelector(`.analytics-index-cell[data-report="${id}"]`);
+            if (cell) cell.classList.toggle('analytics-index-cell-dim', !match);
             if (match) visible++;
         }
         for (const g of groups) {
@@ -312,6 +380,16 @@ class AnalyticsView {
         }
         const count = document.getElementById('analytics-filter-count');
         if (count) count.textContent = q ? `${visible} of ${total} reports` : `${total} reports`;
+
+        // Jump to the first match (canonical report order) so a hit is
+        // visible immediately instead of hidden in a collapsed group.
+        if (q) {
+            const first = AnalyticsView.REPORTS.find(r => {
+                const el = document.getElementById(`analytics-section-${r.id}`);
+                return el && !el.hidden;
+            });
+            if (first) this._jumpToReport(first.id);
+        }
     }
 
     _recountGroups() {
