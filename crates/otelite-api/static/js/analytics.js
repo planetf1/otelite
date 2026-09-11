@@ -222,6 +222,14 @@ class AnalyticsView {
         this._registerSectionLoaders();
         this._attachSectionToggleHandlers();
         this._attachReportTools();
+        // Deep link: #/analytics?report=<id> jumps straight to that report
+        // (#212). Re-checked on hashchange so links arriving while the view
+        // is already rendered (Overview widgets, pasted URLs) still apply.
+        this._applyReportDeepLink();
+        if (!this._hashListenerBound) {
+            this._hashListenerBound = true;
+            window.addEventListener('hashchange', () => this._applyReportDeepLink());
+        }
         // Pinned sections mount already open; the toggle event that would
         // lazy-load them doesn't fire on initial creation, so fire their
         // loaders explicitly.
@@ -312,13 +320,44 @@ class AnalyticsView {
         this._applyReportFilter(this._filterQuery);
     }
 
+    // Write report=<id> into the current hash, preserving every other
+    // param (filter dimensions, zoom window). history.replaceState does
+    // not fire hashchange, so there is no re-entry loop.
+    _setReportHash(id) {
+        const hash = window.location.hash || '';
+        if (!hash.startsWith('#/analytics')) return;
+        const qIndex = hash.indexOf('?');
+        const path = qIndex < 0 ? hash : hash.slice(0, qIndex);
+        const params = new URLSearchParams(qIndex < 0 ? '' : hash.slice(qIndex + 1));
+        params.set('report', id);
+        window.history.replaceState(null, '', `${path}?${params.toString()}`);
+    }
+
+    // If the current hash points at a known report, jump to it. Runs on
+    // render (deep link on load) and on hashchange (Overview widget links
+    // arriving while analytics is already rendered). No-op when the param
+    // is absent or unchanged.
+    _applyReportDeepLink() {
+        const hash = window.location.hash || '';
+        if (!hash.startsWith('#/analytics')) return;
+        const qIndex = hash.indexOf('?');
+        if (qIndex < 0) return;
+        const id = new URLSearchParams(hash.slice(qIndex + 1)).get('report');
+        if (!id || id === this._appliedReportParam) return;
+        if (!AnalyticsView.REPORTS.some(r => r.id === id)) return;
+        this._appliedReportParam = id;
+        this._jumpToReport(id);
+    }
+
     // Jump to a report: expand its group and the report itself (opening the
     // details fires the toggle handler, which lazily loads the section),
-    // scroll it into view and flash it. Used by the index grid and the
-    // jump-to filter.
+    // scroll it into view and flash it. Used by the index grid, the
+    // jump-to filter and the #report= deep link.
     _jumpToReport(id) {
         const el = document.getElementById(`analytics-section-${id}`);
         if (!el) return;
+        this._appliedReportParam = id;
+        this._setReportHash(id);
         const group = el.closest('.analytics-group');
         if (group) group.open = true;
         el.open = true;

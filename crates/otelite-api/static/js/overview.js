@@ -8,6 +8,12 @@
 //   3. Model mix            → /api/genai/usage
 //   4. p95 latency trend    → /api/genai/latency_series
 //   5. Token burn           → /api/genai/cost_series
+//   6. Retried calls        → /api/genai/retry_stats
+//   7. Error rate           → /api/genai/error_rate
+//   8. Truncated            → /api/genai/truncation_rate
+//
+// Widgets 6–8 are the reliability trio (#212); each deep-links into the
+// Reliability report (#/analytics?report=reliability).
 //
 // All five render their loading state immediately; data fetches fire when
 // each widget enters the viewport (lazyLoad). On a fresh page load every
@@ -35,6 +41,9 @@ class OverviewView {
                 ${this._widgetSlot('models', 'Model mix', 'Distribution of GenAI requests by model')}
                 ${this._widgetSlot('latency', 'p95 latency', 'GenAI request latency (last 24 h)')}
                 ${this._widgetSlot('tokens', 'Token burn', 'Total tokens consumed (last 24 h)')}
+                ${this._widgetSlot('retries', 'Retried calls', 'GenAI calls that needed a retry (last 24 h)')}
+                ${this._widgetSlot('errorrate', 'Error rate', 'GenAI requests that errored (last 24 h)')}
+                ${this._widgetSlot('truncated', 'Truncated', 'Responses cut off at max tokens (last 24 h)')}
             </div>
         `;
 
@@ -45,6 +54,9 @@ class OverviewView {
         lazy(document.getElementById('ov-widget-models'), () => this._loadModels());
         lazy(document.getElementById('ov-widget-latency'), () => this._loadLatency());
         lazy(document.getElementById('ov-widget-tokens'), () => this._loadTokens());
+        lazy(document.getElementById('ov-widget-retries'), () => this._loadRetries());
+        lazy(document.getElementById('ov-widget-errorrate'), () => this._loadErrorRate());
+        lazy(document.getElementById('ov-widget-truncated'), () => this._loadTruncated());
 
         // Fire the anomaly strip independently — it doesn't block the widgets.
         this._loadAnomalyStrip();
@@ -243,6 +255,69 @@ class OverviewView {
         }
     }
 
+    async _loadRetries() {
+        try {
+            const params = this._windowParams();
+            const s = await this.api.getRetryStats(params);
+            if (!s || !s.total_llm_calls) {
+                this._setBody('retries', '<div class="overview-empty">No GenAI activity yet.</div>');
+                return;
+            }
+            this._setBody('retries', `
+                <div class="overview-stat-large">${s.retried_calls.toLocaleString()}</div>
+                <div class="overview-stat-sub">of ${s.total_llm_calls.toLocaleString()} calls · ${s.extra_attempts} extra attempts</div>
+                <button class="btn btn-secondary btn-sm overview-cta" data-target="analytics-report-reliability">Reliability →</button>
+            `);
+            this._wireCta('retries');
+        } catch (err) {
+            this._setError('retries', `Couldn't load retries: ${err.message}`);
+        }
+    }
+
+    async _loadErrorRate() {
+        try {
+            const params = this._windowParams();
+            const resp = await this.api.getErrorRate(params);
+            const list = Array.isArray(resp) ? resp : (resp?.items || []);
+            const total = list.reduce((a, r) => a + (r.total || 0), 0);
+            const errors = list.reduce((a, r) => a + (r.errors || 0), 0);
+            if (total === 0) {
+                this._setBody('errorrate', '<div class="overview-empty">No GenAI activity yet.</div>');
+                return;
+            }
+            this._setBody('errorrate', `
+                <div class="overview-stat-large">${(errors / total * 100).toFixed(1)}%</div>
+                <div class="overview-stat-sub">${errors.toLocaleString()} of ${total.toLocaleString()} requests</div>
+                <button class="btn btn-secondary btn-sm overview-cta" data-target="analytics-report-reliability">Reliability →</button>
+            `);
+            this._wireCta('errorrate');
+        } catch (err) {
+            this._setError('errorrate', `Couldn't load error rate: ${err.message}`);
+        }
+    }
+
+    async _loadTruncated() {
+        try {
+            const params = this._windowParams();
+            const resp = await this.api.getTruncationRate(params);
+            const list = Array.isArray(resp) ? resp : (resp?.items || []);
+            const total = list.reduce((a, r) => a + (r.total || 0), 0);
+            const truncated = list.reduce((a, r) => a + (r.truncated || 0), 0);
+            if (total === 0) {
+                this._setBody('truncated', '<div class="overview-empty">No GenAI activity yet.</div>');
+                return;
+            }
+            this._setBody('truncated', `
+                <div class="overview-stat-large">${truncated.toLocaleString()}</div>
+                <div class="overview-stat-sub">${(truncated / total * 100).toFixed(1)}% of ${total.toLocaleString()} responses</div>
+                <button class="btn btn-secondary btn-sm overview-cta" data-target="analytics-report-reliability">Reliability →</button>
+            `);
+            this._wireCta('truncated');
+        } catch (err) {
+            this._setError('truncated', `Couldn't load truncation: ${err.message}`);
+        }
+    }
+
     /**
      * Anomaly alert strip: surfaces the most actionable issues from the last
      * 24 h without requiring the user to open Analytics. Fires two parallel
@@ -429,6 +504,10 @@ class OverviewView {
                 }
             } else if (target === 'sessions' || target === 'analytics' || target === 'traces') {
                 window.app.switchView(target);
+            } else if (target === 'analytics-report-reliability') {
+                // Deep link (#212): the hashchange — or first render — of
+                // the Analytics view applies the report param and jumps.
+                window.location.hash = '#/analytics?report=reliability';
             }
         });
     }

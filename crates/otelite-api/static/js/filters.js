@@ -53,6 +53,16 @@ function writeHashQuery(filters, win = null) {
     FILTER_DIMENSIONS.forEach(key => {
         if (filters[key]) params.set(key, filters[key]);
     });
+    // Preserve the report deep-link param (#212) when the filter bar
+    // rewrites the analytics hash, so a jumped-to report survives filter
+    // changes. Only meaningful on the analytics view; left alone elsewhere.
+    if (path.endsWith('/analytics')) {
+        const prev = new URLSearchParams(
+            hash.includes('?') ? hash.slice(hash.indexOf('?') + 1) : ''
+        );
+        const report = prev.get('report');
+        if (report) params.set('report', report);
+    }
     if (win && win.startMs && win.endMs) {
         params.set('start', String(win.startMs));
         params.set('end', String(win.endMs));

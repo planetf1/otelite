@@ -13,6 +13,12 @@ have to work around), not implementation detail.
 
 ### Added
 
+- GenAI reports are now URL-addressable: `#/analytics?report=reliability`
+  (any of the 28 report ids) opens and highlights that report on load, and
+  jumping to a report from the index or filter updates the URL, so positions
+  are shareable and survive reload. The Overview page gained three
+  reliability widgets — retried calls, error rate and truncated responses
+  over the last 24 h — each linking straight into the Reliability report
 - GenAI report index: an at-a-glance grid of all 28 reports (one column
   per group) above the report list — click any report to open and
   highlight it. The "Filter reports…" box now also matches metric keywords
