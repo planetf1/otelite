@@ -11,6 +11,8 @@ have to work around), not implementation detail.
 
 ## [Unreleased]
 
+## [0.1.127] - 2026-09-11
+
 ### Added
 
 - Each GenAI report now ends with a row of "Related" chips — hand-picked
