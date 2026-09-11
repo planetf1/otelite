@@ -13,6 +13,10 @@ have to work around), not implementation detail.
 
 ### Added
 
+- ⌘K / Ctrl+K command palette: from any view, press ⌘K, type a word you
+  associate with the report you want ("retry", "ttft", "skill", …) and hit
+  Enter to jump straight there — matches report titles, hints, group names
+  and metric keywords, so it finds the same reports the filter box does
 - GenAI reports are now URL-addressable: `#/analytics?report=reliability`
   (any of the 28 report ids) opens and highlights that report on load, and
   jumping to a report from the index or filter updates the URL, so positions

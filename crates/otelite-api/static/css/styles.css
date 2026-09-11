@@ -2552,6 +2552,82 @@ details[open] > .json-tree-summary::before {
     border-radius: 6px;
 }
 
+/* Command palette (#213): ⌘K / Ctrl+K jump to a GenAI report. */
+.cmd-palette-overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.45);
+    z-index: 1000;
+    display: flex;
+    justify-content: center;
+    align-items: flex-start;
+    padding-top: 15vh;
+}
+.cmd-palette {
+    width: 560px;
+    max-width: 90vw;
+    max-height: 50vh;
+    display: flex;
+    flex-direction: column;
+    background: var(--bg-secondary, #1a1a24);
+    border: 1px solid var(--border-color, #2a2a38);
+    border-radius: 8px;
+    box-shadow: 0 12px 40px rgba(0, 0, 0, 0.5);
+    overflow: hidden;
+}
+.cmd-palette-input {
+    background: transparent;
+    border: none;
+    border-bottom: 1px solid var(--border-color, #2a2a38);
+    color: var(--text-primary);
+    font-size: 0.95rem;
+    padding: 0.7rem 0.9rem;
+    outline: none;
+}
+.cmd-palette-list {
+    overflow-y: auto;
+    padding: 0.35rem;
+}
+.cmd-palette-item {
+    display: flex;
+    justify-content: space-between;
+    gap: 1rem;
+    padding: 0.4rem 0.6rem;
+    border-radius: 5px;
+    font-size: 0.88rem;
+    cursor: pointer;
+}
+.cmd-palette-item:hover {
+    background: var(--bg-tertiary);
+}
+.cmd-palette-selected {
+    background: var(--bg-tertiary);
+    outline: 1px solid var(--border-color, #2a2a38);
+}
+.cmd-palette-label {
+    color: var(--text-primary);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+.cmd-palette-group {
+    color: var(--text-secondary, #8b949e);
+    font-size: 0.75rem;
+    white-space: nowrap;
+}
+.cmd-palette-empty {
+    padding: 0.8rem;
+    color: var(--text-secondary, #8b949e);
+    font-size: 0.85rem;
+    text-align: center;
+}
+.cmd-palette-foot {
+    border-top: 1px solid var(--border-color, #2a2a38);
+    padding: 0.3rem 0.9rem;
+    font-size: 0.7rem;
+    color: var(--text-secondary, #8b949e);
+}
+
 .analytics-group-count {
     color: var(--text-secondary);
     font-size: 0.8rem;

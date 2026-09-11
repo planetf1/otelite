@@ -1,6 +1,7 @@
 // Main application entry point
 
 import { api } from './api.js';
+import { CommandPalette } from './palette.js';
 
 /**
  * Main application class
@@ -42,6 +43,7 @@ class App {
         };
         this.setupNavigation();
         this.setupConnectionMonitoring();
+        this.palette = new CommandPalette(this);
         this.loadInitialView();
 
         window.addEventListener('hashchange', () => {

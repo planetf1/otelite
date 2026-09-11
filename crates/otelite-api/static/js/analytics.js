@@ -189,7 +189,7 @@ class AnalyticsView {
             <div id="analytics-sections">
                 <div class="analytics-report-tools">
                     <input type="search" id="analytics-report-filter" class="filter-input"
-                           placeholder="Filter reports… (e.g. ttft, cost, mcp, retry)" autocomplete="off">
+                           placeholder="Filter reports… (e.g. ttft, cost, mcp, retry) — or press ⌘K" autocomplete="off">
                     <span id="analytics-filter-count" class="analytics-filter-count"></span>
                 </div>
                 <div class="analytics-index" id="analytics-index">
