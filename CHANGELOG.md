@@ -13,6 +13,11 @@ have to work around), not implementation detail.
 
 ### Added
 
+- The Reliability and Latency reports now show their headline health
+  numbers right in the report header — error rate + retried call count,
+  and p95 latency — so "is anything broken right now?" is answerable
+  without opening them; they refresh with the usual 30 s cycle and follow
+  the time range and filters
 - ⌘K / Ctrl+K command palette: from any view, press ⌘K, type a word you
   associate with the report you want ("retry", "ttft", "skill", …) and hit
   Enter to jump straight there — matches report titles, hints, group names

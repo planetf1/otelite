@@ -705,9 +705,14 @@ class AnalyticsView {
 
         try {
             const params = this._baseParams();
-            const [summary, pricingMeta] = await Promise.all([
+            const [summary, pricingMeta, errorRateRows, retryStats, latencyStats] = await Promise.all([
                 this.api.getTokenUsage(params),
                 this.api.getPricingMetadata().catch(() => null),
+                // Group KPIs (#214): health numbers for the Reliability and
+                // Latency lead reports. Each degrades to null on failure.
+                this.api.getErrorRate(params).catch(() => null),
+                this.api.getRetryStats(params).catch(() => null),
+                this.api.getLatencyStats(params).catch(() => null),
             ]);
             this.lastSummary = summary;
 
@@ -737,7 +742,7 @@ class AnalyticsView {
 
             summaryContainer.innerHTML = this._buildHeaderCards(summary);
             this._populateModelDropdown(summary.by_model || []);
-            this._updateSectionStats(summary);
+            this._updateSectionStats(summary, errorRateRows, retryStats, latencyStats);
         } catch (err) {
             if (this.lastSummary && this.lastSummary.summary) {
                 // Keep the previous cards; the data is merely stale.
@@ -773,7 +778,7 @@ class AnalyticsView {
             </div>`;
     }
 
-    _updateSectionStats(data) {
+    _updateSectionStats(data, errorRateRows = null, retryStats = null, latencyStats = null) {
         const { summary, by_model } = data;
         const fmt = n => Number(n).toLocaleString();
         const requests = summary.total_requests ?? 0;
@@ -784,9 +789,32 @@ class AnalyticsView {
             const el = document.getElementById(`analytics-section-stat-${id}`);
             if (el) el.innerHTML = html;
         };
+
+        // Health KPIs (#214): Reliability and Latency lead reports carry the
+        // numbers that answer "is anything broken right now?" without
+        // opening them. Any missing/failing aggregate falls back to the
+        // current plain stat text.
+        let reliabilityStat = `${fmt(requests)} req`;
+        if (Array.isArray(errorRateRows) && retryStats) {
+            const total = errorRateRows.reduce((a, r) => a + (r.total || 0), 0);
+            const errors = errorRateRows.reduce((a, r) => a + (r.errors || 0), 0);
+            const retried = retryStats.retried_calls || 0;
+            if (total > 0) {
+                reliabilityStat = `err ${((errors / total) * 100).toFixed(1)}% · ${retried} retried · ${fmt(requests)} req`;
+            }
+        }
+        let latencyStat = `${fmt(requests)} req · ${fmt(modelCount)} model${modelCount === 1 ? '' : 's'}`;
+        if (Array.isArray(latencyStats)) {
+            const n = latencyStats.reduce((a, r) => a + (r.count || 0), 0);
+            if (n > 0) {
+                const weightedP95 = latencyStats.reduce((a, r) => a + (r.p95_ms || 0) * (r.count || 0), 0) / n;
+                latencyStat = `p95 ${(weightedP95 / 1000).toFixed(1)}s · ${fmt(requests)} req`;
+            }
+        }
+
         set('cost', `${fmt(totalTokens)} tokens · ${fmt(requests)} req`);
-        set('latency', `${fmt(requests)} req · ${fmt(modelCount)} model${modelCount === 1 ? '' : 's'}`);
-        set('reliability', `${fmt(requests)} req`);
+        set('latency', latencyStat);
+        set('reliability', reliabilityStat);
         set('behavior', `${fmt(requests)} req`);
     }
 
