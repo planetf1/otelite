@@ -82,7 +82,9 @@ test('_renderGroupShell renders nested section shells and the count label', () =
 test('_renderGroupShell honours the open flag and pinned styling', () => {
     view.pinned = new Set();
     assert.match(view._renderGroupShell('cost', 'Cost', ['cost'], true), /<details[^>]+ id="analytics-group-cost" open>/);
-    assert.doesNotMatch(view._renderGroupShell('cost', 'Cost', ['cost']), /open/);
+    // Structural check on the <details> tag only — the section bodies embed
+    // hint text (e.g. "opencode") that legitimately contains "open".
+    assert.doesNotMatch(view._renderGroupShell('cost', 'Cost', ['cost']), /<details[^>]*open\s*>/);
     assert.match(
         view._renderGroupShell('pinned', 'Pinned', ['cost']),
         /class="analytics-group analytics-group-pinned" id="analytics-group-pinned"/,
@@ -99,7 +101,9 @@ test('_renderSectionShell renders the pin button and pinned open state', () => {
     const plain = view._renderSectionShell('cost');
     assert.match(plain, /<details class="analytics-section" id="analytics-section-cost">/);
     assert.match(plain, /class="pin-btn" data-pin="cost"[\s\S]*aria-pressed="false"/);
-    assert.doesNotMatch(plain, /open/);
+    // Structural check on the <details> tag only — the related-report chips
+    // embed hint text (e.g. "opencode") that legitimately contains "open".
+    assert.doesNotMatch(plain, /<details[^>]*open\s*>/);
 
     view.pinned = new Set(['cost']);
     const pinned = view._renderSectionShell('cost');
