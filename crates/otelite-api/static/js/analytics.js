@@ -112,6 +112,40 @@ class AnalyticsView {
         project_rollup: ['project', 'per project', 'rollup'],
     };
 
+    // Curated cross-links (#215): which reports answer the follow-up
+    // question after reading this one. One-directional by design; 2–4
+    // links, no self-references.
+    static REPORT_RELATED = {
+        cost: ['efficiency', 'providers', 'roles'],
+        providers: ['cost', 'model_performance'],
+        roles: ['cost', 'session_model', 'model_selection_heatmap'],
+        session_model: ['cost', 'roles'],
+        effort: ['cost', 'model_performance', 'speed_dist'],
+        efficiency: ['cost', 'skill_outcomes'],
+        skill_outcomes: ['efficiency', 'skill_activity'],
+        latency: ['model_performance', 'cross_tool_ttft', 'speed_dist'],
+        model_performance: ['latency', 'reliability', 'model_selection_heatmap'],
+        codex_ttft: ['cross_tool_ttft', 'latency', 'speed_dist'],
+        cross_tool_ttft: ['codex_ttft', 'latency', 'model_performance'],
+        codex_turns: ['behavior', 'daily_tool_mix'],
+        speed_dist: ['latency', 'effort', 'reasoning_share'],
+        reliability: ['recent_errors', 'session_quality', 'model_performance'],
+        recent_errors: ['reliability', 'session_quality', 'tool_failure_rates'],
+        session_quality: ['reliability', 'session_model'],
+        mcp_health: ['tool_failure_rates', 'reliability'],
+        tool_failure_rates: ['mcp_health', 'recent_errors', 'behavior'],
+        guardian: ['reliability', 'behavior'],
+        behavior: ['daily_tool_mix', 'multi_agent', 'codex_turns'],
+        multi_agent: ['behavior', 'roles'],
+        daily_tool_mix: ['behavior', 'codex_turns'],
+        model_selection_heatmap: ['roles', 'providers', 'session_model'],
+        reasoning_share: ['effort', 'cost', 'speed_dist'],
+        skill_activity: ['skill_outcomes', 'codex_turns'],
+        hook_overhead: ['latency', 'capabilities'],
+        capabilities: ['hook_overhead', 'model_performance'],
+        project_rollup: ['cost', 'session_model'],
+    };
+
     constructor(apiClient) {
         this.api = apiClient;
         this.refreshInterval = null;
@@ -279,7 +313,23 @@ class AnalyticsView {
                 <div class="analytics-section-body" id="analytics-section-body-${id}">
                     <div class="empty-state-hint">Loading…</div>
                 </div>
+                ${this._renderRelatedChips(id)}
             </details>`;
+    }
+
+    // Related-report chips (#215): permanent navigation at the foot of the
+    // section (below the body, so section loads never wipe it). Clicks
+    // reuse _jumpToReport — expand, scroll, flash, hash update.
+    _renderRelatedChips(id) {
+        const rel = AnalyticsView.REPORT_RELATED[id];
+        if (!rel || rel.length === 0) return '';
+        const chips = rel.map(rid => {
+            const r = AnalyticsView.REPORTS.find(x => x.id === rid);
+            return r
+                ? `<button type="button" class="related-chip" title="${this._esc(r.hint)}" onclick="window.app.views.analytics._jumpToReport('${rid}');return false;">${r.title}</button>`
+                : '';
+        }).join('');
+        return `<div class="analytics-related"><span class="analytics-related-label">Related:</span>${chips}</div>`;
     }
 
     _loadPins() {

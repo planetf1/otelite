@@ -13,6 +13,10 @@ have to work around), not implementation detail.
 
 ### Added
 
+- Each GenAI report now ends with a row of "Related" chips — hand-picked
+  follow-ups (Cost → Efficiency/Providers/Roles, Reliability → Recent
+  errors/Session quality, …) — so the natural next question has a one-click
+  answer at the foot of every report
 - The Reliability and Latency reports now show their headline health
   numbers right in the report header — error rate + retried call count,
   and p95 latency — so "is anything broken right now?" is answerable

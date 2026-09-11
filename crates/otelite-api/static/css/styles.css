@@ -2628,6 +2628,32 @@ details[open] > .json-tree-summary::before {
     color: var(--text-secondary, #8b949e);
 }
 
+/* Related-report chips (#215). */
+.analytics-related {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 0.35rem;
+    padding: 0.5rem 0.25rem 0.25rem;
+}
+.analytics-related-label {
+    font-size: 0.72rem;
+    color: var(--text-secondary, #8b949e);
+}
+.related-chip {
+    background: var(--bg-tertiary);
+    border: 1px solid var(--border-color, #30363d);
+    border-radius: 999px;
+    color: var(--text-primary);
+    font-size: 0.72rem;
+    padding: 2px 0.6rem;
+    cursor: pointer;
+}
+.related-chip:hover {
+    border-color: var(--accent-color, #6366f1);
+    color: var(--accent-color, #6366f1);
+}
+
 .analytics-group-count {
     color: var(--text-secondary);
     font-size: 0.8rem;
