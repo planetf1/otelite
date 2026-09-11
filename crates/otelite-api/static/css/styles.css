@@ -2491,6 +2491,13 @@ details[open] > .json-tree-summary::before {
     color: var(--text-primary);
 }
 
+.analytics-group-sub {
+    margin-left: 0.6rem;
+    font-size: 0.78rem;
+    font-weight: 400;
+    color: var(--text-secondary, #8b949e);
+}
+
 .analytics-group-count {
     color: var(--text-secondary);
     font-size: 0.8rem;

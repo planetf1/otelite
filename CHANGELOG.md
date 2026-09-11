@@ -11,6 +11,14 @@ have to work around), not implementation detail.
 
 ## [Unreleased]
 
+### Changed
+
+- The recent retry-incident list moved from the Cost report's retry-rate
+  gauge into the **Reliability** report (it's a failure signal — the gauge
+  stays in Cost as a cost multiplier), and the five GenAI report groups now
+  carry question-form subtitles ("Where did the tokens go?", "What's
+  breaking, and how often?", …) so the groups read as an index of questions
+
 ## [0.1.126] - 2026-09-10
 
 ### Added

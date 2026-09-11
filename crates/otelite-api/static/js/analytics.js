@@ -70,11 +70,11 @@ class AnalyticsView {
     // Top-level categories. A report appears in exactly one group; pinned
     // reports move to the Pinned group while pinned.
     static GROUPS = [
-        { id: 'cost',        label: 'Cost',                    reports: ['cost', 'providers', 'roles', 'session_model', 'effort', 'efficiency', 'skill_outcomes'] },
-        { id: 'latency',     label: 'Latency',                 reports: ['latency', 'model_performance', 'codex_ttft', 'cross_tool_ttft', 'codex_turns', 'speed_dist'] },
-        { id: 'reliability', label: 'Reliability',             reports: ['reliability', 'recent_errors', 'session_quality', 'mcp_health', 'tool_failure_rates', 'guardian'] },
-        { id: 'behavior',    label: 'Behaviour',               reports: ['behavior', 'multi_agent', 'daily_tool_mix', 'model_selection_heatmap', 'reasoning_share'] },
-        { id: 'ecosystem',   label: 'Ecosystem & Diagnostics', reports: ['skill_activity', 'hook_overhead', 'capabilities', 'project_rollup'] },
+        { id: 'cost',        label: 'Cost',                    sub: 'Where did the tokens go?',            reports: ['cost', 'providers', 'roles', 'session_model', 'effort', 'efficiency', 'skill_outcomes'] },
+        { id: 'latency',     label: 'Latency',                 sub: 'How fast, and where is it slow?',      reports: ['latency', 'model_performance', 'codex_ttft', 'cross_tool_ttft', 'codex_turns', 'speed_dist'] },
+        { id: 'reliability', label: 'Reliability',             sub: "What's breaking, and how often?",      reports: ['reliability', 'recent_errors', 'session_quality', 'mcp_health', 'tool_failure_rates', 'guardian'] },
+        { id: 'behavior',    label: 'Behaviour',               sub: 'How is it being used?',                reports: ['behavior', 'multi_agent', 'daily_tool_mix', 'model_selection_heatmap', 'reasoning_share'] },
+        { id: 'ecosystem',   label: 'Ecosystem & Diagnostics', sub: "What's the tooling actually doing?",   reports: ['skill_activity', 'hook_overhead', 'capabilities', 'project_rollup'] },
     ];
 
     constructor(apiClient) {
@@ -161,7 +161,7 @@ class AnalyticsView {
                     (this.pinned.size ? this._renderGroupShell('pinned', 'Pinned', [...this.pinned], true) : ''),
                     ...AnalyticsView.GROUPS.map(g => {
                         const ids = g.reports.filter(id => !this.pinned.has(id));
-                        return ids.length ? this._renderGroupShell(g.id, g.label, ids) : '';
+                        return ids.length ? this._renderGroupShell(g.id, g.label, ids, false, g.sub || '') : '';
                     }),
                 ].join('')}
             </div>
@@ -194,7 +194,7 @@ class AnalyticsView {
         }
     }
 
-    _renderGroupShell(gid, label, reportIds, open = false) {
+    _renderGroupShell(gid, label, reportIds, open = false, sub = '') {
         // reportIds may be empty (a freshly created Pinned group) — the
         // caller then appends the moved <details> element itself.
         const sections = (reportIds || []).map(id => this._renderSectionShell(id)).join('');
@@ -202,7 +202,7 @@ class AnalyticsView {
         return `
             <details class="analytics-group${gid === 'pinned' ? ' analytics-group-pinned' : ''}" id="analytics-group-${gid}"${open ? ' open' : ''}>
                 <summary class="analytics-group-summary">
-                    <span class="analytics-group-title">${label}</span>
+                    <span class="analytics-group-title">${label}${sub ? `<span class="analytics-group-sub">${sub}</span>` : ''}</span>
                     <span class="analytics-group-count" id="analytics-group-count-${gid}">${n} report${n === 1 ? '' : 's'}</span>
                 </summary>
                 <div class="analytics-group-body" id="analytics-group-body-${gid}">${sections}</div>
@@ -990,8 +990,7 @@ class AnalyticsView {
             const params = this._baseParams();
             const bucket = this._chooseBucket();
             const [costSeries, topSpans, cacheHitRate, cacheEconomics, reasoningShare,
-                   retryStats, recentRetries, errorRate, contextTypeSplit, agentsRollup,
-                   projectsRollup] =
+                   retryStats, errorRate, contextTypeSplit, agentsRollup, projectsRollup] =
                 await Promise.all([
                     this.api.getCostSeries({ ...params, bucket }),
                     this.api.getTopSpans({ ...params, limit: 20 }),
@@ -999,7 +998,6 @@ class AnalyticsView {
                     this.api.getCacheEconomics({ ...params, bucket_secs: bucket }).catch(() => null),
                     this.api.getReasoningShare(params).catch(() => null),
                     this.api.getRetryStats(params).catch(() => null),
-                    this.api.getRecentRetries({ ...params, limit: 10 }).catch(() => null),
                     this.api.getErrorRate(params).catch(() => []),
                     this.api.getContextTypeSplit(params).catch(() => null),
                     this.api.getAgents({ ...params, bucket_secs: bucket }).catch(() => null),
@@ -1033,7 +1031,7 @@ class AnalyticsView {
                         <div class="gauge-bar"><div class="gauge-fill" style="width:${cachePct.toFixed(2)}%"></div></div>
                         <div class="gauge-hint">${fmt(cacheRead)} / ${fmt(cacheDenom)} tokens served from cache</div>
                     </div>
-                    ${this._buildRetryGauge(retryStats, recentRetries)}
+                    ${this._buildRetryGauge(retryStats)}
                 </div>
                 ${zeroCacheModels.length ? `<p class="table-hint insight-alert">⚠ No caching observed for: ${zeroCacheModels.map(m => `<strong>${this._esc(m)}</strong>`).join(', ')} — these models send full context every turn.</p>` : ''}`;
 
@@ -1237,13 +1235,14 @@ class AnalyticsView {
         try {
             const params = this._baseParams();
             const [finishReasons, errorRate, errorTypes, truncationRate, modelDrift,
-                   stopReasons] = await Promise.all([
+                   stopReasons, recentRetries] = await Promise.all([
                 this.api.getFinishReasons(params),
                 this.api.getErrorRate(params),
                 this.api.getErrorTypes(params).catch(() => null),
                 this.api.getTruncationRate(params).catch(() => null),
                 this.api.getModelDrift(params).catch(() => null),
                 this.api.getStopReasons(params).catch(() => null),
+                this.api.getRecentRetries({ ...params, limit: 10 }).catch(() => null),
             ]);
 
             const reasons = Array.isArray(finishReasons) ? finishReasons : [];
@@ -1265,6 +1264,7 @@ class AnalyticsView {
                 </div>` : '';
 
             const html = [
+                this._buildRecentRetries(recentRetries),
                 truncCard,
                 this._buildFinishReasons(reasons),
                 this._buildStopReasons(stopReasons || []),
@@ -1408,53 +1408,58 @@ class AnalyticsView {
         return ms < 10000 ? `${Number(ms).toLocaleString()} ms` : `${(ms / 1000).toFixed(1)} s`;
     }
 
-    _buildRetryGauge(retryStats, recentRetries) {
+    _buildRetryGauge(retryStats) {
         if (!retryStats || !retryStats.total_llm_calls) return '';
         const rate = retryStats.retry_rate || 0;
         const pct = rate * 100;
         const fmt = n => Number(n).toLocaleString();
-        // #205: give the gauge a face — the most recent retry incidents
-        // (a dropped stream that was retried without streaming).
-        const rows = Array.isArray(recentRetries) ? recentRetries : [];
-        const listHtml = rows.length ? `
-                    <div class="retry-recent" style="margin-top:8px">
-                        <div class="retry-recent-row retry-recent-head">
-                            <span class="rrc-time">Time</span>
-                            <span class="rrc-model">Model</span>
-                            <span class="rrc-att">Att</span>
-                            <span class="rrc-ttft">TTFT</span>
-                            <span class="rrc-sess">Session</span>
-                            <span class="rrc-trace">Trace</span>
-                        </div>
-                        ${rows.map(r => {
-                            const when = new Date(r.start_time / 1e6).toISOString().slice(5, 16).replace('T', ' ');
-                            const model = (r.model || '?').split('/').pop();
-                            const ttft = r.ttft_ms != null
-                                ? (r.ttft_ms < 10000 ? r.ttft_ms + ' ms' : (r.ttft_ms / 1000).toFixed(1) + ' s')
-                                : '—';
-                            const session = r.session_id
-                                ? `<a class="trace-link" href="#" onclick="window.app.navigateToTracesBySession('${this._esc(r.session_id)}');return false;" title="All traces for session ${this._esc(r.session_id)}">${r.session_id.slice(0, 8)}</a>`
-                                : '—';
-                            const trace = `<a class="trace-link" href="#" onclick="window.app.switchView('traces');window.app.views.traces.selectTrace('${this._esc(r.trace_id)}','${this._esc(r.span_id)}');return false;" title="Open trace ${this._esc(r.trace_id)} — jumps to the retried span (attempt events, logs, session report)">${r.trace_id.slice(0, 8)}</a>`;
-                            return `<div class="retry-recent-row">
-                                <span class="rrc-time">${when}</span>
-                                <span class="rrc-model" title="${this._esc(r.model || '')}">${this._esc(model)}</span>
-                                <span class="rrc-att">${r.attempt}×</span>
-                                <span class="rrc-ttft">${ttft}</span>
-                                <span class="rrc-sess">${session}</span>
-                                <span class="rrc-trace">${trace}</span>
-                            </div>`;
-                        }).join('')}
-                        <div class="gauge-hint" style="margin-top:4px">session → traces for that session · trace → the retried span (attempt events, logs, session report)</div>
-                    </div>` : '';
         return `
                 <div class="usage-gauge-card">
                     <div class="usage-card-label">Retry rate</div>
                     <div class="usage-card-value">${pct.toFixed(1)}%</div>
                     <div class="gauge-bar"><div class="gauge-fill ${pct > 0 ? 'gauge-fill-warning' : ''}" style="width:${pct.toFixed(2)}%"></div></div>
-                    <div class="gauge-hint">${fmt(retryStats.retried_calls || 0)} of ${fmt(retryStats.total_llm_calls)} calls retried (${fmt(retryStats.extra_attempts || 0)} extra attempts)</div>
-                    ${listHtml}
+                    <div class="gauge-hint">${fmt(retryStats.retried_calls || 0)} of ${fmt(retryStats.total_llm_calls)} calls retried (${fmt(retryStats.extra_attempts || 0)} extra attempts) — incidents listed in the Reliability report</div>
                 </div>`;
+    }
+
+    // The retried-call incident list (first attempt failed, retry succeeded).
+    // Lives in the Reliability report — a failure signal; the retry *rate*
+    // gauge stays in Cost because retries are a cost multiplier.
+    _buildRecentRetries(recentRetries) {
+        const rows = Array.isArray(recentRetries) ? recentRetries : [];
+        if (!rows.length) return '';
+        return `
+            <div class="retry-recent" style="margin-bottom:12px">
+                <h3>Recent retry incidents</h3>
+                <div class="retry-recent-row retry-recent-head">
+                    <span class="rrc-time">Time</span>
+                    <span class="rrc-model">Model</span>
+                    <span class="rrc-att">Att</span>
+                    <span class="rrc-ttft">TTFT</span>
+                    <span class="rrc-sess">Session</span>
+                    <span class="rrc-trace">Trace</span>
+                </div>
+                ${rows.map(r => {
+                    const when = new Date(r.start_time / 1e6).toISOString().slice(5, 16).replace('T', ' ');
+                    const model = (r.model || '?').split('/').pop();
+                    const ttft = r.ttft_ms != null
+                        ? (r.ttft_ms < 10000 ? r.ttft_ms + ' ms' : (r.ttft_ms / 1000).toFixed(1) + ' s')
+                        : '—';
+                    const session = r.session_id
+                        ? `<a class="trace-link" href="#" onclick="window.app.navigateToTracesBySession('${this._esc(r.session_id)}');return false;" title="All traces for session ${this._esc(r.session_id)}">${r.session_id.slice(0, 8)}</a>`
+                        : '—';
+                    const trace = `<a class="trace-link" href="#" onclick="window.app.switchView('traces');window.app.views.traces.selectTrace('${this._esc(r.trace_id)}','${this._esc(r.span_id)}');return false;" title="Open trace ${this._esc(r.trace_id)} — jumps to the retried span (attempt events, logs, session report)">${r.trace_id.slice(0, 8)}</a>`;
+                    return `<div class="retry-recent-row">
+                        <span class="rrc-time">${when}</span>
+                        <span class="rrc-model" title="${this._esc(r.model || '')}">${this._esc(model)}</span>
+                        <span class="rrc-att">${r.attempt}×</span>
+                        <span class="rrc-ttft">${ttft}</span>
+                        <span class="rrc-sess">${session}</span>
+                        <span class="rrc-trace">${trace}</span>
+                    </div>`;
+                }).join('')}
+                <div class="gauge-hint" style="margin-top:4px">session → traces for that session · trace → the retried span (attempt events, logs, session report)</div>
+            </div>`;
     }
 
     _formatTokensK(n) {
