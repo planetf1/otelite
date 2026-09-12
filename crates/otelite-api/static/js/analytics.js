@@ -52,9 +52,8 @@ class AnalyticsView {
         { id: 'reliability',             title: 'Reliability',             hint: 'Errors · retries · truncation · drift · error events · session quality' },
         { id: 'tool_failures',           title: 'Tool Failures',           hint: 'Failure rates per MCP server/tool and per opencode tool — spot flaky or broken integrations' },
         { id: 'guardian',                title: 'Guardian Reviews',        hint: 'Risk levels · denial rate by action type · what the guardian is actually blocking' },
-        { id: 'behavior',                title: 'Behavior',                hint: 'Tool use · retrieval · request volume' },
+        { id: 'behavior',                title: 'Behavior',                hint: 'Tool use · retrieval · request volume · daily tool mix' },
         { id: 'multi_agent',             title: 'Multi-Agent Topology',    hint: 'Sub-agent spawn and resume counts by role' },
-        { id: 'daily_tool_mix',          title: 'Daily Tool Mix',          hint: 'Claude Code / opencode / Codex activity per calendar day — when you use each tool' },
         { id: 'model_selection_heatmap', title: 'Model Selection Heatmap', hint: 'Which tool picked which model for which agent role — (role × tool × model) request counts' },
         { id: 'reasoning_share',         title: 'Reasoning Token Share',   hint: 'Thinking tokens as a percentage of output tokens per model — opencode + Codex' },
         { id: 'skill_activity',          title: 'Skills Activity',         hint: 'Which Codex skills fire most — implicit injection counts by skill name' },
@@ -69,7 +68,7 @@ class AnalyticsView {
         { id: 'cost',        label: 'Cost',                    sub: 'Where did the tokens go?',            reports: ['cost', 'providers', 'roles', 'session_model', 'effort', 'efficiency', 'skill_outcomes'] },
         { id: 'latency',     label: 'Latency',                 sub: 'How fast, and where is it slow?',      reports: ['latency', 'model_performance', 'ttft', 'codex_turns', 'speed_dist'] },
         { id: 'reliability', label: 'Reliability',             sub: "What's breaking, and how often?",      reports: ['reliability', 'tool_failures', 'guardian'] },
-        { id: 'behavior',    label: 'Behaviour',               sub: 'How is it being used?',                reports: ['behavior', 'multi_agent', 'daily_tool_mix', 'model_selection_heatmap', 'reasoning_share'] },
+        { id: 'behavior',    label: 'Behaviour',               sub: 'How is it being used?',                reports: ['behavior', 'multi_agent', 'model_selection_heatmap', 'reasoning_share'] },
         { id: 'ecosystem',   label: 'Ecosystem & Diagnostics', sub: "What's the tooling actually doing?",   reports: ['skill_activity', 'hook_overhead', 'capabilities', 'project_rollup'] },
     ];
 
@@ -93,9 +92,8 @@ class AnalyticsView {
         reliability: ['reliability', 'finish reason', 'stop reason', 'truncation', 'max_tokens', 'error rate', 'error', 'drift', 'retry', 'retried', 'retries', 'incident', 'failed', 'failures', 'recent', 'quality', 'degraded', 'clean', 'errored sessions'],
         tool_failures: ['mcp', 'flaky server', 'server health', 'tool failure', 'tool error', 'flaky tool', 'opencode tool'],
         guardian: ['guardian', 'risk', 'blocked', 'denial'],
-        behavior: ['tool use', 'retrieval', 'request volume', 'behaviour'],
+        behavior: ['tool use', 'retrieval', 'request volume', 'behaviour', 'daily', 'per day', 'calendar', 'tool mix'],
         multi_agent: ['multi-agent', 'topology', 'spawn', 'resume'],
-        daily_tool_mix: ['daily', 'per day', 'calendar', 'tool mix'],
         model_selection_heatmap: ['heatmap', 'selection', 'which tool picked'],
         reasoning_share: ['reasoning', 'thinking tokens', 'thinking'],
         skill_activity: ['skill activity', 'injection', 'codex skills'],
@@ -118,14 +116,13 @@ class AnalyticsView {
         latency: ['model_performance', 'ttft', 'speed_dist'],
         model_performance: ['latency', 'reliability', 'model_selection_heatmap'],
         ttft: ['latency', 'speed_dist', 'model_performance'],
-        codex_turns: ['behavior', 'daily_tool_mix'],
+        codex_turns: ['behavior', 'multi_agent'],
         speed_dist: ['latency', 'effort', 'reasoning_share'],
         reliability: ['tool_failures', 'model_performance', 'session_model'],
         tool_failures: ['reliability', 'behavior'],
         guardian: ['reliability', 'behavior'],
-        behavior: ['daily_tool_mix', 'multi_agent', 'codex_turns'],
+        behavior: ['multi_agent', 'codex_turns', 'model_selection_heatmap'],
         multi_agent: ['behavior', 'roles'],
-        daily_tool_mix: ['behavior', 'codex_turns'],
         model_selection_heatmap: ['roles', 'providers', 'session_model'],
         reasoning_share: ['effort', 'cost', 'speed_dist'],
         skill_activity: ['skill_outcomes', 'codex_turns'],
@@ -145,6 +142,7 @@ class AnalyticsView {
         tool_failure_rates: 'tool_failures',
         recent_errors: 'reliability',
         session_quality: 'reliability',
+        daily_tool_mix: 'behavior',
     };
 
     constructor(apiClient) {
@@ -1122,7 +1120,6 @@ class AnalyticsView {
             speed_dist: () => this._loadSpeedDistSection(),
             hook_overhead: () => this._loadHookOverheadSection(),
             reasoning_share: () => this._loadReasoningShareSection(),
-            daily_tool_mix: () => this._loadDailyToolMixSection(),
             skill_activity: () => this._loadSkillActivitySection(),
             skill_outcomes: () => this._loadSkillOutcomesSection(),
             model_selection_heatmap: () => this._loadModelSelectionHeatmapSection(),
@@ -1487,12 +1484,26 @@ class AnalyticsView {
         }
     }
 
+    // Absorbed-report block (#223): the former Daily Tool Mix section,
+    // rendered at the foot of Behaviour with independent error/empty
+    // handling. _buildDailyToolMix moves in unchanged.
+    _renderBehaviorDailyMixBlock(data) {
+        if (data && data.__error) {
+            return `<div class="error-message">Couldn't load daily tool mix: ${this._esc(data.__error.message)}</div>`;
+        }
+        const rows = (data && data.rows) || [];
+        if (!rows.length) {
+            return '<div class="empty-state-hint">No tool activity data in this window.</div>';
+        }
+        return this._buildDailyToolMix(rows, (data && data.tools) || []);
+    }
+
     async _loadBehaviorSection() {
         this._setSectionLoading('behavior');
         try {
             const params = this._baseParams();
             const [toolUsage, retrievalStats, requestParamProfile, callsSeries,
-                   toolApprovals, toolErrors, hourOfDay] = await Promise.all([
+                   toolApprovals, toolErrors, hourOfDay, dailyToolMix] = await Promise.all([
                 this.api.getToolUsage(params),
                 this.api.getRetrievalStats(params).catch(() => null),
                 this.api.getRequestParamProfile(params).catch(() => null),
@@ -1500,6 +1511,9 @@ class AnalyticsView {
                 this.api.getToolApprovals(params).catch(() => null),
                 this.api.getToolErrors(params).catch(() => null),
                 this.api.getHourOfDay(params).catch(() => null),
+                // Absorbed report (#223): the per-day calendar is a
+                // projection of this report's volume data.
+                this.api.getDailyToolMix(params).catch(err => ({ __error: err })),
             ]);
 
             const html = [
@@ -1510,6 +1524,7 @@ class AnalyticsView {
                 this._buildToolErrors(toolErrors || []),
                 this._buildRetrievalStats(retrievalStats),
                 this._buildRequestParamProfile(requestParamProfile),
+                this._renderBehaviorDailyMixBlock(dailyToolMix),
             ].filter(Boolean).join('');
 
             this._setSectionBody('behavior', html);
@@ -4134,25 +4149,6 @@ class AnalyticsView {
     }
 
     // ── Daily Tool Mix (#insight-2) ───────────────────────────────────────────
-
-    async _loadDailyToolMixSection() {
-        this._setSectionLoading('daily_tool_mix');
-        try {
-            const data = await this.api.getDailyToolMix(this._baseParams());
-            const rows = (data && data.rows) || [];
-            const tools = (data && data.tools) || [];
-            if (!rows.length) {
-                this._setSectionBody('daily_tool_mix', '<div class="empty-state-hint">No tool activity data in this window.</div>');
-                this.loadedSections.add('daily_tool_mix');
-                return;
-            }
-            const html = this._buildDailyToolMix(rows, tools);
-            this._setSectionBody('daily_tool_mix', html);
-            this.loadedSections.add('daily_tool_mix');
-        } catch (err) {
-            this._setSectionError('daily_tool_mix', err);
-        }
-    }
 
     _buildDailyToolMix(rows, tools) {
         const dayMap = {};

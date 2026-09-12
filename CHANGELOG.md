@@ -13,6 +13,9 @@ have to work around), not implementation detail.
 
 ### Changed
 
+- The **Behavior** report now ends with the former Daily Tool Mix calendar
+  (Claude Code / opencode / Codex activity per day) — "when do I use which
+  tool?" is one report; the section degrades independently
 - The **Reliability** report is now the whole failure story: it ends with
   the former Recent Errors list and Session Quality breakdown as sections,
   so "what failed, where, and in which sessions" is one report. Each new
