@@ -58,6 +58,8 @@ cargo build --workspace                                    # must compile
 cargo test --workspace                                     # all tests pass
 cargo clippy --workspace --all-targets -- -D warnings      # zero warnings
 cargo fmt --check                                          # formatting ok
+node --test "crates/otelite-api/tests/js/*.test.mjs"      # web parity (CI runs this; cargo test does not)
+node scripts/check_analytics_nav.mjs                       # analytics nav registries in lockstep
 ```
 
 ### Local coverage (optional)
