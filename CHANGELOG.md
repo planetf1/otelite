@@ -11,6 +11,8 @@ have to work around), not implementation detail.
 
 ## [Unreleased]
 
+## [0.1.128] - 2026-09-12
+
 ### Changed
 
 - **Skills** is now one report with ROI and activity sections (token
