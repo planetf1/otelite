@@ -49,9 +49,7 @@ class AnalyticsView {
         { id: 'ttft',                      title: 'TTFT',                    hint: 'First-token latency per model — Codex (histogram metrics) and Claude Code / opencode / pi (span attributes)' },
         { id: 'codex_turns',             title: 'Codex Busy/Idle',         hint: 'Average busy vs idle time per turn by model and project' },
         { id: 'speed_dist',              title: 'Speed / Effort Mode',     hint: 'Distribution of the Claude Code speed attribute (normal / extended thinking) by model' },
-        { id: 'reliability',             title: 'Reliability',             hint: 'Errors · retries · truncation · drift' },
-        { id: 'recent_errors',           title: 'Recent Errors',           hint: 'Latest error events from spans and logs — OTel ERROR status, bad finish reasons, and log ERROR records' },
-        { id: 'session_quality',         title: 'Session Quality',         hint: 'Clean / degraded / errored breakdown — spot sessions that truncated, retried, or failed' },
+        { id: 'reliability',             title: 'Reliability',             hint: 'Errors · retries · truncation · drift · error events · session quality' },
         { id: 'tool_failures',           title: 'Tool Failures',           hint: 'Failure rates per MCP server/tool and per opencode tool — spot flaky or broken integrations' },
         { id: 'guardian',                title: 'Guardian Reviews',        hint: 'Risk levels · denial rate by action type · what the guardian is actually blocking' },
         { id: 'behavior',                title: 'Behavior',                hint: 'Tool use · retrieval · request volume' },
@@ -70,7 +68,7 @@ class AnalyticsView {
     static GROUPS = [
         { id: 'cost',        label: 'Cost',                    sub: 'Where did the tokens go?',            reports: ['cost', 'providers', 'roles', 'session_model', 'effort', 'efficiency', 'skill_outcomes'] },
         { id: 'latency',     label: 'Latency',                 sub: 'How fast, and where is it slow?',      reports: ['latency', 'model_performance', 'ttft', 'codex_turns', 'speed_dist'] },
-        { id: 'reliability', label: 'Reliability',             sub: "What's breaking, and how often?",      reports: ['reliability', 'recent_errors', 'session_quality', 'tool_failures', 'guardian'] },
+        { id: 'reliability', label: 'Reliability',             sub: "What's breaking, and how often?",      reports: ['reliability', 'tool_failures', 'guardian'] },
         { id: 'behavior',    label: 'Behaviour',               sub: 'How is it being used?',                reports: ['behavior', 'multi_agent', 'daily_tool_mix', 'model_selection_heatmap', 'reasoning_share'] },
         { id: 'ecosystem',   label: 'Ecosystem & Diagnostics', sub: "What's the tooling actually doing?",   reports: ['skill_activity', 'hook_overhead', 'capabilities', 'project_rollup'] },
     ];
@@ -92,9 +90,7 @@ class AnalyticsView {
         ttft: ['ttft', 'codex', 'first token', 'percentiles', 'all tools', 'cross-tool'],
         codex_turns: ['busy', 'idle', 'turn', 'codex'],
         speed_dist: ['speed', 'extended thinking', 'effort mode', 'normal'],
-        reliability: ['reliability', 'finish reason', 'stop reason', 'truncation', 'max_tokens', 'error rate', 'drift', 'retry', 'retried', 'retries', 'incident'],
-        recent_errors: ['errors', 'error', 'failed', 'recent', 'failures'],
-        session_quality: ['quality', 'degraded', 'clean', 'errored sessions'],
+        reliability: ['reliability', 'finish reason', 'stop reason', 'truncation', 'max_tokens', 'error rate', 'error', 'drift', 'retry', 'retried', 'retries', 'incident', 'failed', 'failures', 'recent', 'quality', 'degraded', 'clean', 'errored sessions'],
         tool_failures: ['mcp', 'flaky server', 'server health', 'tool failure', 'tool error', 'flaky tool', 'opencode tool'],
         guardian: ['guardian', 'risk', 'blocked', 'denial'],
         behavior: ['tool use', 'retrieval', 'request volume', 'behaviour'],
@@ -124,10 +120,8 @@ class AnalyticsView {
         ttft: ['latency', 'speed_dist', 'model_performance'],
         codex_turns: ['behavior', 'daily_tool_mix'],
         speed_dist: ['latency', 'effort', 'reasoning_share'],
-        reliability: ['recent_errors', 'session_quality', 'model_performance'],
-        recent_errors: ['reliability', 'session_quality', 'tool_failures'],
-        session_quality: ['reliability', 'session_model'],
-        tool_failures: ['reliability', 'recent_errors', 'behavior'],
+        reliability: ['tool_failures', 'model_performance', 'session_model'],
+        tool_failures: ['reliability', 'behavior'],
         guardian: ['reliability', 'behavior'],
         behavior: ['daily_tool_mix', 'multi_agent', 'codex_turns'],
         multi_agent: ['behavior', 'roles'],
@@ -149,6 +143,8 @@ class AnalyticsView {
         cross_tool_ttft: 'ttft',
         mcp_health: 'tool_failures',
         tool_failure_rates: 'tool_failures',
+        recent_errors: 'reliability',
+        session_quality: 'reliability',
     };
 
     constructor(apiClient) {
@@ -1128,10 +1124,8 @@ class AnalyticsView {
             reasoning_share: () => this._loadReasoningShareSection(),
             daily_tool_mix: () => this._loadDailyToolMixSection(),
             skill_activity: () => this._loadSkillActivitySection(),
-            session_quality: () => this._loadSessionQualitySection(),
             skill_outcomes: () => this._loadSkillOutcomesSection(),
             model_selection_heatmap: () => this._loadModelSelectionHeatmapSection(),
-            recent_errors: () => this._loadRecentErrorsSection(),
         };
     }
 
@@ -1438,7 +1432,7 @@ class AnalyticsView {
         try {
             const params = this._baseParams();
             const [finishReasons, errorRate, errorTypes, truncationRate, modelDrift,
-                   stopReasons, recentRetries] = await Promise.all([
+                   stopReasons, recentRetries, recentErrors, sessionQuality] = await Promise.all([
                 this.api.getFinishReasons(params),
                 this.api.getErrorRate(params),
                 this.api.getErrorTypes(params).catch(() => null),
@@ -1446,6 +1440,11 @@ class AnalyticsView {
                 this.api.getModelDrift(params).catch(() => null),
                 this.api.getStopReasons(params).catch(() => null),
                 this.api.getRecentRetries({ ...params, limit: 10 }).catch(() => null),
+                // Absorbed reports (#222): error events and per-session
+                // quality. {__error} pattern so each block degrades
+                // independently of the others.
+                this.api.getRecentErrors(params).catch(err => ({ __error: err })),
+                this.api.getSessionQualitySummary(params).catch(err => ({ __error: err })),
             ]);
 
             const reasons = Array.isArray(finishReasons) ? finishReasons : [];
@@ -1475,6 +1474,10 @@ class AnalyticsView {
                 this._buildErrorRate(errorRate || []),
                 this._buildErrorTypes(errorTypes || []),
                 this._buildModelDrift(modelDrift || []),
+                // Absorbed reports (#222): the failure story continues with
+                // the individual events and the per-session breakdown.
+                this._renderReliabilityErrorsBlock(recentErrors),
+                this._renderReliabilitySessionQualityBlock(sessionQuality),
             ].filter(Boolean).join('');
 
             this._setSectionBody('reliability', html);
@@ -1628,6 +1631,31 @@ class AnalyticsView {
     // The retried-call incident list (first attempt failed, retry succeeded).
     // Lives in the Reliability report — a failure signal; the retry *rate*
     // gauge stays in Cost because retries are a cost multiplier.
+    // Absorbed-report blocks (#222): render the former Recent Errors and
+    // Session Quality sections inside Reliability, each with independent
+    // error/empty handling. The content builders (_buildRecentErrors,
+    // _buildSessionQuality) are unchanged.
+    _renderReliabilityErrorsBlock(data) {
+        if (data && data.__error) {
+            return `<div class="error-message">Couldn't load recent error events: ${this._esc(data.__error.message)}</div>`;
+        }
+        const rows = (data && data.rows) || [];
+        if (!rows.length) {
+            return '<div class="empty-state-hint">No error events in this window. Errors appear when a span has OTel ERROR status, a bad finish reason, or a log record at ERROR level or above.</div>';
+        }
+        return this._buildRecentErrors(rows);
+    }
+
+    _renderReliabilitySessionQualityBlock(data) {
+        if (data && data.__error) {
+            return `<div class="error-message">Couldn't load session quality: ${this._esc(data.__error.message)}</div>`;
+        }
+        if (!data || data.total === 0) {
+            return '<div class="empty-state-hint">No session data in this window.</div>';
+        }
+        return this._buildSessionQuality(data);
+    }
+
     _buildRecentRetries(recentRetries) {
         const rows = Array.isArray(recentRetries) ? recentRetries : [];
         if (!rows.length) return '';
@@ -4229,22 +4257,6 @@ class AnalyticsView {
 
     // ── Session Quality (#174) ────────────────────────────────────────────────
 
-    async _loadSessionQualitySection() {
-        this._setSectionLoading('session_quality');
-        try {
-            const data = await this.api.getSessionQualitySummary(this._baseParams());
-            if (!data || data.total === 0) {
-                this._setSectionBody('session_quality', '<div class="empty-state-hint">No session data in this window.</div>');
-                this.loadedSections.add('session_quality');
-                return;
-            }
-            this._setSectionBody('session_quality', this._buildSessionQuality(data));
-            this.loadedSections.add('session_quality');
-        } catch (err) {
-            this._setSectionError('session_quality', err);
-        }
-    }
-
     _buildSessionQuality(data) {
         const total = data.total || 1;
         const cleanPct  = ((data.clean   || 0) / total * 100).toFixed(1);
@@ -4367,23 +4379,6 @@ class AnalyticsView {
             <h3>Model selection by role and tool</h3>
             <p class="table-hint">For each agent role (from <code>llm_request.context</code>) and tool harness, which model was selected and what share of output tokens it produced. Helps identify whether sub-agents are routing to different models than the orchestrator.</p>
             ${sections}`;
-    }
-
-    async _loadRecentErrorsSection() {
-        this._setSectionLoading('recent_errors');
-        try {
-            const data = await this.api.getRecentErrors(this._baseParams());
-            const rows = data.rows || [];
-            if (!rows.length) {
-                this._setSectionBody('recent_errors', '<div class="empty-state-hint">No error events in this window. Errors appear when a span has OTel ERROR status, a bad finish reason, or a log record at ERROR level or above.</div>');
-                this.loadedSections.add('recent_errors');
-                return;
-            }
-            this._setSectionBody('recent_errors', this._buildRecentErrors(rows));
-            this.loadedSections.add('recent_errors');
-        } catch (err) {
-            this._setSectionError('recent_errors', err);
-        }
     }
 
     _buildRecentErrors(rows) {

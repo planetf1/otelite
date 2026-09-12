@@ -13,6 +13,10 @@ have to work around), not implementation detail.
 
 ### Changed
 
+- The **Reliability** report is now the whole failure story: it ends with
+  the former Recent Errors list and Session Quality breakdown as sections,
+  so "what failed, where, and in which sessions" is one report. Each new
+  section degrades independently of the aggregate above it
 - **Tool Failures** is now one report with per-ecosystem sections (MCP
   servers & tools, then opencode tools) instead of the separate MCP Health
   and Tool Failure Rates reports — "which integrations are flaky?" is one
