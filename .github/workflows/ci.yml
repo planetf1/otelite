@@ -93,6 +93,9 @@ jobs:
       - name: Run web parity tests (node --test)
         run: node --test "crates/otelite-api/tests/js/*.test.mjs"
 
+      - name: Check analytics navigation integrity
+        run: node scripts/check_analytics_nav.mjs
+
       - name: Run doc tests
         run: cargo test --workspace --doc --all-features
 
