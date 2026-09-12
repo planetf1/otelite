@@ -46,8 +46,7 @@ class AnalyticsView {
         { id: 'skill_outcomes',          title: 'Skill Outcomes',          hint: 'Token efficiency comparison: sessions that used each skill vs sessions that did not' },
         { id: 'latency',                 title: 'Latency',                 hint: 'Response time · throughput · context size' },
         { id: 'model_performance',       title: 'Model Performance',       hint: 'Per-model duration · throughput · TTFT · error diagnosis vs preceding & rolling baselines' },
-        { id: 'codex_ttft',              title: 'Codex TTFT',              hint: 'First-token latency percentiles (p50/p90/p95) per model from histogram metrics' },
-        { id: 'cross_tool_ttft',         title: 'Cross-Tool TTFT',         hint: 'First-token latency by model across all tools (Claude Code, opencode, pi) from span attributes' },
+        { id: 'ttft',                      title: 'TTFT',                    hint: 'First-token latency per model — Codex (histogram metrics) and Claude Code / opencode / pi (span attributes)' },
         { id: 'codex_turns',             title: 'Codex Busy/Idle',         hint: 'Average busy vs idle time per turn by model and project' },
         { id: 'speed_dist',              title: 'Speed / Effort Mode',     hint: 'Distribution of the Claude Code speed attribute (normal / extended thinking) by model' },
         { id: 'reliability',             title: 'Reliability',             hint: 'Errors · retries · truncation · drift' },
@@ -71,7 +70,7 @@ class AnalyticsView {
     // reports move to the Pinned group while pinned.
     static GROUPS = [
         { id: 'cost',        label: 'Cost',                    sub: 'Where did the tokens go?',            reports: ['cost', 'providers', 'roles', 'session_model', 'effort', 'efficiency', 'skill_outcomes'] },
-        { id: 'latency',     label: 'Latency',                 sub: 'How fast, and where is it slow?',      reports: ['latency', 'model_performance', 'codex_ttft', 'cross_tool_ttft', 'codex_turns', 'speed_dist'] },
+        { id: 'latency',     label: 'Latency',                 sub: 'How fast, and where is it slow?',      reports: ['latency', 'model_performance', 'ttft', 'codex_turns', 'speed_dist'] },
         { id: 'reliability', label: 'Reliability',             sub: "What's breaking, and how often?",      reports: ['reliability', 'recent_errors', 'session_quality', 'mcp_health', 'tool_failure_rates', 'guardian'] },
         { id: 'behavior',    label: 'Behaviour',               sub: 'How is it being used?',                reports: ['behavior', 'multi_agent', 'daily_tool_mix', 'model_selection_heatmap', 'reasoning_share'] },
         { id: 'ecosystem',   label: 'Ecosystem & Diagnostics', sub: "What's the tooling actually doing?",   reports: ['skill_activity', 'hook_overhead', 'capabilities', 'project_rollup'] },
@@ -91,8 +90,7 @@ class AnalyticsView {
         skill_outcomes: ['skill efficiency', 'with vs without'],
         latency: ['latency', 'p50', 'p95', 'p99', 'response time', 'throughput', 'context size'],
         model_performance: ['baseline', 'regression', 'performance', 'diagnosis'],
-        codex_ttft: ['ttft', 'codex', 'first token', 'percentiles'],
-        cross_tool_ttft: ['ttft', 'first token', 'all tools', 'cross-tool'],
+        ttft: ['ttft', 'codex', 'first token', 'percentiles', 'all tools', 'cross-tool'],
         codex_turns: ['busy', 'idle', 'turn', 'codex'],
         speed_dist: ['speed', 'extended thinking', 'effort mode', 'normal'],
         reliability: ['reliability', 'finish reason', 'stop reason', 'truncation', 'max_tokens', 'error rate', 'drift', 'retry', 'retried', 'retries', 'incident'],
@@ -123,10 +121,9 @@ class AnalyticsView {
         effort: ['cost', 'model_performance', 'speed_dist'],
         efficiency: ['cost', 'skill_outcomes'],
         skill_outcomes: ['efficiency', 'skill_activity'],
-        latency: ['model_performance', 'cross_tool_ttft', 'speed_dist'],
+        latency: ['model_performance', 'ttft', 'speed_dist'],
         model_performance: ['latency', 'reliability', 'model_selection_heatmap'],
-        codex_ttft: ['cross_tool_ttft', 'latency', 'speed_dist'],
-        cross_tool_ttft: ['codex_ttft', 'latency', 'model_performance'],
+        ttft: ['latency', 'speed_dist', 'model_performance'],
         codex_turns: ['behavior', 'daily_tool_mix'],
         speed_dist: ['latency', 'effort', 'reasoning_share'],
         reliability: ['recent_errors', 'session_quality', 'model_performance'],
@@ -144,6 +141,15 @@ class AnalyticsView {
         hook_overhead: ['latency', 'capabilities'],
         capabilities: ['hook_overhead', 'model_performance'],
         project_rollup: ['cost', 'session_model'],
+    };
+
+    // #216 consolidation: ids absorbed into a successor report. A pinned
+    // absorbed id migrates to its successor at load so pins don't die
+    // silently; deep links to absorbed ids are graceful no-ops (no alias
+    // window — decided 2026-09-12).
+    static PIN_MIGRATIONS = {
+        codex_ttft: 'ttft',
+        cross_tool_ttft: 'ttft',
     };
 
     constructor(apiClient) {
@@ -336,7 +342,12 @@ class AnalyticsView {
         try {
             const raw = JSON.parse(localStorage.getItem('otelite.analytics.pinned') || '[]');
             const valid = new Set(AnalyticsView.REPORTS.map(r => r.id));
-            return new Set(Array.isArray(raw) ? raw.filter(id => valid.has(id)) : []);
+            // Migrate pins from absorbed report ids to their successors
+            // (#216), then drop anything that is not a current report.
+            const migrated = Array.isArray(raw)
+                ? raw.map(id => AnalyticsView.PIN_MIGRATIONS[id] || id)
+                : [];
+            return new Set(migrated.filter(id => valid.has(id)));
         } catch {
             // Corrupt storage — start unpinned rather than failing the view.
             return new Set();
@@ -1106,7 +1117,7 @@ class AnalyticsView {
             model_performance: () => this._loadModelPerformanceSection(),
             effort: () => this._loadEffortSection(),
             efficiency: () => this._loadEfficiencySection(),
-            codex_ttft: () => this._loadCodexTtftSection(),
+            ttft: () => this._loadTtftSection(),
             project_rollup: () => this._loadProjectRollupSection(),
             mcp_health: () => this._loadMcpHealthSection(),
             guardian: () => this._loadGuardianSection(),
@@ -1114,7 +1125,6 @@ class AnalyticsView {
             codex_turns: () => this._loadCodexTurnsSection(),
             session_model: () => this._loadSessionModelSection(),
             speed_dist: () => this._loadSpeedDistSection(),
-            cross_tool_ttft: () => this._loadCrossToolTtftSection(),
             hook_overhead: () => this._loadHookOverheadSection(),
             reasoning_share: () => this._loadReasoningShareSection(),
             tool_failure_rates: () => this._loadToolFailureRatesSection(),
@@ -3686,27 +3696,72 @@ class AnalyticsView {
         }
     }
 
-    async _loadCodexTtftSection() {
-        this._setSectionLoading('codex_ttft');
-        try {
-            const data = await this.api.getCodexTtft(this._baseParams());
+    async _loadTtftSection() {
+        this._setSectionLoading('ttft');
+        const params = this._baseParams();
+        // Two per-population sections (#220): the sources have different
+        // precision/coverage and disjoint tool populations, so each section
+        // degrades independently — a dead endpoint blanks only its block.
+        const [codex, cross] = await Promise.all([
+            this.api.getCodexTtft(params).catch(err => ({ __error: err })),
+            this.api.getCrossToolTtft(params).catch(err => ({ __error: err })),
+        ]);
+        this.loadedSections.add('ttft');
+        this._setSectionBody('ttft',
+            this._renderTtftCodexBlock(codex) + this._renderTtftCrossBlock(cross));
+    }
+
+    _renderTtftCodexBlock(data) {
+        let inner;
+        if (data.__error) {
+            inner = `<div class="error-message">Couldn't load Codex TTFT: ${this._esc(data.__error.message)}</div>`;
+        } else {
             const models = data.models || [];
             if (!models.length) {
-                this._setSectionBody('codex_ttft', '<div class="empty-state-hint">No Codex TTFT data in this window.</div>');
-                this.loadedSections.add('codex_ttft');
-                return;
+                inner = '<div class="empty-state-hint">No Codex TTFT data in this window.</div>';
+            } else {
+                const fmtMs = v => v != null ? `${v.toFixed(0)} ms` : '—';
+                let html = '<div class="analytics-table-wrap"><table class="analytics-table"><thead><tr><th>Model</th><th>Samples</th><th>p50</th><th>p90</th><th>p95</th></tr></thead><tbody>';
+                for (const m of models) {
+                    html += `<tr><td>${this._esc(m.model)}</td><td>${Number(m.count).toLocaleString()}</td><td>${fmtMs(m.p50_ms)}</td><td>${fmtMs(m.p90_ms)}</td><td>${fmtMs(m.p95_ms)}</td></tr>`;
+                }
+                html += '</tbody></table></div>';
+                inner = html;
             }
-            const fmtMs = v => v != null ? `${v.toFixed(0)} ms` : '—';
-            let html = '<div class="analytics-table-wrap"><table class="analytics-table"><thead><tr><th>Model</th><th>Samples</th><th>p50</th><th>p90</th><th>p95</th></tr></thead><tbody>';
-            for (const m of models) {
-                html += `<tr><td>${this._esc(m.model)}</td><td>${Number(m.count).toLocaleString()}</td><td>${fmtMs(m.p50_ms)}</td><td>${fmtMs(m.p90_ms)}</td><td>${fmtMs(m.p95_ms)}</td></tr>`;
-            }
-            html += '</tbody></table></div>';
-            this._setSectionBody('codex_ttft', html);
-            this.loadedSections.add('codex_ttft');
-        } catch (err) {
-            this._setSectionError('codex_ttft', err);
         }
+        return `<h3>Codex <span class="dim">(histogram metrics)</span></h3>${inner}`;
+    }
+
+    _renderTtftCrossBlock(data) {
+        let inner;
+        if (data.__error) {
+            inner = `<div class="error-message">Couldn't load cross-tool TTFT: ${this._esc(data.__error.message)}</div>`;
+        } else {
+            const rows = data.rows || [];
+            if (!rows.length) {
+                inner = '<div class="empty-state-hint">No TTFT span data in this window. Only Claude Code and opencode spans carry ttft_ms.</div>';
+            } else {
+                const fmtMs = v => v != null ? `${Math.round(v).toLocaleString()} ms` : '—';
+                let html = '<div class="analytics-table-wrap"><table class="analytics-table"><thead><tr>' +
+                    '<th>Tool</th><th>Model</th><th>Count</th><th>Avg TTFT</th><th>Min</th><th>p90</th><th>Max</th>' +
+                    '</tr></thead><tbody>';
+                for (const r of rows.slice(0, 60)) {
+                    html += `<tr>
+                        <td>${this._esc(r.tool)}</td>
+                        <td>${this._esc(r.model)}</td>
+                        <td>${Number(r.count).toLocaleString()}</td>
+                        <td>${fmtMs(r.avg_ms)}</td>
+                        <td>${fmtMs(r.min_ms)}</td>
+                        <td>${r.p90_ms != null ? fmtMs(r.p90_ms) : '<span class="dim">n/a</span>'}</td>
+                        <td>${fmtMs(r.max_ms)}</td>
+                    </tr>`;
+                }
+                html += '</tbody></table></div>';
+                if (rows.length > 60) html += `<p class="empty-state-hint">Showing top 60 of ${rows.length} rows.</p>`;
+                inner = html;
+            }
+        }
+        return `<h3>Claude Code · opencode · pi <span class="dim">(span attributes)</span></h3>${inner}`;
     }
 
     async _loadProjectRollupSection() {
@@ -3904,40 +3959,6 @@ class AnalyticsView {
             this.loadedSections.add('speed_dist');
         } catch (err) {
             this._setSectionError('speed_dist', err);
-        }
-    }
-
-    async _loadCrossToolTtftSection() {
-        this._setSectionLoading('cross_tool_ttft');
-        try {
-            const data = await this.api.getCrossToolTtft(this._baseParams());
-            const rows = data.rows || [];
-            if (!rows.length) {
-                this._setSectionBody('cross_tool_ttft', '<div class="empty-state-hint">No TTFT span data in this window. Only Claude Code and opencode spans carry ttft_ms.</div>');
-                this.loadedSections.add('cross_tool_ttft');
-                return;
-            }
-            const fmtMs = v => v != null ? `${Math.round(v).toLocaleString()} ms` : '—';
-            let html = '<div class="analytics-table-wrap"><table class="analytics-table"><thead><tr>' +
-                '<th>Tool</th><th>Model</th><th>Count</th><th>Avg TTFT</th><th>Min</th><th>p90</th><th>Max</th>' +
-                '</tr></thead><tbody>';
-            for (const r of rows.slice(0, 60)) {
-                html += `<tr>
-                    <td>${this._esc(r.tool)}</td>
-                    <td>${this._esc(r.model)}</td>
-                    <td>${Number(r.count).toLocaleString()}</td>
-                    <td>${fmtMs(r.avg_ms)}</td>
-                    <td>${fmtMs(r.min_ms)}</td>
-                    <td>${r.p90_ms != null ? fmtMs(r.p90_ms) : '<span class="dim">n/a</span>'}</td>
-                    <td>${fmtMs(r.max_ms)}</td>
-                </tr>`;
-            }
-            html += '</tbody></table></div>';
-            if (rows.length > 60) html += `<p class="empty-state-hint">Showing top 60 of ${rows.length} rows.</p>`;
-            this._setSectionBody('cross_tool_ttft', html);
-            this.loadedSections.add('cross_tool_ttft');
-        } catch (err) {
-            this._setSectionError('cross_tool_ttft', err);
         }
     }
 

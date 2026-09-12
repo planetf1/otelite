@@ -11,6 +11,13 @@ have to work around), not implementation detail.
 
 ## [Unreleased]
 
+### Changed
+
+- First-token latency is now one **TTFT** report with per-tool sections
+  (Codex histogram percentiles, and Claude Code / opencode / pi span data)
+  instead of two separate reports — the sections stay independent, so a
+  dead source blanks only its own block
+
 ## [0.1.127] - 2026-09-11
 
 ### Added

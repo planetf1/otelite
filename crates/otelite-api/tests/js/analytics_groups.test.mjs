@@ -71,12 +71,12 @@ test('GROUPS partition the REPORTS — every report in exactly one group', () =>
 
 test('_renderGroupShell renders nested section shells and the count label', () => {
     view.pinned = new Set();
-    const html = view._renderGroupShell('latency', 'Latency', ['latency', 'codex_ttft']);
+    const html = view._renderGroupShell('latency', 'Latency', ['latency', 'ttft']);
     assert.match(html, /<details class="analytics-group" id="analytics-group-latency">/);
     assert.match(html, /<span class="analytics-group-title">Latency<\/span>/);
     assert.match(html, /<span class="analytics-group-count" id="analytics-group-count-latency">2 reports<\/span>/);
     assert.match(html, /id="analytics-section-latency"/);
-    assert.match(html, /id="analytics-section-codex_ttft"/);
+    assert.match(html, /id="analytics-section-ttft"/);
 });
 
 test('_renderGroupShell honours the open flag and pinned styling', () => {
