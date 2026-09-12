@@ -132,6 +132,25 @@ test('_loadPins keeps valid ids and drops corrupt storage', () => {
     assert.equal(view._loadPins().size, 0);
 });
 
+test('_loadPins migrates absorbed report ids to their successors (#216)', () => {
+    globalThis.localStorage = stubLocalStorage({
+        'otelite.analytics.pinned': JSON.stringify(['codex_ttft', 'recent_errors', 'skill_activity', 'no_such_report']),
+    });
+    const pins = view._loadPins();
+    // codex_ttft -> ttft, recent_errors -> reliability,
+    // skill_activity -> skills; the unknown id is dropped.
+    assert.deepEqual([...pins].sort(), ['reliability', 'skills', 'ttft']);
+
+    // A pin list of only absorbed ids (the user pinned exactly the
+    // reports that got merged) resolves to the successors without crash.
+    globalThis.localStorage = stubLocalStorage({
+        'otelite.analytics.pinned': JSON.stringify(['codex_ttft', 'cross_tool_ttft']),
+    });
+    assert.deepEqual([...view._loadPins()], ['ttft']);
+
+    delete globalThis.localStorage;
+});
+
 test('_savePins writes the pinned id list as JSON', () => {
     const ls = stubLocalStorage();
     globalThis.localStorage = ls;
