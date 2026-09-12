@@ -52,8 +52,7 @@ class AnalyticsView {
         { id: 'reliability',             title: 'Reliability',             hint: 'Errors · retries · truncation · drift' },
         { id: 'recent_errors',           title: 'Recent Errors',           hint: 'Latest error events from spans and logs — OTel ERROR status, bad finish reasons, and log ERROR records' },
         { id: 'session_quality',         title: 'Session Quality',         hint: 'Clean / degraded / errored breakdown — spot sessions that truncated, retried, or failed' },
-        { id: 'mcp_health',              title: 'MCP Health',              hint: 'Call success/error rates per MCP server and tool — spot flaky integrations' },
-        { id: 'tool_failure_rates',      title: 'Tool Failure Rates',      hint: 'Failure % per opencode tool — spot flaky or broken integrations at a glance' },
+        { id: 'tool_failures',           title: 'Tool Failures',           hint: 'Failure rates per MCP server/tool and per opencode tool — spot flaky or broken integrations' },
         { id: 'guardian',                title: 'Guardian Reviews',        hint: 'Risk levels · denial rate by action type · what the guardian is actually blocking' },
         { id: 'behavior',                title: 'Behavior',                hint: 'Tool use · retrieval · request volume' },
         { id: 'multi_agent',             title: 'Multi-Agent Topology',    hint: 'Sub-agent spawn and resume counts by role' },
@@ -71,7 +70,7 @@ class AnalyticsView {
     static GROUPS = [
         { id: 'cost',        label: 'Cost',                    sub: 'Where did the tokens go?',            reports: ['cost', 'providers', 'roles', 'session_model', 'effort', 'efficiency', 'skill_outcomes'] },
         { id: 'latency',     label: 'Latency',                 sub: 'How fast, and where is it slow?',      reports: ['latency', 'model_performance', 'ttft', 'codex_turns', 'speed_dist'] },
-        { id: 'reliability', label: 'Reliability',             sub: "What's breaking, and how often?",      reports: ['reliability', 'recent_errors', 'session_quality', 'mcp_health', 'tool_failure_rates', 'guardian'] },
+        { id: 'reliability', label: 'Reliability',             sub: "What's breaking, and how often?",      reports: ['reliability', 'recent_errors', 'session_quality', 'tool_failures', 'guardian'] },
         { id: 'behavior',    label: 'Behaviour',               sub: 'How is it being used?',                reports: ['behavior', 'multi_agent', 'daily_tool_mix', 'model_selection_heatmap', 'reasoning_share'] },
         { id: 'ecosystem',   label: 'Ecosystem & Diagnostics', sub: "What's the tooling actually doing?",   reports: ['skill_activity', 'hook_overhead', 'capabilities', 'project_rollup'] },
     ];
@@ -96,8 +95,7 @@ class AnalyticsView {
         reliability: ['reliability', 'finish reason', 'stop reason', 'truncation', 'max_tokens', 'error rate', 'drift', 'retry', 'retried', 'retries', 'incident'],
         recent_errors: ['errors', 'error', 'failed', 'recent', 'failures'],
         session_quality: ['quality', 'degraded', 'clean', 'errored sessions'],
-        mcp_health: ['mcp', 'flaky server', 'server health'],
-        tool_failure_rates: ['tool failure', 'tool error', 'flaky tool', 'opencode tool'],
+        tool_failures: ['mcp', 'flaky server', 'server health', 'tool failure', 'tool error', 'flaky tool', 'opencode tool'],
         guardian: ['guardian', 'risk', 'blocked', 'denial'],
         behavior: ['tool use', 'retrieval', 'request volume', 'behaviour'],
         multi_agent: ['multi-agent', 'topology', 'spawn', 'resume'],
@@ -127,10 +125,9 @@ class AnalyticsView {
         codex_turns: ['behavior', 'daily_tool_mix'],
         speed_dist: ['latency', 'effort', 'reasoning_share'],
         reliability: ['recent_errors', 'session_quality', 'model_performance'],
-        recent_errors: ['reliability', 'session_quality', 'tool_failure_rates'],
+        recent_errors: ['reliability', 'session_quality', 'tool_failures'],
         session_quality: ['reliability', 'session_model'],
-        mcp_health: ['tool_failure_rates', 'reliability'],
-        tool_failure_rates: ['mcp_health', 'recent_errors', 'behavior'],
+        tool_failures: ['reliability', 'recent_errors', 'behavior'],
         guardian: ['reliability', 'behavior'],
         behavior: ['daily_tool_mix', 'multi_agent', 'codex_turns'],
         multi_agent: ['behavior', 'roles'],
@@ -150,6 +147,8 @@ class AnalyticsView {
     static PIN_MIGRATIONS = {
         codex_ttft: 'ttft',
         cross_tool_ttft: 'ttft',
+        mcp_health: 'tool_failures',
+        tool_failure_rates: 'tool_failures',
     };
 
     constructor(apiClient) {
@@ -1119,7 +1118,7 @@ class AnalyticsView {
             efficiency: () => this._loadEfficiencySection(),
             ttft: () => this._loadTtftSection(),
             project_rollup: () => this._loadProjectRollupSection(),
-            mcp_health: () => this._loadMcpHealthSection(),
+            tool_failures: () => this._loadToolFailuresSection(),
             guardian: () => this._loadGuardianSection(),
             multi_agent: () => this._loadMultiAgentSection(),
             codex_turns: () => this._loadCodexTurnsSection(),
@@ -1127,7 +1126,6 @@ class AnalyticsView {
             speed_dist: () => this._loadSpeedDistSection(),
             hook_overhead: () => this._loadHookOverheadSection(),
             reasoning_share: () => this._loadReasoningShareSection(),
-            tool_failure_rates: () => this._loadToolFailureRatesSection(),
             daily_tool_mix: () => this._loadDailyToolMixSection(),
             skill_activity: () => this._loadSkillActivitySection(),
             session_quality: () => this._loadSessionQualitySection(),
@@ -3788,28 +3786,65 @@ class AnalyticsView {
         }
     }
 
-    async _loadMcpHealthSection() {
-        this._setSectionLoading('mcp_health');
-        try {
-            const data = await this.api.getMcpHealth(this._baseParams());
+    async _loadToolFailuresSection() {
+        this._setSectionLoading('tool_failures');
+        const params = this._baseParams();
+        // Two per-ecosystem sections (#221): same question ("which
+        // integrations are flaky?") over MCP and opencode. Each endpoint
+        // degrades independently — a dead source blanks only its block.
+        const [mcp, opencode] = await Promise.all([
+            this.api.getMcpHealth(params).catch(err => ({ __error: err })),
+            this.api.getToolFailureRates(params).catch(err => ({ __error: err })),
+        ]);
+        this.loadedSections.add('tool_failures');
+        const mcpEntries = (mcp && !mcp.__error) ? (mcp.entries || []) : [];
+        const opRows = (opencode && !opencode.__error) ? ((opencode.rows || [])) : [];
+        const statEl = document.getElementById('analytics-section-stat-tool_failures');
+        if (statEl) {
+            const summary = opRows.length
+                ? `${opRows.length} tool${opRows.length === 1 ? '' : 's'} with failures`
+                : mcpEntries.length
+                    ? `${mcpEntries.length} MCP row${mcpEntries.length === 1 ? '' : 's'}`
+                    : '';
+            if (summary) statEl.textContent = summary;
+        }
+        this._setSectionBody('tool_failures',
+            this._renderToolFailuresMcpBlock(mcp) + this._renderToolFailuresOpencodeBlock(opencode));
+    }
+
+    _renderToolFailuresMcpBlock(data) {
+        let inner;
+        if (data.__error) {
+            inner = `<div class="error-message">Couldn't load MCP health: ${this._esc(data.__error.message)}</div>`;
+        } else {
             const entries = data.entries || [];
             if (!entries.length) {
-                this._setSectionBody('mcp_health', '<div class="empty-state-hint">No MCP call data in this window.</div>');
-                this.loadedSections.add('mcp_health');
-                return;
+                inner = '<div class="empty-state-hint">No MCP call data in this window.</div>';
+            } else {
+                let html = '<div class="analytics-table-wrap"><table class="analytics-table"><thead><tr><th>Server</th><th>Tool</th><th>OK</th><th>Errors</th><th>Error rate</th></tr></thead><tbody>';
+                for (const e of entries) {
+                    const pct = (e.error_rate * 100).toFixed(1);
+                    const cls = e.error_rate > 0.1 ? ' style="color:var(--error-color,#c0392b)"' : '';
+                    html += `<tr><td>${this._esc(e.server)}</td><td>${this._esc(e.tool)}</td><td>${Number(e.ok_calls).toLocaleString()}</td><td>${Number(e.error_calls).toLocaleString()}</td><td${cls}>${pct}%</td></tr>`;
+                }
+                html += '</tbody></table></div>';
+                inner = html;
             }
-            let html = '<div class="analytics-table-wrap"><table class="analytics-table"><thead><tr><th>Server</th><th>Tool</th><th>OK</th><th>Errors</th><th>Error rate</th></tr></thead><tbody>';
-            for (const e of entries) {
-                const pct = (e.error_rate * 100).toFixed(1);
-                const cls = e.error_rate > 0.1 ? ' style="color:var(--error-color,#c0392b)"' : '';
-                html += `<tr><td>${this._esc(e.server)}</td><td>${this._esc(e.tool)}</td><td>${Number(e.ok_calls).toLocaleString()}</td><td>${Number(e.error_calls).toLocaleString()}</td><td${cls}>${pct}%</td></tr>`;
-            }
-            html += '</tbody></table></div>';
-            this._setSectionBody('mcp_health', html);
-            this.loadedSections.add('mcp_health');
-        } catch (err) {
-            this._setSectionError('mcp_health', err);
         }
+        return `<h3>MCP servers &amp; tools</h3>${inner}`;
+    }
+
+    _renderToolFailuresOpencodeBlock(data) {
+        if (data.__error) {
+            return `<h3>opencode tools</h3><div class="error-message">Couldn't load opencode tool failures: ${this._esc(data.__error.message)}</div>`;
+        }
+        const rows = data.rows || [];
+        if (!rows.length) {
+            return '<h3>opencode tools</h3><div class="empty-state-hint">No opencode tool failure data in this window.</div>';
+        }
+        // _buildToolFailureRates renders its own "(opencode)" heading and
+        // legend — reuse it verbatim as the section body.
+        return this._buildToolFailureRates(rows);
     }
 
     async _loadGuardianSection() {
@@ -4047,26 +4082,6 @@ class AnalyticsView {
     }
 
     // ── Tool Failure Rates (#insight-1) ──────────────────────────────────────
-
-    async _loadToolFailureRatesSection() {
-        this._setSectionLoading('tool_failure_rates');
-        try {
-            const data = await this.api.getToolFailureRates(this._baseParams());
-            const rows = (data && data.rows) || [];
-            if (!rows.length) {
-                this._setSectionBody('tool_failure_rates', '<div class="empty-state-hint">No opencode tool failure data in this window.</div>');
-                this.loadedSections.add('tool_failure_rates');
-                return;
-            }
-            const statEl = document.getElementById('analytics-section-stat-tool_failure_rates');
-            if (statEl) statEl.textContent = `${rows.length} tool${rows.length === 1 ? '' : 's'} with failures`;
-            const html = this._buildToolFailureRates(rows);
-            this._setSectionBody('tool_failure_rates', html);
-            this.loadedSections.add('tool_failure_rates');
-        } catch (err) {
-            this._setSectionError('tool_failure_rates', err);
-        }
-    }
 
     _buildToolFailureRates(rows) {
         const fmt = n => Number(n || 0).toLocaleString();

@@ -13,6 +13,10 @@ have to work around), not implementation detail.
 
 ### Changed
 
+- **Tool Failures** is now one report with per-ecosystem sections (MCP
+  servers & tools, then opencode tools) instead of the separate MCP Health
+  and Tool Failure Rates reports — "which integrations are flaky?" is one
+  place again, with each section degrading independently
 - First-token latency is now one **TTFT** report with per-tool sections
   (Codex histogram percentiles, and Claude Code / opencode / pi span data)
   instead of two separate reports — the sections stay independent, so a
