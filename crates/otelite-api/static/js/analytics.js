@@ -43,7 +43,7 @@ class AnalyticsView {
         { id: 'session_model',           title: 'Session × Model',         hint: 'Token and cost breakdown per (session, model) pair — spot opus spend in specific sessions' },
         { id: 'thinking_effort',         title: 'Thinking & Effort',       hint: 'Thinking and effort token usage — Claude Code effort levels, opencode + Codex reasoning share' },
         { id: 'efficiency',              title: 'Agent Efficiency',        hint: 'Tokens per commit · tokens per line of code · cross-agent comparison' },
-        { id: 'skill_outcomes',          title: 'Skill Outcomes',          hint: 'Token efficiency comparison: sessions that used each skill vs sessions that did not' },
+        { id: 'skills',                  title: 'Skills',                  hint: 'Skill token ROI vs sessions without the skill · Codex skill injection activity' },
         { id: 'latency',                 title: 'Latency',                 hint: 'Response time · throughput · context size' },
         { id: 'model_performance',       title: 'Model Performance',       hint: 'Per-model duration · throughput · TTFT · error diagnosis vs preceding & rolling baselines' },
         { id: 'ttft',                      title: 'TTFT',                    hint: 'First-token latency per model — Codex (histogram metrics) and Claude Code / opencode / pi (span attributes)' },
@@ -55,7 +55,6 @@ class AnalyticsView {
         { id: 'behavior',                title: 'Behavior',                hint: 'Tool use · retrieval · request volume · daily tool mix' },
         { id: 'multi_agent',             title: 'Multi-Agent Topology',    hint: 'Sub-agent spawn and resume counts by role' },
         { id: 'model_selection_heatmap', title: 'Model Selection Heatmap', hint: 'Which tool picked which model for which agent role — (role × tool × model) request counts' },
-        { id: 'skill_activity',          title: 'Skills Activity',         hint: 'Which Codex skills fire most — implicit injection counts by skill name' },
         { id: 'hook_overhead',           title: 'Hook Overhead',           hint: 'Codex hook total and average invocation time per event type — how much latency hooks add' },
         { id: 'capabilities',            title: 'Telemetry Capabilities',  hint: 'Which metrics each emitter actually provides · availability & quality' },
         { id: 'project_rollup',          title: 'Project Rollup',          hint: 'Token activity and turn counts per project across all agents' },
@@ -64,11 +63,11 @@ class AnalyticsView {
     // Top-level categories. A report appears in exactly one group; pinned
     // reports move to the Pinned group while pinned.
     static GROUPS = [
-        { id: 'cost',        label: 'Cost',                    sub: 'Where did the tokens go?',            reports: ['cost', 'providers', 'roles', 'session_model', 'thinking_effort', 'efficiency', 'skill_outcomes'] },
+        { id: 'cost',        label: 'Cost',                    sub: 'Where did the tokens go?',            reports: ['cost', 'providers', 'roles', 'session_model', 'thinking_effort', 'efficiency', 'skills'] },
         { id: 'latency',     label: 'Latency',                 sub: 'How fast, and where is it slow?',      reports: ['latency', 'model_performance', 'ttft', 'codex_turns', 'speed_dist'] },
         { id: 'reliability', label: 'Reliability',             sub: "What's breaking, and how often?",      reports: ['reliability', 'tool_failures', 'guardian'] },
         { id: 'behavior',    label: 'Behaviour',               sub: 'How is it being used?',                reports: ['behavior', 'multi_agent', 'model_selection_heatmap'] },
-        { id: 'ecosystem',   label: 'Ecosystem & Diagnostics', sub: "What's the tooling actually doing?",   reports: ['skill_activity', 'hook_overhead', 'capabilities', 'project_rollup'] },
+        { id: 'ecosystem',   label: 'Ecosystem & Diagnostics', sub: "What's the tooling actually doing?",   reports: ['hook_overhead', 'capabilities', 'project_rollup'] },
     ];
 
     // Extra vocabulary per report for the jump-to filter: metric names and
@@ -82,7 +81,7 @@ class AnalyticsView {
         session_model: ['per-session', 'session spend', 'model pair'],
         thinking_effort: ['effort', 'low', 'medium', 'high', 'xhigh', 'reasoning', 'thinking tokens', 'thinking'],
         efficiency: ['efficiency', 'commits', 'lines of code', 'loc', 'tokens per commit'],
-        skill_outcomes: ['skill efficiency', 'with vs without'],
+        skills: ['skill', 'skill efficiency', 'with vs without', 'skill activity', 'injection', 'codex skills'],
         latency: ['latency', 'p50', 'p95', 'p99', 'response time', 'throughput', 'context size'],
         model_performance: ['baseline', 'regression', 'performance', 'diagnosis'],
         ttft: ['ttft', 'codex', 'first token', 'percentiles', 'all tools', 'cross-tool'],
@@ -94,7 +93,6 @@ class AnalyticsView {
         behavior: ['tool use', 'retrieval', 'request volume', 'behaviour', 'daily', 'per day', 'calendar', 'tool mix'],
         multi_agent: ['multi-agent', 'topology', 'spawn', 'resume'],
         model_selection_heatmap: ['heatmap', 'selection', 'which tool picked'],
-        skill_activity: ['skill activity', 'injection', 'codex skills'],
         hook_overhead: ['hook', 'overhead', 'pre_prompt', 'stop hook'],
         capabilities: ['telemetry', 'availability', 'emitter', 'capability coverage'],
         project_rollup: ['project', 'per project', 'rollup'],
@@ -109,8 +107,8 @@ class AnalyticsView {
         roles: ['cost', 'session_model', 'model_selection_heatmap'],
         session_model: ['cost', 'roles'],
         thinking_effort: ['cost', 'model_performance', 'speed_dist'],
-        efficiency: ['cost', 'skill_outcomes'],
-        skill_outcomes: ['efficiency', 'skill_activity'],
+        efficiency: ['cost', 'skills'],
+        skills: ['efficiency', 'codex_turns'],
         latency: ['model_performance', 'ttft', 'speed_dist'],
         model_performance: ['latency', 'reliability', 'model_selection_heatmap'],
         ttft: ['latency', 'speed_dist', 'model_performance'],
@@ -122,7 +120,6 @@ class AnalyticsView {
         behavior: ['multi_agent', 'codex_turns', 'model_selection_heatmap'],
         multi_agent: ['behavior', 'roles'],
         model_selection_heatmap: ['roles', 'providers', 'session_model'],
-        skill_activity: ['skill_outcomes', 'codex_turns'],
         hook_overhead: ['latency', 'capabilities'],
         capabilities: ['hook_overhead', 'model_performance'],
         project_rollup: ['cost', 'session_model'],
@@ -142,6 +139,8 @@ class AnalyticsView {
         daily_tool_mix: 'behavior',
         effort: 'thinking_effort',
         reasoning_share: 'thinking_effort',
+        skill_outcomes: 'skills',
+        skill_activity: 'skills',
     };
 
     constructor(apiClient) {
@@ -1118,8 +1117,7 @@ class AnalyticsView {
             session_model: () => this._loadSessionModelSection(),
             speed_dist: () => this._loadSpeedDistSection(),
             hook_overhead: () => this._loadHookOverheadSection(),
-            skill_activity: () => this._loadSkillActivitySection(),
-            skill_outcomes: () => this._loadSkillOutcomesSection(),
+            skills: () => this._loadSkillsSection(),
             model_selection_heatmap: () => this._loadModelSelectionHeatmapSection(),
         };
     }
@@ -4182,24 +4180,47 @@ class AnalyticsView {
 
     // ── Skills Activity (#insight-3) ─────────────────────────────────────────
 
-    async _loadSkillActivitySection() {
-        this._setSectionLoading('skill_activity');
-        try {
-            const data = await this.api.getSkillActivity(this._baseParams());
-            const rows = (data && data.rows) || [];
-            if (!rows.length) {
-                this._setSectionBody('skill_activity', '<div class="empty-state-hint">No Codex skill injection data in this window. Requires Codex with skills enabled.</div>');
-                this.loadedSections.add('skill_activity');
-                return;
-            }
-            const statEl = document.getElementById('analytics-section-stat-skill_activity');
-            if (statEl) statEl.textContent = `${Number(data.total_injections || 0).toLocaleString()} injections`;
-            const html = this._buildSkillActivity(rows, data.total_injections || 0);
-            this._setSectionBody('skill_activity', html);
-            this.loadedSections.add('skill_activity');
-        } catch (err) {
-            this._setSectionError('skill_activity', err);
+    async _loadSkillsSection() {
+        this._setSectionLoading('skills');
+        const params = this._baseParams();
+        // Two sections, one question ("are skills worth it?") (#225): the
+        // token ROI and the firing counts of the same skills. Each
+        // endpoint degrades independently.
+        const [outcomes, activity] = await Promise.all([
+            this.api.getSkillOutcomes(params).catch(err => ({ __error: err })),
+            this.api.getSkillActivity(params).catch(err => ({ __error: err })),
+        ]);
+        this.loadedSections.add('skills');
+        const actRows = (activity && !activity.__error) ? ((activity.rows || [])) : [];
+        const statEl = document.getElementById('analytics-section-stat-skills');
+        if (statEl && actRows.length && activity.total_injections != null) {
+            statEl.textContent = `${Number(activity.total_injections).toLocaleString()} injections`;
         }
+        this._setSectionBody('skills',
+            this._renderSkillsOutcomesBlock(outcomes) +
+            this._renderSkillsActivityBlock(activity));
+    }
+
+    _renderSkillsOutcomesBlock(data) {
+        if (data && data.__error) {
+            return `<div class="error-message">Couldn't load skill outcomes: ${this._esc(data.__error.message)}</div>`;
+        }
+        const rows = (data && data.rows) || [];
+        if (!rows.length) {
+            return '<div class="empty-state-hint">No skill outcome data in this window. Requires sessions with and without Codex skill injections.</div>';
+        }
+        return this._buildSkillOutcomes(rows);
+    }
+
+    _renderSkillsActivityBlock(data) {
+        if (data && data.__error) {
+            return `<div class="error-message">Couldn't load skill activity: ${this._esc(data.__error.message)}</div>`;
+        }
+        const rows = (data && data.rows) || [];
+        if (!rows.length) {
+            return '<div class="empty-state-hint">No Codex skill injection data in this window. Requires Codex with skills enabled.</div>';
+        }
+        return this._buildSkillActivity(rows, data.total_injections || 0);
     }
 
     _buildSkillActivity(rows, totalInjections) {
@@ -4253,23 +4274,6 @@ class AnalyticsView {
     }
 
     // ── Skill Outcomes (#168) ─────────────────────────────────────────────────
-
-    async _loadSkillOutcomesSection() {
-        this._setSectionLoading('skill_outcomes');
-        try {
-            const data = await this.api.getSkillOutcomes(this._baseParams());
-            const rows = data.rows || [];
-            if (!rows.length) {
-                this._setSectionBody('skill_outcomes', '<div class="empty-state-hint">No skill outcome data in this window. Requires sessions with and without Codex skill injections.</div>');
-                this.loadedSections.add('skill_outcomes');
-                return;
-            }
-            this._setSectionBody('skill_outcomes', this._buildSkillOutcomes(rows));
-            this.loadedSections.add('skill_outcomes');
-        } catch (err) {
-            this._setSectionError('skill_outcomes', err);
-        }
-    }
 
     _buildSkillOutcomes(rows) {
         const fmt = n => Number(n || 0).toLocaleString();
