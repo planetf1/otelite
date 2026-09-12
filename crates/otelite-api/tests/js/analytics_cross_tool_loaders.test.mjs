@@ -1,7 +1,8 @@
 // Regression tests for the cross-tool report loaders (issue #189):
 // _loadTtftSection (merged from _loadCodexTtftSection and
-// _loadCrossToolTtftSection by #220), _loadHookOverheadSection and
-// _loadReasoningShareSection once called a nonexistent `this._timeParams()`
+// _loadCrossToolTtftSection by #220), _loadThinkingEffortSection (merged
+// from _loadEffortSection and _loadReasoningShareSection by #224) and
+// _loadHookOverheadSection once called a nonexistent `this._timeParams()`
 // and failed with "Failed to load: this._timeParams is not a function" on
 // every expand. They must query the API with the standard time window
 // ({start_time, end_time} in ns, as produced by _baseParams).
@@ -107,17 +108,26 @@ test('hook_overhead loader queries the API with the standard time window', async
     assert.ok(view.loadedSections.has('hook_overhead'));
 });
 
-test('reasoning_share loader queries the API with the standard time window', async () => {
+test('thinking_effort loader queries both endpoints with the standard time window', async () => {
     const view = makeView();
     const calls = [];
     view.api = {
+        getEffortBreakdown: async (p) => {
+            calls.push(['effort', p]);
+            return { rows: [{ effort: 'high', model: 'claude', token_type: 'output', tokens: 1000 }] };
+        },
         getReasoningShare: async (p) => {
-            calls.push(p);
-            return { models: [], effort: [] };
+            calls.push(['reasoning', p]);
+            return { models: [{ model: 'codex', reasoning_tokens: 10, output_tokens: 100, share_pct: 10, cost_usd: 0.01 }], effort: [] };
         },
     };
-    await view._loadReasoningShareSection();
-    assert.equal(calls.length, 1, 'getReasoningShare not called — loader threw?');
-    assert.deepEqual(calls[0], expectedParams);
-    assert.ok(view.loadedSections.has('reasoning_share'));
+    await view._loadThinkingEffortSection();
+    assert.equal(calls.length, 2, 'both Thinking & Effort endpoints must be queried');
+    for (const [, p] of calls) assert.deepEqual(p, expectedParams);
+    assert.ok(view.loadedSections.has('thinking_effort'));
+    const body = view._bodies['thinking_effort'];
+    assert.match(body, /Effort levels/);
+    assert.match(body, /<td>high<\/td>/);
+    assert.match(body, /Reasoning share by model/);
+    assert.match(body, /<td>codex<\/td>/);
 });

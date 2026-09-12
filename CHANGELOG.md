@@ -13,6 +13,10 @@ have to work around), not implementation detail.
 
 ### Changed
 
+- **Thinking & Effort** is now one report with per-tool sections — Claude
+  Code effort levels and opencode/Codex reasoning share — instead of the
+  separate Effort Breakdown and Reasoning Token Share reports; each section
+  names its emitter population and degrades independently
 - The **Behavior** report now ends with the former Daily Tool Mix calendar
   (Claude Code / opencode / Codex activity per day) — "when do I use which
   tool?" is one report; the section degrades independently

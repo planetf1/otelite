@@ -41,7 +41,7 @@ class AnalyticsView {
         { id: 'providers',               title: 'Provider Mix',            hint: 'Tokens & estimated cost by provider × model (opencode · codex · claude)' },
         { id: 'roles',                   title: 'Agent Roles',             hint: 'Sub-agent attribution · cost & tokens per role · role × model routing matrix (opencode)' },
         { id: 'session_model',           title: 'Session × Model',         hint: 'Token and cost breakdown per (session, model) pair — spot opus spend in specific sessions' },
-        { id: 'effort',                  title: 'Effort Breakdown',        hint: 'Claude Code token usage by effort level (low/medium/high/xhigh) × model × type' },
+        { id: 'thinking_effort',         title: 'Thinking & Effort',       hint: 'Thinking and effort token usage — Claude Code effort levels, opencode + Codex reasoning share' },
         { id: 'efficiency',              title: 'Agent Efficiency',        hint: 'Tokens per commit · tokens per line of code · cross-agent comparison' },
         { id: 'skill_outcomes',          title: 'Skill Outcomes',          hint: 'Token efficiency comparison: sessions that used each skill vs sessions that did not' },
         { id: 'latency',                 title: 'Latency',                 hint: 'Response time · throughput · context size' },
@@ -55,7 +55,6 @@ class AnalyticsView {
         { id: 'behavior',                title: 'Behavior',                hint: 'Tool use · retrieval · request volume · daily tool mix' },
         { id: 'multi_agent',             title: 'Multi-Agent Topology',    hint: 'Sub-agent spawn and resume counts by role' },
         { id: 'model_selection_heatmap', title: 'Model Selection Heatmap', hint: 'Which tool picked which model for which agent role — (role × tool × model) request counts' },
-        { id: 'reasoning_share',         title: 'Reasoning Token Share',   hint: 'Thinking tokens as a percentage of output tokens per model — opencode + Codex' },
         { id: 'skill_activity',          title: 'Skills Activity',         hint: 'Which Codex skills fire most — implicit injection counts by skill name' },
         { id: 'hook_overhead',           title: 'Hook Overhead',           hint: 'Codex hook total and average invocation time per event type — how much latency hooks add' },
         { id: 'capabilities',            title: 'Telemetry Capabilities',  hint: 'Which metrics each emitter actually provides · availability & quality' },
@@ -65,10 +64,10 @@ class AnalyticsView {
     // Top-level categories. A report appears in exactly one group; pinned
     // reports move to the Pinned group while pinned.
     static GROUPS = [
-        { id: 'cost',        label: 'Cost',                    sub: 'Where did the tokens go?',            reports: ['cost', 'providers', 'roles', 'session_model', 'effort', 'efficiency', 'skill_outcomes'] },
+        { id: 'cost',        label: 'Cost',                    sub: 'Where did the tokens go?',            reports: ['cost', 'providers', 'roles', 'session_model', 'thinking_effort', 'efficiency', 'skill_outcomes'] },
         { id: 'latency',     label: 'Latency',                 sub: 'How fast, and where is it slow?',      reports: ['latency', 'model_performance', 'ttft', 'codex_turns', 'speed_dist'] },
         { id: 'reliability', label: 'Reliability',             sub: "What's breaking, and how often?",      reports: ['reliability', 'tool_failures', 'guardian'] },
-        { id: 'behavior',    label: 'Behaviour',               sub: 'How is it being used?',                reports: ['behavior', 'multi_agent', 'model_selection_heatmap', 'reasoning_share'] },
+        { id: 'behavior',    label: 'Behaviour',               sub: 'How is it being used?',                reports: ['behavior', 'multi_agent', 'model_selection_heatmap'] },
         { id: 'ecosystem',   label: 'Ecosystem & Diagnostics', sub: "What's the tooling actually doing?",   reports: ['skill_activity', 'hook_overhead', 'capabilities', 'project_rollup'] },
     ];
 
@@ -81,7 +80,7 @@ class AnalyticsView {
         providers: ['provider', 'mix', 'anthropic', 'openai', 'amazon', 'bedrock'],
         roles: ['role', 'sub-agent', 'subagent', 'attribution', 'routing matrix'],
         session_model: ['per-session', 'session spend', 'model pair'],
-        effort: ['effort', 'low', 'medium', 'high', 'xhigh'],
+        thinking_effort: ['effort', 'low', 'medium', 'high', 'xhigh', 'reasoning', 'thinking tokens', 'thinking'],
         efficiency: ['efficiency', 'commits', 'lines of code', 'loc', 'tokens per commit'],
         skill_outcomes: ['skill efficiency', 'with vs without'],
         latency: ['latency', 'p50', 'p95', 'p99', 'response time', 'throughput', 'context size'],
@@ -95,7 +94,6 @@ class AnalyticsView {
         behavior: ['tool use', 'retrieval', 'request volume', 'behaviour', 'daily', 'per day', 'calendar', 'tool mix'],
         multi_agent: ['multi-agent', 'topology', 'spawn', 'resume'],
         model_selection_heatmap: ['heatmap', 'selection', 'which tool picked'],
-        reasoning_share: ['reasoning', 'thinking tokens', 'thinking'],
         skill_activity: ['skill activity', 'injection', 'codex skills'],
         hook_overhead: ['hook', 'overhead', 'pre_prompt', 'stop hook'],
         capabilities: ['telemetry', 'availability', 'emitter', 'capability coverage'],
@@ -110,21 +108,20 @@ class AnalyticsView {
         providers: ['cost', 'model_performance'],
         roles: ['cost', 'session_model', 'model_selection_heatmap'],
         session_model: ['cost', 'roles'],
-        effort: ['cost', 'model_performance', 'speed_dist'],
+        thinking_effort: ['cost', 'model_performance', 'speed_dist'],
         efficiency: ['cost', 'skill_outcomes'],
         skill_outcomes: ['efficiency', 'skill_activity'],
         latency: ['model_performance', 'ttft', 'speed_dist'],
         model_performance: ['latency', 'reliability', 'model_selection_heatmap'],
         ttft: ['latency', 'speed_dist', 'model_performance'],
         codex_turns: ['behavior', 'multi_agent'],
-        speed_dist: ['latency', 'effort', 'reasoning_share'],
+        speed_dist: ['latency', 'thinking_effort'],
         reliability: ['tool_failures', 'model_performance', 'session_model'],
         tool_failures: ['reliability', 'behavior'],
         guardian: ['reliability', 'behavior'],
         behavior: ['multi_agent', 'codex_turns', 'model_selection_heatmap'],
         multi_agent: ['behavior', 'roles'],
         model_selection_heatmap: ['roles', 'providers', 'session_model'],
-        reasoning_share: ['effort', 'cost', 'speed_dist'],
         skill_activity: ['skill_outcomes', 'codex_turns'],
         hook_overhead: ['latency', 'capabilities'],
         capabilities: ['hook_overhead', 'model_performance'],
@@ -143,6 +140,8 @@ class AnalyticsView {
         recent_errors: 'reliability',
         session_quality: 'reliability',
         daily_tool_mix: 'behavior',
+        effort: 'thinking_effort',
+        reasoning_share: 'thinking_effort',
     };
 
     constructor(apiClient) {
@@ -1108,7 +1107,7 @@ class AnalyticsView {
             behavior: () => this._loadBehaviorSection(),
             capabilities: () => this._loadCapabilitiesSection(),
             model_performance: () => this._loadModelPerformanceSection(),
-            effort: () => this._loadEffortSection(),
+            thinking_effort: () => this._loadThinkingEffortSection(),
             efficiency: () => this._loadEfficiencySection(),
             ttft: () => this._loadTtftSection(),
             project_rollup: () => this._loadProjectRollupSection(),
@@ -1119,7 +1118,6 @@ class AnalyticsView {
             session_model: () => this._loadSessionModelSection(),
             speed_dist: () => this._loadSpeedDistSection(),
             hook_overhead: () => this._loadHookOverheadSection(),
-            reasoning_share: () => this._loadReasoningShareSection(),
             skill_activity: () => this._loadSkillActivitySection(),
             skill_outcomes: () => this._loadSkillOutcomesSection(),
             model_selection_heatmap: () => this._loadModelSelectionHeatmapSection(),
@@ -3665,48 +3663,75 @@ class AnalyticsView {
 
     // ── New insight section loaders (#157–#164) ──────────────────────────
 
-    async _loadEffortSection() {
-        this._setSectionLoading('effort');
-        try {
-            const data = await this.api.getEffortBreakdown(this._baseParams());
-            const rows = data.rows || [];
-            if (!rows.length) {
-                this._setSectionBody('effort', '<div class="empty-state-hint">No effort-level data in this window. Try a wider time range.</div>');
-                this.loadedSections.add('effort');
-                return;
-            }
-            // Group by effort level for a summary table
-            const byEffort = {};
-            for (const r of rows) {
-                if (!byEffort[r.effort]) byEffort[r.effort] = 0;
-                if (r.token_type === 'input' || r.token_type === 'output') byEffort[r.effort] += r.tokens;
-            }
-            const effortOrder = ['low', 'medium', 'high', 'xhigh', '(none)'];
-            const sortedEfforts = Object.keys(byEffort).sort((a, b) =>
-                (effortOrder.indexOf(a) + 1 || 99) - (effortOrder.indexOf(b) + 1 || 99));
-            const total = Object.values(byEffort).reduce((s, v) => s + v, 0);
-            let html = '<div class="analytics-table-wrap"><table class="analytics-table"><thead><tr><th>Effort</th><th>Tokens (input+output)</th><th>Share</th></tr></thead><tbody>';
-            for (const e of sortedEfforts) {
-                const pct = total > 0 ? (byEffort[e] / total * 100).toFixed(1) : '0.0';
-                html += `<tr><td>${this._esc(e)}</td><td>${Number(byEffort[e]).toLocaleString()}</td><td>${pct}%</td></tr>`;
-            }
-            html += '</tbody></table></div>';
-            // Also add per-model table
-            const modelTotals = {};
-            for (const r of rows) {
-                const key = r.model;
-                if (!modelTotals[key]) modelTotals[key] = 0;
-                if (r.token_type === 'input' || r.token_type === 'output') modelTotals[key] += r.tokens;
-            }
-            const topModels = Object.entries(modelTotals).sort((a, b) => b[1] - a[1]).slice(0, 10);
-            html += '<h4 style="margin-top:1rem">By model</h4><div class="analytics-table-wrap"><table class="analytics-table"><thead><tr><th>Model</th><th>Tokens</th></tr></thead><tbody>';
-            for (const [m, t] of topModels) html += `<tr><td>${this._esc(m)}</td><td>${Number(t).toLocaleString()}</td></tr>`;
-            html += '</tbody></table></div>';
-            this._setSectionBody('effort', html);
-            this.loadedSections.add('effort');
-        } catch (err) {
-            this._setSectionError('effort', err);
+    async _loadThinkingEffortSection() {
+        this._setSectionLoading('thinking_effort');
+        const params = this._baseParams();
+        // Two per-population sections (#224): Claude Code effort levels and
+        // opencode/Codex reasoning share. Different emitters, so each
+        // section states its population and degrades independently.
+        const [effort, reasoning] = await Promise.all([
+            this.api.getEffortBreakdown(params).catch(err => ({ __error: err })),
+            this.api.getReasoningShare(params).catch(err => ({ __error: err })),
+        ]);
+        this.loadedSections.add('thinking_effort');
+        this._setSectionBody('thinking_effort',
+            this._renderThinkingEffortClaudeBlock(effort) +
+            this._renderThinkingEffortReasoningBlock(reasoning));
+    }
+
+    _renderThinkingEffortClaudeBlock(data) {
+        if (data && data.__error) {
+            return `<div class="error-message">Couldn't load effort breakdown: ${this._esc(data.__error.message)}</div>`;
         }
+        const rows = (data && data.rows) || [];
+        if (!rows.length) {
+            return '<div class="empty-state-hint">No effort-level data in this window. Try a wider time range.</div>';
+        }
+        return this._buildEffortBreakdown(rows);
+    }
+
+    _renderThinkingEffortReasoningBlock(data) {
+        if (data && data.__error) {
+            return `<div class="error-message">Couldn't load reasoning share: ${this._esc(data.__error.message)}</div>`;
+        }
+        const models = (data && Array.isArray(data.models)) ? data.models : [];
+        const effort = (data && Array.isArray(data.effort)) ? data.effort : [];
+        if (!models.length && !effort.length) {
+            return '<div class="empty-state-hint">No reasoning/thinking token data in this window. Requires opencode or Codex with extended thinking enabled.</div>';
+        }
+        // Shared with the Cost report's card — one renderer, one look.
+        return this._buildReasoningShare(data);
+    }
+
+    _buildEffortBreakdown(rows) {
+        // Group by effort level for a summary table
+        const byEffort = {};
+        for (const r of rows) {
+            if (!byEffort[r.effort]) byEffort[r.effort] = 0;
+            if (r.token_type === 'input' || r.token_type === 'output') byEffort[r.effort] += r.tokens;
+        }
+        const effortOrder = ['low', 'medium', 'high', 'xhigh', '(none)'];
+        const sortedEfforts = Object.keys(byEffort).sort((a, b) =>
+            (effortOrder.indexOf(a) + 1 || 99) - (effortOrder.indexOf(b) + 1 || 99));
+        const total = Object.values(byEffort).reduce((s, v) => s + v, 0);
+        let html = '<h3>Effort levels <span class="dim">(Claude Code)</span></h3><div class="analytics-table-wrap"><table class="analytics-table"><thead><tr><th>Effort</th><th>Tokens (input+output)</th><th>Share</th></tr></thead><tbody>';
+        for (const e of sortedEfforts) {
+            const pct = total > 0 ? (byEffort[e] / total * 100).toFixed(1) : '0.0';
+            html += `<tr><td>${this._esc(e)}</td><td>${Number(byEffort[e]).toLocaleString()}</td><td>${pct}%</td></tr>`;
+        }
+        html += '</tbody></table></div>';
+        // Also add per-model table
+        const modelTotals = {};
+        for (const r of rows) {
+            const key = r.model;
+            if (!modelTotals[key]) modelTotals[key] = 0;
+            if (r.token_type === 'input' || r.token_type === 'output') modelTotals[key] += r.tokens;
+        }
+        const topModels = Object.entries(modelTotals).sort((a, b) => b[1] - a[1]).slice(0, 10);
+        html += '<h4 style="margin-top:1rem">By model</h4><div class="analytics-table-wrap"><table class="analytics-table"><thead><tr><th>Model</th><th>Tokens</th></tr></thead><tbody>';
+        for (const [m, t] of topModels) html += `<tr><td>${this._esc(m)}</td><td>${Number(t).toLocaleString()}</td></tr>`;
+        html += '</tbody></table></div>';
+        return html;
     }
 
     async _loadEfficiencySection() {
@@ -4069,58 +4094,6 @@ class AnalyticsView {
             this.loadedSections.add('hook_overhead');
         } catch (err) {
             this._setSectionError('hook_overhead', err);
-        }
-    }
-
-    async _loadReasoningShareSection() {
-        this._setSectionLoading('reasoning_share');
-        try {
-            const data = await this.api.getReasoningShare(this._baseParams());
-            const models = data.models || [];
-            const effort = data.effort || [];
-            if (!models.length && !effort.length) {
-                this._setSectionBody('reasoning_share', '<div class="empty-state-hint">No reasoning/thinking token data in this window. Requires opencode or Codex with extended thinking enabled.</div>');
-                this.loadedSections.add('reasoning_share');
-                return;
-            }
-            const fmtTok = v => v != null ? Number(v).toLocaleString() : '—';
-            let html = '';
-            if (models.length) {
-                html += '<h4 class="analytics-sub-heading">By model</h4>';
-                html += '<div class="analytics-table-wrap"><table class="analytics-table"><thead><tr>' +
-                    '<th>Model</th><th>Reasoning tokens</th><th>Output tokens</th><th>Share %</th><th>Est. cost</th>' +
-                    '</tr></thead><tbody>';
-                for (const m of models) {
-                    const share = m.share_pct != null ? `${m.share_pct.toFixed(1)}%` : '—';
-                    const cost = m.cost_usd != null ? `$${m.cost_usd.toFixed(4)}` : '—';
-                    html += `<tr>
-                        <td>${this._esc(m.model)}</td>
-                        <td>${fmtTok(m.reasoning_tokens)}</td>
-                        <td>${fmtTok(m.output_tokens)}</td>
-                        <td>${share}</td>
-                        <td>${cost}</td>
-                    </tr>`;
-                }
-                html += '</tbody></table></div>';
-            }
-            if (effort.length) {
-                html += '<h4 class="analytics-sub-heading">By effort level (Codex)</h4>';
-                html += '<div class="analytics-table-wrap"><table class="analytics-table"><thead><tr>' +
-                    '<th>Effort level</th><th>Reasoning tokens</th><th>Calls</th>' +
-                    '</tr></thead><tbody>';
-                for (const e of effort) {
-                    html += `<tr>
-                        <td>${this._esc(e.effort)}</td>
-                        <td>${fmtTok(e.reasoning_tokens)}</td>
-                        <td>${Number(e.calls).toLocaleString()}</td>
-                    </tr>`;
-                }
-                html += '</tbody></table></div>';
-            }
-            this._setSectionBody('reasoning_share', html);
-            this.loadedSections.add('reasoning_share');
-        } catch (err) {
-            this._setSectionError('reasoning_share', err);
         }
     }
 
