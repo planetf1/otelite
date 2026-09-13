@@ -23,6 +23,14 @@ name: Bump version and tag
 #   main carries notes a push did not release; with no notes it exits
 #   cleanly.
 #
+#   Optional secret: RELEASE_PR_TOKEN — a fine-grained PAT of the owner
+#   account scoped to this repo (Contents + Pull requests, read/write),
+#   used ONLY to author the release PR (#202): app-authored PRs park
+#   every pull_request run in action_required. Without it the workflow
+#   falls back to GITHUB_TOKEN (one human approval step per release).
+#   The FGP cannot bypass branch protection — it is a collaborator
+#   credential, not an override.
+#
 #   Incident recovery (the only place override belongs): if a release
 #   PR gets stuck, re-run the failed jobs (Actions → run → Re-run
 #   failed) and merge by hand (`gh pr merge <n> --squash
@@ -153,9 +161,19 @@ jobs:
         if: steps.gate.outputs.proceed == 'true'
         env:
           NEW_VERSION: ${{ steps.bump.outputs.new }}
+          # #202: author the PR with the owner's repo-scoped fine-grained
+          # token when configured — an app-authored PR (github-actions[bot])
+          # parks every pull_request run in action_required until a human
+          # approves each. The FGP cannot bypass branch protection, so it
+          # is a collaborator credential, not an override. Until the secret
+          # exists, GH_TOKEN stays the workflow token (legacy behaviour).
+          RELEASE_PR_TOKEN: ${{ secrets.RELEASE_PR_TOKEN }}
         run: |
           set -euo pipefail
           branch="chore/release-v${NEW_VERSION}"
+          if [[ -n "${RELEASE_PR_TOKEN:-}" ]]; then
+            export GH_TOKEN="$RELEASE_PR_TOKEN"
+          fi
           git checkout -q -b "$branch"
           git add Cargo.toml Cargo.lock CHANGELOG.md changelog/
           git commit -m "chore: release v${NEW_VERSION}"
