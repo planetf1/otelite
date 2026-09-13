@@ -11,6 +11,17 @@ have to work around), not implementation detail.
 
 ## [Unreleased]
 
+### Internal
+
+- Release pipeline hardened after three consecutive stalls (v0.1.126/
+  127/ 128): the Bump-and-tag wait loop now self-heals orphaned
+  PR-only checks (force-pushes no longer idle the release out of its
+  timeout), re-triggered release runs adopt the open PR instead of
+  failing, the release PR can be authored with an optional owner token
+  so its checks no longer park in action_required, and the Coverage
+  job's flaky test startup deadlines are tolerant of instrumented
+  builds
+
 ## [0.1.128] - 2026-09-12
 
 ### Changed
