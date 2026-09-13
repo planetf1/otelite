@@ -181,11 +181,20 @@ jobs:
           # commit (new timestamp) onto the branch the failed run left.
           git push -q -f origin "$branch"
           body=$(printf 'Automatic release PR opened by the *Bump version and tag* workflow.\n\nCarries the version bump (Cargo.toml / Cargo.lock) and the CHANGELOG rotation for v%s. It merges by itself once the required checks pass — no manual action needed.\n\nIf a required check fails spuriously it is re-run once automatically; if it fails again, re-run it (Actions → run → Re-run failed jobs) and the merge will proceed, or merge by hand (gh pr merge <n> --squash --delete-branch), then tag the merged commit and dispatch release.yml.' "$NEW_VERSION")
-          url=$(gh pr create --title "chore: release v${NEW_VERSION}" --body "$body")
+          # #208: idempotent — while a release PR for the branch is open
+          # (back-to-back pushes with release notes, manual re-runs),
+          # adopt the existing PR instead of failing at 'gh pr create'.
+          # The git push -f above already makes the branch itself
+          # idempotent (the v0.1.125 fix); this makes the PR step match.
+          if url=$(gh pr list --head "$branch" --state open --json url -q '.[0].url' 2>/dev/null) && [[ -n "$url" ]]; then
+            echo "release PR already open: $url"
+          else
+            url=$(gh pr create --title "chore: release v${NEW_VERSION}" --body "$body")
+          fi
           pr_number=${url##*/}
           echo "pr_number=$pr_number" >> "$GITHUB_OUTPUT"
           echo "branch=$branch" >> "$GITHUB_OUTPUT"
-          echo "opened $url"
+          echo "using $url"
 
       - name: Wait for checks, rebase if stale, squash-merge
         id: merge
