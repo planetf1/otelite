@@ -260,6 +260,18 @@ jobs:
                   if [[ "$in_progress" -eq 0 && "$self_healed" -eq 0 ]]; then
                     required=$(gh api "repos/${GITHUB_REPOSITORY}/branches/main/protection" \
                       -q '.required_status_checks.contexts[]?' 2>/dev/null || echo "")
+                    if [[ -z "$required" ]]; then
+                      # Reading branch protection requires the admin scope,
+                      # which the workflow token does not have (403) — fall
+                      # back to the configured required contexts. Keep this
+                      # list in sync with the branch protection rule on
+                      # main when it changes.
+                      required=$(printf '%s\n' \
+                        'Changelog Entry' 'Coverage' 'Dependency Audit' 'Dependency Check' \
+                        'Documentation' 'Flake Check' 'Format Check' 'License Check' \
+                        'Lint (Clippy)' 'SAST Scan' 'Secret Detection' 'Security Advisories' \
+                        'Security Audit' 'Test (macos-latest)' 'Test (ubuntu-latest)')
+                    fi
                     present=$(jq -r '.[].name' <<<"$runs" | sort -u)
                     missing=""
                     # Line-based iteration: context names contain spaces
