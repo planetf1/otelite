@@ -3,6 +3,9 @@ name: Changelog entry
 on:
   pull_request:
     branches: [main, develop]
+  # #207: the Bump-and-tag wait loop can self-dispatch this workflow on the
+  # release branch when a force-push orphans the PR-only check runs.
+  workflow_dispatch:
 
 permissions:
   contents: read

@@ -28,6 +28,18 @@ name: Bump version and tag
 #   failed) and merge by hand (`gh pr merge <n> --squash
 #   --delete-branch`), tag the merged commit and dispatch release.yml —
 #   or push the tagged commit to main with owner credentials.
+#
+#   Orphaned PR-only checks (v0.1.126 2026-09-10/11, and again on
+#   v0.1.127/v0.1.128 2026-09-11/12): a force-push to the release branch
+#   supersedes the head, and raw pushes do not re-fire pull_request
+#   events — so PR-only workflows (Changelog Entry, Flake Check) had no
+#   check run on the current head and the wait loop idled out its 50
+#   iterations. The wait loop now detects required contexts missing on
+#   the head (nothing in flight) and dispatches the owning workflow once
+#   per orphaning event (self_healed latch, re-armed after each rebase
+#   force-push); changelog.yml carries a workflow_dispatch trigger for
+#   exactly this. Manual recovery (dispatch + close/reopen) remains the
+#   fallback if the self-heal is insufficient.
 
 on:
   push:
@@ -167,6 +179,7 @@ jobs:
           set -uo pipefail
           merged=0
           reran=0
+          self_healed=0
           for i in $(seq 1 50); do
             status=$(gh pr view "$PR_NUMBER" --json mergeStateStatus -q .mergeStateStatus 2>/dev/null || echo UNKNOWN)
             case "$status" in
@@ -188,6 +201,9 @@ jobs:
                   exit 1
                 fi
                 git push -q -f origin "$BRANCH"
+                # The force-push orphans the PR-only check runs again
+                # (#207) — re-arm the self-heal latch.
+                self_healed=0
                 ;;
               DIRTY)
                 echo "merge conflict on $BRANCH — release needs manual intervention"
@@ -200,9 +216,55 @@ jobs:
                 head_oid=$(gh pr view "$PR_NUMBER" --json headRefOid -q .headRefOid 2>/dev/null || echo "")
                 if [[ -n "$head_oid" ]]; then
                   runs=$(gh api "repos/${GITHUB_REPOSITORY}/commits/${head_oid}/check-runs" \
-                    -q '[.check_runs[] | {status: .status, conclusion: (.conclusion // "none")}]' 2>/dev/null || echo "[]")
+                    -q '[.check_runs[] | {status: .status, conclusion: (.conclusion // "none"), name: .name}]' 2>/dev/null || echo "[]")
                   in_progress=$(jq '[.[] | select(.status != "completed")] | length' <<<"$runs")
                   settled_failures=$(jq '[.[] | select(.status == "completed" and (.conclusion | ascii_downcase | IN("failure","error","timed_out","cancelled")))] | length' <<<"$runs")
+                  # Self-heal for orphaned checks (#207, incidents on
+                  # v0.1.126/127/128): a force-push to the release branch
+                  # (re-run or rebase) supersedes the head, and raw pushes
+                  # do not re-fire pull_request events — PR-only workflows
+                  # (changelog.yml, nix.yml) then have no check run on the
+                  # current head at all, and the loop waits out its 50
+                  # iterations on checks that will never appear. With
+                  # nothing in flight, dispatch the owning workflow for
+                  # every required context missing on the head. Bounded by
+                  # the self_healed latch (re-armed after each rebase
+                  # force-push, which orphans again).
+                  if [[ "$in_progress" -eq 0 && "$self_healed" -eq 0 ]]; then
+                    required=$(gh api "repos/${GITHUB_REPOSITORY}/branches/main/protection" \
+                      -q '.required_status_checks.contexts[]?' 2>/dev/null || echo "")
+                    present=$(jq -r '.[].name' <<<"$runs" | sort -u)
+                    missing=""
+                    # Line-based iteration: context names contain spaces
+                    # ("Changelog Entry") — word splitting would break them.
+                    while IFS= read -r ctx; do
+                      [[ -z "$ctx" ]] && continue
+                      grep -qx -- "$ctx" <<<"$present" || missing+="$ctx"$'\n'
+                    done <<< "$required"
+                    if [[ -n "$missing" ]]; then
+                      dispatched_any=0
+                      while IFS= read -r ctx; do
+                        [[ -z "$ctx" ]] && continue
+                        wf=""
+                        case "$ctx" in
+                          "Changelog Entry") wf="changelog.yml" ;;
+                          "Flake Check"|"Flake Inputs Changed") wf="nix.yml" ;;
+                          "Coverage"|"Documentation"|"Format Check"|"Lint (Clippy)"|"Test (macos-latest)"|"Test (ubuntu-latest)") wf="ci.yml" ;;
+                          "Dependency Audit"|"Dependency Check"|"License Check"|"SAST Scan"|"Secret Detection"|"Security Advisories"|"Security Audit") wf="security.yml" ;;
+                        esac
+                        if [[ -n "$wf" ]]; then
+                          echo "required context '$ctx' has no check run on head — dispatching $wf on $BRANCH"
+                          gh workflow run "$wf" --ref "$BRANCH" --repo "${GITHUB_REPOSITORY}" && dispatched_any=1 || true
+                        else
+                          echo "required context '$ctx' missing on head, no known dispatchable workflow — needs manual intervention"
+                        fi
+                      done <<< "$missing"
+                      if [[ "$dispatched_any" -eq 1 ]]; then
+                        self_healed=1
+                        echo "dispatched — waiting for the fresh runs to settle"
+                      fi
+                    fi
+                  fi
                   if [[ "$in_progress" -eq 0 && "$settled_failures" -gt 0 ]]; then
                     if [[ "$reran" -eq 0 ]]; then
                       echo "settled failure — re-running failed jobs once, then waiting again"
