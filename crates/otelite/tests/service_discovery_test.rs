@@ -74,7 +74,7 @@ fn test_discovery_finds_serve_without_pid_file() {
         .unwrap();
     let pid = child.id();
 
-    wait_for_port(grpc_port, Instant::now() + Duration::from_secs(15));
+    wait_for_port(grpc_port, Instant::now() + Duration::from_secs(45));
 
     // The regression itself: no PID file, yet the listener is discovered
     // and the PID matches the serve process.
@@ -197,8 +197,8 @@ fn test_start_refuses_when_daemon_has_no_pid_file() {
         .stderr(std::process::Stdio::null())
         .spawn()
         .unwrap();
-    wait_for_port(grpc_port, Instant::now() + Duration::from_secs(15));
-    wait_for_otelite_attribution(grpc_port, Instant::now() + Duration::from_secs(15));
+    wait_for_port(grpc_port, Instant::now() + Duration::from_secs(45));
+    wait_for_otelite_attribution(grpc_port, Instant::now() + Duration::from_secs(45));
 
     // `start` from a different (empty) data dir: no PID file to trip
     // on, only port discovery can find the daemon. It sees the same OTLP
@@ -397,7 +397,7 @@ fn test_serve_exits_gracefully_on_sigterm() {
         .spawn()
         .unwrap();
 
-    wait_for_port(dashboard_port, Instant::now() + Duration::from_secs(15));
+    wait_for_port(dashboard_port, Instant::now() + Duration::from_secs(45));
 
     let started = Instant::now();
     nix::sys::signal::kill(
@@ -484,7 +484,7 @@ fn test_serve_writes_rotating_log_file() {
         .spawn()
         .unwrap();
 
-    wait_for_port(dashboard_port, Instant::now() + Duration::from_secs(15));
+    wait_for_port(dashboard_port, Instant::now() + Duration::from_secs(45));
 
     let dated_log = |dir: &std::path::Path| -> Option<std::path::PathBuf> {
         std::fs::read_dir(dir)
@@ -603,10 +603,12 @@ fn test_serve_writes_rotating_log_file() {
     // The rotating appender names its file otelite.log.YYYY-MM-DD (the M17
     // regression itself) and a background worker writes the lines into it.
     // The worker is normally fast, but a loaded build sandbox may starve it
-    // for seconds; poll for live content, then fall back to the shutdown
-    // flush (the appender guard drops on clean exit) before failing.
+    // for seconds — and the llvm-cov Coverage job runs the instrumented
+    // binary, which is slower still (#209); poll for live content, then
+    // fall back to the shutdown flush (the appender guard drops on clean
+    // exit) before failing.
     let mut live_len = 0u64;
-    let deadline = Instant::now() + Duration::from_secs(15);
+    let deadline = Instant::now() + Duration::from_secs(45);
     while Instant::now() < deadline {
         live_len = log_len(&data_dir);
         if live_len > 0 {
