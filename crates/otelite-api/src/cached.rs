@@ -17,7 +17,7 @@ use std::{
 };
 
 use axum::{
-    body::{to_bytes, Body},
+    body::Body,
     extract::Request,
     http::{Method, StatusCode},
     middleware::Next,
@@ -27,7 +27,8 @@ use axum::{
 use crate::cache::LruCache;
 
 /// Maximum response body size (bytes) that will be cached. Analytics
-/// responses are small JSON; anything bigger is passed through uncached.
+/// responses are small JSON; anything bigger is still served, uncached
+/// (prefix + continuing stream, #197).
 const MAX_CACHE_BODY_BYTES: usize = 8 * 1024 * 1024;
 
 /// How long a dedup waiter will block on an in-flight request before
@@ -37,6 +38,81 @@ const DEDUP_WAIT_TIMEOUT: Duration = Duration::from_secs(120);
 /// A (status, content-type, body) triple recovered from an in-flight or
 /// cached response.
 type CachedBody = (u16, Option<String>, Vec<u8>);
+
+/// Outcome of buffering a response body for the cache.
+enum CollectedBody {
+    /// The whole body fit under the cache limit.
+    Fitted(bytes::Bytes),
+    /// The body exceeded the limit: a stream of the FULL body (buffered
+    /// prefix followed by the continuing original stream). Return it to
+    /// the client verbatim, uncached.
+    Oversized(futures_util::stream::BoxStream<'static, Result<bytes::Bytes, axum::Error>>),
+}
+
+/// A `Stream` adapter for axum's `Body`, which in axum 0.8 implements
+/// only `http_body::Body` (no `Stream` impl). Yields data frames as
+/// `Bytes`; HTTP trailers, if any, are dropped (JSON responses do not
+/// use them).
+struct BodyStream(Body);
+
+impl futures_util::Stream for BodyStream {
+    type Item = Result<bytes::Bytes, axum::Error>;
+
+    fn poll_next(
+        mut self: std::pin::Pin<&mut Self>,
+        cx: &mut std::task::Context<'_>,
+    ) -> std::task::Poll<Option<Self::Item>> {
+        use http_body::Body as _;
+        match std::pin::Pin::new(&mut self.0).poll_frame(cx) {
+            std::task::Poll::Pending => std::task::Poll::Pending,
+            std::task::Poll::Ready(None) => std::task::Poll::Ready(None),
+            std::task::Poll::Ready(Some(Err(err))) => {
+                std::task::Poll::Ready(Some(Err(axum::Error::new(err))))
+            },
+            std::task::Poll::Ready(Some(Ok(frame))) => match frame.into_data() {
+                Ok(bytes) => std::task::Poll::Ready(Some(Ok(bytes))),
+                // Trailing-headers frame (if any) — data is complete,
+                // drop it.
+                Err(_trailers) => std::task::Poll::Ready(None),
+            },
+        }
+    }
+}
+
+/// Buffer a response body up to `limit` bytes for the response cache.
+///
+/// axum's `to_bytes` consumes the body and drops it on overflow, which
+/// turned every oversize whitelisted response (e.g. a wide-window
+/// `/api/metrics/export`) into a 500 (#197). Instead, once the limit is
+/// hit this hands back a stream of the full body (buffered prefix, the
+/// current chunk's tail, then the remaining frames) so the caller can
+/// serve it uncached. Memory stays bounded at `limit` plus one chunk.
+async fn collect_for_cache(body: Body, limit: usize) -> Result<CollectedBody, axum::Error> {
+    use futures_util::{Stream, StreamExt};
+    let mut buf: Vec<u8> = Vec::new();
+    let mut frames = BodyStream(body);
+    loop {
+        let item = std::future::poll_fn(|cx| std::pin::Pin::new(&mut frames).poll_next(cx)).await;
+        let chunk = item.transpose().map_err(axum::Error::new)?;
+        let Some(mut chunk) = chunk else {
+            return Ok(CollectedBody::Fitted(bytes::Bytes::from(buf)));
+        };
+        let room = limit.saturating_sub(buf.len());
+        if chunk.len() <= room {
+            buf.extend_from_slice(&chunk);
+            continue;
+        }
+        // split_to mutates in place: returns the first `room` bytes and
+        // leaves the tail in `chunk`.
+        let head = chunk.split_to(room);
+        buf.extend_from_slice(&head);
+        let tail = chunk;
+        let prefix = bytes::Bytes::from(buf);
+        let full: futures_util::stream::BoxStream<'static, Result<bytes::Bytes, axum::Error>> =
+            Box::pin(futures_util::stream::iter([Ok(prefix), Ok(tail)]).chain(frames));
+        return Ok(CollectedBody::Oversized(full));
+    }
+}
 
 /// Bookkeeping for one in-flight request that duplicates may await.
 struct InFlight {
@@ -146,6 +222,11 @@ impl CacheState {
             Some(Bucket::Sessions)
         } else if path == "/api/metrics/names" {
             Some(Bucket::Names)
+        } else if path == "/api/metrics/export" {
+            // #197: exports are large one-shot payloads — never cache, and
+            // never buffer for the cache (the 8 MB buffer limit used to
+            // turn every oversize export into a 500).
+            None
         } else if path == "/api/metrics" || path.starts_with("/api/metrics/") {
             Some(Bucket::Metrics)
         } else if path == "/api/resource-keys" {
@@ -301,8 +382,8 @@ pub async fn cache_handler(
     let status = response.status();
     let response = if status.is_success() {
         let (parts, body) = response.into_parts();
-        match to_bytes(body, MAX_CACHE_BODY_BYTES).await {
-            Ok(bytes) => {
+        match collect_for_cache(body, MAX_CACHE_BODY_BYTES).await {
+            Ok(CollectedBody::Fitted(bytes)) => {
                 let text = String::from_utf8_lossy(&bytes).into_owned();
                 // Only cache valid JSON; pass anything else through.
                 if serde_json::from_str::<serde_json::Value>(&text).is_ok() {
@@ -317,17 +398,30 @@ pub async fn cache_handler(
                     Some((status.as_u16(), content_type, bytes.to_vec()));
                 Response::from_parts(parts, Body::from(bytes))
             },
+            Ok(CollectedBody::Oversized(stream)) => {
+                // #197: a whitelisted endpoint can legitimately grow past
+                // the cache limit (wide-window exports, large genai
+                // rollups). Serve the full response — one stream, original
+                // status — uncached, instead of failing it.
+                tracing::debug!(
+                    "Serving {} response uncached (body > {} bytes)",
+                    key,
+                    MAX_CACHE_BODY_BYTES
+                );
+                *entry.response.lock().expect("poisoned") = None;
+                Response::from_parts(parts, Body::from_stream(stream))
+            },
             Err(err) => {
-                // Body too large or unreadable: unblock waiters, don't cache.
-                // The body was consumed while buffering, so the only honest
-                // response left is an error.
+                // The body stream genuinely failed (not a size issue): the
+                // bytes are lost, so the only honest response left is an
+                // error.
                 *entry.response.lock().expect("poisoned") = None;
                 tracing::debug!("Not caching {} response: {}", key, err);
                 Response::builder()
                     .status(StatusCode::INTERNAL_SERVER_ERROR)
                     .header(axum::http::header::CONTENT_TYPE, "application/json")
                     .body(Body::from(format!(
-                        r#"{{"error":"response too large to cache: {}"}}"#,
+                        r#"{{"error":"failed to read response body: {}"}}"#,
                         err
                     )))
                     .expect("valid error response")
@@ -396,6 +490,19 @@ mod tests {
         );
         assert_eq!(CacheState::policy("/api/genai2/usage"), None);
         assert_eq!(CacheState::policy("/api/metricstore"), None);
+    }
+
+    #[test]
+    fn test_policy_excludes_metrics_export() {
+        // #197: exports are one-shot payloads that can legitimately
+        // exceed the cache limit — never cache (or buffer for the cache).
+        assert_eq!(CacheState::policy("/api/metrics/export"), None);
+        // Regular metrics queries still cache.
+        assert_eq!(CacheState::policy("/api/metrics"), Some(Bucket::Metrics));
+        assert_eq!(
+            CacheState::policy("/api/metrics/timeseries/whatever"),
+            Some(Bucket::Metrics)
+        );
     }
 
     #[test]
@@ -575,6 +682,51 @@ mod tests {
     /// entry. Before the fix the entry lingered and every duplicate —
     /// including waiters already parked on it — had to wait out the
     /// full 120 s DEDUP_WAIT_TIMEOUT before running its own copy.
+    #[tokio::test]
+    async fn test_oversize_response_served_uncached_not_500() {
+        // #197: a whitelisted response over MAX_CACHE_BODY_BYTES must be
+        // served in full with its original status — not a
+        // "response too large to cache" 500 — and not cached.
+        let count = Arc::new(AtomicUsize::new(0));
+        let c = Arc::clone(&count);
+        let app = Router::new()
+            .route(
+                "/api/genai/usage",
+                get(move |_req: axum::extract::Request| async move {
+                    let payload = "x".repeat(MAX_CACHE_BODY_BYTES + 1024);
+                    let n = c.fetch_add(1, Ordering::SeqCst) + 1;
+                    Json(serde_json::json!({ "handler_runs": n, "data": payload }))
+                }),
+            )
+            .layer(axum::middleware::from_fn_with_state(
+                CacheState::new(),
+                cache_handler,
+            ));
+
+        let first = app
+            .clone()
+            .oneshot(get_request("/api/genai/usage?start=1&end=2"))
+            .await
+            .unwrap();
+        assert_eq!(first.status(), StatusCode::OK, "oversize must not 500");
+        let body = body_text(first).await;
+        assert!(
+            body.len() > MAX_CACHE_BODY_BYTES,
+            "full body must be served: {} bytes",
+            body.len()
+        );
+        assert!(body.contains(&"x".repeat(MAX_CACHE_BODY_BYTES + 1024)));
+
+        // Not cached: a second identical request re-runs the handler.
+        let second = app
+            .clone()
+            .oneshot(get_request("/api/genai/usage?start=1&end=2"))
+            .await
+            .unwrap();
+        assert_eq!(second.status(), StatusCode::OK);
+        assert_eq!(count.load(Ordering::SeqCst), 2);
+    }
+
     #[tokio::test]
     async fn test_cancelled_owner_cleans_up_in_flight_entry() {
         let count = Arc::new(AtomicUsize::new(0));

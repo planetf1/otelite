@@ -24,6 +24,12 @@ tokio = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 
+# Response-body buffering for the cache middleware (bounded collect with
+# uncached passthrough on overflow, #197)
+bytes = "1"
+futures-util = { version = "0.3", default-features = false, features = ["std", "alloc"] }
+http-body = "1"
+
 # OpenAPI documentation
 utoipa = { version = "4", features = ["axum_extras"] }
 utoipa-swagger-ui = { version = "7", features = ["axum"] }

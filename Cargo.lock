@@ -2189,8 +2189,11 @@ version = "0.1.128"
 dependencies = [
  "async-trait",
  "axum 0.8.9",
+ "bytes",
  "chrono",
  "chrono-tz",
+ "futures-util",
+ "http-body",
  "http-body-util",
  "mime_guess",
  "otelite-core",

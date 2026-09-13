@@ -11,6 +11,14 @@ have to work around), not implementation detail.
 
 ## [Unreleased]
 
+### Fixed
+
+- Metrics export no longer fails with a 500 on large time ranges:
+  `GET /api/metrics/export` responses bigger than the 8 MB cache buffer
+  are now served uncached (streamed with the original status) instead of
+  being refused, and the export endpoint is excluded from the response
+  cache altogether (#197)
+
 ### Internal
 
 - Release pipeline hardened after three consecutive stalls (v0.1.126/
