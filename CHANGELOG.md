@@ -18,6 +18,13 @@ have to work around), not implementation detail.
   are now served uncached (streamed with the original status) instead of
   being refused, and the export endpoint is excluded from the response
   cache altogether (#197)
+- The Traces list no longer depends on the SQLite query planner picking a
+  favourable plan: selecting the newest traces always walks the start-time
+  index newest-first and stops at the requested number, instead of a query
+  whose plan could (depending on planner statistics) scan and sort the
+  entire time window before returning the first row — which made a 1-day
+  trace list take 2.7 s warm / 11.7 s cold on the 35 GB database (#196).
+  Window semantics are unchanged, pinned by a regression test
 
 ### Internal
 

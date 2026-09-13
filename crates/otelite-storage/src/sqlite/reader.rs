@@ -185,12 +185,23 @@ pub fn query_spans_for_trace_list(
         } else if trace_limit == 0 {
             (Vec::new(), Vec::new())
         } else {
-            let mut sql = String::from("SELECT trace_id FROM spans WHERE 1=1");
+            let mut sql = String::from("SELECT trace_id, start_time FROM spans WHERE 1=1");
             let mut scan_params: Vec<Box<dyn rusqlite::ToSql>> = Vec::new();
-            if let Some(start) = params.start_time {
-                sql.push_str(" AND start_time >= ?");
-                scan_params.push(Box::new(start));
-            }
+            // The window's LOWER bound is deliberately NOT in the WHERE
+            // clause. With `start_time >= ?` present, the plan for this
+            // shape is statistics-dependent: under some ANALYZE states
+            // the planner picks a forward range scan over the whole
+            // window plus a full sort before the first row is produced
+            // (observed on the live 35 GB DB on 2026-09-08: 1.9 s
+            // measured; 2.7 s warm / 11.7 s cold via the API), which
+            // makes the early exit below useless. Without the lower
+            // bound the only viable plan is a pure reverse walk of
+            // idx_spans_start_time — stable across statistics — and the
+            // walk stops at the Nth distinct trace: a few hundred rows
+            // instead of the whole window. Window semantics are
+            // preserved: the walk is start_time DESC, so the first row
+            // below the window start is the last row any selected trace
+            // could qualify with; spans older than that are never seen.
             if let Some(end) = params.end_time {
                 sql.push_str(" AND end_time <= ?");
                 scan_params.push(Box::new(end));
@@ -207,16 +218,27 @@ pub fn query_spans_for_trace_list(
                 .map_err(|e| StorageError::QueryError(format!("Failed to prepare query: {}", e)))?;
             let refs: Vec<&dyn rusqlite::ToSql> = scan_params.iter().map(|p| p.as_ref()).collect();
             let rows = stmt
-                .query_map(refs.as_slice(), |row| row.get::<_, String>(0))
+                .query_map(refs.as_slice(), |row| {
+                    Ok((row.get::<_, String>(0)?, row.get::<_, i64>(1)?))
+                })
                 .map_err(|e| StorageError::QueryError(format!("Failed to execute query: {}", e)))?;
 
+            let window_start = params.start_time;
             let mut seen: Vec<String> = Vec::new();
             let mut seen_set: std::collections::HashSet<String> =
                 std::collections::HashSet::with_capacity(trace_limit);
             for row in rows {
-                let tid = row.map_err(|e| {
+                let (tid, start) = row.map_err(|e| {
                     StorageError::QueryError(format!("Failed to parse results: {}", e))
                 })?;
+                // Ordered walk: once start times drop below the window
+                // start, every later row is older — the window's lower
+                // bound, applied here instead of in the WHERE clause.
+                if let Some(ws) = window_start {
+                    if start < ws {
+                        break;
+                    }
+                }
                 if seen_set.insert(tid.clone()) {
                     seen.push(tid);
                     if seen.len() >= trace_limit {
@@ -11997,6 +12019,75 @@ mod tests {
             rusqlite::params![name, start, end, attributes],
         )
         .unwrap();
+    }
+
+    #[test]
+    fn test_trace_list_early_exit_matches_windowed_group_by() {
+        // #196 regression: phase 1 walks idx_spans_start_time WITHOUT the
+        // window's lower bound (applied as the Rust early-exit) and must
+        // select exactly the traces the windowed GROUP BY MAX(start_time)
+        // selects, in the same order — including rows the unbounded scan
+        // sees but the window excludes (below the start, above the end,
+        // crossing the end).
+        let conn = setup_test_db();
+        // (trace_id, start, end); window is [100, 500]
+        let rows: &[(&str, i64, i64)] = &[
+            ("t1", 150, 160),
+            ("t1", 250, 260),
+            ("t2", 300, 310),
+            ("t3", 400, 410),
+            ("t4", 90, 95),   // below window start — visible to the unbounded scan
+            ("t5", 600, 610), // above window end
+            ("t6", 350, 700), // crosses the window end
+            ("t7", 120, 130),
+            ("t7", 80, 90), // older sibling of a selected trace
+        ];
+        for (tid, start, end) in rows {
+            conn.execute(
+                "INSERT INTO spans (trace_id, span_id, name, kind, start_time, end_time, attributes, status_code, events, resource)
+                 VALUES (?1, ?2, 's', 0, ?3, ?4, '{}', 0, '[]', '{}')",
+                rusqlite::params![*tid, format!("s_{tid}_{start}"), *start, *end],
+            )
+            .unwrap();
+        }
+
+        let params = QueryParams {
+            start_time: Some(100),
+            end_time: Some(500),
+            ..Default::default()
+        };
+        let spans = query_spans_for_trace_list(&conn, &params, 3).unwrap();
+
+        // Selection order: newest qualifying trace first (first
+        // encounter in the start-DESC walk).
+        let mut got: Vec<&str> = Vec::new();
+        for s in &spans {
+            if !got.contains(&s.trace_id.as_str()) {
+                got.push(&s.trace_id);
+            }
+        }
+        assert_eq!(got, vec!["t3", "t2", "t1"]);
+        // Phase 2 returns only spans of the selected traces.
+        assert!(spans
+            .iter()
+            .all(|s| matches!(s.trace_id.as_str(), "t1" | "t2" | "t3")));
+        assert_eq!(spans.len(), 4);
+
+        // Equivalence with the windowed GROUP BY the early exit exists to
+        // replicate (the comment's original claim).
+        let eq: Vec<String> = {
+            let mut stmt = conn
+                .prepare(
+                    "SELECT trace_id FROM spans WHERE start_time >= 100 AND end_time <= 500
+                     GROUP BY trace_id ORDER BY MAX(start_time) DESC LIMIT 3",
+                )
+                .unwrap();
+            stmt.query_map([], |r| r.get(0))
+                .unwrap()
+                .collect::<std::result::Result<Vec<String>, _>>()
+                .unwrap()
+        };
+        assert_eq!(got, eq.iter().map(|s| s.as_str()).collect::<Vec<_>>());
     }
 
     #[test]
