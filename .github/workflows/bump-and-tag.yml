@@ -258,8 +258,14 @@ jobs:
                   # the self_healed latch (re-armed after each rebase
                   # force-push, which orphans again).
                   if [[ "$in_progress" -eq 0 && "$self_healed" -eq 0 ]]; then
+                    # `|| required=""` (not an `|| echo ""` inside the
+                    # substitution): on a 403 `gh api` prints the error
+                    # JSON body to stdout, so the variable would be
+                    # non-empty and the fallback below would never fire
+                    # (observed on the v0.1.129 run: the 403 body was
+                    # treated as one giant "context name").
                     required=$(gh api "repos/${GITHUB_REPOSITORY}/branches/main/protection" \
-                      -q '.required_status_checks.contexts[]?' 2>/dev/null || echo "")
+                      -q '.required_status_checks.contexts[]?' 2>/dev/null) || required=""
                     if [[ -z "$required" ]]; then
                       # Reading branch protection requires the admin scope,
                       # which the workflow token does not have (403) — fall
