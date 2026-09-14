@@ -13,6 +13,10 @@ have to work around), not implementation detail.
 
 ### Added
 
+- New Productivity report in the web UI and `otelite usage --productivity`:
+  commits, pull requests, and lines of code per tool per day, with that
+  tool's cost for the day joined in so cost-per-commit is visible — spend
+  with output context, not just spend (#177)
 - Daily tool mix now shows per-tool LLM token volume and estimated cost
   per day: switch between requests, tokens, and cost views in the
   Behaviour report, or read the token table (with a daily cost column
@@ -20,6 +24,10 @@ have to work around), not implementation detail.
 
 ### Fixed
 
+- `usage --efficiency` (and the efficiency API) now report the real
+  pull-request count — it was hard-coded to 0 since the stats landed,
+  while Claude Code has been emitting `claude_code.pull_request.count`
+  all along (#177)
 - Metrics export no longer fails with a 500 on large time ranges:
   `GET /api/metrics/export` responses bigger than the 8 MB cache buffer
   are now served uncached (streamed with the original status) instead of

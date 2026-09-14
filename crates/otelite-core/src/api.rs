@@ -2783,6 +2783,45 @@ pub struct DailyToolMixResponse {
     pub filters_applied: Vec<String>,
 }
 
+// ── Productivity (#177) ──────────────────────────────────────────────────────
+
+/// Git output for one (day, tool) pair. Days are UTC calendar days, the same
+/// convention as `DailyToolMixRow::day`, so the two endpoints join on the
+/// same (day, tool) key. Commits and PRs are emitted by Claude Code only;
+/// lines of code by Claude Code and opencode — tools that do not emit a
+/// counter report 0 for it (#177).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
+pub struct ProductivityRow {
+    /// Calendar day in ISO-8601 format (YYYY-MM-DD), UTC.
+    pub day: String,
+    /// Short tool label: "claude_code", "opencode", ...
+    pub tool: String,
+    /// Commits landed that day.
+    pub commits: u64,
+    /// Pull requests opened that day.
+    pub prs: u64,
+    /// Lines of code added that day.
+    pub lines_added: i64,
+    /// Lines of code removed that day.
+    pub lines_removed: i64,
+    /// Total USD cost for this tool on this day, priced by the API layer
+    /// from the daily tool mix; `None` when no pricing data applies.
+    pub cost_usd: Option<f64>,
+    /// `cost_usd / commits`; `None` when either is missing or commits is 0.
+    pub cost_per_commit_usd: Option<f64>,
+}
+
+/// Response for `GET /api/genai/productivity`.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
+pub struct ProductivityResponse {
+    /// Rows in (day asc, tool asc) order; a (day, tool) pair appears only
+    /// when at least one of its counters moved that day.
+    pub rows: Vec<ProductivityRow>,
+    pub filters_applied: Vec<String>,
+}
+
 // ── Skills Activity (#insight-3) ─────────────────────────────────────────────
 
 /// One skill's usage row.

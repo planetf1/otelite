@@ -219,6 +219,10 @@ pub struct UsageCommand {
     #[arg(long)]
     pub daily_tool_mix: bool,
 
+    /// Show git output per tool per day: commits, PRs, lines of code (#177)
+    #[arg(long)]
+    pub productivity: bool,
+
     /// Show Codex skill injection counts — which skills fire implicitly and how often
     #[arg(long)]
     pub skill_activity: bool,
@@ -352,6 +356,8 @@ struct UsageOutput {
     tool_failures: Option<otelite_core::api::ToolFailureRatesResponse>,
     #[serde(skip_serializing_if = "Option::is_none")]
     daily_tool_mix: Option<otelite_core::api::DailyToolMixResponse>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    productivity: Option<otelite_core::api::ProductivityResponse>,
     #[serde(skip_serializing_if = "Option::is_none")]
     skill_activity: Option<otelite_core::api::SkillActivityResponse>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -1069,6 +1075,20 @@ impl UsageCommand {
             None
         };
 
+        // --productivity
+        let productivity: Option<otelite_core::api::ProductivityResponse> = if self.productivity {
+            Some(
+                storage
+                    .query_productivity_summary(Some(start_time), Some(end_time))
+                    .await
+                    .map_err(|e| {
+                        Error::ApiError(format!("Failed to query productivity_summary: {}", e))
+                    })?,
+            )
+        } else {
+            None
+        };
+
         // --skill-activity
         let skill_activity: Option<otelite_core::api::SkillActivityResponse> =
             if self.skill_activity {
@@ -1193,6 +1213,7 @@ impl UsageCommand {
                     hook_overhead,
                     tool_failures,
                     daily_tool_mix,
+                    productivity,
                     skill_activity,
                     session_quality,
                     skill_outcomes,
@@ -1404,6 +1425,11 @@ impl UsageCommand {
 
                 if let Some(ref resp) = daily_tool_mix {
                     display_daily_tool_mix(resp);
+                    println!();
+                }
+
+                if let Some(ref resp) = productivity {
+                    display_productivity(resp);
                     println!();
                 }
 
@@ -3124,6 +3150,46 @@ fn daily_mix_token_table(
     (tokens, day_cost, any_cost)
 }
 
+/// Table cells for the Productivity table (#177): tool, day, commits, PRs,
+/// lines added, lines removed — one `Vec` per row, in response order.
+fn productivity_table_rows(resp: &otelite_core::api::ProductivityResponse) -> Vec<Vec<String>> {
+    resp.rows
+        .iter()
+        .map(|r| {
+            vec![
+                r.tool.clone(),
+                r.day.clone(),
+                r.commits.to_string(),
+                r.prs.to_string(),
+                r.lines_added.to_string(),
+                r.lines_removed.to_string(),
+            ]
+        })
+        .collect()
+}
+
+fn display_productivity(resp: &otelite_core::api::ProductivityResponse) {
+    if resp.rows.is_empty() {
+        println!("Productivity: no commit/PR/lines-of-code data in range");
+        return;
+    }
+    let mut table = Table::new();
+    fit_to_terminal(&mut table);
+    table.load_preset(UTF8_FULL);
+    table.set_header(vec![
+        Cell::new("Tool").fg(Color::Cyan),
+        Cell::new("Day").fg(Color::Cyan),
+        Cell::new("Commits").fg(Color::Cyan),
+        Cell::new("PRs").fg(Color::Cyan),
+        Cell::new("Lines +").fg(Color::Cyan),
+        Cell::new("Lines -").fg(Color::Cyan),
+    ]);
+    for row in productivity_table_rows(resp) {
+        table.add_row(row.into_iter().map(Cell::new).collect::<Vec<_>>());
+    }
+    println!("{}", table);
+}
+
 fn display_daily_tool_mix(resp: &otelite_core::api::DailyToolMixResponse) {
     if resp.rows.is_empty() {
         println!("Daily Tool Mix: no data");
@@ -3571,5 +3637,55 @@ mod tests {
         let (_, day_cost2, any_cost2) = daily_mix_token_table(&no_price);
         assert!(!any_cost2);
         assert!(day_cost2.is_empty());
+    }
+
+    #[test]
+    fn test_productivity_table_rows() {
+        use otelite_core::api::{ProductivityResponse, ProductivityRow};
+        let resp = ProductivityResponse {
+            rows: vec![
+                ProductivityRow {
+                    day: "2026-01-01".into(),
+                    tool: "claude_code".into(),
+                    commits: 3,
+                    prs: 1,
+                    lines_added: 120,
+                    lines_removed: 45,
+                    cost_usd: Some(2.5),
+                    cost_per_commit_usd: Some(2.5 / 3.0),
+                },
+                ProductivityRow {
+                    // opencode: no commit/PR counters, LOC only (#177).
+                    day: "2026-01-02".into(),
+                    tool: "opencode".into(),
+                    commits: 0,
+                    prs: 0,
+                    lines_added: 7,
+                    lines_removed: 0,
+                    cost_usd: None,
+                    cost_per_commit_usd: None,
+                },
+            ],
+            filters_applied: vec![],
+        };
+        let rows = productivity_table_rows(&resp);
+        assert_eq!(rows.len(), 2);
+        assert_eq!(
+            rows[0],
+            vec![
+                "claude_code".to_string(),
+                "2026-01-01".to_string(),
+                "3".to_string(),
+                "1".to_string(),
+                "120".to_string(),
+                "45".to_string(),
+            ]
+        );
+        assert_eq!(rows[1][0], "opencode");
+        assert_eq!(rows[1][2], "0"); // commits render as 0, never absent
+        assert_eq!(rows[1][4], "7");
+
+        // Empty state: no rows.
+        assert!(productivity_table_rows(&ProductivityResponse::default()).is_empty());
     }
 }

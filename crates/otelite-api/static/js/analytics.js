@@ -43,6 +43,7 @@ class AnalyticsView {
         { id: 'session_model',           title: 'Session × Model',         hint: 'Token and cost breakdown per (session, model) pair — spot opus spend in specific sessions' },
         { id: 'thinking_effort',         title: 'Thinking & Effort',       hint: 'Thinking and effort token usage — Claude Code effort levels, opencode + Codex reasoning share' },
         { id: 'efficiency',              title: 'Agent Efficiency',        hint: 'Tokens per commit · tokens per line of code · cross-agent comparison' },
+        { id: 'productivity',            title: 'Productivity',            hint: 'Commits · PRs · lines of code per day per tool — what the spend produced' },
         { id: 'skills',                  title: 'Skills',                  hint: 'Skill token ROI vs sessions without the skill · Codex skill injection activity' },
         { id: 'latency',                 title: 'Latency',                 hint: 'Response time · throughput · context size' },
         { id: 'model_performance',       title: 'Model Performance',       hint: 'Per-model duration · throughput · TTFT · error diagnosis vs preceding & rolling baselines' },
@@ -63,7 +64,7 @@ class AnalyticsView {
     // Top-level categories. A report appears in exactly one group; pinned
     // reports move to the Pinned group while pinned.
     static GROUPS = [
-        { id: 'cost',        label: 'Cost',                    sub: 'Where did the tokens go?',            reports: ['cost', 'providers', 'roles', 'session_model', 'thinking_effort', 'efficiency', 'skills'] },
+        { id: 'cost',        label: 'Cost',                    sub: 'Where did the tokens go?',            reports: ['cost', 'providers', 'roles', 'session_model', 'thinking_effort', 'efficiency', 'productivity', 'skills'] },
         { id: 'latency',     label: 'Latency',                 sub: 'How fast, and where is it slow?',      reports: ['latency', 'model_performance', 'ttft', 'codex_turns', 'speed_dist'] },
         { id: 'reliability', label: 'Reliability',             sub: "What's breaking, and how often?",      reports: ['reliability', 'tool_failures', 'guardian'] },
         { id: 'behavior',    label: 'Behaviour',               sub: 'How is it being used?',                reports: ['behavior', 'multi_agent', 'model_selection_heatmap'] },
@@ -81,6 +82,7 @@ class AnalyticsView {
         session_model: ['per-session', 'session spend', 'model pair'],
         thinking_effort: ['effort', 'low', 'medium', 'high', 'xhigh', 'reasoning', 'thinking tokens', 'thinking'],
         efficiency: ['efficiency', 'commits', 'lines of code', 'loc', 'tokens per commit'],
+        productivity: ['productivity', 'pull requests', 'prs', 'cost per commit', 'shipped', 'output'],
         skills: ['skill', 'skill efficiency', 'with vs without', 'skill activity', 'injection', 'codex skills'],
         latency: ['latency', 'p50', 'p95', 'p99', 'response time', 'throughput', 'context size'],
         model_performance: ['baseline', 'regression', 'performance', 'diagnosis'],
@@ -107,7 +109,8 @@ class AnalyticsView {
         roles: ['cost', 'session_model', 'model_selection_heatmap'],
         session_model: ['cost', 'roles'],
         thinking_effort: ['cost', 'model_performance', 'speed_dist'],
-        efficiency: ['cost', 'skills'],
+        efficiency: ['cost', 'skills', 'productivity'],
+        productivity: ['efficiency', 'cost', 'behavior'],
         skills: ['efficiency', 'codex_turns'],
         latency: ['model_performance', 'ttft', 'speed_dist'],
         model_performance: ['latency', 'reliability', 'model_selection_heatmap'],
@@ -1108,6 +1111,7 @@ class AnalyticsView {
             model_performance: () => this._loadModelPerformanceSection(),
             thinking_effort: () => this._loadThinkingEffortSection(),
             efficiency: () => this._loadEfficiencySection(),
+            productivity: () => this._loadProductivitySection(),
             ttft: () => this._loadTtftSection(),
             project_rollup: () => this._loadProjectRollupSection(),
             tool_failures: () => this._loadToolFailuresSection(),
@@ -3757,6 +3761,33 @@ class AnalyticsView {
             this.loadedSections.add('efficiency');
         } catch (err) {
             this._setSectionError('efficiency', err);
+        }
+    }
+
+    async _loadProductivitySection() {
+        this._setSectionLoading('productivity');
+        try {
+            const data = await this.api.getProductivity(this._baseParams());
+            const rows = data.rows || [];
+            // Coverage note (#177): only Claude Code reports commits/PRs;
+            // lines of code come from Claude Code and opencode. A missing
+            // row means no counter moved for that tool that day.
+            let html = '<div class="dim" style="margin-bottom:.5rem">Commits and PRs are reported by Claude Code only; lines of code by Claude Code and opencode. A missing row means no counter moved for that tool that day.</div>';
+            if (!rows.length) {
+                html += '<div class="empty-state-hint">No commit, PR or lines-of-code data in this window.</div>';
+            } else {
+                const fmt = n => Number(n).toLocaleString();
+                const fmtUsd = v => v != null ? `$${v.toFixed(2)}` : '—';
+                html += '<div class="analytics-table-wrap"><table class="analytics-table"><thead><tr><th>Day</th><th>Tool</th><th>Commits</th><th>PRs</th><th>Lines +</th><th>Lines -</th><th>Cost</th><th>Cost / commit</th></tr></thead><tbody>';
+                for (const r of rows) {
+                    html += `<tr><td>${this._esc(r.day)}</td><td>${this._esc(r.tool)}</td><td>${fmt(r.commits)}</td><td>${fmt(r.prs)}</td><td>${fmt(r.lines_added)}</td><td>${fmt(r.lines_removed)}</td><td>${fmtUsd(r.cost_usd)}</td><td>${fmtUsd(r.cost_per_commit_usd)}</td></tr>`;
+                }
+                html += '</tbody></table></div>';
+            }
+            this._setSectionBody('productivity', html);
+            this.loadedSections.add('productivity');
+        } catch (err) {
+            this._setSectionError('productivity', err);
         }
     }
 

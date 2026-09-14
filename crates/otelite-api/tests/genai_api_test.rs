@@ -2171,3 +2171,162 @@ async fn test_daily_tool_mix_tokens_and_cost() {
     assert_eq!(v["tools"][0], "claude_code");
     assert_eq!(v["tools"][1], "pi");
 }
+
+// ── Productivity: per-day counters + cost join (#177) ────────────────────────
+
+#[tokio::test]
+async fn test_productivity_rows_and_cost() {
+    let (server, storage, _temp_dir) = setup_test_server().await;
+    let app = server.build_router();
+
+    // Empty state.
+    let (status, v) = get_json(&app, "/api/genai/productivity").await;
+    assert_eq!(status, StatusCode::OK);
+    assert!(v["rows"].as_array().unwrap().is_empty());
+
+    // Day 1 = 2026-01-01 (UTC), day 2 = 2026-01-02.
+    let d1 = 1_767_225_600_000_000_000_i64;
+    let d2 = d1 + 86_400 * 1_000_000_000;
+
+    // claude_code.commit.count: cumulative 2 on d1, 4 on d2 -> deltas 2, 2.
+    storage
+        .write_metric(&agent_metric(
+            "claude_code.commit.count",
+            d1 + 1_000_000,
+            Some(2),
+            None,
+            &[],
+        ))
+        .await
+        .unwrap();
+    storage
+        .write_metric(&agent_metric(
+            "claude_code.commit.count",
+            d2 + 1_000_000,
+            Some(4),
+            None,
+            &[],
+        ))
+        .await
+        .unwrap();
+    // claude_code.pull_request.count: 1 on d1.
+    storage
+        .write_metric(&agent_metric(
+            "claude_code.pull_request.count",
+            d1 + 2_000_000,
+            Some(1),
+            None,
+            &[],
+        ))
+        .await
+        .unwrap();
+    // claude_code.lines_of_code.count: added 10, removed 4 (both d1).
+    storage
+        .write_metric(&agent_metric(
+            "claude_code.lines_of_code.count",
+            d1 + 3_000_000,
+            Some(10),
+            None,
+            &[("type", "added")],
+        ))
+        .await
+        .unwrap();
+    storage
+        .write_metric(&agent_metric(
+            "claude_code.lines_of_code.count",
+            d1 + 4_000_000,
+            Some(4),
+            None,
+            &[("type", "removed")],
+        ))
+        .await
+        .unwrap();
+    // opencode.lines_of_code.total: added 7 (d2).
+    storage
+        .write_metric(&agent_metric(
+            "opencode.lines_of_code.total",
+            d2 + 5_000_000,
+            Some(7),
+            None,
+            &[("type", "added")],
+        ))
+        .await
+        .unwrap();
+
+    // LLM spans for the cost join: a priced Claude model on d1
+    // (claude_code scope), an unpriced synthetic model on d2 (opencode
+    // scope) — mirrors the #179 pricing-branch fixtures.
+    let s1 = daily_mix_span(
+        "p1",
+        "com.anthropic.claude_code",
+        "claude-sonnet-5",
+        d1 + 10_000_000,
+        (100, 50),
+    );
+    let s2 = daily_mix_span(
+        "p2",
+        "com.opencode",
+        "unknown-vendor-model-9.9",
+        d2 + 10_000_000,
+        (5, 6),
+    );
+    storage.write_span_batch(&[s1, s2]).await.unwrap();
+
+    // Windowed query — a different cache key than the empty-state call.
+    let (status, v) = get_json(
+        &app,
+        &format!(
+            "/api/genai/productivity?start_time={d1}&end_time={}",
+            d2 + 86_400 * 1_000_000_000
+        ),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+
+    let rows = v["rows"].as_array().unwrap();
+    assert_eq!(rows.len(), 3, "{v}");
+
+    // d1, claude_code: full counters + priced cost, cost-per-commit
+    // derived as cost / commits.
+    let r0 = &rows[0];
+    assert_eq!(r0["day"], "2026-01-01");
+    assert_eq!(r0["tool"], "claude_code");
+    assert_eq!(r0["commits"], 2);
+    assert_eq!(r0["prs"], 1);
+    assert_eq!(r0["lines_added"], 10);
+    assert_eq!(r0["lines_removed"], 4);
+    let cost = r0["cost_usd"].as_f64();
+    assert!(
+        cost.is_some() && cost.unwrap() > 0.0,
+        "claude family prices via the fallback table: {v}"
+    );
+    let per_commit = r0["cost_per_commit_usd"].as_f64();
+    assert!(
+        per_commit.is_some() && (per_commit.unwrap() - cost.unwrap() / 2.0).abs() < 1e-9,
+        "cost_per_commit must be cost / commits: {v}"
+    );
+
+    // d2, claude_code: only the commit counter moved (delta 4 - 2 = 2);
+    // no cost that day.
+    let r1 = &rows[1];
+    assert_eq!(r1["day"], "2026-01-02");
+    assert_eq!(r1["tool"], "claude_code");
+    assert_eq!(r1["commits"], 2);
+    assert_eq!(r1["prs"], 0);
+    assert_eq!(r1["lines_added"], 0);
+    assert_eq!(r1["lines_removed"], 0);
+    assert!(r1["cost_usd"].is_null(), "{v}");
+    assert!(r1["cost_per_commit_usd"].is_null(), "{v}");
+
+    // d2, opencode: LOC only — commits/PRs are 0, never missing; the
+    // synthetic model has no pricing data -> null cost, not fabricated.
+    let r2 = &rows[2];
+    assert_eq!(r2["day"], "2026-01-02");
+    assert_eq!(r2["tool"], "opencode");
+    assert_eq!(r2["commits"], 0);
+    assert_eq!(r2["prs"], 0);
+    assert_eq!(r2["lines_added"], 7);
+    assert_eq!(r2["lines_removed"], 0);
+    assert!(r2["cost_usd"].is_null(), "{v}");
+    assert!(r2["cost_per_commit_usd"].is_null(), "{v}");
+}

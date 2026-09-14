@@ -8451,6 +8451,16 @@ pub fn query_efficiency_stats(
     )?;
     let cc_commits: u64 = cc_commit_deltas.iter().map(|d| d.delta as u64).sum();
 
+    // ── Claude Code PRs (cumulative counter) ─────────────────────────────
+    let cc_pr_deltas = counter_window_deltas(
+        conn,
+        mnames::CLAUDE_CODE_PR_COUNT,
+        &[],
+        start_time,
+        end_time,
+    )?;
+    let cc_prs: u64 = cc_pr_deltas.iter().map(|d| d.delta as u64).sum();
+
     // ── Claude Code LOC (cumulative counter) ─────────────────────────────
     let cc_loc_deltas = counter_window_deltas(
         conn,
@@ -8540,11 +8550,161 @@ pub fn query_efficiency_stats(
     Ok(EfficiencyStats {
         total_tokens,
         total_commits,
-        total_prs: 0,
+        total_prs: cc_prs,
         net_lines_added,
         tokens_per_commit,
         tokens_per_loc,
         by_agent,
+        filters_applied: Vec::new(),
+    })
+}
+
+/// Git output per (tool, calendar day): commits, PRs, lines added/removed
+/// (#177).
+///
+/// The four source metrics are cumulative counters (per-process running
+/// totals), so per-day values are windowed deltas — one
+/// [`counter_window_deltas`] call per (metric, day bucket) — which reuses
+/// its reset handling (a series that restarts below its baseline is
+/// treated as starting from zero) and its covering-index baseline seeks.
+/// Day buckets tile the requested window in UTC, matching
+/// `query_daily_tool_mix`'s `strftime('%Y-%m-%d', datetime(timestamp/1e9,
+/// 'unixepoch'))` day labels so the two endpoints join on the same
+/// (day, tool) key. A (day, tool) row appears only when at least one of
+/// its counters moved that day; tools that do not emit a counter report
+/// 0 for it.
+pub fn query_productivity_summary(
+    conn: &Connection,
+    start_time: Option<i64>,
+    end_time: Option<i64>,
+) -> Result<otelite_core::api::ProductivityResponse> {
+    use otelite_core::api::{ProductivityResponse, ProductivityRow};
+    use otelite_core::semconv::metric_names as mnames;
+    use std::collections::BTreeMap;
+
+    let names: [&str; 4] = [
+        mnames::CLAUDE_CODE_COMMIT_COUNT,
+        mnames::CLAUDE_CODE_PR_COUNT,
+        mnames::CLAUDE_CODE_LINES_OF_CODE,
+        mnames::OPENCODE_LINES_OF_CODE,
+    ];
+
+    // Finite bounds: the per-day delta loop needs them. Unbounded end ->
+    // now; unbounded start -> the earliest source-metric datapoint (no
+    // rows -> no data). A series with no datapoint before its first
+    // bucket has no baseline to lose — its first-day delta starts at
+    // zero, same as the full-window query.
+    let end_ns =
+        end_time.unwrap_or_else(|| chrono::Utc::now().timestamp_nanos_opt().unwrap_or(i64::MAX));
+    let start_ns = match start_time {
+        Some(s) => s,
+        None => {
+            let mut stmt = conn
+                .prepare("SELECT MIN(timestamp) FROM metrics WHERE name IN (?,?,?,?)")
+                .map_err(|e| {
+                    StorageError::QueryError(format!(
+                        "Failed to prepare productivity min query: {e}"
+                    ))
+                })?;
+            let min_ts = stmt
+                .query_row(names, |r| r.get::<_, Option<i64>>(0))
+                .map_err(|e| {
+                    StorageError::QueryError(format!(
+                        "Failed to execute productivity min query: {e}"
+                    ))
+                })?;
+            match min_ts {
+                Some(ts) => ts,
+                None => return Ok(ProductivityResponse::default()),
+            }
+        },
+    };
+    if start_ns >= end_ns {
+        return Ok(ProductivityResponse::default());
+    }
+
+    let buckets = calendar_day_buckets(start_ns, end_ns, &chrono_tz::UTC)?;
+    // Day label per bucket: the UTC calendar day of the (clipped) bucket
+    // start — identical to the strftime convention above.
+    let mut labels: Vec<String> = Vec::with_capacity(buckets.len());
+    for (b_start, _) in &buckets {
+        let secs = b_start.div_euclid(1_000_000_000);
+        let day = chrono::DateTime::<chrono::Utc>::from_timestamp(secs, 0)
+            .ok_or_else(|| {
+                StorageError::QueryError(format!(
+                    "productivity bucket start {b_start} out of range"
+                ))
+            })?
+            .format("%Y-%m-%d");
+        labels.push(day.to_string());
+    }
+
+    // (day, tool) -> (commits, prs, lines_added, lines_removed)
+    let mut acc: BTreeMap<(String, String), (u64, u64, i64, i64)> = BTreeMap::new();
+
+    // ── Claude Code commits / PRs (no labels: one series per metric) ─────
+    for (metric, is_commits) in [
+        (mnames::CLAUDE_CODE_COMMIT_COUNT, true),
+        (mnames::CLAUDE_CODE_PR_COUNT, false),
+    ] {
+        for (i, (b_start, b_end)) in buckets.iter().enumerate() {
+            for d in counter_window_deltas(conn, metric, &[], Some(*b_start), Some(*b_end - 1))? {
+                let entry = acc
+                    .entry((labels[i].clone(), "claude_code".to_string()))
+                    .or_default();
+                if is_commits {
+                    entry.0 += d.delta as u64;
+                } else {
+                    entry.1 += d.delta as u64;
+                }
+            }
+        }
+    }
+
+    // ── Lines of code (label $.type: "added" | "removed") ────────────────
+    for (metric, tool) in [
+        (mnames::CLAUDE_CODE_LINES_OF_CODE, "claude_code"),
+        (mnames::OPENCODE_LINES_OF_CODE, "opencode"),
+    ] {
+        for (i, (b_start, b_end)) in buckets.iter().enumerate() {
+            for d in
+                counter_window_deltas(conn, metric, &["$.type"], Some(*b_start), Some(*b_end - 1))?
+            {
+                let is_added = d.labels.first().and_then(|l| l.as_deref()) == Some("added");
+                let is_removed = d.labels.first().and_then(|l| l.as_deref()) == Some("removed");
+                if !is_added && !is_removed {
+                    continue; // unknown label type: don't misattribute
+                }
+                let entry = acc
+                    .entry((labels[i].clone(), tool.to_string()))
+                    .or_default();
+                if is_added {
+                    entry.2 += d.delta as i64;
+                } else {
+                    entry.3 += d.delta as i64;
+                }
+            }
+        }
+    }
+
+    let rows = acc
+        .into_iter()
+        .map(
+            |((day, tool), (commits, prs, lines_added, lines_removed))| ProductivityRow {
+                day,
+                tool,
+                commits,
+                prs,
+                lines_added,
+                lines_removed,
+                cost_usd: None,
+                cost_per_commit_usd: None,
+            },
+        )
+        .collect();
+
+    Ok(ProductivityResponse {
+        rows,
         filters_applied: Vec::new(),
     })
 }
@@ -12335,6 +12495,7 @@ mod tests {
             r#"{"type":"output"}"#,
         );
         insert_metric(&conn, "claude_code.commit.count", 1000, 5, "{}");
+        insert_metric(&conn, "claude_code.pull_request.count", 1500, 2, "{}");
         let result = query_efficiency_stats(&conn, None, None).unwrap();
         // tokens: counter window delta includes input (1000) + output (500) = 1500
         // but counter_window_deltas with no start uses "last value before window" = None
@@ -12349,6 +12510,8 @@ mod tests {
                 .unwrap_or(0),
             5
         );
+        // PRs surface in the summary too (were hard-coded 0 before #177).
+        assert_eq!(result.total_prs, 2);
     }
 
     #[test]
@@ -14303,6 +14466,119 @@ mod new_insight_tests_2 {
         assert!(d1_only.rows.iter().all(|r| r.day == "2026-01-01"));
         assert_eq!(d1_only.model_rows.len(), 2);
         assert!(d1_only.rows.iter().all(|r| r.tool == "claude_code"));
+    }
+
+    #[test]
+    fn test_productivity_summary_per_day_counters() {
+        let conn = make_conn();
+        // Days (UTC): d1 = 2026-01-01, d2 = 2026-01-02, d3 = 2026-01-03.
+        let d1 = 1_767_225_600_000_000_000_i64;
+        let d2 = d1 + 86_400 * 1_000_000_000;
+        let d3 = d2 + 86_400 * 1_000_000_000;
+
+        let metric_row = |name: &str, ts: i64, value: u64, attrs: &str| {
+            conn.execute(
+                "INSERT INTO metrics (name, metric_type, timestamp, value_int, attributes, flags, created_at)
+                 VALUES (?, 1, ?, ?, ?, 0, 1000000000)",
+                rusqlite::params![name, ts, value, attrs],
+            )
+            .unwrap();
+        };
+
+        // claude_code.commit.count: cumulative 1 -> 2 on d1 (two flushes),
+        // 4 on d2. Per-day deltas: d1 = 2, d2 = 2.
+        metric_row("claude_code.commit.count", d1 + 1_000_000, 1, "{}");
+        metric_row("claude_code.commit.count", d1 + 2_000_000, 2, "{}");
+        metric_row("claude_code.commit.count", d2 + 1_000_000, 4, "{}");
+        // claude_code.pull_request.count: 1 -> 3 on d1, then a reset on d2
+        // (value 1, below baseline 3) -> treated as restart: delta = 1.
+        metric_row("claude_code.pull_request.count", d1 + 1_000_000, 1, "{}");
+        metric_row("claude_code.pull_request.count", d1 + 2_000_000, 3, "{}");
+        metric_row("claude_code.pull_request.count", d2 + 1_000_000, 1, "{}");
+        // claude_code.lines_of_code.count: type=added 10 (d1) -> 15 (d2);
+        // type=removed 4 (d2).
+        metric_row(
+            "claude_code.lines_of_code.count",
+            d1 + 1_000_000,
+            10,
+            r#"{"type":"added"}"#,
+        );
+        metric_row(
+            "claude_code.lines_of_code.count",
+            d2 + 1_000_000,
+            15,
+            r#"{"type":"added"}"#,
+        );
+        metric_row(
+            "claude_code.lines_of_code.count",
+            d2 + 2_000_000,
+            4,
+            r#"{"type":"removed"}"#,
+        );
+        // opencode.lines_of_code.total: type=added 7 (d3).
+        metric_row(
+            "opencode.lines_of_code.total",
+            d3 + 1_000_000,
+            7,
+            r#"{"type":"added"}"#,
+        );
+
+        let result = query_productivity_summary(&conn, None, None).unwrap();
+
+        // (day asc, tool asc); a (day, tool) appears only when a counter
+        // moved. Storage leaves pricing to the API.
+        assert_eq!(result.rows.len(), 3, "{result:?}");
+        let r0 = &result.rows[0];
+        assert_eq!(r0.day, "2026-01-01");
+        assert_eq!(r0.tool, "claude_code");
+        assert_eq!(r0.commits, 2);
+        assert_eq!(r0.prs, 3);
+        assert_eq!(r0.lines_added, 10);
+        assert_eq!(r0.lines_removed, 0);
+        assert_eq!(r0.cost_usd, None);
+        assert_eq!(r0.cost_per_commit_usd, None);
+
+        let r1 = &result.rows[1];
+        assert_eq!(r1.day, "2026-01-02");
+        assert_eq!(r1.tool, "claude_code");
+        assert_eq!(r1.commits, 2);
+        assert_eq!(r1.prs, 1); // reset: below baseline -> restart from zero
+        assert_eq!(r1.lines_added, 5);
+        assert_eq!(r1.lines_removed, 4);
+
+        // opencode reports LOC only — commits/PRs are 0, never missing.
+        let r2 = &result.rows[2];
+        assert_eq!(r2.day, "2026-01-03");
+        assert_eq!(r2.tool, "opencode");
+        assert_eq!(r2.commits, 0);
+        assert_eq!(r2.prs, 0);
+        assert_eq!(r2.lines_added, 7);
+        assert_eq!(r2.lines_removed, 0);
+
+        // Window filter: only day 2. The d2 commit delta is 4 - 2 (baseline
+        // before the window) = 2, not 4.
+        let w =
+            query_productivity_summary(&conn, Some(d2), Some(d2 + 86_400 * 1_000_000_000)).unwrap();
+        assert_eq!(w.rows.len(), 1, "{w:?}");
+        assert_eq!(w.rows[0].day, "2026-01-02");
+        assert_eq!(w.rows[0].commits, 2);
+        assert_eq!(w.rows[0].prs, 1);
+        assert_eq!(w.rows[0].lines_added, 5);
+        assert_eq!(w.rows[0].lines_removed, 4);
+
+        // Window past the last datapoint: no counter moved, no rows.
+        let after = query_productivity_summary(
+            &conn,
+            Some(d3 + 86_400 * 1_000_000_000),
+            Some(d3 + 2 * 86_400 * 1_000_000_000),
+        )
+        .unwrap();
+        assert!(after.rows.is_empty());
+
+        // Empty state: no source metrics at all.
+        let empty = make_conn();
+        let e = query_productivity_summary(&empty, None, None).unwrap();
+        assert!(e.rows.is_empty());
     }
 
     #[test]

@@ -2926,6 +2926,37 @@ pub async fn get_tool_failure_rates(
     Ok(Json(response))
 }
 
+/// Price a daily tool mix response: fill each row's `total_cost_usd` from
+/// the per-model breakdown and return the (day, tool) -> cost rollup for
+/// callers that need it directly (#177). Unpriced models contribute
+/// nothing — a row with no pricing data keeps a `None` cost, never a
+/// fabricated zero (#179).
+fn price_daily_tool_mix(
+    pricing: &crate::pricing_cache::PricingState,
+    response: &mut otelite_core::api::DailyToolMixResponse,
+) -> std::collections::HashMap<(String, String), f64> {
+    let mut cost: std::collections::HashMap<(String, String), f64> =
+        std::collections::HashMap::new();
+    for m in &response.model_rows {
+        let usage = TokenUsage {
+            input: m.input_tokens,
+            output: m.output_tokens,
+            cache_creation: m.cache_creation_tokens,
+            cache_read: m.cache_read_tokens,
+        };
+        let result = pricing.db.compute_cost(Some(m.model.as_str()), usage, None);
+        if let Some(c) = result.cost {
+            *cost.entry((m.day.clone(), m.tool.clone())).or_insert(0.0) += c;
+        }
+    }
+    for r in &mut response.rows {
+        if let Some(c) = cost.get(&(r.day.clone(), r.tool.clone())) {
+            r.total_cost_usd = Some(*c);
+        }
+    }
+    cost
+}
+
 /// Daily tool activity mix (claude_code / opencode / codex datapoints per day).
 #[utoipa::path(
     get,
@@ -2955,25 +2986,68 @@ pub async fn get_daily_tool_mix(
         })?;
 
     // Price the per-model breakdown and roll cost up to (day, tool) (#179).
-    // `total_cost_usd` stays None for rows whose models have no pricing data.
     let pricing = state.pricing.snapshot().await;
-    let mut cost: std::collections::HashMap<(String, String), f64> =
-        std::collections::HashMap::new();
-    for m in &response.model_rows {
-        let usage = TokenUsage {
-            input: m.input_tokens,
-            output: m.output_tokens,
-            cache_creation: m.cache_creation_tokens,
-            cache_read: m.cache_read_tokens,
-        };
-        let result = pricing.db.compute_cost(Some(m.model.as_str()), usage, None);
-        if let Some(c) = result.cost {
-            *cost.entry((m.day.clone(), m.tool.clone())).or_insert(0.0) += c;
-        }
-    }
+    price_daily_tool_mix(&pricing, &mut response);
+
+    Ok(Json(response))
+}
+
+/// Git output per tool per day: commits, PRs, lines of code, with the
+/// daily tool mix's cost joined on (day, tool) for cost-per-commit (#177).
+#[utoipa::path(
+    get,
+    path = "/api/genai/productivity",
+    params(TimeRangeQuery),
+    responses(
+        (status = 200, description = "Commits, PRs and lines of code per tool per calendar day", body = otelite_core::api::ProductivityResponse),
+        (status = 500, description = "Internal server error", body = ErrorResponse)
+    ),
+    tag = "genai"
+)]
+pub async fn get_productivity(
+    State(state): State<AppState>,
+    Query(query): Query<TimeRangeQuery>,
+) -> Result<Json<otelite_core::api::ProductivityResponse>, (StatusCode, Json<ErrorResponse>)> {
+    let mut response = state
+        .storage
+        .query_productivity_summary(query.start_time, query.end_time)
+        .await
+        .map_err(|e| {
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(ErrorResponse::storage_error(format!(
+                    "query productivity_summary: {e}"
+                ))),
+            )
+        })?;
+
+    // Join the daily tool mix's priced cost rollup onto (day, tool) — the
+    // existing cost data, priced exactly like /api/genai/daily_tool_mix.
+    let mix = state
+        .storage
+        .query_daily_tool_mix(query.start_time, query.end_time)
+        .await
+        .map_err(|e| {
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(ErrorResponse::storage_error(format!(
+                    "query daily_tool_mix for productivity cost: {e}"
+                ))),
+            )
+        })?;
+    let pricing = state.pricing.snapshot().await;
+    let cost = {
+        let mut mix = mix;
+        price_daily_tool_mix(&pricing, &mut mix)
+    };
     for r in &mut response.rows {
         if let Some(c) = cost.get(&(r.day.clone(), r.tool.clone())) {
-            r.total_cost_usd = Some(*c);
+            r.cost_usd = Some(*c);
+            r.cost_per_commit_usd = if r.commits > 0 {
+                Some(*c / r.commits as f64)
+            } else {
+                None
+            };
         }
     }
 

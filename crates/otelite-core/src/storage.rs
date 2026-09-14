@@ -743,6 +743,17 @@ pub trait StorageBackend: Send + Sync {
         Err(StorageError::QueryError("not implemented".to_string()))
     }
 
+    /// Git output per tool per calendar day: commits, PRs, lines of code
+    /// (#177).
+    async fn query_productivity_summary(
+        &self,
+        start_time: Option<i64>,
+        end_time: Option<i64>,
+    ) -> Result<crate::api::ProductivityResponse> {
+        let _ = (start_time, end_time);
+        Err(StorageError::QueryError("not implemented".to_string()))
+    }
+
     /// Codex skill injection activity (#insight-3).
     async fn query_skill_activity(
         &self,
