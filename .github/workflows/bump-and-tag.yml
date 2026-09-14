@@ -207,6 +207,7 @@ jobs:
           merged=0
           reran=0
           self_healed=0
+          dispatched_at=0
           # 90 min: the self-heal dispatch path must run the full flake
           # check (14-40 min observed) plus CI in parallel on the release
           # head before the merge can go CLEAN.
@@ -263,6 +264,30 @@ jobs:
                   done
                   in_progress=$(jq '[.[] | select(.status != "completed")] | length' <<<"$runs")
                   settled_failures=$(jq '[.[] | select(.status == "completed" and (.conclusion | ascii_downcase | IN("failure","error","timed_out","cancelled")))] | length' <<<"$runs")
+                  # Resolve the required contexts on every BLOCKED
+                  # iteration, not just the self-heal one: the
+                  # settled-state branch below also needs the list.
+                  # `|| required=""` (not an `|| echo ""` inside the
+                  # substitution): on a 403 `gh api` prints the error
+                  # JSON body to stdout, so the variable would be
+                  # non-empty and the fallback below would never fire
+                  # (observed on the v0.1.129 run: the 403 body was
+                  # treated as one giant "context name").
+                  required=$(gh api "repos/${GITHUB_REPOSITORY}/branches/main/protection" \
+                    -q '.required_status_checks.contexts[]?' 2>/dev/null) || required=""
+                  if [[ -z "$required" ]]; then
+                    # Reading branch protection requires the admin scope,
+                    # which the workflow token does not have (403) — fall
+                    # back to the configured required contexts. Keep this
+                    # list in sync with the branch protection rule on
+                    # main when it changes.
+                    required=$(printf '%s\n' \
+                      'Changelog Entry' 'Coverage' 'Dependency Audit' 'Dependency Check' \
+                      'Documentation' 'Flake Check' 'Format Check' 'License Check' \
+                      'Lint (Clippy)' 'SAST Scan' 'Secret Detection' 'Security Advisories' \
+                      'Security Audit' 'Test (macos-latest)' 'Test (ubuntu-latest)')
+                  fi
+
                   # Self-heal for orphaned checks (#207, incidents on
                   # v0.1.126/127/128): a force-push to the release branch
                   # (re-run or rebase) supersedes the head, and raw pushes
@@ -275,26 +300,6 @@ jobs:
                   # the self_healed latch (re-armed after each rebase
                   # force-push, which orphans again).
                   if [[ "$in_progress" -eq 0 && "$self_healed" -eq 0 ]]; then
-                    # `|| required=""` (not an `|| echo ""` inside the
-                    # substitution): on a 403 `gh api` prints the error
-                    # JSON body to stdout, so the variable would be
-                    # non-empty and the fallback below would never fire
-                    # (observed on the v0.1.129 run: the 403 body was
-                    # treated as one giant "context name").
-                    required=$(gh api "repos/${GITHUB_REPOSITORY}/branches/main/protection" \
-                      -q '.required_status_checks.contexts[]?' 2>/dev/null) || required=""
-                    if [[ -z "$required" ]]; then
-                      # Reading branch protection requires the admin scope,
-                      # which the workflow token does not have (403) — fall
-                      # back to the configured required contexts. Keep this
-                      # list in sync with the branch protection rule on
-                      # main when it changes.
-                      required=$(printf '%s\n' \
-                        'Changelog Entry' 'Coverage' 'Dependency Audit' 'Dependency Check' \
-                        'Documentation' 'Flake Check' 'Format Check' 'License Check' \
-                        'Lint (Clippy)' 'SAST Scan' 'Secret Detection' 'Security Advisories' \
-                        'Security Audit' 'Test (macos-latest)' 'Test (ubuntu-latest)')
-                    fi
                     present=$(jq -r '.[].name' <<<"$runs" | sort -u)
                     missing=""
                     # Line-based iteration: context names contain spaces
@@ -323,6 +328,7 @@ jobs:
                       done <<< "$missing"
                       if [[ "$dispatched_any" -eq 1 ]]; then
                         self_healed=1
+                        dispatched_at=$i
                         echo "dispatched — waiting for the fresh runs to settle"
                       fi
                     fi
@@ -341,17 +347,48 @@ jobs:
                       exit 1
                     fi
                   elif [[ "$in_progress" -eq 0 ]]; then
-                    # Every check run has settled without a failure, yet the
-                    # merge is still BLOCKED: a required context is missing
-                    # or SKIPPED (a skipped required check does not satisfy
-                    # branch protection — proven on v0.1.129 2026-09-14:
-                    # Flake Check skipped, merge stayed BLOCKED, and the old
-                    # else-branch idled out all 50 iterations on it).
-                    # Report the exact state and fail fast.
-                    echo "all checks settled without failure, but the merge is still BLOCKED — non-success check runs on head:"
-                    jq -r '.[] | select(.conclusion != "success") | "  " + .name + " => " + .conclusion' <<<"$runs" | sort | uniq -c
-                    echo "manual intervention: make the required contexts succeed (or adjust the branch protection rule)"
-                    exit 1
+                    # Everything registered on head has settled without a failure,
+                    # yet the merge is still BLOCKED. Two distinct states:
+                    #  (a) a required context still has NO check run — the
+                    #      self-heal dispatch may still be queueing it (check runs
+                    #      register within ~1 min of dispatch); wait, bounded by a
+                    #      grace counter so a dispatch that produces nothing fails
+                    #      fast with diagnostics instead of waiting out the cap.
+                    #  (b) every required context has a check run and none is
+                    #      success — the merge can never go CLEAN on this head. A
+                    #      SKIPPED required check does not satisfy branch
+                    #      protection (proven on v0.1.129 2026-09-14: Flake Check
+                    #      skipped, merge stayed BLOCKED, and the old else-branch
+                    #      idled out all 50 iterations on it). Report and fail
+                    #      fast.
+                    present_ctx=$(jq -r '.[].name' <<<"$runs" | sort -u)
+                    missing_ctx=""
+                    # Line-based iteration: context names contain spaces
+                    # ("Changelog Entry") — word splitting would break them.
+                    while IFS= read -r ctx; do
+                      [[ -z "$ctx" ]] && continue
+                      grep -qx -- "$ctx" <<<"$present_ctx" || missing_ctx+="$ctx"$'\n'
+                    done <<< "$required"
+                    if [[ -n "$missing_ctx" ]]; then
+                      if [[ $((i - dispatched_at)) -gt 10 ]]; then
+                        echo "required contexts still have no check run on head after the self-heal dispatch — needs manual intervention:"
+                        echo "$missing_ctx"
+                        gh run list --branch "$BRANCH" --limit 10 --json databaseId,headBranch,status,conclusion,event \
+                          -q '.[] | ((.databaseId|tostring) + " " + .event + " " + .status + " " + ((.conclusion // "-")))' || true
+                        exit 1
+                      fi
+                      echo "dispatched check runs not registered yet — waiting (attempt $i/$wait_limit)"
+                    else
+                      echo "all checks settled without failure, but the merge is still BLOCKED — non-success check runs on head:"
+                      non_success=$(jq -r '.[] | select(.conclusion != "success") | .name + " => " + .conclusion' <<<"$runs" | sort | uniq -c)
+                      if [[ -n "$non_success" ]]; then
+                        echo "$non_success"
+                        echo "manual intervention: make the required contexts succeed (or adjust the branch protection rule)"
+                      else
+                        echo "  (none — every check run on head is success; the block likely comes from branch protection beyond check runs, e.g. required reviews)"
+                      fi
+                      exit 1
+                    fi
                   else
                     echo "checks in flight — waiting (attempt $i/$wait_limit)"
                   fi

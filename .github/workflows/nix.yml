@@ -16,7 +16,10 @@ on:
   # No paths filter on PRs: 'Flake Check' is a required check, and a
   # required check that never runs blocks the merge. All PRs run this
   # workflow; the expensive flake check self-skips when the flake inputs
-  # are untouched (a skipped required check does not block merges).
+  # are untouched. (A skipped required check still blocks a merge —
+  # proven on v0.1.129, 2026-09-14 — so on release branches the check
+  # must be produced by the bump-and-tag self-heal dispatch, which runs
+  # it via the workflow_dispatch path below.)
   pull_request:
     branches: [main, develop]
   workflow_dispatch:
