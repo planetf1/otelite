@@ -207,7 +207,11 @@ jobs:
           merged=0
           reran=0
           self_healed=0
-          for i in $(seq 1 50); do
+          # 90 min: the self-heal dispatch path must run the full flake
+          # check (14-40 min observed) plus CI in parallel on the release
+          # head before the merge can go CLEAN.
+          wait_limit=90
+          for i in $(seq 1 "$wait_limit"); do
             status=$(gh pr view "$PR_NUMBER" --json mergeStateStatus -q .mergeStateStatus 2>/dev/null || echo UNKNOWN)
             case "$status" in
               CLEAN|UNSTABLE)
@@ -242,8 +246,21 @@ jobs:
                 # superseded head must not count).
                 head_oid=$(gh pr view "$PR_NUMBER" --json headRefOid -q .headRefOid 2>/dev/null || echo "")
                 if [[ -n "$head_oid" ]]; then
-                  runs=$(gh api "repos/${GITHUB_REPOSITORY}/commits/${head_oid}/check-runs" \
-                    -q '[.check_runs[] | {status: .status, conclusion: (.conclusion // "none"), name: .name}]' 2>/dev/null || echo "[]")
+                  # Paginate: a self-heal dispatch batch creates ~100
+                  # check-runs on the head, and the API's default page is
+                  # 30 — the v0.1.129 run (2026-09-14) counted from page 1
+                  # only and misread the settle state.
+                  runs="[]"
+                  page=1
+                  while :; do
+                    page_runs=$(gh api "repos/${GITHUB_REPOSITORY}/commits/${head_oid}/check-runs?per_page=100&page=${page}" \
+                      -q '[.check_runs[] | {status: .status, conclusion: (.conclusion // "none"), name: .name}]' 2>/dev/null || echo "[]")
+                    runs=$(jq -s 'add' <<<"$(jq -c . <<<"$runs") $page_runs")
+                    if [[ $(jq 'length' <<<"$page_runs") -lt 100 || $page -ge 5 ]]; then
+                      break
+                    fi
+                    page=$((page + 1))
+                  done
                   in_progress=$(jq '[.[] | select(.status != "completed")] | length' <<<"$runs")
                   settled_failures=$(jq '[.[] | select(.status == "completed" and (.conclusion | ascii_downcase | IN("failure","error","timed_out","cancelled")))] | length' <<<"$runs")
                   # Self-heal for orphaned checks (#207, incidents on
@@ -251,8 +268,8 @@ jobs:
                   # (re-run or rebase) supersedes the head, and raw pushes
                   # do not re-fire pull_request events — PR-only workflows
                   # (changelog.yml, nix.yml) then have no check run on the
-                  # current head at all, and the loop waits out its 50
-                  # iterations on checks that will never appear. With
+                  # current head at all, and the loop waits out its full
+                  # iteration count on checks that will never appear. With
                   # nothing in flight, dispatch the owning workflow for
                   # every required context missing on the head. Bounded by
                   # the self_healed latch (re-armed after each rebase
@@ -323,15 +340,27 @@ jobs:
                       jq -r '.[] | select(.status == "completed" and (.conclusion | ascii_downcase | IN("failure","error","timed_out","cancelled"))) | .conclusion' <<<"$runs" | sort | uniq -c
                       exit 1
                     fi
+                  elif [[ "$in_progress" -eq 0 ]]; then
+                    # Every check run has settled without a failure, yet the
+                    # merge is still BLOCKED: a required context is missing
+                    # or SKIPPED (a skipped required check does not satisfy
+                    # branch protection — proven on v0.1.129 2026-09-14:
+                    # Flake Check skipped, merge stayed BLOCKED, and the old
+                    # else-branch idled out all 50 iterations on it).
+                    # Report the exact state and fail fast.
+                    echo "all checks settled without failure, but the merge is still BLOCKED — non-success check runs on head:"
+                    jq -r '.[] | select(.conclusion != "success") | "  " + .name + " => " + .conclusion' <<<"$runs" | sort | uniq -c
+                    echo "manual intervention: make the required contexts succeed (or adjust the branch protection rule)"
+                    exit 1
                   else
-                    echo "checks in flight — waiting (attempt $i/50)"
+                    echo "checks in flight — waiting (attempt $i/$wait_limit)"
                   fi
                 else
-                  echo "checks in flight — waiting (attempt $i/50)"
+                  echo "checks in flight — waiting (attempt $i/$wait_limit)"
                 fi
                 ;;
               *)
-                echo "merge state '$status' — waiting (attempt $i/50)"
+                echo "merge state '$status' — waiting (attempt $i/$wait_limit)"
                 ;;
             esac
             sleep 60
