@@ -11,6 +11,8 @@ have to work around), not implementation detail.
 
 ## [Unreleased]
 
+## [0.1.131] - 2026-09-14
+
 ### Added
 
 - New Cost by Project report: which project drives the bill — per-project
