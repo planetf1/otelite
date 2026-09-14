@@ -64,6 +64,7 @@ class AnalyticsView {
         { id: 'capabilities',            title: 'Telemetry Capabilities',  hint: 'Which metrics each emitter actually provides · availability & quality' },
         { id: 'project_rollup',          title: 'Project Rollup',          hint: 'Token activity and turn counts per project across all agents' },
         { id: 'time_in_tool',            title: 'Time in Tool',            hint: 'Active engagement per tool per day — where your AI time actually went' },
+        { id: 'session_chains',          title: 'Session Chains',          hint: 'Resumed sessions rolled up into work threads — which threads you sustain vs abandon' },
     ];
 
     // Top-level categories. A report appears in exactly one group; pinned
@@ -72,7 +73,7 @@ class AnalyticsView {
         { id: 'cost',        label: 'Cost',                    sub: 'Where did the tokens go?',            reports: ['cost', 'providers', 'cost_by_project', 'session_depth', 'roles', 'session_model', 'thinking_effort', 'efficiency', 'productivity', 'skills'] },
         { id: 'latency',     label: 'Latency',                 sub: 'How fast, and where is it slow?',      reports: ['latency', 'model_performance', 'ttft', 'tool_switch_overhead', 'codex_turns', 'speed_dist'] },
         { id: 'reliability', label: 'Reliability',             sub: "What's breaking, and how often?",      reports: ['reliability', 'tool_failures', 'guardian'] },
-        { id: 'behavior',    label: 'Behaviour',               sub: 'How is it being used?',                reports: ['behavior', 'multi_agent', 'model_selection_heatmap', 'time_in_tool'] },
+        { id: 'behavior',    label: 'Behaviour',               sub: 'How is it being used?',                reports: ['behavior', 'multi_agent', 'model_selection_heatmap', 'time_in_tool', 'session_chains'] },
         { id: 'ecosystem',   label: 'Ecosystem & Diagnostics', sub: "What's the tooling actually doing?",   reports: ['hook_overhead', 'bob_hook_overhead', 'capabilities', 'project_rollup'] },
     ];
 
@@ -86,6 +87,7 @@ class AnalyticsView {
         cost_by_project: ['cost by project', 'per project', 'attribution', 'unattributed', 'which project'],
         session_depth: ['session depth', 'turn count', 'turns', 'depth', 'median cost', 'p95', 'sweet spot'],
         time_in_tool: ['time in tool', 'time spent', 'engagement', 'active time', 'where did my time', 'attention'],
+        session_chains: ['session chain', 'resumed session', 'continue', 'work thread', 'sustained', 'abandoned'],
         roles: ['role', 'sub-agent', 'subagent', 'attribution', 'routing matrix'],
         session_model: ['per-session', 'session spend', 'model pair'],
         thinking_effort: ['effort', 'low', 'medium', 'high', 'xhigh', 'reasoning', 'thinking tokens', 'thinking'],
@@ -119,6 +121,7 @@ class AnalyticsView {
         cost_by_project: ['cost', 'project_rollup', 'providers'],
         session_depth: ['cost', 'efficiency', 'session_model'],
         time_in_tool: ['behavior', 'productivity', 'model_selection_heatmap'],
+        session_chains: ['behavior', 'session_model', 'multi_agent'],
         roles: ['cost', 'session_model', 'model_selection_heatmap'],
         session_model: ['cost', 'roles'],
         thinking_effort: ['cost', 'model_performance', 'speed_dist'],
@@ -1122,6 +1125,7 @@ class AnalyticsView {
             cost_by_project: () => this._loadCostByProjectSection(),
             session_depth: () => this._loadSessionDepthSection(),
             time_in_tool: () => this._loadTimeInToolSection(),
+            session_chains: () => this._loadSessionChainsSection(),
             latency: () => this._loadLatencySection(),
             reliability: () => this._loadReliabilitySection(),
             behavior: () => this._loadBehaviorSection(),
@@ -4002,6 +4006,58 @@ class AnalyticsView {
                 </div>
                 <p class="table-hint">${legend}</p>
             </div>`;
+    }
+
+    // Session chains (#165): a resumed session keeps its stable session
+    // ID across the resumption (e.g. Claude --continue), so each
+    // session's activity splits into segments at gaps beyond the 2 h
+    // window. Rows arrive in (total tokens desc) order from the server.
+    async _loadSessionChainsSection() {
+        this._setSectionLoading('session_chains');
+        try {
+            const data = await this.api.getSessionChains(this._baseParams());
+            const chains = data.chains || [];
+            let html = '<p class="section-hint">A chain is one session; a resumed session splits into segments where the gap between requests exceeds 2 hours — segments &gt; 1 mark a work thread you came back to.</p>';
+            if (!chains.length) {
+                html += '<div class="empty-state-hint">No sessions in this window.</div>';
+            } else {
+                const resumed = chains.filter(c => (c.segments || []).length > 1).length;
+                html += `<p class="table-hint"><strong>${chains.length}</strong> chain(s) · <strong>${resumed}</strong> resumed (2+ segments)</p>`;
+                const fmtUtc = ns => {
+                    const d = new Date(ns / 1_000_000);
+                    const p = n => String(n).padStart(2, '0');
+                    return `${d.getUTCFullYear()}-${p(d.getUTCMonth() + 1)}-${p(d.getUTCDate())} ${p(d.getUTCHours())}:${p(d.getUTCMinutes())}`;
+                };
+                const fmtSpan = ns => {
+                    const s = Math.max(0, Math.floor(ns / 1_000_000_000));
+                    if (s < 3600) return `${Math.floor(s / 60)} min`;
+                    if (s < 172_800) return `${(s / 3600).toFixed(1)} h`;
+                    return `${Math.floor(s / 86_400)} d ${Math.floor((s % 86_400) / 3600)} h`;
+                };
+                const fmtUsd = v => v != null ? `$${Number(v).toFixed(2)}` : '—';
+                html += '<div class="analytics-table-wrap"><table class="analytics-table"><thead><tr>'
+                    + '<th>Tool</th><th>Chain</th><th>Segments</th><th>Turns</th><th>Tokens</th><th>Cost</th><th>First (UTC)</th><th>Last (UTC)</th><th>Span</th>'
+                    + '</tr></thead><tbody>';
+                for (const c of chains) {
+                    html += `<tr>`
+                        + `<td>${this._esc(c.tool)}</td>`
+                        + `<td title="${this._esc(c.chain_id)}">${this._esc((c.chain_id || '').slice(0, 8))}</td>`
+                        + `<td>${Number((c.segments || []).length).toLocaleString()}</td>`
+                        + `<td>${Number(c.total_turns).toLocaleString()}</td>`
+                        + `<td>${Number(c.total_tokens).toLocaleString()}</td>`
+                        + `<td>${fmtUsd(c.total_cost_usd)}</td>`
+                        + `<td>${fmtUtc(c.first_seen)}</td>`
+                        + `<td>${fmtUtc(c.last_seen)}</td>`
+                        + `<td>${fmtSpan(c.last_seen - c.first_seen)}</td>`
+                        + `</tr>`;
+                }
+                html += '</tbody></table></div>';
+            }
+            this._setSectionBody('session_chains', html);
+            this.loadedSections.add('session_chains');
+        } catch (err) {
+            this._setSectionError('session_chains', err);
+        }
     }
 
     async _loadTtftSection() {

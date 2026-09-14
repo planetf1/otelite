@@ -13135,6 +13135,106 @@ pub fn query_tool_switch_storage(
     })
 }
 
+// ── Session chains (#165) ────────────────────────────────────────────────────
+
+/// Per-span LLM rows for the session-chain build (#165): session id,
+/// tool label, model, start time, and token counts — in
+/// (session_id asc, start_time asc) order, the order
+/// [`otelite_core::session_chain::build_chains`] requires.
+///
+/// The tool and model mappings are identical to `query_daily_tool_mix`
+/// so the reports agree on labels.
+pub fn query_session_chain_storage(
+    conn: &Connection,
+    start_time: Option<i64>,
+    end_time: Option<i64>,
+) -> Result<otelite_core::api::SessionChainStorageResponse> {
+    use otelite_core::api::{SessionChainSpan, SessionChainStorageResponse};
+    use otelite_core::semconv;
+
+    let exprs = token_exprs();
+    let llm_guard = semconv::llm_span_guard("attributes");
+    let session_expr = semconv::session_id_expr("attributes");
+    let session_predicate = semconv::session_id_index_predicate("attributes");
+    let tool_expr = r#"CASE
+        WHEN json_extract(scope,'$.name') LIKE '%claude_code%'   THEN 'claude_code'
+        WHEN json_extract(scope,'$.name') = 'com.opencode'       THEN 'opencode'
+        WHEN json_extract(scope,'$.name') LIKE '%opencode%'      THEN 'opencode'
+        WHEN json_extract(scope,'$.name') = 'pi-otel'            THEN 'pi'
+        WHEN json_extract(scope,'$.name') LIKE '%codex%'         THEN 'codex'
+        WHEN json_extract(scope,'$.name') LIKE '%deekseek%'      THEN 'deepseek'
+        ELSE COALESCE(json_extract(scope,'$.name'), 'unknown')
+    END"#;
+    // Bare model name — the daily tool mix / cost-by-project
+    // convention (the composite identity form is the cost series'
+    // convention; pricing here takes the bare name).
+    let model_expr = r#"COALESCE(json_extract(attributes,'$."gen_ai.request.model"'),
+        json_extract(attributes,'$."model"'), '(unknown)')"#;
+
+    let mut where_clause = format!("WHERE {llm_guard} AND {session_predicate}");
+    let mut params: Vec<Box<dyn rusqlite::ToSql>> = Vec::new();
+    if let Some(s) = start_time {
+        where_clause.push_str(" AND start_time >= ?");
+        params.push(Box::new(s));
+    }
+    if let Some(e) = end_time {
+        where_clause.push_str(" AND start_time <= ?");
+        params.push(Box::new(e));
+    }
+
+    let sql = format!(
+        r#"
+        SELECT
+          {session} AS session_id,
+          {tool} AS tool,
+          {model} AS model,
+          start_time,
+          COALESCE({input}, 0) AS input_tokens,
+          COALESCE({output}, 0) AS output_tokens,
+          COALESCE({cache_creation}, 0) AS cache_creation_tokens,
+          COALESCE({cache_read}, 0) AS cache_read_tokens
+        FROM spans
+        {where_clause}
+        ORDER BY session_id ASC, start_time ASC
+        "#,
+        session = session_expr,
+        tool = tool_expr,
+        model = model_expr,
+        input = exprs.input,
+        output = exprs.output,
+        cache_creation = exprs.cache_creation,
+        cache_read = exprs.cache_read,
+        where_clause = where_clause,
+    );
+
+    let param_refs: Vec<&dyn rusqlite::ToSql> = params.iter().map(|p| p.as_ref()).collect();
+    let mut stmt = conn.prepare(&sql).map_err(|e| {
+        StorageError::QueryError(format!("Failed to prepare session_chain query: {e}"))
+    })?;
+
+    let rows: Vec<SessionChainSpan> = stmt
+        .query_map(param_refs.as_slice(), |r| {
+            Ok(SessionChainSpan {
+                session_id: r.get(0)?,
+                tool: r.get(1)?,
+                model: r.get(2)?,
+                start_time: r.get(3)?,
+                input_tokens: r.get::<_, i64>(4).unwrap_or(0) as u64,
+                output_tokens: r.get::<_, i64>(5).unwrap_or(0) as u64,
+                cache_creation_tokens: r.get::<_, i64>(6).unwrap_or(0) as u64,
+                cache_read_tokens: r.get::<_, i64>(7).unwrap_or(0) as u64,
+            })
+        })
+        .map_err(|e| StorageError::QueryError(format!("{e}")))?
+        .collect::<std::result::Result<Vec<_>, _>>()
+        .map_err(|e| StorageError::QueryError(format!("{e}")))?;
+
+    Ok(SessionChainStorageResponse {
+        rows,
+        filters_applied: Vec::new(),
+    })
+}
+
 #[cfg(test)]
 mod new_insight_tests {
     use super::*;
@@ -15599,6 +15699,181 @@ mod new_insight_tests_2 {
         // Empty state.
         let empty = make_conn();
         assert!(query_tool_switch_storage(&empty, None, None)
+            .unwrap()
+            .rows
+            .is_empty());
+    }
+
+    // One LLM span with a session id for the session-chain tests.
+    // Attributes are built with json! — raw-string fixtures have been
+    // corrupted in transit before (see the #180 session.id incident).
+    // Seven parameters mirror the span fields the fixture varies — one
+    // per test axis; restructuring them would obscure the call sites.
+    #[allow(clippy::too_many_arguments)]
+    fn sc_span(
+        conn: &Connection,
+        trace: &str,
+        start: i64,
+        scope: &str,
+        session: Option<&str>,
+        model: &str,
+        tokens: (u64, u64, u64, u64),
+    ) {
+        let (in_t, out_t, cache_c, cache_r) = tokens;
+        let mut obj = serde_json::json!({
+            "gen_ai.system": "anthropic",
+            "gen_ai.request.model": model,
+            "gen_ai.usage.input_tokens": in_t,
+            "gen_ai.usage.output_tokens": out_t,
+        });
+        if cache_c > 0 {
+            obj["gen_ai.usage.cache_creation_tokens"] = serde_json::json!(cache_c);
+        }
+        if cache_r > 0 {
+            obj["gen_ai.usage.cache_read_tokens"] = serde_json::json!(cache_r);
+        }
+        if let Some(s) = session {
+            obj["session.id"] = serde_json::json!(s);
+        }
+        let scope_json = serde_json::json!({ "name": scope });
+        conn.execute(
+            "INSERT INTO spans (trace_id, span_id, name, kind, start_time, end_time, attributes, scope, flags, created_at)
+             VALUES (?1, ?2, 'llm_request', 0, ?3, ?3 + 1000000, ?4, ?5, 0, 1000000000)",
+            rusqlite::params![trace, format!("{trace}_s1"), start, obj.to_string(), scope_json.to_string()],
+        )
+        .unwrap();
+    }
+
+    #[test]
+    fn test_session_chain_storage_orders_spans_with_tokens() {
+        let conn = make_conn();
+        const SEC: i64 = 1_000_000_000;
+        let d1 = 1_767_225_600_000_000_000_i64; // 2026-01-01 (UTC)
+
+        // sc-a: two bursts under one UUID (the --continue pattern),
+        // interleaved in time with sc-b's single span.
+        sc_span(
+            &conn,
+            "sch1",
+            d1,
+            "com.opencode",
+            Some("sc-a"),
+            "test-model",
+            (10, 0, 0, 0),
+        );
+        sc_span(
+            &conn,
+            "sch2",
+            d1 + 60 * SEC,
+            "com.opencode",
+            Some("sc-a"),
+            "test-model",
+            (20, 5, 0, 0),
+        );
+        sc_span(
+            &conn,
+            "sch3",
+            d1 + 3 * 3600 * SEC,
+            "com.opencode",
+            Some("sc-a"),
+            "other-model",
+            (30, 0, 0, 0),
+        );
+        // sc-b sits after the 2 h window cutoff below so both
+        // sessions survive it.
+        sc_span(
+            &conn,
+            "sch4",
+            d1 + 9000 * SEC,
+            "com.anthropic.claude_code",
+            Some("sc-b"),
+            "test-model",
+            (5, 2, 3, 7),
+        );
+        // No session.id: excluded entirely.
+        sc_span(
+            &conn,
+            "sch5",
+            d1,
+            "com.opencode",
+            None,
+            "test-model",
+            (1, 1, 0, 0),
+        );
+
+        let result = query_session_chain_storage(&conn, None, None).unwrap();
+
+        // (session asc, start asc): sc-a x3 then sc-b.
+        assert_eq!(result.rows.len(), 4, "{result:?}");
+        let keys: Vec<(String, String, String, i64)> = result
+            .rows
+            .iter()
+            .map(|r| {
+                (
+                    r.session_id.clone(),
+                    r.tool.clone(),
+                    r.model.clone(),
+                    r.start_time,
+                )
+            })
+            .collect();
+        assert_eq!(
+            keys,
+            vec![
+                (
+                    "sc-a".to_string(),
+                    "opencode".to_string(),
+                    "test-model".to_string(),
+                    d1
+                ),
+                (
+                    "sc-a".to_string(),
+                    "opencode".to_string(),
+                    "test-model".to_string(),
+                    d1 + 60 * SEC
+                ),
+                (
+                    "sc-a".to_string(),
+                    "opencode".to_string(),
+                    "other-model".to_string(),
+                    d1 + 3 * 3600 * SEC
+                ),
+                (
+                    "sc-b".to_string(),
+                    "claude_code".to_string(),
+                    "test-model".to_string(),
+                    d1 + 9000 * SEC
+                ),
+            ]
+        );
+        // Token columns, including the cache fields.
+        assert_eq!(
+            (result.rows[0].input_tokens, result.rows[0].output_tokens,),
+            (10, 0)
+        );
+        assert_eq!(
+            (result.rows[1].input_tokens, result.rows[1].output_tokens,),
+            (20, 5)
+        );
+        assert_eq!(
+            (
+                result.rows[3].input_tokens,
+                result.rows[3].output_tokens,
+                result.rows[3].cache_creation_tokens,
+                result.rows[3].cache_read_tokens,
+            ),
+            (5, 2, 3, 7)
+        );
+
+        // Window: only sc-a's third burst and sc-b survive d1+2h.
+        let windowed = query_session_chain_storage(&conn, Some(d1 + 2 * 3600 * SEC), None).unwrap();
+        assert_eq!(windowed.rows.len(), 2, "{windowed:?}");
+        assert_eq!(windowed.rows[0].session_id, "sc-a");
+        assert_eq!(windowed.rows[1].session_id, "sc-b");
+
+        // Empty state.
+        let empty = make_conn();
+        assert!(query_session_chain_storage(&empty, None, None)
             .unwrap()
             .rows
             .is_empty());

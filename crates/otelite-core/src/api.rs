@@ -2858,6 +2858,85 @@ pub struct CostByProjectResponse {
     pub filters_applied: Vec<String>,
 }
 
+// ── Session chains (#165) ────────────────────────────────────────────────────
+
+/// One time burst (segment) of a session chain (#165): a contiguous run
+/// of LLM spans whose consecutive gaps stay within the chain window.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
+pub struct SessionChainSegment {
+    /// 1-based segment index in start-time order.
+    pub index: u64,
+    /// First span of the segment, ns since epoch.
+    pub first_seen: i64,
+    /// Last span of the segment, ns since epoch.
+    pub last_seen: i64,
+    /// LLM spans (turns) in this segment.
+    pub turns: u64,
+}
+
+/// A session chain (#165): one work thread. A resumed session keeps its
+/// stable session ID across the resumption (e.g. Claude Code's
+/// `--continue`), so the chain's activity splits into segments at gaps
+/// beyond the window — each segment is one uninterrupted burst.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
+pub struct SessionChain {
+    /// The stable session ID — the chain's identity.
+    pub chain_id: String,
+    /// Tool of the session's first span (sessions are effectively
+    /// single-tool).
+    pub tool: String,
+    pub segments: Vec<SessionChainSegment>,
+    /// LLM spans across all segments.
+    pub total_turns: u64,
+    /// Total tokens (input + output + cache creation + cache read).
+    pub total_tokens: u64,
+    /// Total cost; `None` when no span in the chain could be priced
+    /// (never a fabricated zero).
+    pub total_cost_usd: Option<f64>,
+    /// First span of the chain, ns since epoch.
+    pub first_seen: i64,
+    /// Last span of the chain, ns since epoch.
+    pub last_seen: i64,
+}
+
+/// Per-span storage row feeding the session-chain build (#165).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
+pub struct SessionChainSpan {
+    pub session_id: String,
+    /// Short tool label, same convention as the daily tool mix.
+    pub tool: String,
+    /// Bare model name, same convention as the daily tool mix.
+    pub model: String,
+    /// Span start time, ns since epoch.
+    pub start_time: i64,
+    pub input_tokens: u64,
+    pub output_tokens: u64,
+    pub cache_creation_tokens: u64,
+    pub cache_read_tokens: u64,
+}
+
+/// Response of the storage query behind `GET /api/sessions/chains`
+/// (#165): rows in (session_id asc, start_time asc) order — the order
+/// the chain build requires.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
+pub struct SessionChainStorageResponse {
+    pub rows: Vec<SessionChainSpan>,
+    pub filters_applied: Vec<String>,
+}
+
+/// Response for `GET /api/sessions/chains` (#165): every session in the
+/// window as a chain, in (total_tokens desc, chain_id asc) order.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
+pub struct SessionChainsResponse {
+    pub chains: Vec<SessionChain>,
+    pub filters_applied: Vec<String>,
+}
+
 // ── Tool switch overhead (#166) ──────────────────────────────────────────────
 
 /// Per-span input to the tool-switch analysis (#166). `ttft_ms` is the

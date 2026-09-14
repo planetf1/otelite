@@ -103,6 +103,7 @@ use utoipa::OpenApi;
         crate::api::sessions::get_session_costs,
         crate::api::sessions::get_session_cost_distribution,
         crate::api::sessions::get_session_context,
+        crate::api::sessions::get_session_chains,
     ),
     components(
         schemas(
@@ -487,6 +488,7 @@ impl DashboardServer {
                 "/api/sessions/{session_id}/context",
                 get(crate::api::sessions::get_session_context),
             )
+            .route("/api/sessions/chains", get(crate::api::sessions::get_session_chains))
             // OpenAPI spec endpoint
             .route("/api/openapi.json", get(|| async {
                 axum::Json(ApiDoc::openapi())

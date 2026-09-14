@@ -33,6 +33,9 @@ pub mod session_depth;
 // Tool-switch overhead analysis (issue #166)
 pub mod tool_switch;
 
+// Session-chain continuity (issue #165)
+pub mod session_chain;
+
 // Generic distribution binning + summary stats (issue #133)
 pub mod distribution;
 

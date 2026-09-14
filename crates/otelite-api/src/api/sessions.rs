@@ -663,3 +663,102 @@ pub struct SessionContextQuery {
     /// Max spans and logs to return (default 500, cap 5000)
     pub limit: Option<usize>,
 }
+
+/// Query parameters for GET /api/sessions/chains.
+#[derive(Debug, Deserialize, Serialize, utoipa::IntoParams, utoipa::ToSchema)]
+pub struct SessionChainsQuery {
+    /// Start time (nanoseconds since Unix epoch)
+    pub start_time: Option<i64>,
+    /// End time (nanoseconds since Unix epoch)
+    pub end_time: Option<i64>,
+    /// Chain window in seconds: a gap strictly greater than this splits
+    /// a session into two segments (default 7200 = 2 h).
+    pub chain_window_secs: Option<u64>,
+}
+
+/// GET /api/sessions/chains
+///
+/// Session chains (#165): every session in the window as a work thread.
+/// A resumed session keeps its stable session ID across the
+/// resumption (e.g. Claude Code's `--continue`), so each session's
+/// activity is split into segments at gaps beyond the window; segments
+/// greater than one mark a resumed thread. Costs are priced per
+/// (session, model) — a chain with no pricable span carries `null`.
+#[utoipa::path(
+    get,
+    path = "/api/sessions/chains",
+    params(SessionChainsQuery),
+    responses(
+        (status = 200, description = "Session chains sorted by total tokens descending", body = otelite_core::api::SessionChainsResponse),
+        (status = 400, description = "Invalid chain_window_secs", body = ErrorResponse),
+        (status = 500, description = "Internal server error", body = ErrorResponse)
+    )
+)]
+pub async fn get_session_chains(
+    State(state): State<AppState>,
+    Query(params): Query<SessionChainsQuery>,
+) -> Result<Json<otelite_core::api::SessionChainsResponse>, (StatusCode, Json<ErrorResponse>)> {
+    use otelite_core::pricing::TokenUsage;
+    use otelite_core::session_chain;
+
+    const DEFAULT_CHAIN_WINDOW_SECS: u64 = 7200;
+    const MAX_CHAIN_WINDOW_SECS: u64 = 604_800; // one week
+    let window_secs = params
+        .chain_window_secs
+        .unwrap_or(DEFAULT_CHAIN_WINDOW_SECS);
+    if window_secs == 0 || window_secs > MAX_CHAIN_WINDOW_SECS {
+        return Err((
+            StatusCode::BAD_REQUEST,
+            Json(ErrorResponse::bad_request(format!(
+                "chain_window_secs must be between 1 and {MAX_CHAIN_WINDOW_SECS} seconds, got {window_secs}"
+            ))),
+        ));
+    }
+
+    let resp = state
+        .storage
+        .query_session_chain_storage(params.start_time, params.end_time)
+        .await
+        .map_err(|e| {
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(ErrorResponse::storage_error(format!(
+                    "query session_chains: {e}"
+                ))),
+            )
+        })?;
+
+    // Price per (session, model), then fold to per-session totals — the
+    // same convention as session depth vs cost (#180). Unpriced models
+    // leave the session unpriced (null, never zero).
+    let pricing = state.pricing.snapshot().await;
+    let mut per_session_model: HashMap<(String, String), TokenUsage> = HashMap::new();
+    for r in &resp.rows {
+        let e = per_session_model
+            .entry((r.session_id.clone(), r.model.clone()))
+            .or_insert(TokenUsage {
+                input: 0,
+                output: 0,
+                cache_creation: 0,
+                cache_read: 0,
+            });
+        e.input += r.input_tokens;
+        e.output += r.output_tokens;
+        e.cache_creation += r.cache_creation_tokens;
+        e.cache_read += r.cache_read_tokens;
+    }
+    let mut costs: HashMap<String, Option<f64>> = HashMap::new();
+    for ((session_id, model), usage) in per_session_model {
+        let cr = pricing.db.compute_cost(Some(&model), usage, None);
+        let entry = costs.entry(session_id).or_insert(None);
+        if let Some(c) = cr.cost {
+            *entry = Some(entry.unwrap_or(0.0) + c);
+        }
+    }
+
+    Ok(Json(session_chain::build_chains(
+        &resp.rows,
+        &costs,
+        window_secs,
+    )))
+}

@@ -811,6 +811,18 @@ pub trait StorageBackend: Send + Sync {
         Err(StorageError::QueryError("not implemented".to_string()))
     }
 
+    /// Per-span LLM rows for the session-chain build (#165): session
+    /// id, tool, model, start time, and token counts — in
+    /// (session_id asc, start_time asc) order.
+    async fn query_session_chain_storage(
+        &self,
+        start_time: Option<i64>,
+        end_time: Option<i64>,
+    ) -> Result<crate::api::SessionChainStorageResponse> {
+        let _ = (start_time, end_time);
+        Err(StorageError::QueryError("not implemented".to_string()))
+    }
+
     /// Codex skill injection activity (#insight-3).
     async fn query_skill_activity(
         &self,

@@ -3063,3 +3063,151 @@ async fn test_tool_switch_overhead_detects_boundaries() {
     // unmeasured — null, not zero.
     assert!(t["avg_ttft_delta_ms"].is_null(), "{v}");
 }
+
+// ── Session chains (#165) ───────────────────────────────────────────────────
+
+/// LLM span with session.id and controlled model/tokens for the
+/// session-chain fixtures. Six parameters mirror the span fields the
+/// fixture varies — one per test assertion axis.
+#[allow(clippy::too_many_arguments)]
+fn sch_span(
+    span_id: &str,
+    scope: &str,
+    model: &str,
+    start: i64,
+    session: &str,
+    tokens: (u64, u64),
+) -> Span {
+    let (in_t, out_t) = tokens;
+    let mut attributes: HashMap<String, String> = HashMap::new();
+    attributes.insert("otel.scope.name".to_string(), scope.to_string());
+    attributes.insert("gen_ai.system".to_string(), "anthropic".to_string());
+    attributes.insert("gen_ai.request.model".to_string(), model.to_string());
+    attributes.insert("gen_ai.usage.input_tokens".to_string(), in_t.to_string());
+    attributes.insert("gen_ai.usage.output_tokens".to_string(), out_t.to_string());
+    attributes.insert("session.id".to_string(), session.to_string());
+    Span {
+        trace_id: "t-session-chains".to_string(),
+        span_id: span_id.to_string(),
+        parent_span_id: None,
+        name: "llm_request".to_string(),
+        kind: SpanKind::Internal,
+        start_time: start,
+        end_time: start + 1_000_000,
+        attributes,
+        status: SpanStatus {
+            code: SpanStatusCode::Ok,
+            message: None,
+        },
+        events: Vec::new(),
+        resource: None,
+    }
+}
+
+#[tokio::test]
+async fn test_session_chains_links_resumed_bursts() {
+    let (server, storage, _temp_dir) = setup_test_server().await;
+    let app = server.build_router();
+
+    // Empty state.
+    let (status, v) = get_json(&app, "/api/sessions/chains").await;
+    assert_eq!(status, StatusCode::OK);
+    assert!(v["chains"].as_array().unwrap().is_empty());
+
+    // Validation: a zero window is rejected.
+    let (status, _) = get_json(&app, "/api/sessions/chains?chain_window_secs=0").await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+
+    let d1 = 1_767_225_600_000_000_000_i64;
+    let sec = 1_000_000_000_i64;
+    // ch-1 (opencode, priced Claude): two bursts under one UUID — the
+    // --continue pattern. Burst 1: two spans 0.5 s apart; burst 2: one
+    // span 3 h later (> the default 2 h window).
+    let spans = vec![
+        sch_span(
+            "sch-1",
+            "com.opencode",
+            "claude-sonnet-5",
+            d1,
+            "ch-1",
+            (10, 5),
+        ),
+        sch_span(
+            "sch-2",
+            "com.opencode",
+            "claude-sonnet-5",
+            d1 + 500_000_000,
+            "ch-1",
+            (20, 5),
+        ),
+        sch_span(
+            "sch-3",
+            "com.opencode",
+            "claude-sonnet-5",
+            d1 + 3 * 3600 * sec,
+            "ch-1",
+            (30, 5),
+        ),
+        // ch-2 (claude_code, unpriced model): a single span.
+        sch_span(
+            "sch-4",
+            "com.anthropic.claude_code",
+            "unknown-vendor-model-9.9",
+            d1 + 10 * sec,
+            "ch-2",
+            (3, 2),
+        ),
+    ];
+    storage.write_span_batch(&spans).await.unwrap();
+
+    // Windowed query — a different cache key than the empty-state call.
+    let (status, v) = get_json(
+        &app,
+        &format!(
+            "/api/sessions/chains?start_time={d1}&end_time={}",
+            d1 + 86_400 * sec
+        ),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+
+    // Sorted by total tokens desc: ch-1 (75) before ch-2 (5).
+    let chains = v["chains"].as_array().unwrap();
+    assert_eq!(chains.len(), 2, "{v}");
+    let c1 = &chains[0];
+    assert_eq!(c1["chain_id"], "ch-1");
+    assert_eq!(c1["tool"], "opencode");
+    // Two segments (the 3 h gap splits at the default 2 h window).
+    let segs = c1["segments"].as_array().unwrap();
+    assert_eq!(segs.len(), 2, "{v}");
+    assert_eq!(segs[0]["turns"], 2);
+    assert_eq!(segs[1]["turns"], 1);
+    assert_eq!(c1["total_turns"], 3);
+    assert_eq!(c1["total_tokens"], 75);
+    // Priced via the deterministic Claude fallback.
+    assert!(c1["total_cost_usd"].as_f64().unwrap() > 0.0, "{v}");
+    assert_eq!(c1["first_seen"], d1);
+    assert_eq!(c1["last_seen"], d1 + 3 * 3600 * sec);
+
+    // The unpriced single-burst chain: null cost, one segment.
+    let c2 = &chains[1];
+    assert_eq!(c2["chain_id"], "ch-2");
+    assert_eq!(c2["tool"], "claude_code");
+    assert_eq!(c2["segments"].as_array().unwrap().len(), 1);
+    assert_eq!(c2["total_turns"], 1);
+    assert_eq!(c2["total_tokens"], 5);
+    assert!(c2["total_cost_usd"].is_null(), "{v}");
+
+    // A 4 h window swallows the 3 h gap: ch-1 becomes one segment.
+    let (status, v) = get_json(
+        &app,
+        &format!(
+            "/api/sessions/chains?start_time={d1}&end_time={}&chain_window_secs=14400",
+            d1 + 86_400 * sec
+        ),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    let wide = v["chains"].as_array().unwrap();
+    assert_eq!(wide[0]["segments"].as_array().unwrap().len(), 1, "{v}");
+}

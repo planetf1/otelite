@@ -218,6 +218,10 @@ pub struct UsageCommand {
     #[arg(long)]
     pub tool_switch_overhead: bool,
 
+    /// Show session chains: resumed sessions rolled up into work threads (#165)
+    #[arg(long)]
+    pub session_chains: bool,
+
     /// Show opencode tool failure rates — which tools fail most and at what percentage
     #[arg(long)]
     pub tool_failures: bool,
@@ -380,6 +384,8 @@ struct UsageOutput {
     bob_hook_overhead: Option<otelite_core::api::HookOverheadResponse>,
     #[serde(skip_serializing_if = "Option::is_none")]
     tool_switch_overhead: Option<otelite_core::api::ToolSwitchOverheadResponse>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    session_chains: Option<otelite_core::api::SessionChainsResponse>,
     #[serde(skip_serializing_if = "Option::is_none")]
     tool_failures: Option<otelite_core::api::ToolFailureRatesResponse>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -1110,6 +1116,47 @@ impl UsageCommand {
                 None
             };
 
+        // --session-chains (default 2 h chain window; a gap beyond it
+        // marks a resumption, not a continuation)
+        let session_chains: Option<otelite_core::api::SessionChainsResponse> =
+            if self.session_chains {
+                let resp = storage
+                    .query_session_chain_storage(Some(start_time), Some(end_time))
+                    .await
+                    .map_err(|e| Error::ApiError(format!("Failed to query session_chains: {e}")))?;
+                use std::collections::HashMap;
+                // Price per (session, model), fold to per-session totals —
+                // the API handler's convention, so the CLI and web agree.
+                let mut per_sm: HashMap<(String, String), TokenUsage> = HashMap::new();
+                for r in &resp.rows {
+                    let e = per_sm
+                        .entry((r.session_id.clone(), r.model.clone()))
+                        .or_insert(TokenUsage {
+                            input: 0,
+                            output: 0,
+                            cache_creation: 0,
+                            cache_read: 0,
+                        });
+                    e.input += r.input_tokens;
+                    e.output += r.output_tokens;
+                    e.cache_creation += r.cache_creation_tokens;
+                    e.cache_read += r.cache_read_tokens;
+                }
+                let mut costs: HashMap<String, Option<f64>> = HashMap::new();
+                for ((session_id, model), usage) in per_sm {
+                    let cr = pricing_db.compute_cost(Some(&model), usage, None);
+                    let entry = costs.entry(session_id).or_insert(None);
+                    if let Some(c) = cr.cost {
+                        *entry = Some(entry.unwrap_or(0.0) + c);
+                    }
+                }
+                Some(otelite_core::session_chain::build_chains(
+                    &resp.rows, &costs, 7200,
+                ))
+            } else {
+                None
+            };
+
         // --tool-failures
         let tool_failures: Option<otelite_core::api::ToolFailureRatesResponse> =
             if self.tool_failures {
@@ -1396,6 +1443,7 @@ impl UsageCommand {
                     hook_overhead,
                     bob_hook_overhead,
                     tool_switch_overhead,
+                    session_chains,
                     tool_failures,
                     daily_tool_mix,
                     productivity,
@@ -1614,6 +1662,11 @@ impl UsageCommand {
 
                 if let Some(ref resp) = tool_switch_overhead {
                     display_tool_switch_overhead(resp);
+                    println!();
+                }
+
+                if let Some(ref resp) = session_chains {
+                    display_session_chains(resp);
                     println!();
                 }
 
@@ -3385,6 +3438,85 @@ fn display_tool_switch_overhead(resp: &otelite_core::api::ToolSwitchOverheadResp
     println!("{}", table);
 }
 
+/// Table cells for the session-chains table (#165), in response order
+/// (total tokens desc): tool, short chain id, segments, turns, tokens,
+/// formatted cost (dash when unpriced), first/last seen (UTC), and the
+/// overall span.
+fn session_chain_rows(resp: &otelite_core::api::SessionChainsResponse) -> Vec<Vec<String>> {
+    let fmt_usd = |c: Option<f64>| {
+        c.map(|v| format!("${v:.2}"))
+            .unwrap_or_else(|| "—".to_string())
+    };
+    resp.chains
+        .iter()
+        .map(|c| {
+            vec![
+                c.tool.clone(),
+                c.chain_id.chars().take(8).collect(),
+                c.segments.len().to_string(),
+                c.total_turns.to_string(),
+                c.total_tokens.to_string(),
+                fmt_usd(c.total_cost_usd),
+                fmt_utc_ns(c.first_seen),
+                fmt_utc_ns(c.last_seen),
+                fmt_chain_span_ns(c.last_seen - c.first_seen),
+            ]
+        })
+        .collect()
+}
+
+/// `ns` since epoch as `YYYY-MM-DD HH:MM` UTC.
+fn fmt_utc_ns(ns: i64) -> String {
+    chrono::DateTime::from_timestamp_nanos(ns)
+        .format("%Y-%m-%d %H:%M")
+        .to_string()
+}
+
+/// A duration in ns as a compact human span: minutes below the hour,
+/// hours below two days, days beyond.
+fn fmt_chain_span_ns(ns: i64) -> String {
+    let secs = (ns / 1_000_000_000).max(0);
+    if secs < 3600 {
+        format!("{} min", secs / 60)
+    } else if secs < 172_800 {
+        format!("{:.1} h", secs as f64 / 3600.0)
+    } else {
+        format!("{} d {} h", secs / 86_400, (secs % 86_400) / 3600)
+    }
+}
+
+fn display_session_chains(resp: &otelite_core::api::SessionChainsResponse) {
+    println!("Session Chains (2 h resumption window):");
+    if resp.chains.is_empty() {
+        println!("  No sessions in range");
+        return;
+    }
+    let resumed = resp.chains.iter().filter(|c| c.segments.len() > 1).count();
+    println!(
+        "  {} chain(s) — {} resumed (2+ segments)",
+        resp.chains.len(),
+        resumed
+    );
+    let mut table = Table::new();
+    fit_to_terminal(&mut table);
+    table.load_preset(UTF8_FULL);
+    table.set_header(vec![
+        Cell::new("Tool").fg(Color::Cyan),
+        Cell::new("Chain").fg(Color::Cyan),
+        Cell::new("Seg").fg(Color::Cyan),
+        Cell::new("Turns").fg(Color::Cyan),
+        Cell::new("Tokens").fg(Color::Cyan),
+        Cell::new("Cost").fg(Color::Cyan),
+        Cell::new("First (UTC)").fg(Color::Cyan),
+        Cell::new("Last (UTC)").fg(Color::Cyan),
+        Cell::new("Span").fg(Color::Cyan),
+    ]);
+    for row in session_chain_rows(resp) {
+        table.add_row(row.into_iter().map(Cell::new).collect::<Vec<_>>());
+    }
+    println!("{}", table);
+}
+
 fn display_tool_failure_rates(resp: &otelite_core::api::ToolFailureRatesResponse) {
     if resp.rows.is_empty() {
         println!("Tool Failure Rates: no data");
@@ -4438,5 +4570,71 @@ mod tests {
 
         // Empty state: no rows.
         assert!(tool_switch_rows(&ToolSwitchOverheadResponse::default()).is_empty());
+    }
+
+    #[test]
+    fn test_session_chain_rows() {
+        use otelite_core::api::{SessionChain, SessionChainsResponse};
+        // 2026-01-01T00:00:00Z and +17.5 h.
+        let first = 1_767_225_600_000_000_000_i64;
+        let last = first + (17 * 3600 + 30 * 60) * 1_000_000_000;
+        let resp = SessionChainsResponse {
+            chains: vec![SessionChain {
+                chain_id: "12345678-aaaa-bbbb-cccc-ddddeeee0000".into(),
+                tool: "claude_code".into(),
+                segments: vec![
+                    otelite_core::api::SessionChainSegment {
+                        index: 1,
+                        first_seen: first,
+                        last_seen: first + 60_000_000_000,
+                        turns: 4,
+                    },
+                    otelite_core::api::SessionChainSegment {
+                        index: 2,
+                        first_seen: last - 30_000_000_000,
+                        last_seen: last,
+                        turns: 2,
+                    },
+                ],
+                total_turns: 6,
+                total_tokens: 123_456,
+                total_cost_usd: Some(12.345),
+                first_seen: first,
+                last_seen: last,
+            }],
+            filters_applied: vec![],
+        };
+        let rows = session_chain_rows(&resp);
+        assert_eq!(rows.len(), 1);
+        assert_eq!(
+            rows[0],
+            vec![
+                "claude_code".to_string(),
+                "12345678".to_string(),
+                "2".to_string(),
+                "6".to_string(),
+                "123456".to_string(),
+                "$12.35".to_string(),
+                "2026-01-01 00:00".to_string(),
+                "2026-01-01 17:30".to_string(),
+                "17.5 h".to_string(),
+            ]
+        );
+
+        // Unpriced chain: dash cost cell.
+        let mut resp2 = resp.clone();
+        resp2.chains[0].total_cost_usd = None;
+        assert_eq!(session_chain_rows(&resp2)[0][5], "—");
+
+        // Span formatting boundaries.
+        assert_eq!(fmt_chain_span_ns(45 * 60 * 1_000_000_000), "45 min");
+        assert_eq!(fmt_chain_span_ns(2 * 3600 * 1_000_000_000), "2.0 h");
+        assert_eq!(
+            fmt_chain_span_ns(3 * 86_400 * 1_000_000_000 + 5 * 3600 * 1_000_000_000),
+            "3 d 5 h"
+        );
+
+        // Empty state: no rows.
+        assert!(session_chain_rows(&SessionChainsResponse::default()).is_empty());
     }
 }

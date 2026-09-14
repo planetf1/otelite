@@ -13,6 +13,12 @@ have to work around), not implementation detail.
 
 ### Added
 
+- New Session Chains report: resumed sessions rolled up into work threads —
+  a `--continue`d session keeps its ID, so each thread's activity splits
+  into segments at gaps beyond 2 hours; see which threads you sustain vs
+  abandon (segments, turns, tokens, cost, first/last seen, span), with
+  `otelite usage --session-chains` as a table and a
+  `chain_window_secs` API parameter to tune the resumption threshold (#165)
 - New Tool Switch Overhead report: what crossing a tool boundary mid-session
   actually costs — switch gaps and cold-start TTFT at each boundary, with a
   per-transition breakdown (e.g. "opencode → codex: 1,500 ms avg gap, +200 ms
