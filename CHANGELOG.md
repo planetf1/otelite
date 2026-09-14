@@ -11,6 +11,15 @@ have to work around), not implementation detail.
 
 ## [Unreleased]
 
+### Added
+
+- New Session Duration report: how long your sessions actually last, per
+  tool — a length histogram (<5m … >60m) plus median/p95/mean, with
+  `otelite usage --session-duration` as a per-tool table. opencode is
+  measured from its own duration metric; the other tools from their span
+  ranges. Spot sessions that end too fast (context failures, frustration)
+  or drag on too long (inefficiency) (#183)
+
 ## [0.1.134] - 2026-09-14
 
 ### Added

@@ -36,6 +36,9 @@ pub mod tool_switch;
 // Session-chain continuity (issue #165)
 pub mod session_chain;
 
+// Session-duration distribution (issue #183)
+pub mod session_duration;
+
 // Generic distribution binning + summary stats (issue #133)
 pub mod distribution;
 

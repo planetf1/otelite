@@ -65,6 +65,7 @@ class AnalyticsView {
         { id: 'project_rollup',          title: 'Project Rollup',          hint: 'Token activity and turn counts per project across all agents' },
         { id: 'time_in_tool',            title: 'Time in Tool',            hint: 'Active engagement per tool per day — where your AI time actually went' },
         { id: 'session_chains',          title: 'Session Chains',          hint: 'Resumed sessions rolled up into work threads — which threads you sustain vs abandon' },
+        { id: 'session_duration',        title: 'Session Duration',        hint: 'Session length distribution per tool — spot too-short (frustration?) and too-long (inefficient?) sessions' },
     ];
 
     // Top-level categories. A report appears in exactly one group; pinned
@@ -73,7 +74,7 @@ class AnalyticsView {
         { id: 'cost',        label: 'Cost',                    sub: 'Where did the tokens go?',            reports: ['cost', 'providers', 'cost_by_project', 'session_depth', 'roles', 'session_model', 'thinking_effort', 'efficiency', 'productivity', 'skills'] },
         { id: 'latency',     label: 'Latency',                 sub: 'How fast, and where is it slow?',      reports: ['latency', 'model_performance', 'ttft', 'tool_switch_overhead', 'codex_turns', 'speed_dist'] },
         { id: 'reliability', label: 'Reliability',             sub: "What's breaking, and how often?",      reports: ['reliability', 'tool_failures', 'guardian'] },
-        { id: 'behavior',    label: 'Behaviour',               sub: 'How is it being used?',                reports: ['behavior', 'multi_agent', 'model_selection_heatmap', 'time_in_tool', 'session_chains'] },
+        { id: 'behavior',    label: 'Behaviour',               sub: 'How is it being used?',                reports: ['behavior', 'multi_agent', 'model_selection_heatmap', 'time_in_tool', 'session_chains', 'session_duration'] },
         { id: 'ecosystem',   label: 'Ecosystem & Diagnostics', sub: "What's the tooling actually doing?",   reports: ['hook_overhead', 'bob_hook_overhead', 'capabilities', 'project_rollup'] },
     ];
 
@@ -88,6 +89,7 @@ class AnalyticsView {
         session_depth: ['session depth', 'turn count', 'turns', 'depth', 'median cost', 'p95', 'sweet spot'],
         time_in_tool: ['time in tool', 'time spent', 'engagement', 'active time', 'where did my time', 'attention'],
         session_chains: ['session chain', 'resumed session', 'continue', 'work thread', 'sustained', 'abandoned'],
+        session_duration: ['session duration', 'session length', 'how long', 'outlier sessions', 'too long', 'too short'],
         roles: ['role', 'sub-agent', 'subagent', 'attribution', 'routing matrix'],
         session_model: ['per-session', 'session spend', 'model pair'],
         thinking_effort: ['effort', 'low', 'medium', 'high', 'xhigh', 'reasoning', 'thinking tokens', 'thinking'],
@@ -122,6 +124,7 @@ class AnalyticsView {
         session_depth: ['cost', 'efficiency', 'session_model'],
         time_in_tool: ['behavior', 'productivity', 'model_selection_heatmap'],
         session_chains: ['behavior', 'session_model', 'multi_agent'],
+        session_duration: ['behavior', 'session_chains', 'time_in_tool'],
         roles: ['cost', 'session_model', 'model_selection_heatmap'],
         session_model: ['cost', 'roles'],
         thinking_effort: ['cost', 'model_performance', 'speed_dist'],
@@ -1129,6 +1132,7 @@ class AnalyticsView {
             session_depth: () => this._loadSessionDepthSection(),
             time_in_tool: () => this._loadTimeInToolSection(),
             session_chains: () => this._loadSessionChainsSection(),
+            session_duration: () => this._loadSessionDurationSection(),
             latency: () => this._loadLatencySection(),
             reliability: () => this._loadReliabilitySection(),
             behavior: () => this._loadBehaviorSection(),
@@ -4061,6 +4065,88 @@ class AnalyticsView {
         } catch (err) {
             this._setSectionError('session_chains', err);
         }
+    }
+
+    // Session duration (#183): per-tool length distribution. opencode
+    // is measured from its own session-duration metric; the other
+    // tools from the span time range. Renders the stats box (median /
+    // p95 / mean), a per-bucket histogram (all tools), and the
+    // per-tool × bucket table.
+    async _loadSessionDurationSection() {
+        this._setSectionLoading('session_duration');
+        try {
+            const data = await this.api.getSessionDuration(this._baseParams());
+            const buckets = data.buckets || [];
+            let html = '<p class="section-hint">Session length = last activity minus first. opencode uses its own duration metric; other tools approximate it from the span time range. Very short sessions may mean context failures or frustration; very long ones may be inefficient.</p>';
+            if (!buckets.length) {
+                html += '<div class="empty-state-hint">No session duration data in this window.</div>';
+            } else {
+                const stats = data.stats || {};
+                const fmtMin = v => v != null ? `${Math.round(v)} min` : '—';
+                html += `<p class="table-hint"><strong>${Number(stats.sessions || 0).toLocaleString()}</strong> session(s) · median <strong>${fmtMin(stats.median_minutes)}</strong> · p95 <strong>${fmtMin(stats.p95_minutes)}</strong> · mean ${fmtMin(stats.mean_minutes)}</p>`;
+                html += this._buildSessionDurationChart(buckets);
+                // Per-tool × bucket pivot.
+                const labels = ['<5m', '5-15m', '15-30m', '30-60m', '>60m'];
+                const byTool = new Map();
+                for (const b of buckets) {
+                    const t = byTool.get(b.tool) || {};
+                    t[b.bucket] = (t[b.bucket] || 0) + (b.count || 0);
+                    byTool.set(b.tool, t);
+                }
+                html += '<div class="analytics-table-wrap"><table class="analytics-table"><thead><tr>'
+                    + '<th>Tool</th>' + labels.map(l => `<th>${this._esc(l)}</th>`).join('') + '<th>Total</th>'
+                    + '</tr></thead><tbody>';
+                const tools = [...byTool.entries()].sort((a, b) => {
+                    const ta = Object.values(a[1]).reduce((x, y) => x + y, 0);
+                    const tb = Object.values(b[1]).reduce((x, y) => x + y, 0);
+                    return tb - ta || (a[0] < b[0] ? -1 : 1);
+                });
+                for (const [tool, cells] of tools) {
+                    const total = Object.values(cells).reduce((x, y) => x + y, 0);
+                    html += `<tr><td>${this._esc(tool)}</td>`
+                        + labels.map(l => `<td>${(cells[l] || 0) ? Number(cells[l]).toLocaleString() : '—'}</td>`).join('')
+                        + `<td>${Number(total).toLocaleString()}</td></tr>`;
+                }
+                html += '</tbody></table></div>';
+            }
+            this._setSectionBody('session_duration', html);
+            this.loadedSections.add('session_duration');
+        } catch (err) {
+            this._setSectionError('session_duration', err);
+        }
+    }
+
+    // Session-duration histogram: one bar per fixed bucket (all tools
+    // summed), height scaled to the busiest bucket, tooltip carries
+    // the per-bucket count and share.
+    _buildSessionDurationChart(buckets) {
+        const labels = ['<5m', '5-15m', '15-30m', '30-60m', '>60m'];
+        const total = buckets.reduce((a, b) => a + (b.count || 0), 0);
+        const per = new Map(labels.map(l => [l, 0]));
+        for (const b of buckets) per.set(b.bucket, (per.get(b.bucket) || 0) + (b.count || 0));
+        const counts = labels.map(l => per.get(l) || 0);
+        const max = Math.max(...counts, 1);
+        const width = 100;
+        const barGap = 2;
+        const barWidth = (width - barGap * (labels.length - 1)) / labels.length;
+        const chartHeight = 100;
+        const bars = labels.map((l, i) => {
+            const c = counts[i];
+            const h = (c / max) * chartHeight;
+            const x = i * (barWidth + barGap);
+            const y = chartHeight - h;
+            const pct = total > 0 ? (c / total * 100).toFixed(1) : '0.0';
+            const title = `${l}\n${c} session(s) — ${pct}%`;
+            return `<rect class="cost-chart-bar" x="${x.toFixed(3)}" y="${y.toFixed(3)}" width="${barWidth.toFixed(3)}" height="${h.toFixed(3)}"><title>${title}</title></rect>`;
+        }).join('');
+        return `
+            <h3>Sessions by length</h3>
+            <div class="cost-chart">
+                <svg class="cost-chart-svg" viewBox="0 0 ${width} ${chartHeight}" preserveAspectRatio="none">${bars}</svg>
+                <div class="session-duration-axis">
+                    ${labels.map(l => `<span>${this._esc(l)}</span>`).join('')}
+                </div>
+            </div>`;
     }
 
     async _loadTtftSection() {

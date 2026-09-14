@@ -206,6 +206,10 @@ pub struct UsageCommand {
     #[arg(long)]
     pub codex_idle_ratio: bool,
 
+    /// Show the session-duration distribution per tool (length trends + outliers)
+    #[arg(long)]
+    pub session_duration: bool,
+
     /// Show cross-tool first-token latency comparison (Claude Code, opencode, pi) from spans
     #[arg(long)]
     pub cross_tool_ttft: bool,
@@ -382,6 +386,8 @@ struct UsageOutput {
     codex_turns: Option<otelite_core::api::CodexTurnBreakdownResponse>,
     #[serde(skip_serializing_if = "Option::is_none")]
     codex_idle_ratio: Option<otelite_core::api::CodexIdleRatioResponse>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    session_duration: Option<otelite_core::api::SessionDurationResponse>,
     #[serde(skip_serializing_if = "Option::is_none")]
     cross_tool_ttft: Option<otelite_core::api::CrossToolTtftResponse>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -1079,6 +1085,19 @@ impl UsageCommand {
                 None
             };
 
+        // --session-duration
+        let session_duration: Option<otelite_core::api::SessionDurationResponse> = if self
+            .session_duration
+        {
+            let resp = storage
+                .query_session_durations(Some(start_time), Some(end_time))
+                .await
+                .map_err(|e| Error::ApiError(format!("Failed to query session_duration: {e}")))?;
+            Some(otelite_core::session_duration::distribution(&resp.rows))
+        } else {
+            None
+        };
+
         // --cross-tool-ttft
         let cross_tool_ttft: Option<otelite_core::api::CrossToolTtftResponse> =
             if self.cross_tool_ttft {
@@ -1461,6 +1480,7 @@ impl UsageCommand {
                     codex_ttft,
                     codex_turns,
                     codex_idle_ratio,
+                    session_duration,
                     cross_tool_ttft,
                     hook_overhead,
                     bob_hook_overhead,
@@ -1669,6 +1689,11 @@ impl UsageCommand {
 
                 if let Some(ref resp) = codex_idle_ratio {
                     display_codex_idle_ratio(resp);
+                    println!();
+                }
+
+                if let Some(ref resp) = session_duration {
+                    display_session_duration(resp);
                     println!();
                 }
 
@@ -3346,6 +3371,65 @@ fn display_codex_idle_ratio(resp: &otelite_core::api::CodexIdleRatioResponse) {
     println!("{}", table);
 }
 
+/// Table cells for the session-duration table (#183): one row per tool
+/// (tool asc) — tool, total sessions, then the count in each fixed
+/// bucket (<5m, 5-15m, 15-30m, 30-60m, >60m), zero when a tool has
+/// no session in the bucket.
+fn session_duration_rows(resp: &otelite_core::api::SessionDurationResponse) -> Vec<Vec<String>> {
+    use std::collections::BTreeMap;
+    const LABELS: [&str; 5] = ["<5m", "5-15m", "15-30m", "30-60m", ">60m"];
+    let mut by_tool: BTreeMap<String, BTreeMap<String, u64>> = BTreeMap::new();
+    for b in &resp.buckets {
+        *by_tool
+            .entry(b.tool.clone())
+            .or_default()
+            .entry(b.bucket.clone())
+            .or_insert(0) += b.count;
+    }
+    by_tool
+        .into_iter()
+        .map(|(tool, cells)| {
+            let total: u64 = cells.values().sum();
+            let mut row = vec![tool, total.to_string()];
+            for label in LABELS {
+                row.push(cells.get(label).copied().unwrap_or(0).to_string());
+            }
+            row
+        })
+        .collect()
+}
+
+fn display_session_duration(resp: &otelite_core::api::SessionDurationResponse) {
+    println!("Session Duration (opencode: its own metric; other tools: span range):");
+    if resp.buckets.is_empty() {
+        println!("  No session duration data in range");
+        return;
+    }
+    println!(
+        "  {} session(s) — median {:.1} min · p95 {:.1} min · mean {:.1} min",
+        resp.stats.sessions,
+        resp.stats.median_minutes,
+        resp.stats.p95_minutes,
+        resp.stats.mean_minutes
+    );
+    let mut table = Table::new();
+    fit_to_terminal(&mut table);
+    table.load_preset(UTF8_FULL);
+    table.set_header(vec![
+        Cell::new("Tool").fg(Color::Cyan),
+        Cell::new("Sessions").fg(Color::Cyan),
+        Cell::new("<5m").fg(Color::Cyan),
+        Cell::new("5-15m").fg(Color::Cyan),
+        Cell::new("15-30m").fg(Color::Cyan),
+        Cell::new("30-60m").fg(Color::Cyan),
+        Cell::new(">60m").fg(Color::Cyan),
+    ]);
+    for row in session_duration_rows(resp) {
+        table.add_row(row.into_iter().map(Cell::new).collect::<Vec<_>>());
+    }
+    println!("{}", table);
+}
+
 fn display_cross_tool_ttft(resp: &otelite_core::api::CrossToolTtftResponse) {
     if resp.rows.is_empty() {
         println!("Cross-Tool TTFT: no span-level ttft_ms data in range");
@@ -4754,5 +4838,43 @@ mod tests {
 
         // Empty state: no rows.
         assert!(codex_idle_ratio_rows(&CodexIdleRatioResponse::default()).is_empty());
+    }
+
+    #[test]
+    fn test_session_duration_rows_pivot_by_tool() {
+        use otelite_core::api::{
+            SessionDurationBucket, SessionDurationResponse, SessionDurationStats,
+        };
+        let b = |tool: &str, bucket: &str, count: u64| SessionDurationBucket {
+            tool: tool.into(),
+            bucket: bucket.into(),
+            count,
+            pct: 0.0,
+        };
+        let resp = SessionDurationResponse {
+            // Deliberately out of bucket order — the pivot must not
+            // depend on input order.
+            buckets: vec![
+                b("opencode", ">60m", 1),
+                b("opencode", "<5m", 2),
+                b("claude_code", "30-60m", 3),
+                b("opencode", "5-15m", 4),
+            ],
+            stats: SessionDurationStats {
+                sessions: 10,
+                median_minutes: 8.0,
+                p95_minutes: 75.0,
+                mean_minutes: 12.0,
+            },
+            filters_applied: vec![],
+        };
+        let rows = session_duration_rows(&resp);
+        // Tool asc; zero-filled bucket columns; per-tool total first.
+        assert_eq!(rows.len(), 2);
+        assert_eq!(rows[0], vec!["claude_code", "3", "0", "0", "0", "3", "0"]);
+        assert_eq!(rows[1], vec!["opencode", "7", "2", "4", "0", "0", "1"]);
+
+        // Empty state: no rows.
+        assert!(session_duration_rows(&SessionDurationResponse::default()).is_empty());
     }
 }

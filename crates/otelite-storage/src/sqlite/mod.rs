@@ -1232,6 +1232,17 @@ impl StorageBackend for SqliteBackend {
         .await
     }
 
+    async fn query_session_durations(
+        &self,
+        start_time: Option<i64>,
+        end_time: Option<i64>,
+    ) -> Result<otelite_core::api::SessionDurationStorageResponse> {
+        self.read_query(move |conn| {
+            reader::query_session_durations(conn, start_time, end_time).map_err(StorageError::from)
+        })
+        .await
+    }
+
     async fn query_tool_switch_storage(
         &self,
         start_time: Option<i64>,

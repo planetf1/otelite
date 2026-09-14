@@ -810,6 +810,21 @@ pub trait StorageBackend: Send + Sync {
         Err(StorageError::QueryError("not implemented".to_string()))
     }
 
+    /// Per-(tool, session) duration rows for the session-duration
+    /// distribution (#183): opencode from its
+    /// `opencode.session.duration` metric (max of the per-sample
+    /// averages per session = the session's final duration), every
+    /// other tool from the span time range (max end - min start per
+    /// session.id) — the fallback the issue prescribes.
+    async fn query_session_durations(
+        &self,
+        start_time: Option<i64>,
+        end_time: Option<i64>,
+    ) -> Result<crate::api::SessionDurationStorageResponse> {
+        let _ = (start_time, end_time);
+        Err(StorageError::QueryError("not implemented".to_string()))
+    }
+
     /// Per-session, start-ordered LLM span rows for the tool-switch
     /// overhead analysis (#166): session id, tool, start time, and the
     /// reconciled TTFT in ms.

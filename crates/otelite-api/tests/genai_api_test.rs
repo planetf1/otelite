@@ -3382,3 +3382,90 @@ async fn test_codex_idle_ratio_per_day() {
     );
     assert_eq!(rows[1]["span_count"], 1);
 }
+
+// ── Session duration distribution (#183) ────────────────────────────────────
+
+#[tokio::test]
+async fn test_session_duration_buckets_and_stats() {
+    let (server, storage, _temp_dir) = setup_test_server().await;
+    let app = server.build_router();
+
+    // Empty state.
+    let (status, v) = get_json(&app, "/api/genai/session_duration").await;
+    assert_eq!(status, StatusCode::OK);
+    assert!(v["buckets"].as_array().unwrap().is_empty());
+    assert_eq!(v["stats"]["sessions"], 0);
+
+    const SEC: i64 = 1_000_000_000;
+    let base = R0;
+
+    // sd-a (opencode metric source): re-reports of a cumulative
+    // duration (60 s, then 120 s) -> session duration 120 s -> "<5m".
+    storage
+        .write_metric(&agent_metric(
+            "opencode.session.duration",
+            base,
+            None,
+            Some((1, 60_000.0)),
+            &[("session.id", "sd-a")],
+        ))
+        .await
+        .unwrap();
+    storage
+        .write_metric(&agent_metric(
+            "opencode.session.duration",
+            base + 300 * SEC,
+            None,
+            Some((1, 120_000.0)),
+            &[("session.id", "sd-a")],
+        ))
+        .await
+        .unwrap();
+    // sd-b (claude_code span source): first span at base, last at
+    // base + 400 s -> ~400 s -> "5-15m".
+    let spans = vec![
+        tsw_span("sdur-1", "com.anthropic.claude_code", base, "sd-b", None),
+        tsw_span(
+            "sdur-2",
+            "com.anthropic.claude_code",
+            base + 400 * SEC,
+            "sd-b",
+            None,
+        ),
+    ];
+    storage.write_span_batch(&spans).await.unwrap();
+
+    // Windowed query — a different cache key than the empty-state call.
+    let (status, v) = get_json(
+        &app,
+        &format!(
+            "/api/genai/session_duration?start_time={}&end_time={}",
+            base - SEC,
+            base + 86_400 * SEC
+        ),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+
+    let buckets = v["buckets"].as_array().unwrap();
+    assert_eq!(buckets.len(), 2, "{v}");
+    // (bucket asc, tool asc): <5m/opencode then 5-15m/claude_code.
+    assert_eq!(buckets[0]["bucket"], "<5m");
+    assert_eq!(buckets[0]["tool"], "opencode");
+    assert_eq!(buckets[0]["count"], 1);
+    assert!(
+        (buckets[0]["pct"].as_f64().unwrap() - 50.0).abs() < 1e-9,
+        "{v}"
+    );
+    assert_eq!(buckets[1]["bucket"], "5-15m");
+    assert_eq!(buckets[1]["tool"], "claude_code");
+    assert_eq!(buckets[1]["count"], 1);
+
+    // Stats over both sessions (120 s and ~400 s).
+    let stats = &v["stats"];
+    assert_eq!(stats["sessions"], 2);
+    let mean = stats["mean_minutes"].as_f64().unwrap();
+    assert!((mean - (120.0 + 400.0) / 2.0 / 60.0).abs() < 0.05, "{v}");
+    let p95 = stats["p95_minutes"].as_f64().unwrap();
+    assert!((p95 - 400.0 / 60.0).abs() < 0.05, "{v}");
+}

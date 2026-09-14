@@ -13456,6 +13456,133 @@ pub fn query_session_chain_storage(
     })
 }
 
+// ── Session duration distribution (#183) ────────────────────────────────────
+
+/// Per-(tool, session) duration rows (#183).
+///
+/// Two sources, merged here:
+///
+/// 1. **opencode** reports its own `opencode.session.duration`
+///    histogram. Each row re-reports the session's cumulative duration
+///    (constant after the session ends), so the session's duration is
+///    the MAX of the per-row sample means (`sum / count`, ms).
+/// 2. **every other tool** is approximated from the span time range
+///    (max end_time - min start_time per session.id) — the fallback
+///    the issue prescribes. opencode spans are excluded from this
+///    source so the metric is the single source of truth for it.
+///
+/// Tool labels follow the daily tool mix convention.
+pub fn query_session_durations(
+    conn: &Connection,
+    start_time: Option<i64>,
+    end_time: Option<i64>,
+) -> Result<otelite_core::api::SessionDurationStorageResponse> {
+    use otelite_core::api::{SessionDurationRow, SessionDurationStorageResponse};
+    use otelite_core::semconv;
+
+    let tool_expr = r#"CASE
+        WHEN json_extract(scope,'$.name') LIKE '%claude_code%'   THEN 'claude_code'
+        WHEN json_extract(scope,'$.name') = 'com.opencode'       THEN 'opencode'
+        WHEN json_extract(scope,'$.name') LIKE '%opencode%'      THEN 'opencode'
+        WHEN json_extract(scope,'$.name') = 'pi-otel'            THEN 'pi'
+        WHEN json_extract(scope,'$.name') LIKE '%codex%'         THEN 'codex'
+        WHEN json_extract(scope,'$.name') LIKE '%deekseek%'      THEN 'deepseek'
+        ELSE COALESCE(json_extract(scope,'$.name'), 'unknown')
+    END"#;
+
+    // ── Source 1: the opencode metric ─────────────────────────────────
+    let mut metric_where = String::from(
+        "WHERE name = 'opencode.session.duration' AND json_valid(attributes)
+           AND value_histogram IS NOT NULL
+           AND json_extract(attributes,'$.\"session.id\"') IS NOT NULL",
+    );
+    let mut metric_params: Vec<Box<dyn rusqlite::ToSql>> = Vec::new();
+    if let Some(s) = start_time {
+        metric_where.push_str(" AND timestamp >= ?");
+        metric_params.push(Box::new(s));
+    }
+    if let Some(e) = end_time {
+        metric_where.push_str(" AND timestamp <= ?");
+        metric_params.push(Box::new(e));
+    }
+    let metric_sql = format!(
+        "SELECT json_extract(attributes,'$.\"session.id\"') AS session_id,
+                MAX(json_extract(value_histogram,'$[1]')
+                    / NULLIF(json_extract(value_histogram,'$[0]'), 0)) / 1000.0 AS dur_s
+         FROM metrics
+         {metric_where}
+         GROUP BY session_id"
+    );
+    let metric_refs: Vec<&dyn rusqlite::ToSql> = metric_params.iter().map(|p| p.as_ref()).collect();
+    let mut stmt = conn.prepare(&metric_sql).map_err(|e| {
+        StorageError::QueryError(format!(
+            "Failed to prepare session_duration metric query: {e}"
+        ))
+    })?;
+    let mut rows: Vec<SessionDurationRow> = stmt
+        .query_map(metric_refs.as_slice(), |r| {
+            Ok(SessionDurationRow {
+                session_id: r.get(0)?,
+                tool: "opencode".to_string(),
+                duration_secs: r.get::<_, Option<f64>>(1)?.unwrap_or(0.0),
+            })
+        })
+        .map_err(|e| StorageError::QueryError(format!("{e}")))?
+        .collect::<std::result::Result<Vec<_>, _>>()
+        .map_err(|e| StorageError::QueryError(format!("{e}")))?;
+
+    // ── Source 2: span ranges for the non-opencode tools ──────────────
+    let llm_guard = semconv::llm_span_guard("attributes");
+    let session_expr = semconv::session_id_expr("attributes");
+    let session_predicate = semconv::session_id_index_predicate("attributes");
+    let mut span_where = format!("WHERE {llm_guard} AND {session_predicate}");
+    // The metric is opencode's source of truth; its spans must not
+    // double-count.
+    span_where.push_str(&format!(" AND ({tool_expr}) <> 'opencode'"));
+    let mut span_params: Vec<Box<dyn rusqlite::ToSql>> = Vec::new();
+    if let Some(s) = start_time {
+        span_where.push_str(" AND start_time >= ?");
+        span_params.push(Box::new(s));
+    }
+    if let Some(e) = end_time {
+        span_where.push_str(" AND start_time <= ?");
+        span_params.push(Box::new(e));
+    }
+    let span_sql = format!(
+        "SELECT {session} AS session_id,
+                {tool} AS tool,
+                (MAX(end_time) - MIN(start_time)) / 1000000000.0 AS dur_s
+         FROM spans
+         {span_where}
+         GROUP BY session_id, tool",
+        session = session_expr,
+        tool = tool_expr,
+    );
+    let span_refs: Vec<&dyn rusqlite::ToSql> = span_params.iter().map(|p| p.as_ref()).collect();
+    let mut stmt2 = conn.prepare(&span_sql).map_err(|e| {
+        StorageError::QueryError(format!(
+            "Failed to prepare session_duration span query: {e}"
+        ))
+    })?;
+    let span_rows: Vec<SessionDurationRow> = stmt2
+        .query_map(span_refs.as_slice(), |r| {
+            Ok(SessionDurationRow {
+                session_id: r.get(0)?,
+                tool: r.get(1)?,
+                duration_secs: r.get::<_, Option<f64>>(2)?.unwrap_or(0.0),
+            })
+        })
+        .map_err(|e| StorageError::QueryError(format!("{e}")))?
+        .collect::<std::result::Result<Vec<_>, _>>()
+        .map_err(|e| StorageError::QueryError(format!("{e}")))?;
+    rows.extend(span_rows);
+
+    Ok(SessionDurationStorageResponse {
+        rows,
+        filters_applied: Vec::new(),
+    })
+}
+
 #[cfg(test)]
 mod new_insight_tests {
     use super::*;
@@ -16095,6 +16222,95 @@ mod new_insight_tests_2 {
         // Empty state.
         let empty = make_conn();
         assert!(query_session_chain_storage(&empty, None, None)
+            .unwrap()
+            .rows
+            .is_empty());
+    }
+
+    #[test]
+    fn test_session_durations_merges_metric_and_span_sources() {
+        let conn = make_conn();
+        const SEC: i64 = 1_000_000_000;
+        let d1 = 1_767_225_600_000_000_000_i64; // 2026-01-01 (UTC)
+
+        // du-a (opencode metric source): two re-reportings of the
+        // cumulative session duration (60 s, then 120 s) — the max is
+        // the session's final duration.
+        for (ts, sum_ms) in [(d1, 60_000), (d1 + 300 * SEC, 120_000)] {
+            conn.execute(
+                "INSERT INTO metrics (name, metric_type, timestamp, value_histogram, attributes, flags, created_at)
+                 VALUES ('opencode.session.duration', 2, ?1, ?2, ?3, 0, 1000000000)",
+                rusqlite::params![
+                    ts,
+                    format!("[1, {sum_ms}.0, []]"),
+                    serde_json::json!({ "session.id": "du-a" }).to_string(),
+                ],
+            )
+            .unwrap();
+        }
+        // du-b (claude_code span source): first span at d1, last at
+        // d1+300 s -> span-range duration ~300 s.
+        sc_span(
+            &conn,
+            "dur1",
+            d1,
+            "com.anthropic.claude_code",
+            Some("du-b"),
+            "test-model",
+            (1, 1, 0, 0),
+        );
+        sc_span(
+            &conn,
+            "dur2",
+            d1 + 300 * SEC,
+            "com.anthropic.claude_code",
+            Some("du-b"),
+            "test-model",
+            (1, 1, 0, 0),
+        );
+        // du-c (opencode spans, no metric): excluded — the metric is
+        // opencode's source of truth, so spans alone produce no row.
+        sc_span(
+            &conn,
+            "dur3",
+            d1,
+            "com.opencode",
+            Some("du-c"),
+            "test-model",
+            (1, 1, 0, 0),
+        );
+        // No session.id: excluded.
+        sc_span(
+            &conn,
+            "dur4",
+            d1,
+            "com.anthropic.claude_code",
+            None,
+            "test-model",
+            (1, 1, 0, 0),
+        );
+
+        let result = query_session_durations(&conn, None, None).unwrap();
+        assert_eq!(result.rows.len(), 2, "{result:?}");
+        let by_session = |id: &str| result.rows.iter().find(|r| r.session_id == id).unwrap();
+        // Metric source: the max of the sample means (120 s), tool
+        // fixed to opencode.
+        let a = by_session("du-a");
+        assert_eq!(a.tool, "opencode");
+        assert!((a.duration_secs - 120.0).abs() < 1e-9, "{result:?}");
+        // Span source: max end - min start (~300 s + the 1 ms span
+        // width).
+        let b = by_session("du-b");
+        assert_eq!(b.tool, "claude_code");
+        assert!((b.duration_secs - 300.0).abs() < 0.01, "{result:?}");
+
+        // A day-2-only window drops both (all activity is on day 1).
+        let day2 = query_session_durations(&conn, Some(d1 + 86_400 * SEC), None).unwrap();
+        assert!(day2.rows.is_empty(), "{day2:?}");
+
+        // Empty state.
+        let empty = make_conn();
+        assert!(query_session_durations(&empty, None, None)
             .unwrap()
             .rows
             .is_empty());

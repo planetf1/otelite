@@ -2883,6 +2883,61 @@ pub struct CostByProjectResponse {
     pub filters_applied: Vec<String>,
 }
 
+// ── Session duration distribution (#183) ────────────────────────────────────
+
+/// One session's duration observation (#183): the (tool, session) pair
+/// and its duration in seconds.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
+pub struct SessionDurationRow {
+    pub session_id: String,
+    /// Short tool label, same convention as the daily tool mix.
+    pub tool: String,
+    pub duration_secs: f64,
+}
+
+/// Response of the storage query behind `GET /api/genai/session_duration`
+/// (#183): one row per (tool, session).
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
+pub struct SessionDurationStorageResponse {
+    pub rows: Vec<SessionDurationRow>,
+    pub filters_applied: Vec<String>,
+}
+
+/// One (tool, bucket) histogram cell (#183).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
+pub struct SessionDurationBucket {
+    pub tool: String,
+    /// Fixed label: `<5m`, `5-15m`, `15-30m`, `30-60m`, `>60m`.
+    pub bucket: String,
+    pub count: u64,
+    /// Share of ALL sessions in the window (the table column sums to
+    /// 100 over every row).
+    pub pct: f64,
+}
+
+/// Scalar stats over all sessions in the window (#183).
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
+pub struct SessionDurationStats {
+    pub sessions: u64,
+    pub median_minutes: f64,
+    pub p95_minutes: f64,
+    pub mean_minutes: f64,
+}
+
+/// Response for `GET /api/genai/session_duration` (#183).
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
+pub struct SessionDurationResponse {
+    /// Per-(tool, bucket) cells, in (bucket asc, tool asc) order.
+    pub buckets: Vec<SessionDurationBucket>,
+    pub stats: SessionDurationStats,
+    pub filters_applied: Vec<String>,
+}
+
 // ── Session chains (#165) ────────────────────────────────────────────────────
 
 /// One time burst (segment) of a session chain (#165): a contiguous run

@@ -3019,6 +3019,43 @@ pub async fn get_codex_idle_ratio(
     Ok(Json(response))
 }
 
+/// Session-duration distribution (#183): which length your sessions
+/// have, per tool. opencode is measured from its own
+/// `opencode.session.duration` metric; the other tools are
+/// approximated from the span time range. Very short sessions may
+/// indicate context failures or frustration; very long ones may be
+/// inefficient.
+#[utoipa::path(
+    get,
+    path = "/api/genai/session_duration",
+    params(TimeRangeQuery),
+    responses(
+        (status = 200, description = "Per-(tool, bucket) duration histogram and scalar stats", body = otelite_core::api::SessionDurationResponse),
+        (status = 500, description = "Internal server error", body = ErrorResponse)
+    ),
+    tag = "genai"
+)]
+pub async fn get_session_duration(
+    State(state): State<AppState>,
+    Query(query): Query<TimeRangeQuery>,
+) -> Result<Json<otelite_core::api::SessionDurationResponse>, (StatusCode, Json<ErrorResponse>)> {
+    let resp = state
+        .storage
+        .query_session_durations(query.start_time, query.end_time)
+        .await
+        .map_err(|e| {
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(ErrorResponse::storage_error(format!(
+                    "query session_duration: {e}"
+                ))),
+            )
+        })?;
+    let mut response = otelite_core::session_duration::distribution(&resp.rows);
+    response.filters_applied = query.filters().applied(&[]);
+    Ok(Json(response))
+}
+
 /// Session × model cross-tab: tokens and cost per (session_id, model) pair (#115).
 #[utoipa::path(
     get,
