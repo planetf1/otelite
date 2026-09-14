@@ -1172,6 +1172,18 @@ impl StorageBackend for SqliteBackend {
         .await
     }
 
+    async fn query_cost_by_project_model_tool(
+        &self,
+        start_time: Option<i64>,
+        end_time: Option<i64>,
+    ) -> Result<otelite_core::api::CostByProjectResponse> {
+        self.read_query(move |conn| {
+            reader::query_cost_by_project_model_tool(conn, start_time, end_time)
+                .map_err(StorageError::from)
+        })
+        .await
+    }
+
     async fn query_skill_activity(
         &self,
         start_time: Option<i64>,

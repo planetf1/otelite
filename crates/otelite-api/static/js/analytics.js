@@ -39,6 +39,7 @@ class AnalyticsView {
     static REPORTS = [
         { id: 'cost',                    title: 'Cost',                    hint: 'Tokens spent · pricing · most expensive calls' },
         { id: 'providers',               title: 'Provider Mix',            hint: 'Tokens & estimated cost by provider × model (opencode · codex · claude)' },
+        { id: 'cost_by_project',         title: 'Cost by Project',         hint: 'Cost by project × tool × model — which project drives the bill' },
         { id: 'roles',                   title: 'Agent Roles',             hint: 'Sub-agent attribution · cost & tokens per role · role × model routing matrix (opencode)' },
         { id: 'session_model',           title: 'Session × Model',         hint: 'Token and cost breakdown per (session, model) pair — spot opus spend in specific sessions' },
         { id: 'thinking_effort',         title: 'Thinking & Effort',       hint: 'Thinking and effort token usage — Claude Code effort levels, opencode + Codex reasoning share' },
@@ -64,7 +65,7 @@ class AnalyticsView {
     // Top-level categories. A report appears in exactly one group; pinned
     // reports move to the Pinned group while pinned.
     static GROUPS = [
-        { id: 'cost',        label: 'Cost',                    sub: 'Where did the tokens go?',            reports: ['cost', 'providers', 'roles', 'session_model', 'thinking_effort', 'efficiency', 'productivity', 'skills'] },
+        { id: 'cost',        label: 'Cost',                    sub: 'Where did the tokens go?',            reports: ['cost', 'providers', 'cost_by_project', 'roles', 'session_model', 'thinking_effort', 'efficiency', 'productivity', 'skills'] },
         { id: 'latency',     label: 'Latency',                 sub: 'How fast, and where is it slow?',      reports: ['latency', 'model_performance', 'ttft', 'codex_turns', 'speed_dist'] },
         { id: 'reliability', label: 'Reliability',             sub: "What's breaking, and how often?",      reports: ['reliability', 'tool_failures', 'guardian'] },
         { id: 'behavior',    label: 'Behaviour',               sub: 'How is it being used?',                reports: ['behavior', 'multi_agent', 'model_selection_heatmap'] },
@@ -78,6 +79,7 @@ class AnalyticsView {
     static REPORT_KEYWORDS = {
         cost: ['cost', 'pricing', 'spend', 'expensive', 'tokens spent'],
         providers: ['provider', 'mix', 'anthropic', 'openai', 'amazon', 'bedrock'],
+        cost_by_project: ['cost by project', 'per project', 'attribution', 'unattributed', 'which project'],
         roles: ['role', 'sub-agent', 'subagent', 'attribution', 'routing matrix'],
         session_model: ['per-session', 'session spend', 'model pair'],
         thinking_effort: ['effort', 'low', 'medium', 'high', 'xhigh', 'reasoning', 'thinking tokens', 'thinking'],
@@ -106,6 +108,7 @@ class AnalyticsView {
     static REPORT_RELATED = {
         cost: ['efficiency', 'providers', 'roles'],
         providers: ['cost', 'model_performance'],
+        cost_by_project: ['cost', 'project_rollup', 'providers'],
         roles: ['cost', 'session_model', 'model_selection_heatmap'],
         session_model: ['cost', 'roles'],
         thinking_effort: ['cost', 'model_performance', 'speed_dist'],
@@ -1104,6 +1107,7 @@ class AnalyticsView {
             cost: () => this._loadCostSection(),
             roles: () => this._loadRolesSection(),
             providers: () => this._loadProvidersSection(),
+            cost_by_project: () => this._loadCostByProjectSection(),
             latency: () => this._loadLatencySection(),
             reliability: () => this._loadReliabilitySection(),
             behavior: () => this._loadBehaviorSection(),
@@ -3802,6 +3806,47 @@ class AnalyticsView {
             this.loadedSections.add('productivity');
         } catch (err) {
             this._setSectionError('productivity', err);
+        }
+    }
+
+    async _loadCostByProjectSection() {
+        this._setSectionLoading('cost_by_project');
+        try {
+            const data = await this.api.getCostByProject(this._baseParams());
+            const rows = data.rows || [];
+            let html = '<p class="section-hint">Codex and Claude Code spans carry no project label — they land in "unattributed" (a known limitation, not a gap in the query).</p>';
+            if (!rows.length) {
+                html += '<div class="empty-state-hint">No LLM span data in this window.</div>';
+            } else {
+                // Group by project (client-side) for the expandable layout:
+                // project subtotal + tool/model breakdown per project.
+                const byProject = new Map();
+                for (const r of rows) {
+                    const g = byProject.get(r.project) || { project: r.project, cost: 0, rows: [] };
+                    g.cost += r.cost_usd ?? 0;
+                    g.rows.push(r);
+                    byProject.set(r.project, g);
+                }
+                const total = [...byProject.values()].reduce((s, g) => s + g.cost, 0);
+                const projects = [...byProject.values()].sort((a, b) => b.cost - a.cost);
+                const fmtUsd = v => v != null && v > 0 ? `$${v.toFixed(2)}` : '—';
+                html += '<div class="cbp-groups">';
+                projects.forEach((g, i) => {
+                    const share = total > 0 ? `${(g.cost / total * 100).toFixed(1)}%` : '—';
+                    html += `<details class="cbp-project"${i === 0 ? ' open' : ''}>
+                        <summary><strong>${this._esc(g.project)}</strong> — ${fmtUsd(g.cost)} (${share}) · ${g.rows.length} model${g.rows.length === 1 ? '' : 's'}</summary>
+                        <div class="analytics-table-wrap"><table class="analytics-table"><thead><tr><th>Tool</th><th>Model</th><th>Requests</th><th>Cost</th></tr></thead><tbody>`;
+                    for (const r of [...g.rows].sort((a, b) => (b.cost_usd ?? -1) - (a.cost_usd ?? -1))) {
+                        html += `<tr><td>${this._esc(r.tool)}</td><td>${this._esc(r.model)}</td><td>${Number(r.requests).toLocaleString()}</td><td>${fmtUsd(r.cost_usd)}</td></tr>`;
+                    }
+                    html += '</tbody></table></div></details>';
+                });
+                html += '</div>';
+            }
+            this._setSectionBody('cost_by_project', html);
+            this.loadedSections.add('cost_by_project');
+        } catch (err) {
+            this._setSectionError('cost_by_project', err);
         }
     }
 

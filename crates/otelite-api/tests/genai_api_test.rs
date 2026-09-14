@@ -2409,3 +2409,178 @@ async fn test_cost_projection_with_and_without_data() {
     assert!(models[0]["avg_daily"].as_f64().unwrap() > 0.0, "{v}");
     assert!(models[0]["projected"].as_f64().unwrap() > 0.0, "{v}");
 }
+
+// ── Cost by project × model × tool (#173) ────────────────────────────────────
+
+/// LLM span with an optional `project.id` attribute (the daily_mix_span
+/// helper predates #173 and cannot carry it).
+// Six parameters mirror the six span fields the fixture varies — one per
+// test assertion axis; restructuring them would obscure the call sites.
+#[allow(clippy::too_many_arguments)]
+fn cbp_span(
+    span_id: &str,
+    scope: &str,
+    model: &str,
+    start: i64,
+    project_id: Option<&str>,
+    tokens: (u64, u64),
+) -> Span {
+    let (in_t, out_t) = tokens;
+    let mut attributes: HashMap<String, String> = HashMap::new();
+    attributes.insert("otel.scope.name".to_string(), scope.to_string());
+    attributes.insert("gen_ai.system".to_string(), "anthropic".to_string());
+    attributes.insert("gen_ai.request.model".to_string(), model.to_string());
+    attributes.insert("gen_ai.usage.input_tokens".to_string(), in_t.to_string());
+    attributes.insert("gen_ai.usage.output_tokens".to_string(), out_t.to_string());
+    if let Some(p) = project_id {
+        attributes.insert("project.id".to_string(), p.to_string());
+    }
+    Span {
+        trace_id: "t-cost-by-project".to_string(),
+        span_id: span_id.to_string(),
+        parent_span_id: None,
+        name: "llm_request".to_string(),
+        kind: SpanKind::Internal,
+        start_time: start,
+        end_time: start + 1_000_000,
+        attributes,
+        status: SpanStatus {
+            code: SpanStatusCode::Ok,
+            message: None,
+        },
+        events: Vec::new(),
+        resource: None,
+    }
+}
+
+#[tokio::test]
+async fn test_cost_by_project_rows_and_pricing() {
+    let (server, storage, _temp_dir) = setup_test_server().await;
+    let app = server.build_router();
+
+    // Empty state.
+    let (status, v) = get_json(&app, "/api/genai/cost_by_project").await;
+    assert_eq!(status, StatusCode::OK);
+    assert!(v["rows"].as_array().unwrap().is_empty());
+
+    // Day = 2026-01-01 (UTC).
+    let d1 = 1_767_225_600_000_000_000_i64;
+
+    let spans = vec![
+        // opencode, project "api-server": two granite-4.0 spans...
+        cbp_span(
+            "c1",
+            "com.opencode",
+            "granite-4.0",
+            d1 + 1_000_000,
+            Some("api-server"),
+            (10, 5),
+        ),
+        cbp_span(
+            "c2",
+            "com.opencode",
+            "granite-4.0",
+            d1 + 2_000_000,
+            Some("api-server"),
+            (20, 5),
+        ),
+        // ...and one granite-4.1 span.
+        cbp_span(
+            "c3",
+            "com.opencode",
+            "granite-4.1",
+            d1 + 3_000_000,
+            Some("api-server"),
+            (1, 1),
+        ),
+        // opencode, second project "web-ui".
+        cbp_span(
+            "c4",
+            "com.opencode",
+            "granite-4.0",
+            d1 + 4_000_000,
+            Some("web-ui"),
+            (7, 3),
+        ),
+        // claude_code: no project label -> unattributed, priced via the
+        // deterministic Claude fallback table.
+        cbp_span(
+            "c5",
+            "com.anthropic.claude_code",
+            "claude-sonnet-5",
+            d1 + 5_000_000,
+            None,
+            (100, 50),
+        ),
+        // opencode with an EMPTY project label -> also unattributed.
+        cbp_span(
+            "c6",
+            "com.opencode",
+            "granite-4.0",
+            d1 + 6_000_000,
+            Some(""),
+            (2, 2),
+        ),
+    ];
+    storage.write_span_batch(&spans).await.unwrap();
+
+    // Windowed query — a different cache key than the empty-state call.
+    let (status, v) = get_json(
+        &app,
+        &format!(
+            "/api/genai/cost_by_project?start_time={d1}&end_time={}",
+            d1 + 86_400 * 1_000_000_000
+        ),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+
+    // (project asc, tool asc, model asc).
+    let rows = v["rows"].as_array().unwrap();
+    assert_eq!(rows.len(), 5, "{v}");
+    let keys: Vec<(&str, &str, &str)> = rows
+        .iter()
+        .map(|r| {
+            (
+                r["project"].as_str().unwrap(),
+                r["tool"].as_str().unwrap(),
+                r["model"].as_str().unwrap(),
+            )
+        })
+        .collect();
+    assert_eq!(
+        keys,
+        vec![
+            ("api-server", "opencode", "granite-4.0"),
+            ("api-server", "opencode", "granite-4.1"),
+            ("unattributed", "claude_code", "claude-sonnet-5"),
+            ("unattributed", "opencode", "granite-4.0"),
+            ("web-ui", "opencode", "granite-4.0"),
+        ]
+    );
+
+    // Grouping: the two api-server granite-4.0 spans merge into one row.
+    let r0 = &rows[0];
+    assert_eq!(r0["requests"], 2);
+    assert_eq!(r0["input_tokens"], 30);
+    assert_eq!(r0["output_tokens"], 10);
+    // granite-4.0 has no pricing data -> null cost, never a zero.
+    assert!(r0["cost_usd"].is_null(), "{v}");
+
+    // The unattributed Claude row prices via the fallback table.
+    let r2 = &rows[2];
+    assert_eq!(r2["requests"], 1);
+    assert_eq!(r2["input_tokens"], 100);
+    assert!(
+        r2["cost_usd"].as_f64().unwrap() > 0.0,
+        "claude family prices: {v}"
+    );
+    assert!(r2["cost_source"].is_string(), "{v}");
+
+    // Empty-label opencode span lands in unattributed alongside it, split
+    // by tool.
+    let r3 = &rows[3];
+    assert_eq!(r3["requests"], 1);
+    assert_eq!(r3["input_tokens"], 2);
+    assert!(r3["cost_usd"].is_null(), "{v}");
+}

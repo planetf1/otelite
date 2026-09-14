@@ -2817,6 +2817,47 @@ pub struct CostProjectionResponse {
     pub filters_applied: Vec<String>,
 }
 
+// ── Cost by project (#173) ───────────────────────────────────────────────────
+
+/// One (project, tool, model) cost row. `cost_usd` / `cost_source` are
+/// filled by the API layer from the pricing data; `cost_usd` stays `None`
+/// when the model has no known pricing — never a fabricated zero (#173).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
+pub struct CostByProjectRow {
+    /// Project label (`project.id` from opencode spans); spans without a
+    /// project label (codex / claude_code) group under "unattributed".
+    pub project: String,
+    /// Short tool label, same convention as the daily tool mix.
+    pub tool: String,
+    /// Model name (`(unknown)` when the span carries no model attribute).
+    pub model: String,
+    /// LLM requests in the window for this (project, tool, model).
+    pub requests: u64,
+    pub input_tokens: u64,
+    pub output_tokens: u64,
+    /// Prompt-cache creation tokens (priced; not part of the user-facing
+    /// token totals).
+    pub cache_creation_tokens: u64,
+    /// Prompt-cache read tokens.
+    pub cache_read_tokens: u64,
+    /// Total USD cost for this row, or `None` when unpriced.
+    pub cost_usd: Option<f64>,
+    /// Where the price came from (e.g. "litellm", "fallback"), set
+    /// alongside `cost_usd`.
+    pub cost_source: Option<String>,
+}
+
+/// Response for `GET /api/genai/cost_by_project` (#173).
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
+pub struct CostByProjectResponse {
+    /// Rows in (project asc, tool asc, model asc) order; the web/CLI sort
+    /// by cost for display.
+    pub rows: Vec<CostByProjectRow>,
+    pub filters_applied: Vec<String>,
+}
+
 // ── Productivity (#177) ──────────────────────────────────────────────────────
 
 /// Git output for one (day, tool) pair. Days are UTC calendar days, the same

@@ -227,6 +227,10 @@ pub struct UsageCommand {
     #[arg(long)]
     pub cost_projection: bool,
 
+    /// LLM cost by project × tool × model (#173)
+    #[arg(long)]
+    pub cost_by_project: bool,
+
     /// Show Codex skill injection counts — which skills fire implicitly and how often
     #[arg(long)]
     pub skill_activity: bool,
@@ -364,6 +368,8 @@ struct UsageOutput {
     productivity: Option<otelite_core::api::ProductivityResponse>,
     #[serde(skip_serializing_if = "Option::is_none")]
     cost_projection: Option<otelite_core::api::CostProjectionResponse>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    cost_by_project: Option<otelite_core::api::CostByProjectResponse>,
     #[serde(skip_serializing_if = "Option::is_none")]
     skill_activity: Option<otelite_core::api::SkillActivityResponse>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -1128,6 +1134,30 @@ impl UsageCommand {
                 None
             };
 
+        // --cost-by-project
+        let cost_by_project: Option<otelite_core::api::CostByProjectResponse> = if self
+            .cost_by_project
+        {
+            let mut resp = storage
+                .query_cost_by_project_model_tool(Some(start_time), Some(end_time))
+                .await
+                .map_err(|e| Error::ApiError(format!("Failed to query cost_by_project: {e}")))?;
+            for r in resp.rows.iter_mut() {
+                let usage = TokenUsage {
+                    input: r.input_tokens,
+                    output: r.output_tokens,
+                    cache_creation: r.cache_creation_tokens,
+                    cache_read: r.cache_read_tokens,
+                };
+                let cr = pricing_db.compute_cost(Some(r.model.as_str()), usage, None);
+                r.cost_usd = cr.cost;
+                r.cost_source = Some(cr.source.as_str().to_string());
+            }
+            Some(resp)
+        } else {
+            None
+        };
+
         // --skill-activity
         let skill_activity: Option<otelite_core::api::SkillActivityResponse> =
             if self.skill_activity {
@@ -1254,6 +1284,7 @@ impl UsageCommand {
                     daily_tool_mix,
                     productivity,
                     cost_projection,
+                    cost_by_project,
                     skill_activity,
                     session_quality,
                     skill_outcomes,
@@ -1475,6 +1506,11 @@ impl UsageCommand {
 
                 if let Some(ref resp) = cost_projection {
                     display_cost_projection(resp, &pricing_source);
+                    println!();
+                }
+
+                if let Some(ref resp) = cost_by_project {
+                    display_cost_by_project(resp, &pricing_source);
                     println!();
                 }
 
@@ -3281,6 +3317,59 @@ fn display_cost_projection(resp: &otelite_core::api::CostProjectionResponse, pri
     println!("{}", table);
 }
 
+/// Table cells for the cost-by-project table (#173), sorted by cost
+/// descending (unpriced rows last, then by tokens): project, tool, model,
+/// requests, input+output tokens, formatted cost.
+fn cost_by_project_rows(resp: &otelite_core::api::CostByProjectResponse) -> Vec<Vec<String>> {
+    use std::cmp::Ordering;
+    let mut rows: Vec<&otelite_core::api::CostByProjectRow> = resp.rows.iter().collect();
+    rows.sort_by(|a, b| {
+        b.cost_usd
+            .partial_cmp(&a.cost_usd)
+            .unwrap_or(Ordering::Equal)
+            .then_with(|| {
+                (b.input_tokens + b.output_tokens).cmp(&(a.input_tokens + a.output_tokens))
+            })
+    });
+    rows.into_iter()
+        .map(|r| {
+            vec![
+                r.project.clone(),
+                r.tool.clone(),
+                r.model.clone(),
+                r.requests.to_string(),
+                (r.input_tokens + r.output_tokens).to_string(),
+                r.cost_usd
+                    .map(|c| format!("${c:.2}"))
+                    .unwrap_or_else(|| "—".to_string()),
+            ]
+        })
+        .collect()
+}
+
+fn display_cost_by_project(resp: &otelite_core::api::CostByProjectResponse, pricing_source: &str) {
+    println!("Cost by Project ({pricing_source}):");
+    if resp.rows.is_empty() {
+        println!("  No LLM spans in range");
+        return;
+    }
+    let mut table = Table::new();
+    fit_to_terminal(&mut table);
+    table.load_preset(UTF8_FULL);
+    table.set_header(vec![
+        Cell::new("Project").fg(Color::Cyan),
+        Cell::new("Tool").fg(Color::Cyan),
+        Cell::new("Model").fg(Color::Cyan),
+        Cell::new("Requests").fg(Color::Cyan),
+        Cell::new("Tokens").fg(Color::Cyan),
+        Cell::new("Cost").fg(Color::Cyan),
+    ]);
+    for row in cost_by_project_rows(resp) {
+        table.add_row(row.into_iter().map(Cell::new).collect::<Vec<_>>());
+    }
+    println!("{}", table);
+}
+
 fn display_daily_tool_mix(resp: &otelite_core::api::DailyToolMixResponse) {
     if resp.rows.is_empty() {
         println!("Daily Tool Mix: no data");
@@ -3825,5 +3914,51 @@ mod tests {
 
         // Empty state: no rows.
         assert!(cost_projection_rows(&CostProjectionResponse::default()).is_empty());
+    }
+
+    #[test]
+    fn test_cost_by_project_rows_sorted_cost_desc() {
+        use otelite_core::api::{CostByProjectResponse, CostByProjectRow};
+        let row = |project: &str, model: &str, cost: Option<f64>, tokens: u64| CostByProjectRow {
+            project: project.into(),
+            tool: "opencode".into(),
+            model: model.into(),
+            requests: 1,
+            input_tokens: tokens,
+            output_tokens: 0,
+            cache_creation_tokens: 0,
+            cache_read_tokens: 0,
+            cost_usd: cost,
+            cost_source: cost.map(|_| "fallback".to_string()),
+        };
+        let resp = CostByProjectResponse {
+            rows: vec![
+                row("web-ui", "granite-4.0", Some(1.0), 100),
+                // Unpriced row: sorted last, ordered by tokens among the rest.
+                row("api-server", "mystery-model", None, 500),
+                row("api-server", "granite-4.1", Some(9.5), 10),
+                // Another unpriced row with fewer tokens: after the 500 one.
+                row("unattributed", "claude-sonnet-5", None, 42),
+            ],
+            filters_applied: vec![],
+        };
+        let rows = cost_by_project_rows(&resp);
+        assert_eq!(rows.len(), 4);
+        // Priced rows first, cost desc: 9.50 then 1.00.
+        assert_eq!(rows[0][0], "api-server");
+        assert_eq!(rows[0][2], "granite-4.1");
+        assert_eq!(rows[0][5], "$9.50");
+        assert_eq!(rows[1][0], "web-ui");
+        assert_eq!(rows[1][5], "$1.00");
+        // Unpriced rows last, token-desc: 500 then 42, dash cost cell.
+        assert_eq!(rows[2][0], "api-server");
+        assert_eq!(rows[2][5], "—");
+        assert_eq!(rows[2][4], "500");
+        assert_eq!(rows[3][0], "unattributed");
+        assert_eq!(rows[3][4], "42");
+        assert_eq!(rows[3][5], "—");
+
+        // Empty state: no rows.
+        assert!(cost_by_project_rows(&CostByProjectResponse::default()).is_empty());
     }
 }

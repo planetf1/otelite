@@ -90,6 +90,7 @@ use utoipa::OpenApi;
         crate::api::genai::get_daily_tool_mix,
         crate::api::genai::get_productivity,
         crate::api::genai::get_cost_projection,
+        crate::api::genai::get_cost_by_project,
         crate::api::genai::get_skill_activity,
         crate::api::genai::get_skill_outcomes,
         crate::api::genai::get_model_selection_heatmap,
@@ -460,6 +461,7 @@ impl DashboardServer {
             .route("/api/genai/daily_tool_mix", get(crate::api::genai::get_daily_tool_mix))
             .route("/api/genai/productivity", get(crate::api::genai::get_productivity))
             .route("/api/genai/cost_projection", get(crate::api::genai::get_cost_projection))
+            .route("/api/genai/cost_by_project", get(crate::api::genai::get_cost_by_project))
             .route("/api/genai/skill_activity", get(crate::api::genai::get_skill_activity))
             .route("/api/genai/skill_outcomes", get(crate::api::genai::get_skill_outcomes))
             .route("/api/genai/model_selection_heatmap", get(crate::api::genai::get_model_selection_heatmap))

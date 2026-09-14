@@ -13346,6 +13346,112 @@ pub fn query_daily_tool_mix(
     })
 }
 
+// ── Cost by project (#173) ───────────────────────────────────────────────────
+
+/// LLM cost rows grouped by (project, tool, model) (#173).
+///
+/// One source: LLM spans. The tool and model expressions are identical to
+/// `query_daily_tool_mix` so the two reports agree on labels. Projects come
+/// from opencode's `project.id` span attribute; codex/claude_code spans
+/// carry no project label and group under "unattributed" (the same
+/// convention as the agent project rollup — a known limitation, not a gap
+/// in the query). Storage returns token totals only; `cost_usd` /
+/// `cost_source` are filled by the API layer, `None` when the model has no
+/// pricing data.
+pub fn query_cost_by_project_model_tool(
+    conn: &Connection,
+    start_time: Option<i64>,
+    end_time: Option<i64>,
+) -> Result<otelite_core::api::CostByProjectResponse> {
+    use otelite_core::api::{CostByProjectResponse, CostByProjectRow};
+    use otelite_core::semconv;
+
+    let llm_guard = semconv::llm_span_guard("attributes");
+    let input_expr =
+        semconv::coalesce_extract_cast("attributes", semconv::INPUT_TOKEN_KEYS, "INTEGER");
+    let output_expr =
+        semconv::coalesce_extract_cast("attributes", semconv::OUTPUT_TOKEN_KEYS, "INTEGER");
+    let cache_creation_expr =
+        semconv::coalesce_extract_cast("attributes", semconv::CACHE_CREATION_TOKEN_KEYS, "INTEGER");
+    let cache_read_expr =
+        semconv::coalesce_extract_cast("attributes", semconv::CACHE_READ_TOKEN_KEYS, "INTEGER");
+    // Tool mapping: identical to query_daily_tool_mix so the reports agree
+    // on tool labels.
+    let tool_expr = r#"CASE
+        WHEN json_extract(scope,'$.name') LIKE '%claude_code%'   THEN 'claude_code'
+        WHEN json_extract(scope,'$.name') = 'com.opencode'       THEN 'opencode'
+        WHEN json_extract(scope,'$.name') LIKE '%opencode%'      THEN 'opencode'
+        WHEN json_extract(scope,'$.name') = 'pi-otel'            THEN 'pi'
+        WHEN json_extract(scope,'$.name') LIKE '%codex%'         THEN 'codex'
+        WHEN json_extract(scope,'$.name') LIKE '%deekseek%'      THEN 'deepseek'
+        ELSE COALESCE(json_extract(scope,'$.name'), 'unknown')
+    END"#;
+    let model_expr = r#"COALESCE(json_extract(attributes,'$."gen_ai.request.model"'),
+        json_extract(attributes,'$."model"'), '(unknown)')"#;
+    // opencode's per-project identifier; absent on codex/claude spans ->
+    // "unattributed" (documented in the UI as a known limitation).
+    let project_expr =
+        r#"COALESCE(NULLIF(json_extract(attributes,'$."project.id"'), ''), 'unattributed')"#;
+
+    let mut where_clause = format!("WHERE {llm_guard}");
+    let mut params: Vec<Box<dyn rusqlite::ToSql>> = Vec::new();
+    if let Some(s) = start_time {
+        where_clause.push_str(" AND start_time >= ?");
+        params.push(Box::new(s));
+    }
+    if let Some(e) = end_time {
+        where_clause.push_str(" AND start_time <= ?");
+        params.push(Box::new(e));
+    }
+
+    let sql = format!(
+        r#"
+        SELECT
+          {project_expr} AS project,
+          {tool_expr} AS tool,
+          {model_expr} AS model,
+          COUNT(*) AS requests,
+          COALESCE(SUM({input_expr}), 0) AS input_tokens,
+          COALESCE(SUM({output_expr}), 0) AS output_tokens,
+          COALESCE(SUM({cache_creation_expr}), 0) AS cache_creation_tokens,
+          COALESCE(SUM({cache_read_expr}), 0) AS cache_read_tokens
+        FROM spans
+        {where_clause}
+        GROUP BY project, tool, model
+        ORDER BY project ASC, tool ASC, model ASC
+        "#
+    );
+
+    let param_refs: Vec<&dyn rusqlite::ToSql> = params.iter().map(|p| p.as_ref()).collect();
+    let mut stmt = conn.prepare(&sql).map_err(|e| {
+        StorageError::QueryError(format!("Failed to prepare cost_by_project query: {e}"))
+    })?;
+
+    let rows: Vec<CostByProjectRow> = stmt
+        .query_map(param_refs.as_slice(), |r| {
+            Ok(CostByProjectRow {
+                project: r.get(0)?,
+                tool: r.get(1)?,
+                model: r.get(2)?,
+                requests: r.get::<_, i64>(3).unwrap_or(0) as u64,
+                input_tokens: r.get::<_, i64>(4).unwrap_or(0) as u64,
+                output_tokens: r.get::<_, i64>(5).unwrap_or(0) as u64,
+                cache_creation_tokens: r.get::<_, i64>(6).unwrap_or(0) as u64,
+                cache_read_tokens: r.get::<_, i64>(7).unwrap_or(0) as u64,
+                cost_usd: None, // priced by the API layer
+                cost_source: None,
+            })
+        })
+        .map_err(|e| StorageError::QueryError(format!("{e}")))?
+        .collect::<std::result::Result<Vec<_>, _>>()
+        .map_err(|e| StorageError::QueryError(format!("{e}")))?;
+
+    Ok(CostByProjectResponse {
+        rows,
+        filters_applied: Vec::new(),
+    })
+}
+
 // ── Skills Activity (#insight-3) ─────────────────────────────────────────────
 
 /// Codex skill injection activity.
@@ -14579,6 +14685,120 @@ mod new_insight_tests_2 {
         let empty = make_conn();
         let e = query_productivity_summary(&empty, None, None).unwrap();
         assert!(e.rows.is_empty());
+    }
+
+    #[test]
+    fn test_cost_by_project_model_tool() {
+        let conn = make_conn();
+        let d1 = 1_767_225_600_000_000_000_i64; // 2026-01-01 (UTC)
+
+        let ins = |trace: &str, start: i64, scope: &str, attrs: &str| {
+            conn.execute(
+                "INSERT INTO spans (trace_id, span_id, name, kind, start_time, end_time, attributes, scope, flags, created_at)
+                 VALUES (?1, ?2, 'llm_request', 0, ?3, ?3 + 1000000, ?4, ?5, 0, 1000000000)",
+                rusqlite::params![trace, format!("{trace}_s1"), start, attrs, scope],
+            )
+            .unwrap();
+        };
+
+        // opencode, project "api-server": two granite-4.0 spans + one
+        // granite-4.1 span.
+        ins(
+            "cp1",
+            d1 + 1_000_000,
+            r#"{"name":"com.opencode"}"#,
+            r#"{"gen_ai.system":"ibm","gen_ai.request.model":"granite-4.0","project.id":"api-server","gen_ai.usage.input_tokens":10,"gen_ai.usage.output_tokens":5,"gen_ai.usage.cache_read_tokens":2}"#,
+        );
+        ins(
+            "cp2",
+            d1 + 2_000_000,
+            r#"{"name":"com.opencode"}"#,
+            r#"{"gen_ai.system":"ibm","gen_ai.request.model":"granite-4.0","project.id":"api-server","gen_ai.usage.input_tokens":20,"gen_ai.usage.output_tokens":5}"#,
+        );
+        ins(
+            "cp3",
+            d1 + 3_000_000,
+            r#"{"name":"com.opencode"}"#,
+            r#"{"gen_ai.system":"ibm","gen_ai.request.model":"granite-4.1","project.id":"api-server","gen_ai.usage.input_tokens":1,"gen_ai.usage.output_tokens":1}"#,
+        );
+        // opencode, second project "web-ui".
+        ins(
+            "cp4",
+            d1 + 4_000_000,
+            r#"{"name":"com.opencode"}"#,
+            r#"{"gen_ai.system":"ibm","gen_ai.request.model":"granite-4.0","project.id":"web-ui","gen_ai.usage.input_tokens":7,"gen_ai.usage.output_tokens":3}"#,
+        );
+        // claude_code carries no project label -> unattributed.
+        ins(
+            "cp5",
+            d1 + 5_000_000,
+            r#"{"name":"com.anthropic.claude_code"}"#,
+            r#"{"gen_ai.system":"anthropic","gen_ai.request.model":"claude-sonnet-5","gen_ai.usage.input_tokens":100,"gen_ai.usage.output_tokens":50}"#,
+        );
+        // opencode with an EMPTY project.id -> also unattributed.
+        ins(
+            "cp6",
+            d1 + 6_000_000,
+            r#"{"name":"com.opencode"}"#,
+            r#"{"gen_ai.system":"ibm","gen_ai.request.model":"granite-4.0","project.id":"","gen_ai.usage.input_tokens":2,"gen_ai.usage.output_tokens":2}"#,
+        );
+
+        let result = query_cost_by_project_model_tool(&conn, None, None).unwrap();
+
+        // (project asc, tool asc, model asc):
+        //   api-server  / opencode   / granite-4.0  (2 requests, in 30, out 10, cache_read 2)
+        //   api-server  / opencode   / granite-4.1  (1 request)
+        //   unattributed/ claude_code/ claude-sonnet-5
+        //   unattributed/ opencode   / granite-4.0  (empty label)
+        //   web-ui      / opencode   / granite-4.0
+        assert_eq!(result.rows.len(), 5, "{result:?}");
+        let r0 = &result.rows[0];
+        assert_eq!(r0.project, "api-server");
+        assert_eq!(r0.tool, "opencode");
+        assert_eq!(r0.model, "granite-4.0");
+        assert_eq!(r0.requests, 2);
+        assert_eq!(r0.input_tokens, 30);
+        assert_eq!(r0.output_tokens, 10);
+        assert_eq!(r0.cache_read_tokens, 2);
+        assert_eq!(r0.cost_usd, None); // storage leaves pricing to the API
+        assert_eq!(r0.cost_source, None);
+
+        let r1 = &result.rows[1];
+        assert_eq!(r1.model, "granite-4.1");
+        assert_eq!(r1.requests, 1);
+
+        // Label-less claude_code span and empty-label opencode span both
+        // land in "unattributed", split by tool.
+        let r2 = &result.rows[2];
+        assert_eq!(
+            (r2.project.as_str(), r2.tool.as_str(), r2.model.as_str()),
+            ("unattributed", "claude_code", "claude-sonnet-5")
+        );
+        assert_eq!(r2.input_tokens, 100);
+        let r3 = &result.rows[3];
+        assert_eq!(
+            (r3.project.as_str(), r3.tool.as_str()),
+            ("unattributed", "opencode")
+        );
+        assert_eq!(r3.input_tokens, 2);
+
+        let r4 = &result.rows[4];
+        assert_eq!(r4.project, "web-ui");
+        assert_eq!(r4.input_tokens, 7);
+        assert_eq!(r4.output_tokens, 3);
+
+        // Window filter: a day past the data has no rows.
+        let after =
+            query_cost_by_project_model_tool(&conn, Some(d1 + 86_400 * 1_000_000_000), None)
+                .unwrap();
+        assert!(after.rows.is_empty());
+
+        // Empty state.
+        let empty = make_conn();
+        assert!(query_cost_by_project_model_tool(&empty, None, None)
+            .unwrap()
+            .rows
+            .is_empty());
     }
 
     #[test]

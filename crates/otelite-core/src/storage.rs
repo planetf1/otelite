@@ -754,6 +754,16 @@ pub trait StorageBackend: Send + Sync {
         Err(StorageError::QueryError("not implemented".to_string()))
     }
 
+    /// LLM cost rows grouped by (project, tool, model) (#173).
+    async fn query_cost_by_project_model_tool(
+        &self,
+        start_time: Option<i64>,
+        end_time: Option<i64>,
+    ) -> Result<crate::api::CostByProjectResponse> {
+        let _ = (start_time, end_time);
+        Err(StorageError::QueryError("not implemented".to_string()))
+    }
+
     /// Codex skill injection activity (#insight-3).
     async fn query_skill_activity(
         &self,

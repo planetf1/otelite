@@ -11,6 +11,15 @@ have to work around), not implementation detail.
 
 ## [Unreleased]
 
+### Added
+
+- New Cost by Project report: which project drives the bill — per-project
+  total cost with its share, expandable to the tool × model breakdown,
+  plus `otelite usage --cost-by-project` as a cost-descending table.
+  Codex/Claude Code spans carry no project label and group under
+  "unattributed" — a known emitter limitation, documented in the UI
+  (#173)
+
 ## [0.1.130] - 2026-09-14
 
 ### Added

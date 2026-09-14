@@ -289,6 +289,54 @@ pub async fn get_cost_projection(
     )))
 }
 
+/// LLM cost by project × tool × model (#173). Codex/Claude Code spans
+/// carry no project label and land in "unattributed" — a known
+/// limitation documented in the UI.
+#[utoipa::path(
+    get,
+    path = "/api/genai/cost_by_project",
+    params(TimeRangeQuery),
+    responses(
+        (status = 200, description = "Cost rows grouped by (project, tool, model)", body = otelite_core::api::CostByProjectResponse),
+        (status = 500, description = "Internal server error", body = ErrorResponse)
+    ),
+    tag = "genai"
+)]
+pub async fn get_cost_by_project(
+    State(state): State<AppState>,
+    Query(query): Query<TimeRangeQuery>,
+) -> Result<Json<otelite_core::api::CostByProjectResponse>, (StatusCode, Json<ErrorResponse>)> {
+    let mut response = state
+        .storage
+        .query_cost_by_project_model_tool(query.start_time, query.end_time)
+        .await
+        .map_err(|e| {
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(ErrorResponse::storage_error(format!(
+                    "query cost_by_project: {e}"
+                ))),
+            )
+        })?;
+
+    // Price each (project, tool, model) row; unpriced models keep a
+    // `None` cost — never a fabricated zero.
+    let pricing = state.pricing.snapshot().await;
+    for r in &mut response.rows {
+        let usage = TokenUsage {
+            input: r.input_tokens,
+            output: r.output_tokens,
+            cache_creation: r.cache_creation_tokens,
+            cache_read: r.cache_read_tokens,
+        };
+        let result = pricing.db.compute_cost(Some(r.model.as_str()), usage, None);
+        r.cost_usd = result.cost;
+        r.cost_source = Some(result.source.as_str().to_string());
+    }
+
+    Ok(Json(response))
+}
+
 /// Query parameters for top-spans endpoint
 #[derive(Debug, Deserialize, Serialize, utoipa::IntoParams, utoipa::ToSchema)]
 pub struct TopSpansQuery {
