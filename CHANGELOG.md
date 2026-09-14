@@ -11,6 +11,14 @@ have to work around), not implementation detail.
 
 ## [Unreleased]
 
+### Added
+
+- New Session Depth vs Cost report: median and p95 session cost per
+  tool and turn-count bucket (1-5, 6-15, 16-30, 31-50, 51+), with
+  `otelite usage --session-depth-cost` as a table — see at what turn
+  count your sessions start costing disproportionately more, and which
+  tool has the steepest curve (#180)
+
 ## [0.1.131] - 2026-09-14
 
 ### Added

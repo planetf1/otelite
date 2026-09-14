@@ -337,6 +337,77 @@ pub async fn get_cost_by_project(
     Ok(Json(response))
 }
 
+/// Session depth vs cost (#180): per (tool, turn-count bucket) median /
+/// p95 session cost — where does cost explode as sessions get longer?
+#[utoipa::path(
+    get,
+    path = "/api/genai/session_depth_cost",
+    params(TimeRangeQuery),
+    responses(
+        (status = 200, description = "Median/p95 session cost by tool and turn-count bucket", body = otelite_core::api::SessionDepthCostResponse),
+        (status = 500, description = "Internal server error", body = ErrorResponse)
+    ),
+    tag = "genai"
+)]
+pub async fn get_session_depth_cost(
+    State(state): State<AppState>,
+    Query(query): Query<TimeRangeQuery>,
+) -> Result<Json<otelite_core::api::SessionDepthCostResponse>, (StatusCode, Json<ErrorResponse>)> {
+    use std::collections::HashMap;
+
+    let storage_resp = state
+        .storage
+        .query_session_depth_storage(query.start_time, query.end_time)
+        .await
+        .map_err(|e| {
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(ErrorResponse::storage_error(format!(
+                    "query session_depth_cost: {e}"
+                ))),
+            )
+        })?;
+
+    // Fold (session, model) rows into per-session (turns, priced cost).
+    // A session with at least one priced model row carries a cost; the
+    // unpriced remainder is simply absent from the sum.
+    let mut sessions: HashMap<(String, String), (u64, Option<f64>)> = HashMap::new();
+    let pricing = state.pricing.snapshot().await;
+    for r in &storage_resp.rows {
+        let usage = TokenUsage {
+            input: r.input_tokens,
+            output: r.output_tokens,
+            cache_creation: r.cache_creation_tokens,
+            cache_read: r.cache_read_tokens,
+        };
+        let result = pricing.db.compute_cost(Some(r.model.as_str()), usage, None);
+        let entry = sessions
+            .entry((r.session_id.clone(), r.tool.clone()))
+            .or_insert((0, None));
+        entry.0 += r.turns;
+        if let Some(c) = result.cost {
+            entry.1 = Some(entry.1.unwrap_or(0.0) + c);
+        }
+    }
+    let inputs: Vec<otelite_core::api::SessionDepthSession> = sessions
+        .into_iter()
+        .map(|((session_id, tool), (turn_count, cost_usd))| {
+            otelite_core::api::SessionDepthSession {
+                session_id,
+                tool,
+                turn_count,
+                cost_usd,
+            }
+        })
+        .collect();
+
+    let rows = otelite_core::session_depth::bucket_stats(&inputs);
+    Ok(Json(otelite_core::api::SessionDepthCostResponse {
+        rows,
+        filters_applied: storage_resp.filters_applied,
+    }))
+}
+
 /// Query parameters for top-spans endpoint
 #[derive(Debug, Deserialize, Serialize, utoipa::IntoParams, utoipa::ToSchema)]
 pub struct TopSpansQuery {

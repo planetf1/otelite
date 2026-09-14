@@ -2584,3 +2584,164 @@ async fn test_cost_by_project_rows_and_pricing() {
     assert_eq!(r3["input_tokens"], 2);
     assert!(r3["cost_usd"].is_null(), "{v}");
 }
+
+// ── Session depth vs cost (#180) ────────────────────────────────────────────
+
+/// LLM span carrying a `session.id` (the daily_mix_span / cbp_span helpers
+/// predate #180 and cannot carry it).
+#[allow(clippy::too_many_arguments)]
+fn sd_span(
+    span_id: &str,
+    scope: &str,
+    model: &str,
+    start: i64,
+    session_id: Option<&str>,
+    tokens: (u64, u64),
+) -> Span {
+    let (in_t, out_t) = tokens;
+    let mut attributes: HashMap<String, String> = HashMap::new();
+    attributes.insert("otel.scope.name".to_string(), scope.to_string());
+    attributes.insert("gen_ai.system".to_string(), "anthropic".to_string());
+    attributes.insert("gen_ai.request.model".to_string(), model.to_string());
+    attributes.insert("gen_ai.usage.input_tokens".to_string(), in_t.to_string());
+    attributes.insert("gen_ai.usage.output_tokens".to_string(), out_t.to_string());
+    if let Some(s) = session_id {
+        attributes.insert("session.id".to_string(), s.to_string());
+    }
+    Span {
+        trace_id: "t-session-depth".to_string(),
+        span_id: span_id.to_string(),
+        parent_span_id: None,
+        name: "llm_request".to_string(),
+        kind: SpanKind::Internal,
+        start_time: start,
+        end_time: start + 1_000_000,
+        attributes,
+        status: SpanStatus {
+            code: SpanStatusCode::Ok,
+            message: None,
+        },
+        events: Vec::new(),
+        resource: None,
+    }
+}
+
+#[tokio::test]
+async fn test_session_depth_cost_bucketing_and_pricing() {
+    let (server, storage, _temp_dir) = setup_test_server().await;
+    let app = server.build_router();
+
+    // Empty state.
+    let (status, v) = get_json(&app, "/api/genai/session_depth_cost").await;
+    assert_eq!(status, StatusCode::OK);
+    assert!(v["rows"].as_array().unwrap().is_empty());
+
+    // Day = 2026-01-01 (UTC).
+    let d1 = 1_767_225_600_000_000_000_i64;
+
+    // Session s-a (opencode, priced Claude): 6 spans -> bucket "6-15".
+    let mut spans: Vec<Span> = (0..6)
+        .map(|i| {
+            sd_span(
+                &format!("sd-a{i}"),
+                "com.opencode",
+                "claude-sonnet-5",
+                d1 + 1_000_000 + i * 1_000,
+                Some("s-a"),
+                (100, 50),
+            )
+        })
+        .collect();
+    // Session s-b (opencode, unpriced synthetic model): 3 spans ->
+    // bucket "1-5"; counted in the bucket but carries no cost.
+    spans.extend((0..3).map(|i| {
+        sd_span(
+            &format!("sd-b{i}"),
+            "com.opencode",
+            "unknown-vendor-model-9.9",
+            d1 + 2_000_000 + i * 1_000,
+            Some("s-b"),
+            (10, 5),
+        )
+    }));
+    // Session s-c (opencode, priced Claude): 2 spans -> bucket "1-5".
+    spans.extend((0..2).map(|i| {
+        sd_span(
+            &format!("sd-c{i}"),
+            "com.opencode",
+            "claude-sonnet-5",
+            d1 + 3_000_000 + i * 1_000,
+            Some("s-c"),
+            (10, 5),
+        )
+    }));
+    // Session s-d (claude_code, priced Claude): a single span -> excluded
+    // from the stats (not a multi-turn conversation).
+    spans.push(sd_span(
+        "sd-d0",
+        "com.anthropic.claude_code",
+        "claude-sonnet-5",
+        d1 + 4_000_000,
+        Some("s-d"),
+        (50, 25),
+    ));
+    // No session.id: never part of the report.
+    spans.push(sd_span(
+        "sd-e0",
+        "com.opencode",
+        "claude-sonnet-5",
+        d1 + 5_000_000,
+        None,
+        (10, 5),
+    ));
+    storage.write_span_batch(&spans).await.unwrap();
+
+    // Windowed query — a different cache key than the empty-state call.
+    let (status, v) = get_json(
+        &app,
+        &format!(
+            "/api/genai/session_depth_cost?start_time={d1}&end_time={}",
+            d1 + 86_400 * 1_000_000_000
+        ),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+
+    // (tool asc, bucket asc): opencode 1-5, opencode 6-15.
+    // The single-turn claude_code session and the session-less span
+    // contribute nothing.
+    let rows = v["rows"].as_array().unwrap();
+    assert_eq!(rows.len(), 2, "{v}");
+    let keys: Vec<(&str, &str)> = rows
+        .iter()
+        .map(|r| (r["tool"].as_str().unwrap(), r["bucket"].as_str().unwrap()))
+        .collect();
+    assert_eq!(keys, vec![("opencode", "1-5"), ("opencode", "6-15")]);
+
+    // opencode 1-5: two sessions (s-b unpriced + s-c priced), avg turns
+    // (3 + 2) / 2 = 2.5. Cost stats come from the single priced session,
+    // so median == p95 > 0.
+    let r0 = &rows[0];
+    assert_eq!(r0["sessions"], 2);
+    assert!(
+        (r0["avg_turns"].as_f64().unwrap() - 2.5).abs() < 1e-9,
+        "{v}"
+    );
+    let m0 = r0["median_cost_usd"].as_f64().unwrap();
+    assert!(m0 > 0.0, "priced session must carry a cost: {v}");
+    let p0 = r0["p95_cost_usd"].as_f64().unwrap();
+    assert!(
+        (p0 - m0).abs() < 1e-9,
+        "single priced session: p95 == median"
+    );
+
+    // opencode 6-15: one session, 6 turns, priced.
+    let r1 = &rows[1];
+    assert_eq!(r1["sessions"], 1);
+    assert!(
+        (r1["avg_turns"].as_f64().unwrap() - 6.0).abs() < 1e-9,
+        "{v}"
+    );
+    assert!(r1["median_cost_usd"].as_f64().unwrap() > 0.0, "{v}");
+    assert!(r1["p95_cost_usd"].as_f64().unwrap() > 0.0, "{v}");
+}

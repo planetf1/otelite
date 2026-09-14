@@ -764,6 +764,17 @@ pub trait StorageBackend: Send + Sync {
         Err(StorageError::QueryError("not implemented".to_string()))
     }
 
+    /// Per-(session, model) LLM span aggregates for session depth vs cost
+    /// (#180).
+    async fn query_session_depth_storage(
+        &self,
+        start_time: Option<i64>,
+        end_time: Option<i64>,
+    ) -> Result<crate::api::SessionDepthStorageResponse> {
+        let _ = (start_time, end_time);
+        Err(StorageError::QueryError("not implemented".to_string()))
+    }
+
     /// Codex skill injection activity (#insight-3).
     async fn query_skill_activity(
         &self,

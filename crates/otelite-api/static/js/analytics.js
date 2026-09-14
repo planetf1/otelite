@@ -40,6 +40,7 @@ class AnalyticsView {
         { id: 'cost',                    title: 'Cost',                    hint: 'Tokens spent · pricing · most expensive calls' },
         { id: 'providers',               title: 'Provider Mix',            hint: 'Tokens & estimated cost by provider × model (opencode · codex · claude)' },
         { id: 'cost_by_project',         title: 'Cost by Project',         hint: 'Cost by project × tool × model — which project drives the bill' },
+        { id: 'session_depth',           title: 'Session Depth vs Cost',   hint: 'Median / p95 session cost by tool and turn-count bucket — where cost explodes' },
         { id: 'roles',                   title: 'Agent Roles',             hint: 'Sub-agent attribution · cost & tokens per role · role × model routing matrix (opencode)' },
         { id: 'session_model',           title: 'Session × Model',         hint: 'Token and cost breakdown per (session, model) pair — spot opus spend in specific sessions' },
         { id: 'thinking_effort',         title: 'Thinking & Effort',       hint: 'Thinking and effort token usage — Claude Code effort levels, opencode + Codex reasoning share' },
@@ -65,7 +66,7 @@ class AnalyticsView {
     // Top-level categories. A report appears in exactly one group; pinned
     // reports move to the Pinned group while pinned.
     static GROUPS = [
-        { id: 'cost',        label: 'Cost',                    sub: 'Where did the tokens go?',            reports: ['cost', 'providers', 'cost_by_project', 'roles', 'session_model', 'thinking_effort', 'efficiency', 'productivity', 'skills'] },
+        { id: 'cost',        label: 'Cost',                    sub: 'Where did the tokens go?',            reports: ['cost', 'providers', 'cost_by_project', 'session_depth', 'roles', 'session_model', 'thinking_effort', 'efficiency', 'productivity', 'skills'] },
         { id: 'latency',     label: 'Latency',                 sub: 'How fast, and where is it slow?',      reports: ['latency', 'model_performance', 'ttft', 'codex_turns', 'speed_dist'] },
         { id: 'reliability', label: 'Reliability',             sub: "What's breaking, and how often?",      reports: ['reliability', 'tool_failures', 'guardian'] },
         { id: 'behavior',    label: 'Behaviour',               sub: 'How is it being used?',                reports: ['behavior', 'multi_agent', 'model_selection_heatmap'] },
@@ -80,6 +81,7 @@ class AnalyticsView {
         cost: ['cost', 'pricing', 'spend', 'expensive', 'tokens spent'],
         providers: ['provider', 'mix', 'anthropic', 'openai', 'amazon', 'bedrock'],
         cost_by_project: ['cost by project', 'per project', 'attribution', 'unattributed', 'which project'],
+        session_depth: ['session depth', 'turn count', 'turns', 'depth', 'median cost', 'p95', 'sweet spot'],
         roles: ['role', 'sub-agent', 'subagent', 'attribution', 'routing matrix'],
         session_model: ['per-session', 'session spend', 'model pair'],
         thinking_effort: ['effort', 'low', 'medium', 'high', 'xhigh', 'reasoning', 'thinking tokens', 'thinking'],
@@ -109,6 +111,7 @@ class AnalyticsView {
         cost: ['efficiency', 'providers', 'roles'],
         providers: ['cost', 'model_performance'],
         cost_by_project: ['cost', 'project_rollup', 'providers'],
+        session_depth: ['cost', 'efficiency', 'session_model'],
         roles: ['cost', 'session_model', 'model_selection_heatmap'],
         session_model: ['cost', 'roles'],
         thinking_effort: ['cost', 'model_performance', 'speed_dist'],
@@ -1108,6 +1111,7 @@ class AnalyticsView {
             roles: () => this._loadRolesSection(),
             providers: () => this._loadProvidersSection(),
             cost_by_project: () => this._loadCostByProjectSection(),
+            session_depth: () => this._loadSessionDepthSection(),
             latency: () => this._loadLatencySection(),
             reliability: () => this._loadReliabilitySection(),
             behavior: () => this._loadBehaviorSection(),
@@ -3847,6 +3851,40 @@ class AnalyticsView {
             this.loadedSections.add('cost_by_project');
         } catch (err) {
             this._setSectionError('cost_by_project', err);
+        }
+    }
+
+    // Session depth vs cost (#180): median / p95 session cost per
+    // (tool, turn-count bucket). Rows arrive in (tool asc, bucket asc)
+    // order straight from the server — no client-side sorting. Sessions
+    // with < 2 turns and unpriced cost cells are the server's
+    // conventions; the dash means "no priced sessions in this bucket".
+    async _loadSessionDepthSection() {
+        this._setSectionLoading('session_depth');
+        try {
+            const data = await this.api.getSessionDepthCost(this._baseParams());
+            const rows = data.rows || [];
+            let html = '<p class="section-hint">A turn is one LLM request in a session; sessions with fewer than 2 turns are excluded. Cost stats cover priced sessions only — a dash means no priced session in that bucket.</p>';
+            if (!rows.length) {
+                html += '<div class="empty-state-hint">No multi-turn sessions in this window.</div>';
+            } else {
+                const fmtUsd = v => v != null ? `$${Number(v).toFixed(2)}` : '—';
+                html += '<div class="analytics-table-wrap"><table class="analytics-table"><thead><tr>'
+                    + '<th>Tool</th><th>Turns</th><th>Sessions</th><th>Avg turns</th><th>Median cost</th><th>p95 cost</th>'
+                    + '</tr></thead><tbody>';
+                for (const r of rows) {
+                    html += `<tr><td>${this._esc(r.tool)}</td><td>${this._esc(r.bucket)}</td>`
+                        + `<td>${Number(r.sessions).toLocaleString()}</td>`
+                        + `<td>${Number(r.avg_turns).toFixed(1)}</td>`
+                        + `<td>${fmtUsd(r.median_cost_usd)}</td>`
+                        + `<td>${fmtUsd(r.p95_cost_usd)}</td></tr>`;
+                }
+                html += '</tbody></table></div>';
+            }
+            this._setSectionBody('session_depth', html);
+            this.loadedSections.add('session_depth');
+        } catch (err) {
+            this._setSectionError('session_depth', err);
         }
     }
 

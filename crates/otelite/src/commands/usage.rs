@@ -231,6 +231,10 @@ pub struct UsageCommand {
     #[arg(long)]
     pub cost_by_project: bool,
 
+    /// Session depth vs cost: median/p95 cost by turn-count bucket (#180)
+    #[arg(long)]
+    pub session_depth_cost: bool,
+
     /// Show Codex skill injection counts — which skills fire implicitly and how often
     #[arg(long)]
     pub skill_activity: bool,
@@ -370,6 +374,8 @@ struct UsageOutput {
     cost_projection: Option<otelite_core::api::CostProjectionResponse>,
     #[serde(skip_serializing_if = "Option::is_none")]
     cost_by_project: Option<otelite_core::api::CostByProjectResponse>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    session_depth_cost: Option<otelite_core::api::SessionDepthCostResponse>,
     #[serde(skip_serializing_if = "Option::is_none")]
     skill_activity: Option<otelite_core::api::SkillActivityResponse>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -1158,6 +1164,54 @@ impl UsageCommand {
             None
         };
 
+        // --session-depth-cost
+        let session_depth_cost: Option<otelite_core::api::SessionDepthCostResponse> = if self
+            .session_depth_cost
+        {
+            let resp = storage
+                .query_session_depth_storage(Some(start_time), Some(end_time))
+                .await
+                .map_err(|e| Error::ApiError(format!("Failed to query session_depth_cost: {e}")))?;
+            use std::collections::HashMap;
+            // Fold (session, model) rows into per-session (turns, priced
+            // cost) — the same aggregation the API handler runs, so the
+            // CLI and web views agree (#180).
+            let mut sessions: HashMap<(String, String), (u64, Option<f64>)> = HashMap::new();
+            for r in &resp.rows {
+                let usage = TokenUsage {
+                    input: r.input_tokens,
+                    output: r.output_tokens,
+                    cache_creation: r.cache_creation_tokens,
+                    cache_read: r.cache_read_tokens,
+                };
+                let cr = pricing_db.compute_cost(Some(r.model.as_str()), usage, None);
+                let entry = sessions
+                    .entry((r.session_id.clone(), r.tool.clone()))
+                    .or_insert((0, None));
+                entry.0 += r.turns;
+                if let Some(c) = cr.cost {
+                    entry.1 = Some(entry.1.unwrap_or(0.0) + c);
+                }
+            }
+            let inputs: Vec<otelite_core::api::SessionDepthSession> = sessions
+                .into_iter()
+                .map(|((session_id, tool), (turn_count, cost_usd))| {
+                    otelite_core::api::SessionDepthSession {
+                        session_id,
+                        tool,
+                        turn_count,
+                        cost_usd,
+                    }
+                })
+                .collect();
+            Some(otelite_core::api::SessionDepthCostResponse {
+                rows: otelite_core::session_depth::bucket_stats(&inputs),
+                filters_applied: Vec::new(),
+            })
+        } else {
+            None
+        };
+
         // --skill-activity
         let skill_activity: Option<otelite_core::api::SkillActivityResponse> =
             if self.skill_activity {
@@ -1285,6 +1339,7 @@ impl UsageCommand {
                     productivity,
                     cost_projection,
                     cost_by_project,
+                    session_depth_cost,
                     skill_activity,
                     session_quality,
                     skill_outcomes,
@@ -1511,6 +1566,11 @@ impl UsageCommand {
 
                 if let Some(ref resp) = cost_by_project {
                     display_cost_by_project(resp, &pricing_source);
+                    println!();
+                }
+
+                if let Some(ref resp) = session_depth_cost {
+                    display_session_depth_cost(resp, &pricing_source);
                     println!();
                 }
 
@@ -3370,6 +3430,56 @@ fn display_cost_by_project(resp: &otelite_core::api::CostByProjectResponse, pric
     println!("{}", table);
 }
 
+/// Table cells for the session depth vs cost table (#180): tool,
+/// turn-count bucket, sessions, avg turns, formatted median and p95
+/// cost (dash when the bucket has no priced sessions). Response order
+/// is (tool asc, bucket asc).
+fn session_depth_rows(resp: &otelite_core::api::SessionDepthCostResponse) -> Vec<Vec<String>> {
+    let fmt_usd = |c: Option<f64>| {
+        c.map(|v| format!("${v:.2}"))
+            .unwrap_or_else(|| "—".to_string())
+    };
+    resp.rows
+        .iter()
+        .map(|r| {
+            vec![
+                r.tool.clone(),
+                r.bucket.clone(),
+                r.sessions.to_string(),
+                format!("{:.1}", r.avg_turns),
+                fmt_usd(r.median_cost_usd),
+                fmt_usd(r.p95_cost_usd),
+            ]
+        })
+        .collect()
+}
+
+fn display_session_depth_cost(
+    resp: &otelite_core::api::SessionDepthCostResponse,
+    pricing_source: &str,
+) {
+    println!("Session Depth vs Cost ({pricing_source}):");
+    if resp.rows.is_empty() {
+        println!("  No multi-turn sessions (2+ LLM spans) in range");
+        return;
+    }
+    let mut table = Table::new();
+    fit_to_terminal(&mut table);
+    table.load_preset(UTF8_FULL);
+    table.set_header(vec![
+        Cell::new("Tool").fg(Color::Cyan),
+        Cell::new("Turns").fg(Color::Cyan),
+        Cell::new("Sessions").fg(Color::Cyan),
+        Cell::new("Avg turns").fg(Color::Cyan),
+        Cell::new("Median cost").fg(Color::Cyan),
+        Cell::new("p95 cost").fg(Color::Cyan),
+    ]);
+    for row in session_depth_rows(resp) {
+        table.add_row(row.into_iter().map(Cell::new).collect::<Vec<_>>());
+    }
+    println!("{}", table);
+}
+
 fn display_daily_tool_mix(resp: &otelite_core::api::DailyToolMixResponse) {
     if resp.rows.is_empty() {
         println!("Daily Tool Mix: no data");
@@ -3960,5 +4070,59 @@ mod tests {
 
         // Empty state: no rows.
         assert!(cost_by_project_rows(&CostByProjectResponse::default()).is_empty());
+    }
+
+    #[test]
+    fn test_session_depth_rows() {
+        use otelite_core::api::{SessionDepthBucket, SessionDepthCostResponse};
+        let resp = SessionDepthCostResponse {
+            rows: vec![
+                SessionDepthBucket {
+                    tool: "claude_code".into(),
+                    bucket: "51+".into(),
+                    sessions: 1,
+                    avg_turns: 100.0,
+                    median_cost_usd: Some(50.0),
+                    p95_cost_usd: Some(50.0),
+                },
+                // Unpriced bucket: dash cells, counts still shown.
+                SessionDepthBucket {
+                    tool: "opencode".into(),
+                    bucket: "1-5".into(),
+                    sessions: 2,
+                    avg_turns: 3.5,
+                    median_cost_usd: None,
+                    p95_cost_usd: None,
+                },
+            ],
+            filters_applied: vec![],
+        };
+        let rows = session_depth_rows(&resp);
+        assert_eq!(rows.len(), 2);
+        assert_eq!(
+            rows[0],
+            vec![
+                "claude_code".to_string(),
+                "51+".to_string(),
+                "1".to_string(),
+                "100.0".to_string(),
+                "$50.00".to_string(),
+                "$50.00".to_string(),
+            ]
+        );
+        assert_eq!(
+            rows[1],
+            vec![
+                "opencode".to_string(),
+                "1-5".to_string(),
+                "2".to_string(),
+                "3.5".to_string(),
+                "—".to_string(),
+                "—".to_string(),
+            ]
+        );
+
+        // Empty state: no rows.
+        assert!(session_depth_rows(&SessionDepthCostResponse::default()).is_empty());
     }
 }

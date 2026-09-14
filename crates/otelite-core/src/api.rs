@@ -2858,6 +2858,78 @@ pub struct CostByProjectResponse {
     pub filters_applied: Vec<String>,
 }
 
+// ── Session depth vs cost (#180) ─────────────────────────────────────────────
+
+/// One (session, model) aggregate from storage (#180). The API layer
+/// prices each row and folds them into per-session costs before the
+/// bucket statistics are computed.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
+pub struct SessionDepthSessionRow {
+    pub session_id: String,
+    /// Short tool label, same convention as the daily tool mix.
+    pub tool: String,
+    /// Model name (`(unknown)` when the span carries no model attribute).
+    pub model: String,
+    /// LLM request spans in this (session, model) group.
+    pub turns: u64,
+    pub input_tokens: u64,
+    pub output_tokens: u64,
+    /// Prompt-cache creation tokens (priced; not part of the user-facing
+    /// token totals).
+    pub cache_creation_tokens: u64,
+    /// Prompt-cache read tokens.
+    pub cache_read_tokens: u64,
+}
+
+/// Response of the storage query behind `GET /api/genai/session_depth_cost`.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
+pub struct SessionDepthStorageResponse {
+    pub rows: Vec<SessionDepthSessionRow>,
+    pub filters_applied: Vec<String>,
+}
+
+/// One session's input to the bucket statistics (#180).
+#[derive(Debug, Clone)]
+pub struct SessionDepthSession {
+    pub session_id: String,
+    pub tool: String,
+    /// LLM request spans across all models.
+    pub turn_count: u64,
+    /// Priced cost; `None` when none of the session's models have pricing
+    /// data (excluded from cost stats, never treated as zero).
+    pub cost_usd: Option<f64>,
+}
+
+/// Aggregate stats for one (tool, turn-count bucket) (#180).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
+pub struct SessionDepthBucket {
+    pub tool: String,
+    /// Turn-count bucket label: "1-5", "6-15", "16-30", "31-50", "51+".
+    pub bucket: String,
+    /// Sessions in the bucket (turn_count >= 2).
+    pub sessions: u64,
+    /// Mean turn count across the bucket's sessions.
+    pub avg_turns: f64,
+    /// p50 session cost over the priced sessions; `None` when the bucket
+    /// has no priced sessions.
+    pub median_cost_usd: Option<f64>,
+    /// p95 session cost over the priced sessions; `None` when the bucket
+    /// has no priced sessions.
+    pub p95_cost_usd: Option<f64>,
+}
+
+/// Response for `GET /api/genai/session_depth_cost` (#180).
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
+pub struct SessionDepthCostResponse {
+    /// Rows in (tool asc, bucket asc) order.
+    pub rows: Vec<SessionDepthBucket>,
+    pub filters_applied: Vec<String>,
+}
+
 // ── Productivity (#177) ──────────────────────────────────────────────────────
 
 /// Git output for one (day, tool) pair. Days are UTC calendar days, the same

@@ -27,6 +27,9 @@ pub mod session_cost;
 // Monthly cost projection computation (issue #170)
 pub mod cost_projection;
 
+// Session depth vs cost bucketing (issue #180)
+pub mod session_depth;
+
 // Generic distribution binning + summary stats (issue #133)
 pub mod distribution;
 

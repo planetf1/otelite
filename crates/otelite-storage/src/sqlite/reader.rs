@@ -13452,6 +13452,110 @@ pub fn query_cost_by_project_model_tool(
     })
 }
 
+// ── Session depth vs cost (#180) ─────────────────────────────────────────────
+
+/// Per-(session, model) LLM span aggregates for the session depth vs cost
+/// report (#180).
+///
+/// A turn is one LLM request span carrying a `session.id`; the per-session
+/// turn count is the sum of `turns` over a session's model rows (computed
+/// by the API layer before bucketing). Token expressions and the tool
+/// mapping are identical to `query_daily_tool_mix` so the reports agree on
+/// labels. Storage returns token totals only; costs are priced by the API
+/// layer per (session, model) row and folded into per-session costs.
+pub fn query_session_depth_storage(
+    conn: &Connection,
+    start_time: Option<i64>,
+    end_time: Option<i64>,
+) -> Result<otelite_core::api::SessionDepthStorageResponse> {
+    use otelite_core::api::{SessionDepthSessionRow, SessionDepthStorageResponse};
+    use otelite_core::semconv;
+
+    let llm_guard = semconv::llm_span_guard("attributes");
+    let input_expr =
+        semconv::coalesce_extract_cast("attributes", semconv::INPUT_TOKEN_KEYS, "INTEGER");
+    let output_expr =
+        semconv::coalesce_extract_cast("attributes", semconv::OUTPUT_TOKEN_KEYS, "INTEGER");
+    let cache_creation_expr =
+        semconv::coalesce_extract_cast("attributes", semconv::CACHE_CREATION_TOKEN_KEYS, "INTEGER");
+    let cache_read_expr =
+        semconv::coalesce_extract_cast("attributes", semconv::CACHE_READ_TOKEN_KEYS, "INTEGER");
+    // Tool mapping: identical to query_daily_tool_mix so the reports agree
+    // on tool labels.
+    let tool_expr = r#"CASE
+        WHEN json_extract(scope,'$.name') LIKE '%claude_code%'   THEN 'claude_code'
+        WHEN json_extract(scope,'$.name') = 'com.opencode'       THEN 'opencode'
+        WHEN json_extract(scope,'$.name') LIKE '%opencode%'      THEN 'opencode'
+        WHEN json_extract(scope,'$.name') = 'pi-otel'            THEN 'pi'
+        WHEN json_extract(scope,'$.name') LIKE '%codex%'         THEN 'codex'
+        WHEN json_extract(scope,'$.name') LIKE '%deekseek%'      THEN 'deepseek'
+        ELSE COALESCE(json_extract(scope,'$.name'), 'unknown')
+    END"#;
+    let model_expr = r#"COALESCE(json_extract(attributes,'$."gen_ai.request.model"'),
+        json_extract(attributes,'$."model"'), '(unknown)')"#;
+    // json_valid-gated session-id lookup (corrupt JSON -> NULL, never an
+    // error); the paired index predicate is planner-required for
+    // idx_spans_session_id.
+    let session_expr = semconv::session_id_expr("attributes");
+    let session_predicate = semconv::session_id_index_predicate("attributes");
+
+    let mut where_clause = format!("WHERE {llm_guard} AND {session_predicate}");
+    let mut params: Vec<Box<dyn rusqlite::ToSql>> = Vec::new();
+    if let Some(s) = start_time {
+        where_clause.push_str(" AND start_time >= ?");
+        params.push(Box::new(s));
+    }
+    if let Some(e) = end_time {
+        where_clause.push_str(" AND start_time <= ?");
+        params.push(Box::new(e));
+    }
+
+    let sql = format!(
+        r#"
+        SELECT
+          {session_expr} AS session_id,
+          {tool_expr} AS tool,
+          {model_expr} AS model,
+          COUNT(*) AS turns,
+          COALESCE(SUM({input_expr}), 0) AS input_tokens,
+          COALESCE(SUM({output_expr}), 0) AS output_tokens,
+          COALESCE(SUM({cache_creation_expr}), 0) AS cache_creation_tokens,
+          COALESCE(SUM({cache_read_expr}), 0) AS cache_read_tokens
+        FROM spans
+        {where_clause}
+        GROUP BY session_id, tool, model
+        ORDER BY session_id ASC, tool ASC, model ASC
+        "#
+    );
+
+    let param_refs: Vec<&dyn rusqlite::ToSql> = params.iter().map(|p| p.as_ref()).collect();
+    let mut stmt = conn.prepare(&sql).map_err(|e| {
+        StorageError::QueryError(format!("Failed to prepare session_depth query: {e}"))
+    })?;
+
+    let rows: Vec<SessionDepthSessionRow> = stmt
+        .query_map(param_refs.as_slice(), |r| {
+            Ok(SessionDepthSessionRow {
+                session_id: r.get(0)?,
+                tool: r.get(1)?,
+                model: r.get(2)?,
+                turns: r.get::<_, i64>(3).unwrap_or(0) as u64,
+                input_tokens: r.get::<_, i64>(4).unwrap_or(0) as u64,
+                output_tokens: r.get::<_, i64>(5).unwrap_or(0) as u64,
+                cache_creation_tokens: r.get::<_, i64>(6).unwrap_or(0) as u64,
+                cache_read_tokens: r.get::<_, i64>(7).unwrap_or(0) as u64,
+            })
+        })
+        .map_err(|e| StorageError::QueryError(format!("{e}")))?
+        .collect::<std::result::Result<Vec<_>, _>>()
+        .map_err(|e| StorageError::QueryError(format!("{e}")))?;
+
+    Ok(SessionDepthStorageResponse {
+        rows,
+        filters_applied: Vec::new(),
+    })
+}
+
 // ── Skills Activity (#insight-3) ─────────────────────────────────────────────
 
 /// Codex skill injection activity.
@@ -14799,6 +14903,133 @@ mod new_insight_tests_2 {
             .unwrap()
             .rows
             .is_empty());
+    }
+
+    #[test]
+    fn test_session_depth_storage_groups_by_session_model() {
+        let conn = make_conn();
+        let d1 = 1_767_225_600_000_000_000_i64; // 2026-01-01 (UTC)
+
+        // Session spans: (trace, start, scope, session, model, in, out).
+        let ins = |trace: &str,
+                   start: i64,
+                   scope: &str,
+                   session: Option<&str>,
+                   model: &str,
+                   tokens: (u64, u64)| {
+            let (in_t, out_t) = tokens;
+            let mut attrs = format!(
+                r#"{{"gen_ai.system":"anthropic","gen_ai.request.model":"{model}","gen_ai.usage.input_tokens":{in_t},"gen_ai.usage.output_tokens":{out_t}}}"#
+            );
+            if let Some(s) = session {
+                // Insert before the closing brace.
+                let pos = attrs.len() - 1;
+                attrs.insert_str(pos, &format!(r#","session.id":"{s}""#));
+            }
+            conn.execute(
+                "INSERT INTO spans (trace_id, span_id, name, kind, start_time, end_time, attributes, scope, flags, created_at)
+                 VALUES (?1, ?2, 'llm_request', 0, ?3, ?3 + 1000000, ?4, ?5, 0, 1000000000)",
+                rusqlite::params![trace, format!("{trace}_s1"), start, attrs, scope],
+            )
+            .unwrap();
+        };
+
+        // s-a (opencode): 3 spans across two models.
+        ins(
+            "sd1",
+            d1 + 1_000_000,
+            r#"{"name":"com.opencode"}"#,
+            Some("s-a"),
+            "granite-4.0",
+            (10, 5),
+        );
+        ins(
+            "sd2",
+            d1 + 2_000_000,
+            r#"{"name":"com.opencode"}"#,
+            Some("s-a"),
+            "granite-4.0",
+            (20, 5),
+        );
+        ins(
+            "sd3",
+            d1 + 3_000_000,
+            r#"{"name":"com.opencode"}"#,
+            Some("s-a"),
+            "granite-4.1",
+            (1, 1),
+        );
+        // s-b (opencode): a single span (storage returns it; the >=2-turn
+        // filter lives in the bucket stats, not here).
+        ins(
+            "sd4",
+            d1 + 4_000_000,
+            r#"{"name":"com.opencode"}"#,
+            Some("s-b"),
+            "granite-4.0",
+            (2, 2),
+        );
+        // s-c (claude_code): 2 spans, one model.
+        ins(
+            "sd5",
+            d1 + 5_000_000,
+            r#"{"name":"com.anthropic.claude_code"}"#,
+            Some("s-c"),
+            "claude-sonnet-5",
+            (100, 50),
+        );
+        ins(
+            "sd6",
+            d1 + 6_000_000,
+            r#"{"name":"com.anthropic.claude_code"}"#,
+            Some("s-c"),
+            "claude-sonnet-5",
+            (10, 10),
+        );
+        // No session.id: excluded by the index predicate.
+        ins(
+            "sd7",
+            d1 + 7_000_000,
+            r#"{"name":"com.opencode"}"#,
+            None,
+            "granite-4.0",
+            (9, 9),
+        );
+
+        let result = query_session_depth_storage(&conn, None, None).unwrap();
+
+        // (session_id asc, tool asc, model asc).
+        assert_eq!(result.rows.len(), 4, "{result:?}");
+        let keys: Vec<(&str, &str, &str)> = result
+            .rows
+            .iter()
+            .map(|r| (r.session_id.as_str(), r.tool.as_str(), r.model.as_str()))
+            .collect();
+        assert_eq!(
+            keys,
+            vec![
+                ("s-a", "opencode", "granite-4.0"),
+                ("s-a", "opencode", "granite-4.1"),
+                ("s-b", "opencode", "granite-4.0"),
+                ("s-c", "claude_code", "claude-sonnet-5"),
+            ]
+        );
+
+        // s-a granite-4.0: 2 turns, tokens summed.
+        let r0 = &result.rows[0];
+        assert_eq!(r0.turns, 2);
+        assert_eq!(r0.input_tokens, 30);
+        assert_eq!(r0.output_tokens, 10);
+        // s-c: both claude spans in one (session, model) row.
+        let r3 = &result.rows[3];
+        assert_eq!(r3.turns, 2);
+        assert_eq!(r3.input_tokens, 110);
+        assert_eq!(r3.output_tokens, 60);
+
+        // The session-less span produced no row (7 spans in, 6 accounted
+        // for across the four rows).
+        let total_turns: u64 = result.rows.iter().map(|r| r.turns).sum();
+        assert_eq!(total_turns, 6);
     }
 
     #[test]
