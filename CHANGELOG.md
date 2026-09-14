@@ -11,6 +11,8 @@ have to work around), not implementation detail.
 
 ## [Unreleased]
 
+## [0.1.132] - 2026-09-14
+
 ### Added
 
 - New Time in Tool report: where your AI time actually went — active
