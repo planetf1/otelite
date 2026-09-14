@@ -775,6 +775,19 @@ pub trait StorageBackend: Send + Sync {
         Err(StorageError::QueryError("not implemented".to_string()))
     }
 
+    /// Active engagement time per (tool, UTC calendar day): inter-span
+    /// gaps within sessions, counted in full only up to `max_gap_ns`
+    /// (longer gaps are context switches) (#172).
+    async fn query_time_in_tool(
+        &self,
+        start_time: Option<i64>,
+        end_time: Option<i64>,
+        max_gap_ns: i64,
+    ) -> Result<crate::api::TimeInToolResponse> {
+        let _ = (start_time, end_time, max_gap_ns);
+        Err(StorageError::QueryError("not implemented".to_string()))
+    }
+
     /// Codex skill injection activity (#insight-3).
     async fn query_skill_activity(
         &self,

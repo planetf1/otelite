@@ -13,6 +13,13 @@ have to work around), not implementation detail.
 
 ### Added
 
+- New Time in Tool report: where your AI time actually went — active
+  engagement per tool per day (the time between a session's LLM
+  requests, counting gaps up to 5 minutes; longer gaps are context
+  switches, not thinking time) with a stacked per-day chart and
+  `otelite usage --time-in-tool` as a per-tool minutes/sessions/avg
+  table — see which tools hold your attention and which get abandoned
+  (#172)
 - New Session Depth vs Cost report: median and p95 session cost per
   tool and turn-count bucket (1-5, 6-15, 16-30, 31-50, 51+), with
   `otelite usage --session-depth-cost` as a table — see at what turn

@@ -235,6 +235,10 @@ pub struct UsageCommand {
     #[arg(long)]
     pub session_depth_cost: bool,
 
+    /// Active engagement time per tool per day: where the AI time went (#172)
+    #[arg(long)]
+    pub time_in_tool: bool,
+
     /// Show Codex skill injection counts — which skills fire implicitly and how often
     #[arg(long)]
     pub skill_activity: bool,
@@ -376,6 +380,8 @@ struct UsageOutput {
     cost_by_project: Option<otelite_core::api::CostByProjectResponse>,
     #[serde(skip_serializing_if = "Option::is_none")]
     session_depth_cost: Option<otelite_core::api::SessionDepthCostResponse>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    time_in_tool: Option<otelite_core::api::TimeInToolResponse>,
     #[serde(skip_serializing_if = "Option::is_none")]
     skill_activity: Option<otelite_core::api::SkillActivityResponse>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -1212,6 +1218,19 @@ impl UsageCommand {
             None
         };
 
+        // --time-in-tool (default 300 s engagement-gap ceiling; gaps
+        // longer than that are context switches, not thinking time)
+        let time_in_tool: Option<otelite_core::api::TimeInToolResponse> = if self.time_in_tool {
+            Some(
+                storage
+                    .query_time_in_tool(Some(start_time), Some(end_time), 300 * 1_000_000_000)
+                    .await
+                    .map_err(|e| Error::ApiError(format!("Failed to query time_in_tool: {e}")))?,
+            )
+        } else {
+            None
+        };
+
         // --skill-activity
         let skill_activity: Option<otelite_core::api::SkillActivityResponse> =
             if self.skill_activity {
@@ -1340,6 +1359,7 @@ impl UsageCommand {
                     cost_projection,
                     cost_by_project,
                     session_depth_cost,
+                    time_in_tool,
                     skill_activity,
                     session_quality,
                     skill_outcomes,
@@ -1571,6 +1591,11 @@ impl UsageCommand {
 
                 if let Some(ref resp) = session_depth_cost {
                     display_session_depth_cost(resp, &pricing_source);
+                    println!();
+                }
+
+                if let Some(ref resp) = time_in_tool {
+                    display_time_in_tool(resp);
                     println!();
                 }
 
@@ -3480,6 +3505,68 @@ fn display_session_depth_cost(
     println!("{}", table);
 }
 
+/// Per-tool totals for the time-in-tool table (#172), aggregated from the
+/// per-(tool, day) rows: tool, total minutes, sessions, avg minutes per
+/// session — sorted by total minutes desc (tool asc on ties). The
+/// per-tool average is recomputed from the summed minutes/sessions so it
+/// is a true window mean, not a mean of the daily means.
+fn time_in_tool_totals(resp: &otelite_core::api::TimeInToolResponse) -> Vec<Vec<String>> {
+    use std::cmp::Ordering;
+    use std::collections::BTreeMap;
+    let mut by_tool: BTreeMap<String, (f64, u64)> = BTreeMap::new();
+    for r in &resp.rows {
+        let e = by_tool.entry(r.tool.clone()).or_insert((0.0, 0));
+        e.0 += r.active_minutes;
+        e.1 += r.sessions;
+    }
+    let mut tools: Vec<(&String, &(f64, u64))> = by_tool.iter().collect();
+    tools.sort_by(|a, b| {
+        let b_minutes = b.1 .0;
+        let a_minutes = a.1 .0;
+        b_minutes
+            .partial_cmp(&a_minutes)
+            .unwrap_or(Ordering::Equal)
+            .then_with(|| a.0.cmp(b.0))
+    });
+    tools
+        .into_iter()
+        .map(|(tool, (minutes, sessions))| {
+            let avg = if *sessions > 0 {
+                minutes / *sessions as f64
+            } else {
+                0.0
+            };
+            vec![
+                tool.clone(),
+                format!("{minutes:.1}"),
+                sessions.to_string(),
+                format!("{avg:.1}"),
+            ]
+        })
+        .collect()
+}
+
+fn display_time_in_tool(resp: &otelite_core::api::TimeInToolResponse) {
+    println!("Time in Tool (engagement gaps capped at 5 min, per UTC day):");
+    if resp.rows.is_empty() {
+        println!("  No session data in range");
+        return;
+    }
+    let mut table = Table::new();
+    fit_to_terminal(&mut table);
+    table.load_preset(UTF8_FULL);
+    table.set_header(vec![
+        Cell::new("Tool").fg(Color::Cyan),
+        Cell::new("Minutes").fg(Color::Cyan),
+        Cell::new("Sessions").fg(Color::Cyan),
+        Cell::new("Avg min/session").fg(Color::Cyan),
+    ]);
+    for row in time_in_tool_totals(resp) {
+        table.add_row(row.into_iter().map(Cell::new).collect::<Vec<_>>());
+    }
+    println!("{}", table);
+}
+
 fn display_daily_tool_mix(resp: &otelite_core::api::DailyToolMixResponse) {
     if resp.rows.is_empty() {
         println!("Daily Tool Mix: no data");
@@ -4124,5 +4211,46 @@ mod tests {
 
         // Empty state: no rows.
         assert!(session_depth_rows(&SessionDepthCostResponse::default()).is_empty());
+    }
+
+    #[test]
+    fn test_time_in_tool_totals_aggregates_and_sorts() {
+        use otelite_core::api::{TimeInToolResponse, TimeInToolRow};
+        let row = |tool: &str, date: &str, minutes: f64, sessions: u64| TimeInToolRow {
+            tool: tool.into(),
+            date: date.into(),
+            active_minutes: minutes,
+            sessions,
+            avg_session_minutes: if sessions > 0 {
+                minutes / sessions as f64
+            } else {
+                0.0
+            },
+        };
+        let resp = TimeInToolResponse {
+            rows: vec![
+                row("opencode", "2026-01-01", 30.0, 2),
+                row("opencode", "2026-01-02", 10.0, 3),
+                row("claude_code", "2026-01-01", 20.0, 1),
+            ],
+            tools: vec!["claude_code".into(), "opencode".into()],
+            filters_applied: vec![],
+        };
+        let rows = time_in_tool_totals(&resp);
+        assert_eq!(rows.len(), 2);
+        // opencode (40.0 across 5 sessions) sorts ahead of claude_code
+        // (20.0); the avg is the window mean (8.0), not a mean of daily
+        // means (15.0/3.33...).
+        assert_eq!(rows[0][0], "opencode");
+        assert_eq!(rows[0][1], "40.0");
+        assert_eq!(rows[0][2], "5");
+        assert_eq!(rows[0][3], "8.0");
+        assert_eq!(rows[1][0], "claude_code");
+        assert_eq!(rows[1][1], "20.0");
+        assert_eq!(rows[1][2], "1");
+        assert_eq!(rows[1][3], "20.0");
+
+        // Empty state: no rows.
+        assert!(time_in_tool_totals(&TimeInToolResponse::default()).is_empty());
     }
 }

@@ -13556,6 +13556,142 @@ pub fn query_session_depth_storage(
     })
 }
 
+// ── Time in tool (#172) ─────────────────────────────────────────────────────
+
+/// Active engagement time per (tool, UTC calendar day) (#172).
+///
+/// A turn is one LLM request span carrying `session.id`. Within a
+/// session, the gap between consecutive turn start times is engagement
+/// time — while it is at most `max_gap_ns`; a longer gap is a context
+/// switch and contributes zero. Each gap is attributed to the UTC day
+/// of the later span (the day the gap closed). `sessions` counts the
+/// distinct sessions with at least one turn on that (tool, day).
+///
+/// The tool mapping is identical to `query_daily_tool_mix` so the
+/// reports agree on tool labels.
+pub fn query_time_in_tool(
+    conn: &Connection,
+    start_time: Option<i64>,
+    end_time: Option<i64>,
+    max_gap_ns: i64,
+) -> Result<otelite_core::api::TimeInToolResponse> {
+    use otelite_core::api::{TimeInToolResponse, TimeInToolRow};
+    use otelite_core::semconv;
+
+    if max_gap_ns <= 0 {
+        return Err(StorageError::QueryError(format!(
+            "max_gap_ns must be positive, got {max_gap_ns}"
+        )));
+    }
+
+    let llm_guard = semconv::llm_span_guard("attributes");
+    let session_expr = semconv::session_id_expr("attributes");
+    let session_predicate = semconv::session_id_index_predicate("attributes");
+    let tool_expr = r#"CASE
+        WHEN json_extract(scope,'$.name') LIKE '%claude_code%'   THEN 'claude_code'
+        WHEN json_extract(scope,'$.name') = 'com.opencode'       THEN 'opencode'
+        WHEN json_extract(scope,'$.name') LIKE '%opencode%'      THEN 'opencode'
+        WHEN json_extract(scope,'$.name') = 'pi-otel'            THEN 'pi'
+        WHEN json_extract(scope,'$.name') LIKE '%codex%'         THEN 'codex'
+        WHEN json_extract(scope,'$.name') LIKE '%deekseek%'      THEN 'deepseek'
+        ELSE COALESCE(json_extract(scope,'$.name'), 'unknown')
+    END"#;
+
+    let mut where_clause = format!("WHERE {llm_guard} AND {session_predicate}");
+    let mut params: Vec<Box<dyn rusqlite::ToSql>> = Vec::new();
+    if let Some(s) = start_time {
+        where_clause.push_str(" AND start_time >= ?");
+        params.push(Box::new(s));
+    }
+    if let Some(e) = end_time {
+        where_clause.push_str(" AND start_time <= ?");
+        params.push(Box::new(e));
+    }
+    // The gap ceiling binds after the window params (bind order follows
+    // textual appearance in the SQL).
+    params.push(Box::new(max_gap_ns));
+
+    let sql = format!(
+        r#"
+        WITH ordered AS (
+            SELECT
+                {session} AS session_id,
+                {tool} AS tool,
+                start_time,
+                LAG(start_time) OVER (
+                    PARTITION BY {session}
+                    ORDER BY start_time
+                ) AS prev_start
+            FROM spans
+            {where_clause}
+        ),
+        gaps AS (
+            SELECT
+                session_id,
+                tool,
+                start_time,
+                CASE
+                    WHEN prev_start IS NOT NULL
+                         AND (start_time - prev_start) <= ?
+                    THEN (start_time - prev_start)
+                    ELSE 0
+                END AS engaged_ns
+            FROM ordered
+        )
+        SELECT
+            tool,
+            strftime('%Y-%m-%d', datetime(start_time / 1000000000, 'unixepoch')) AS date,
+            SUM(engaged_ns) AS active_ns,
+            COUNT(DISTINCT session_id) AS sessions
+        FROM gaps
+        GROUP BY tool, date
+        ORDER BY date ASC, tool ASC
+        "#,
+        session = session_expr,
+        tool = tool_expr,
+        where_clause = where_clause,
+    );
+
+    let param_refs: Vec<&dyn rusqlite::ToSql> = params.iter().map(|p| p.as_ref()).collect();
+    let mut stmt = conn.prepare(&sql).map_err(|e| {
+        StorageError::QueryError(format!("Failed to prepare time_in_tool query: {e}"))
+    })?;
+
+    let rows: Vec<TimeInToolRow> = stmt
+        .query_map(param_refs.as_slice(), |r| {
+            let active_ns: i64 = r.get(2)?;
+            let sessions: i64 = r.get(3)?;
+            let active_minutes = active_ns as f64 / 1_000_000_000.0 / 60.0;
+            Ok(TimeInToolRow {
+                tool: r.get(0)?,
+                date: r.get(1)?,
+                active_minutes,
+                sessions: sessions as u64,
+                avg_session_minutes: if sessions > 0 {
+                    active_minutes / sessions as f64
+                } else {
+                    0.0
+                },
+            })
+        })
+        .map_err(|e| StorageError::QueryError(format!("{e}")))?
+        .collect::<std::result::Result<Vec<_>, _>>()
+        .map_err(|e| StorageError::QueryError(format!("{e}")))?;
+
+    let tools: Vec<String> = rows
+        .iter()
+        .map(|r| r.tool.clone())
+        .collect::<std::collections::BTreeSet<_>>()
+        .into_iter()
+        .collect();
+
+    Ok(TimeInToolResponse {
+        rows,
+        tools,
+        filters_applied: Vec::new(),
+    })
+}
+
 // ── Skills Activity (#insight-3) ─────────────────────────────────────────────
 
 /// Codex skill injection activity.
@@ -15030,6 +15166,164 @@ mod new_insight_tests_2 {
         // for across the four rows).
         let total_turns: u64 = result.rows.iter().map(|r| r.turns).sum();
         assert_eq!(total_turns, 6);
+    }
+
+    // Insert one LLM span with a session id for the time-in-tool tests.
+    // `scope` is the raw scope NAME; the column stores the JSON object
+    // form the tool-expression CASE extracts from.
+    fn tt_span(conn: &Connection, trace: &str, start: i64, scope: &str, session: &str) {
+        let attrs = serde_json::json!({
+            "gen_ai.system": "anthropic",
+            "gen_ai.request.model": "test-model",
+            "gen_ai.usage.input_tokens": 1,
+            "gen_ai.usage.output_tokens": 1,
+            "session.id": session,
+        });
+        let scope_json = serde_json::json!({ "name": scope });
+        conn.execute(
+            "INSERT INTO spans (trace_id, span_id, name, kind, start_time, end_time, attributes, scope, flags, created_at)
+             VALUES (?1, ?2, 'llm_request', 0, ?3, ?3 + 1000000, ?4, ?5, 0, 1000000000)",
+            rusqlite::params![trace, format!("{trace}_s1"), start, attrs.to_string(), scope_json.to_string()],
+        )
+        .unwrap();
+    }
+
+    #[test]
+    fn test_time_in_tool_caps_gaps_at_ceiling() {
+        let conn = make_conn();
+        const SEC: i64 = 1_000_000_000;
+        let d1 = 1_767_225_600_000_000_000_i64; // 2026-01-01 (UTC)
+        let base = d1 + 3600 * SEC;
+
+        // s-a (opencode): gaps of 240s, 360s, 60s. With the default
+        // 300s ceiling, the 360s gap is a context switch (zero); the
+        // other two count -> 300s = 5.0 minutes.
+        tt_span(&conn, "tt-a1", base, "com.opencode", "s-a");
+        tt_span(&conn, "tt-a2", base + 240 * SEC, "com.opencode", "s-a");
+        tt_span(&conn, "tt-a3", base + 600 * SEC, "com.opencode", "s-a");
+        tt_span(&conn, "tt-a4", base + 660 * SEC, "com.opencode", "s-a");
+        // s-b (opencode): a single 180s gap -> 3.0 minutes.
+        tt_span(&conn, "tt-b1", base + 10 * SEC, "com.opencode", "s-b");
+        tt_span(&conn, "tt-b2", base + 190 * SEC, "com.opencode", "s-b");
+        // s-d (opencode): a single span -> no gaps, 0 minutes but the
+        // session still counts.
+        tt_span(&conn, "tt-d1", base + 30 * SEC, "com.opencode", "s-d");
+
+        let result = query_time_in_tool(&conn, None, None, 300 * SEC).unwrap();
+
+        // One (tool, day) row: opencode on 2026-01-01.
+        assert_eq!(result.rows.len(), 1, "{result:?}");
+        let r = &result.rows[0];
+        assert_eq!(r.tool, "opencode");
+        assert_eq!(r.date, "2026-01-01");
+        // 300s + 180s = 480s = 8.0 minutes across three sessions.
+        assert!((r.active_minutes - 8.0).abs() < 1e-9, "{result:?}");
+        assert_eq!(r.sessions, 3);
+        assert!(
+            (r.avg_session_minutes - 8.0 / 3.0).abs() < 1e-9,
+            "{result:?}"
+        );
+        assert_eq!(result.tools, vec!["opencode".to_string()]);
+
+        // Tighter ceiling (100s): the 240s and 360s gaps both drop out,
+        // as does the 180s gap; only s-a's 60s gap survives -> 1.0 min.
+        let tight = query_time_in_tool(&conn, None, None, 100 * SEC).unwrap();
+        let rt = &tight.rows[0];
+        assert!((rt.active_minutes - 1.0).abs() < 1e-9, "{tight:?}");
+        assert_eq!(
+            rt.sessions, 3,
+            "sessions are counted regardless of the ceiling"
+        );
+    }
+
+    #[test]
+    fn test_time_in_tool_groups_by_tool_and_day() {
+        let conn = make_conn();
+        const SEC: i64 = 1_000_000_000;
+        let d1 = 1_767_225_600_000_000_000_i64; // 2026-01-01 (UTC)
+        let d2 = d1 + 86_400 * SEC;
+        let base = d1 + 3600 * SEC;
+
+        // s-a (opencode) spans two days: a gap that closes on day 1 and
+        // one that closes on day 2.
+        tt_span(&conn, "tt-g1", base, "com.opencode", "s-a");
+        tt_span(&conn, "tt-g2", base + 120 * SEC, "com.opencode", "s-a"); // +2 min day1
+        tt_span(&conn, "tt-g3", d2 + 3600 * SEC, "com.opencode", "s-a");
+        tt_span(
+            &conn,
+            "tt-g4",
+            d2 + 3600 * SEC + 300 * SEC,
+            "com.opencode",
+            "s-a",
+        ); // +5 min day2
+           // s-c (claude_code) on day 2 only: a 240s gap -> 4.0 minutes.
+        tt_span(
+            &conn,
+            "tt-c1",
+            d2 + 7200 * SEC,
+            "com.anthropic.claude_code",
+            "s-c",
+        );
+        tt_span(
+            &conn,
+            "tt-c2",
+            d2 + 7200 * SEC + 240 * SEC,
+            "com.anthropic.claude_code",
+            "s-c",
+        );
+
+        let result = query_time_in_tool(&conn, None, None, 300 * SEC).unwrap();
+
+        // (date asc, tool asc): day1/opencode, day2/claude_code, day2/opencode.
+        assert_eq!(result.rows.len(), 3, "{result:?}");
+        let keys: Vec<(String, String)> = result
+            .rows
+            .iter()
+            .map(|r| (r.date.clone(), r.tool.clone()))
+            .collect();
+        assert_eq!(
+            keys,
+            vec![
+                ("2026-01-01".to_string(), "opencode".to_string()),
+                ("2026-01-02".to_string(), "claude_code".to_string()),
+                ("2026-01-02".to_string(), "opencode".to_string()),
+            ]
+        );
+        assert!(
+            (result.rows[0].active_minutes - 2.0).abs() < 1e-9,
+            "{result:?}"
+        );
+        assert_eq!(result.rows[0].sessions, 1);
+        assert!(
+            (result.rows[1].active_minutes - 4.0).abs() < 1e-9,
+            "{result:?}"
+        );
+        assert_eq!(result.rows[1].sessions, 1);
+        assert!(
+            (result.rows[2].active_minutes - 5.0).abs() < 1e-9,
+            "{result:?}"
+        );
+        // s-a appears on both days, once per (tool, day).
+        assert_eq!(result.rows[2].sessions, 1);
+        assert_eq!(
+            result.tools,
+            vec!["claude_code".to_string(), "opencode".to_string()]
+        );
+
+        // A window covering only day 2 drops the day-1 row entirely.
+        let day2 = query_time_in_tool(&conn, Some(d2), None, 300 * SEC).unwrap();
+        assert_eq!(day2.rows.len(), 2, "{day2:?}");
+        assert!(day2.rows.iter().all(|r| r.date == "2026-01-02"));
+
+        // Empty state.
+        let empty = make_conn();
+        assert!(query_time_in_tool(&empty, None, None, 300 * SEC)
+            .unwrap()
+            .rows
+            .is_empty());
+
+        // The ceiling must be positive.
+        assert!(query_time_in_tool(&conn, None, None, 0).is_err());
     }
 
     #[test]

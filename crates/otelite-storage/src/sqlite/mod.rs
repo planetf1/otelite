@@ -1196,6 +1196,19 @@ impl StorageBackend for SqliteBackend {
         .await
     }
 
+    async fn query_time_in_tool(
+        &self,
+        start_time: Option<i64>,
+        end_time: Option<i64>,
+        max_gap_ns: i64,
+    ) -> Result<otelite_core::api::TimeInToolResponse> {
+        self.read_query(move |conn| {
+            reader::query_time_in_tool(conn, start_time, end_time, max_gap_ns)
+                .map_err(StorageError::from)
+        })
+        .await
+    }
+
     async fn query_skill_activity(
         &self,
         start_time: Option<i64>,

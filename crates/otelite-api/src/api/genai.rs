@@ -408,6 +408,64 @@ pub async fn get_session_depth_cost(
     }))
 }
 
+/// Query parameters for the time-in-tool endpoint (#172).
+#[derive(Debug, Deserialize, Serialize, utoipa::IntoParams, utoipa::ToSchema)]
+pub struct TimeInToolQuery {
+    /// Start time (nanoseconds since Unix epoch)
+    pub start_time: Option<i64>,
+    /// End time (nanoseconds since Unix epoch)
+    pub end_time: Option<i64>,
+    /// Engagement gap ceiling in seconds. Gaps at or below it count in
+    /// full; longer gaps are context switches and count zero. Default 300.
+    pub max_gap_secs: Option<u64>,
+}
+
+/// Active engagement time per tool per UTC day (#172): inter-LLM-span
+/// gaps within sessions, with gaps longer than the ceiling treated as
+/// context switches (they contribute zero, not a clamped amount).
+#[utoipa::path(
+    get,
+    path = "/api/genai/time_in_tool",
+    params(TimeInToolQuery),
+    responses(
+        (status = 200, description = "Active engagement minutes per tool per UTC day", body = otelite_core::api::TimeInToolResponse),
+        (status = 400, description = "Invalid max_gap_secs", body = ErrorResponse),
+        (status = 500, description = "Internal server error", body = ErrorResponse)
+    ),
+    tag = "genai"
+)]
+pub async fn get_time_in_tool(
+    State(state): State<AppState>,
+    Query(query): Query<TimeInToolQuery>,
+) -> Result<Json<otelite_core::api::TimeInToolResponse>, (StatusCode, Json<ErrorResponse>)> {
+    const DEFAULT_MAX_GAP_SECS: u64 = 300;
+    const MAX_GAP_SECS_LIMIT: u64 = 86_400;
+    let max_gap_secs = query.max_gap_secs.unwrap_or(DEFAULT_MAX_GAP_SECS);
+    if max_gap_secs == 0 || max_gap_secs > MAX_GAP_SECS_LIMIT {
+        return Err((
+            StatusCode::BAD_REQUEST,
+            Json(ErrorResponse::bad_request(format!(
+                "max_gap_secs must be between 1 and {MAX_GAP_SECS_LIMIT} seconds, got {max_gap_secs}"
+            ))),
+        ));
+    }
+    let max_gap_ns = max_gap_secs as i64 * 1_000_000_000;
+
+    state
+        .storage
+        .query_time_in_tool(query.start_time, query.end_time, max_gap_ns)
+        .await
+        .map(Json)
+        .map_err(|e| {
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(ErrorResponse::storage_error(format!(
+                    "query time_in_tool: {e}"
+                ))),
+            )
+        })
+}
+
 /// Query parameters for top-spans endpoint
 #[derive(Debug, Deserialize, Serialize, utoipa::IntoParams, utoipa::ToSchema)]
 pub struct TopSpansQuery {

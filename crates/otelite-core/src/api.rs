@@ -2858,6 +2858,42 @@ pub struct CostByProjectResponse {
     pub filters_applied: Vec<String>,
 }
 
+// ── Time in tool (#172) ─────────────────────────────────────────────────────
+
+/// Per-(tool, UTC calendar day) active-engagement row (#172).
+///
+/// Active engagement is the sum of inter-span gaps within a session,
+/// where a gap counts in full only while it is at most the configured
+/// ceiling — longer gaps are context switches, not thinking time, and
+/// contribute zero. Each gap is attributed to the UTC day of the LATER
+/// span (the day the gap closed).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
+pub struct TimeInToolRow {
+    /// Short tool label, same convention as the daily tool mix.
+    pub tool: String,
+    /// UTC calendar day `YYYY-MM-DD` (same convention as daily tool mix).
+    pub date: String,
+    /// Active engagement minutes for this (tool, day).
+    pub active_minutes: f64,
+    /// Distinct sessions with at least one LLM span on this (tool, day).
+    pub sessions: u64,
+    /// `active_minutes / sessions` (0.0 when there are no sessions).
+    pub avg_session_minutes: f64,
+}
+
+/// Response for `GET /api/genai/time_in_tool` (#172) — same shape as
+/// the daily tool mix, in minutes instead of datapoints.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
+pub struct TimeInToolResponse {
+    /// Rows in (date asc, tool asc) order.
+    pub rows: Vec<TimeInToolRow>,
+    /// Distinct tools present, for the frontend legend.
+    pub tools: Vec<String>,
+    pub filters_applied: Vec<String>,
+}
+
 // ── Session depth vs cost (#180) ─────────────────────────────────────────────
 
 /// One (session, model) aggregate from storage (#180). The API layer

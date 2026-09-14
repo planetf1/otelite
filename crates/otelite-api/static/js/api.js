@@ -266,6 +266,7 @@ class ApiClient {
     async getCostProjection(params = {}) { return this.get('/genai/cost_projection', params); }
     async getCostByProject(params = {}) { return this.get('/genai/cost_by_project', params); }
     async getSessionDepthCost(params = {}) { return this.get('/genai/session_depth_cost', params); }
+    async getTimeInTool(params = {}) { return this.get('/genai/time_in_tool', params); }
     async getCodexTtft(params = {})     { return this.get('/genai/codex_ttft', params); }
     async getProjectRollup(params = {}) { return this.get('/genai/project_rollup', params); }
     async getMcpHealth(params = {})     { return this.get('/genai/mcp_health', params); }

@@ -2861,6 +2861,8 @@ details[open] > .json-tree-summary::before {
 .cost-chart-bar:hover { fill: #8b5cf6; }
 .agent-chart-bar { opacity: 0.9; }
 .agent-chart-bar:hover { opacity: 1; }
+.time-chart-bar { opacity: 0.9; }
+.time-chart-bar:hover { opacity: 1; }
 .agent-dot {
     display: inline-block;
     width: 0.6em;

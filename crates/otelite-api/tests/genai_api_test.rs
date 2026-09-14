@@ -2745,3 +2745,131 @@ async fn test_session_depth_cost_bucketing_and_pricing() {
     assert!(r1["median_cost_usd"].as_f64().unwrap() > 0.0, "{v}");
     assert!(r1["p95_cost_usd"].as_f64().unwrap() > 0.0, "{v}");
 }
+
+// ── Time in tool (#172) ─────────────────────────────────────────────────────
+
+#[tokio::test]
+async fn test_time_in_tool_gaps_and_validation() {
+    let (server, storage, _temp_dir) = setup_test_server().await;
+    let app = server.build_router();
+
+    // Empty state.
+    let (status, v) = get_json(&app, "/api/genai/time_in_tool").await;
+    assert_eq!(status, StatusCode::OK);
+    assert!(v["rows"].as_array().unwrap().is_empty());
+
+    // max_gap_secs validation: zero and above the 86400 s limit are 400.
+    let (status, _) = get_json(&app, "/api/genai/time_in_tool?max_gap_secs=0").await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+    let (status, _) = get_json(&app, "/api/genai/time_in_tool?max_gap_secs=86401").await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+
+    // Day = 2026-01-01 (UTC).
+    let d1 = 1_767_225_600_000_000_000_i64;
+    let sec = 1_000_000_000_i64;
+    let base = d1 + 3600 * sec;
+
+    // s-x (opencode): gaps of 240 s (counts) and 360 s (context switch,
+    // zero) -> 240 s = 4.0 minutes.
+    let spans = vec![
+        sd_span(
+            "tt-x1",
+            "com.opencode",
+            "test-model",
+            base,
+            Some("s-x"),
+            (1, 1),
+        ),
+        sd_span(
+            "tt-x2",
+            "com.opencode",
+            "test-model",
+            base + 240 * sec,
+            Some("s-x"),
+            (1, 1),
+        ),
+        sd_span(
+            "tt-x3",
+            "com.opencode",
+            "test-model",
+            base + 600 * sec,
+            Some("s-x"),
+            (1, 1),
+        ),
+        // s-y (claude_code): a single 120 s gap -> 2.0 minutes.
+        sd_span(
+            "tt-y1",
+            "com.anthropic.claude_code",
+            "test-model",
+            base + 10 * sec,
+            Some("s-y"),
+            (1, 1),
+        ),
+        sd_span(
+            "tt-y2",
+            "com.anthropic.claude_code",
+            "test-model",
+            base + 130 * sec,
+            Some("s-y"),
+            (1, 1),
+        ),
+    ];
+    storage.write_span_batch(&spans).await.unwrap();
+
+    // Windowed query (default 300 s ceiling) — a different cache key
+    // than the empty-state call.
+    let (status, v) = get_json(
+        &app,
+        &format!(
+            "/api/genai/time_in_tool?start_time={d1}&end_time={}",
+            d1 + 86_400 * sec
+        ),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+
+    // (date asc, tool asc): claude_code then opencode, both on day 1.
+    let rows = v["rows"].as_array().unwrap();
+    assert_eq!(rows.len(), 2, "{v}");
+    let keys: Vec<(&str, &str)> = rows
+        .iter()
+        .map(|r| (r["tool"].as_str().unwrap(), r["date"].as_str().unwrap()))
+        .collect();
+    assert_eq!(
+        keys,
+        vec![("claude_code", "2026-01-01"), ("opencode", "2026-01-01"),]
+    );
+    assert_eq!(rows[0]["sessions"], 1);
+    assert!(
+        (rows[0]["active_minutes"].as_f64().unwrap() - 2.0).abs() < 1e-9,
+        "{v}"
+    );
+    assert_eq!(rows[1]["sessions"], 1);
+    // 240 s gap counts, the 360 s gap is a context switch.
+    assert!(
+        (rows[1]["active_minutes"].as_f64().unwrap() - 4.0).abs() < 1e-9,
+        "{v}"
+    );
+    assert_eq!(v["tools"], serde_json::json!(["claude_code", "opencode"]));
+
+    // A 100 s ceiling drops both the 240 s and 360 s gaps and the 120 s
+    // gap: sessions still count, active minutes go to zero.
+    let (status, v) = get_json(
+        &app,
+        &format!(
+            "/api/genai/time_in_tool?start_time={d1}&end_time={}&max_gap_secs=100",
+            d1 + 86_400 * sec
+        ),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    let rows = v["rows"].as_array().unwrap();
+    assert_eq!(rows.len(), 2, "{v}");
+    for r in rows {
+        assert_eq!(r["active_minutes"], 0.0, "{v}");
+        assert_eq!(
+            r["sessions"], 1,
+            "sessions count regardless of the ceiling: {v}"
+        );
+    }
+}

@@ -61,6 +61,7 @@ class AnalyticsView {
         { id: 'hook_overhead',           title: 'Hook Overhead',           hint: 'Codex hook total and average invocation time per event type — how much latency hooks add' },
         { id: 'capabilities',            title: 'Telemetry Capabilities',  hint: 'Which metrics each emitter actually provides · availability & quality' },
         { id: 'project_rollup',          title: 'Project Rollup',          hint: 'Token activity and turn counts per project across all agents' },
+        { id: 'time_in_tool',            title: 'Time in Tool',            hint: 'Active engagement per tool per day — where your AI time actually went' },
     ];
 
     // Top-level categories. A report appears in exactly one group; pinned
@@ -69,7 +70,7 @@ class AnalyticsView {
         { id: 'cost',        label: 'Cost',                    sub: 'Where did the tokens go?',            reports: ['cost', 'providers', 'cost_by_project', 'session_depth', 'roles', 'session_model', 'thinking_effort', 'efficiency', 'productivity', 'skills'] },
         { id: 'latency',     label: 'Latency',                 sub: 'How fast, and where is it slow?',      reports: ['latency', 'model_performance', 'ttft', 'codex_turns', 'speed_dist'] },
         { id: 'reliability', label: 'Reliability',             sub: "What's breaking, and how often?",      reports: ['reliability', 'tool_failures', 'guardian'] },
-        { id: 'behavior',    label: 'Behaviour',               sub: 'How is it being used?',                reports: ['behavior', 'multi_agent', 'model_selection_heatmap'] },
+        { id: 'behavior',    label: 'Behaviour',               sub: 'How is it being used?',                reports: ['behavior', 'multi_agent', 'model_selection_heatmap', 'time_in_tool'] },
         { id: 'ecosystem',   label: 'Ecosystem & Diagnostics', sub: "What's the tooling actually doing?",   reports: ['hook_overhead', 'capabilities', 'project_rollup'] },
     ];
 
@@ -82,6 +83,7 @@ class AnalyticsView {
         providers: ['provider', 'mix', 'anthropic', 'openai', 'amazon', 'bedrock'],
         cost_by_project: ['cost by project', 'per project', 'attribution', 'unattributed', 'which project'],
         session_depth: ['session depth', 'turn count', 'turns', 'depth', 'median cost', 'p95', 'sweet spot'],
+        time_in_tool: ['time in tool', 'time spent', 'engagement', 'active time', 'where did my time', 'attention'],
         roles: ['role', 'sub-agent', 'subagent', 'attribution', 'routing matrix'],
         session_model: ['per-session', 'session spend', 'model pair'],
         thinking_effort: ['effort', 'low', 'medium', 'high', 'xhigh', 'reasoning', 'thinking tokens', 'thinking'],
@@ -112,6 +114,7 @@ class AnalyticsView {
         providers: ['cost', 'model_performance'],
         cost_by_project: ['cost', 'project_rollup', 'providers'],
         session_depth: ['cost', 'efficiency', 'session_model'],
+        time_in_tool: ['behavior', 'productivity', 'model_selection_heatmap'],
         roles: ['cost', 'session_model', 'model_selection_heatmap'],
         session_model: ['cost', 'roles'],
         thinking_effort: ['cost', 'model_performance', 'speed_dist'],
@@ -1112,6 +1115,7 @@ class AnalyticsView {
             providers: () => this._loadProvidersSection(),
             cost_by_project: () => this._loadCostByProjectSection(),
             session_depth: () => this._loadSessionDepthSection(),
+            time_in_tool: () => this._loadTimeInToolSection(),
             latency: () => this._loadLatencySection(),
             reliability: () => this._loadReliabilitySection(),
             behavior: () => this._loadBehaviorSection(),
@@ -3886,6 +3890,110 @@ class AnalyticsView {
         } catch (err) {
             this._setSectionError('session_depth', err);
         }
+    }
+
+    // Time in tool (#172): active engagement per tool per UTC day.
+    // Gaps between a session's LLM requests count toward engagement
+    // while they are at most the 5-minute ceiling; longer gaps are
+    // context switches and contribute zero. Renders a window summary
+    // line, a per-day stacked bar chart, and a per-tool summary table.
+    async _loadTimeInToolSection() {
+        this._setSectionLoading('time_in_tool');
+        try {
+            const data = await this.api.getTimeInTool(this._baseParams());
+            const rows = data.rows || [];
+            const tools = data.tools || [];
+            let html = '<p class="section-hint">Active engagement is the time between a session’s LLM requests, counting gaps up to 5 minutes — longer gaps are treated as context switches, not thinking time.</p>';
+            if (!rows.length) {
+                html += '<div class="empty-state-hint">No session data in this window.</div>';
+            } else {
+                // Per-tool totals for the summary line + table.
+                const byTool = new Map();
+                for (const r of rows) {
+                    const t = byTool.get(r.tool) || { tool: r.tool, minutes: 0, sessions: 0 };
+                    t.minutes += r.active_minutes;
+                    t.sessions += r.sessions;
+                    byTool.set(r.tool, t);
+                }
+                const toolTotals = [...byTool.values()].sort((a, b) => b.minutes - a.minutes);
+                const fmtMin = m => (m >= 60
+                    ? `${Math.floor(m / 60)}h ${Math.round(m % 60)}m`
+                    : `${Math.round(m)} min`);
+                html += `<p class="table-hint"><strong>In this window:</strong> ${toolTotals.map(t => `${this._esc(t.tool)} ${fmtMin(t.minutes)}`).join(' · ')}</p>`;
+                html += this._buildTimeInToolChart(rows, tools);
+                html += '<h3>By tool</h3><div class="analytics-table-wrap"><table class="analytics-table"><thead><tr>'
+                    + '<th>Tool</th><th>Minutes</th><th>Sessions</th><th>Avg min / session</th>'
+                    + '</tr></thead><tbody>';
+                for (const t of toolTotals) {
+                    const avg = t.sessions > 0 ? t.minutes / t.sessions : 0;
+                    html += `<tr><td>${this._esc(t.tool)}</td><td>${fmtMin(t.minutes)}</td>`
+                        + `<td>${Number(t.sessions).toLocaleString()}</td>`
+                        + `<td>${avg.toFixed(1)}</td></tr>`;
+                }
+                html += '</tbody></table></div>';
+            }
+            this._setSectionBody('time_in_tool', html);
+            this.loadedSections.add('time_in_tool');
+        } catch (err) {
+            this._setSectionError('time_in_tool', err);
+        }
+    }
+
+    // Stacked per-day bar chart: one segment per tool, height = active
+    // minutes. Same SVG convention as the cost chart (unit viewBox,
+    // preserveAspectRatio=none).
+    _buildTimeInToolChart(rows, tools) {
+        if (!rows.length) return '';
+        const byDay = new Map();
+        for (const r of rows) {
+            const d = byDay.get(r.date) || { date: r.date, total: 0, tools: {} };
+            d.total += r.active_minutes;
+            d.tools[r.tool] = (d.tools[r.tool] || 0) + r.active_minutes;
+            byDay.set(r.date, d);
+        }
+        const days = [...byDay.values()].sort((a, b) => a.date.localeCompare(b.date));
+        const totalMin = days.reduce((a, d) => a + d.total, 0);
+        const maxTotal = days.reduce((a, d) => Math.max(a, d.total), 0);
+
+        const width = 100;
+        const barGap = 0.5;
+        const barWidth = Math.max((width - barGap * (days.length - 1)) / days.length, 0.1);
+        const chartHeight = 100;
+
+        // Stable colour per tool (index into the palette).
+        const palette = ['#6366f1', '#10b981', '#f59e0b', '#ef4444', '#06b6d4', '#8b5cf6', '#84cc16', '#f97316'];
+        const colorFor = t => palette[(tools.indexOf(t) + palette.length) % palette.length];
+
+        const bars = days.map((d, i) => {
+            const x = i * (barWidth + barGap);
+            let yAcc = chartHeight;
+            const segs = tools
+                .filter(t => (d.tools[t] || 0) > 0)
+                .map(t => {
+                    const h = maxTotal > 0 ? ((d.tools[t] || 0) / maxTotal) * chartHeight : 0;
+                    yAcc -= h;
+                    const title = `${d.date}\n${t}: ${Math.round(d.tools[t])} min`;
+                    return `<rect class="time-chart-bar" x="${x.toFixed(3)}" y="${yAcc.toFixed(3)}" width="${barWidth.toFixed(3)}" height="${h.toFixed(3)}" fill="${colorFor(t)}"><title>${this._esc(title)}</title></rect>`;
+                });
+            return segs.join('');
+        }).join('');
+
+        const legend = tools.map(t =>
+            `<span class="agent-dot" style="background:${colorFor(t)}"></span>${this._esc(t)}`
+        ).join(' &nbsp; ');
+
+        return `
+            <h3>Active minutes per day — ${Math.round(totalMin)} min total across ${days.length} day${days.length === 1 ? '' : 's'}</h3>
+            <div class="cost-chart">
+                <svg class="cost-chart-svg" viewBox="0 0 ${width} ${chartHeight}" preserveAspectRatio="none">
+                    ${bars}
+                </svg>
+                <div class="cost-chart-axis-labels">
+                    <span class="cost-chart-axis-left">${this._esc(days[0].date)}</span>
+                    <span class="cost-chart-axis-right">${this._esc(days[days.length - 1].date)}</span>
+                </div>
+                <p class="table-hint">${legend}</p>
+            </div>`;
     }
 
     async _loadTtftSection() {
