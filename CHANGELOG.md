@@ -28,6 +28,13 @@ have to work around), not implementation detail.
 
 ### Internal
 
+- Gitleaks config fixed: the keyword rules (generic-secret,
+  generic-api-key, otelite-api-key) reported the keyword instead of the
+  credential value as the "secret", so value-based allowlists and
+  stopwords were silently inoperative; the value is now the captured
+  group, and the documented RELEASE_PR_TOKEN secret name in the release
+  workflow header is allowlisted (full-history scans were flagging it,
+  blocking release branches)
 - Release pipeline hardened after three consecutive stalls (v0.1.126/
   127/ 128): the Bump-and-tag wait loop now self-heals orphaned
   PR-only checks (force-pushes no longer idle the release out of its

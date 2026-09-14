@@ -12,19 +12,24 @@ useDefault = true
 [[rules]]
 id = "otelite-api-key"
 description = "Otelite API Key"
-regex = '''(?i)(otelite[_-]?api[_-]?key|otelite[_-]?token)\s*[:=]\s*['"]?([a-zA-Z0-9_\-]{32,})['"]?'''
+regex = '''(?i)(?:otelite[_-]?api[_-]?key|otelite[_-]?token)\s*[:=]\s*['"]?([a-zA-Z0-9_\-]{32,})['"]?'''
 tags = ["api-key", "otelite"]
 
 [[rules]]
 id = "generic-api-key"
 description = "Generic API Key"
-regex = '''(?i)(api[_-]?key|apikey)\s*[:=]\s*['"]?([a-zA-Z0-9_\-]{20,})['"]?'''
+regex = '''(?i)(?:api[_-]?key|apikey)\s*[:=]\s*['"]?([a-zA-Z0-9_\-]{20,})['"]?'''
 tags = ["api-key"]
 
 [[rules]]
 id = "generic-secret"
 description = "Generic Secret"
-regex = '''(?i)(secret|password|passwd|pwd)\s*[:=]\s*['"]?([a-zA-Z0-9_\-!@#$%^&*()]{8,})['"]?'''
+# The keyword is non-capturing on purpose: gitleaks reports capture group 1
+# as the "secret", so the credential VALUE must be group 1 for entropy,
+# stopwords and the value-pattern allowlist below to apply. (A capturing
+# keyword group made gitleaks report the literal word "secret", which no
+# value-based allowlist could ever match.)
+regex = '''(?i)(?:secret|password|passwd|pwd)\s*[:=]\s*['"]?([a-zA-Z0-9_\-!@#$%^&*()]{8,})['"]?'''
 tags = ["secret", "password"]
 
 [[rules]]
@@ -79,6 +84,13 @@ regexes = [
     '''<[A-Z_]+>''',
     '''\$\{[A-Z_]+\}''',
     '''\{\{[A-Z_]+\}\}''',
+
+    # Documented GitHub secret *name* in the bump-and-tag.yml header comment
+    # ("Optional secret: RELEASE_PR_TOKEN — …"). It is an identifier for a
+    # repo secret, not a credential; the generic-secret rule matches the
+    # `secret: <NAME>` wording. (#202, false positive seen on full-history
+    # scans 2026-09-14)
+    '''RELEASE_PR_TOKEN''',
 ]
 
 # Allowlist specific commits (if needed)
