@@ -12949,13 +12949,44 @@ pub fn query_hook_overhead(
     start_time: Option<i64>,
     end_time: Option<i64>,
 ) -> Result<otelite_core::api::HookOverheadResponse> {
+    hook_overhead_for(
+        conn,
+        otelite_core::semconv::metric_names::CODEX_HOOKS_RUN_DURATION,
+        start_time,
+        end_time,
+    )
+}
+
+/// Bob hook overhead (#167): the [`query_hook_overhead`] mirror scoped to
+/// Bob's `bob.hooks.run.duration_ms` histogram. Bob does not emit hook
+/// telemetry yet (the upstream request is tracked in #167) — this query
+/// is ready for when it lands, and returns an empty response until then.
+pub fn query_bob_hook_overhead(
+    conn: &Connection,
+    start_time: Option<i64>,
+    end_time: Option<i64>,
+) -> Result<otelite_core::api::HookOverheadResponse> {
+    hook_overhead_for(
+        conn,
+        otelite_core::semconv::metric_names::BOB_HOOKS_RUN_DURATION,
+        start_time,
+        end_time,
+    )
+}
+
+/// Shared hook-overhead aggregation: per-`hook_name` count / total ms /
+/// avg ms over a duration histogram metric, plus the grand total.
+fn hook_overhead_for(
+    conn: &Connection,
+    metric_name: &str,
+    start_time: Option<i64>,
+    end_time: Option<i64>,
+) -> Result<otelite_core::api::HookOverheadResponse> {
     use otelite_core::api::{HookOverheadResponse, HookOverheadRow};
-    use otelite_core::semconv::metric_names as mnames;
 
     let mut where_clause =
         String::from("WHERE name = ? AND json_valid(attributes) AND value_histogram IS NOT NULL");
-    let mut params: Vec<Box<dyn rusqlite::ToSql>> =
-        vec![Box::new(mnames::CODEX_HOOKS_RUN_DURATION.to_string())];
+    let mut params: Vec<Box<dyn rusqlite::ToSql>> = vec![Box::new(metric_name.to_string())];
 
     if let Some(s) = start_time {
         where_clause.push_str(" AND timestamp >= ?");
@@ -12981,7 +13012,7 @@ pub fn query_hook_overhead(
 
     let param_refs: Vec<&dyn rusqlite::ToSql> = params.iter().map(|p| p.as_ref()).collect();
     let mut stmt = conn.prepare(&sql).map_err(|e| {
-        StorageError::QueryError(format!("Failed to prepare hook_overhead query: {e}"))
+        StorageError::QueryError(format!("Failed to prepare {metric_name} query: {e}"))
     })?;
 
     let rows: Vec<HookOverheadRow> = stmt
@@ -13064,6 +13095,55 @@ mod new_insight_tests {
         assert!((result.rows[0].total_ms - 450.0).abs() < 0.01);
         assert!((result.rows[0].avg_ms - 150.0).abs() < 0.01);
         assert!((result.grand_total_ms - 450.0).abs() < 0.01);
+    }
+
+    #[test]
+    fn test_query_bob_hook_overhead() {
+        let conn = setup_db();
+        // The bob query must see only bob.hooks.run.duration_ms rows —
+        // insert a Codex row alongside it to prove the metric scoping.
+        let bob_hist =
+            r#"[4,800.0,[{"upper_bound":100.0,"count":2},{"upper_bound":500.0,"count":2}]]"#;
+        let codex_hist =
+            r#"[3,450.0,[{"upper_bound":100.0,"count":1},{"upper_bound":500.0,"count":2}]]"#;
+        conn.execute(
+            "INSERT INTO metrics (name, metric_type, timestamp, value_histogram, attributes, flags, created_at)
+             VALUES (?,2,1000000000,?,?,0,1000000000)",
+            rusqlite::params![
+                "bob.hooks.run.duration_ms",
+                bob_hist,
+                r#"{"hook_name":"PrePrompt","otel.scope.name":"com.ibm.bob"}"#,
+            ],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO metrics (name, metric_type, timestamp, value_histogram, attributes, flags, created_at)
+             VALUES (?,2,1100000000,?,?,0,1000000000)",
+            rusqlite::params![
+                "codex.hooks.run.duration_ms",
+                codex_hist,
+                r#"{"hook_name":"PreToolUse","otel.scope.name":"codex"}"#,
+            ],
+        )
+        .unwrap();
+
+        let result = query_bob_hook_overhead(&conn, None, None).unwrap();
+        assert_eq!(
+            result.rows.len(),
+            1,
+            "codex rows must not leak in: {result:?}"
+        );
+        assert_eq!(result.rows[0].event, "PrePrompt");
+        assert_eq!(result.rows[0].count, 4);
+        assert!((result.rows[0].total_ms - 800.0).abs() < 0.01);
+        assert!((result.rows[0].avg_ms - 200.0).abs() < 0.01);
+        assert!((result.grand_total_ms - 800.0).abs() < 0.01);
+
+        // Until Bob emits the metric, the view is empty.
+        let empty = setup_db();
+        let e = query_bob_hook_overhead(&empty, None, None).unwrap();
+        assert!(e.rows.is_empty());
+        assert_eq!(e.grand_total_ms, 0.0);
     }
 }
 

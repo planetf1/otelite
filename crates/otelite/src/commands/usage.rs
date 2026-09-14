@@ -210,6 +210,10 @@ pub struct UsageCommand {
     #[arg(long)]
     pub hook_overhead: bool,
 
+    /// Show Bob hook overhead (empty until Bob emits hook telemetry — #167)
+    #[arg(long)]
+    pub bob_hook_overhead: bool,
+
     /// Show opencode tool failure rates — which tools fail most and at what percentage
     #[arg(long)]
     pub tool_failures: bool,
@@ -368,6 +372,8 @@ struct UsageOutput {
     cross_tool_ttft: Option<otelite_core::api::CrossToolTtftResponse>,
     #[serde(skip_serializing_if = "Option::is_none")]
     hook_overhead: Option<otelite_core::api::HookOverheadResponse>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    bob_hook_overhead: Option<otelite_core::api::HookOverheadResponse>,
     #[serde(skip_serializing_if = "Option::is_none")]
     tool_failures: Option<otelite_core::api::ToolFailureRatesResponse>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -1069,6 +1075,21 @@ impl UsageCommand {
             None
         };
 
+        // --bob-hook-overhead
+        let bob_hook_overhead: Option<otelite_core::api::HookOverheadResponse> =
+            if self.bob_hook_overhead {
+                Some(
+                    storage
+                        .query_bob_hook_overhead(Some(start_time), Some(end_time))
+                        .await
+                        .map_err(|e| {
+                            Error::ApiError(format!("Failed to query bob_hook_overhead: {}", e))
+                        })?,
+                )
+            } else {
+                None
+            };
+
         // --tool-failures
         let tool_failures: Option<otelite_core::api::ToolFailureRatesResponse> =
             if self.tool_failures {
@@ -1353,6 +1374,7 @@ impl UsageCommand {
                     codex_turns,
                     cross_tool_ttft,
                     hook_overhead,
+                    bob_hook_overhead,
                     tool_failures,
                     daily_tool_mix,
                     productivity,
@@ -1561,6 +1583,11 @@ impl UsageCommand {
 
                 if let Some(ref resp) = hook_overhead {
                     display_hook_overhead(resp);
+                    println!();
+                }
+
+                if let Some(ref resp) = bob_hook_overhead {
+                    display_bob_hook_overhead(resp);
                     println!();
                 }
 
@@ -3225,12 +3252,30 @@ fn display_cross_tool_ttft(resp: &otelite_core::api::CrossToolTtftResponse) {
 }
 
 fn display_hook_overhead(resp: &otelite_core::api::HookOverheadResponse) {
+    render_hook_overhead(resp, "Codex");
+}
+
+/// Bob hook overhead display (#167). Bob does not emit hook telemetry
+/// yet (upstream request tracked in #167), so this renders the empty
+/// note until it lands.
+fn display_bob_hook_overhead(resp: &otelite_core::api::HookOverheadResponse) {
+    render_hook_overhead(resp, "Bob");
+}
+
+fn render_hook_overhead(resp: &otelite_core::api::HookOverheadResponse, tool: &str) {
     if resp.rows.is_empty() {
-        println!("Hook Overhead: no Codex hook metrics in range");
+        println!(
+            "{tool} Hook Overhead: no {tool} hook metrics in range{}",
+            if tool == "Bob" {
+                " (Bob does not emit hook telemetry yet — #167)"
+            } else {
+                ""
+            }
+        );
         return;
     }
     println!(
-        "Codex Hook Overhead: {:.1} h total ({:.0} s)",
+        "{tool} Hook Overhead: {:.1} h total ({:.0} s)",
         resp.grand_total_ms / 3_600_000.0,
         resp.grand_total_ms / 1000.0,
     );

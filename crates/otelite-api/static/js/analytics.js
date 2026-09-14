@@ -59,6 +59,7 @@ class AnalyticsView {
         { id: 'multi_agent',             title: 'Multi-Agent Topology',    hint: 'Sub-agent spawn and resume counts by role' },
         { id: 'model_selection_heatmap', title: 'Model Selection Heatmap', hint: 'Which tool picked which model for which agent role — (role × tool × model) request counts' },
         { id: 'hook_overhead',           title: 'Hook Overhead',           hint: 'Codex hook total and average invocation time per event type — how much latency hooks add' },
+        { id: 'bob_hook_overhead',       title: 'Bob Hook Overhead',       hint: 'Bob hook invocation time per event type — activates once Bob emits hook telemetry (#167)' },
         { id: 'capabilities',            title: 'Telemetry Capabilities',  hint: 'Which metrics each emitter actually provides · availability & quality' },
         { id: 'project_rollup',          title: 'Project Rollup',          hint: 'Token activity and turn counts per project across all agents' },
         { id: 'time_in_tool',            title: 'Time in Tool',            hint: 'Active engagement per tool per day — where your AI time actually went' },
@@ -71,7 +72,7 @@ class AnalyticsView {
         { id: 'latency',     label: 'Latency',                 sub: 'How fast, and where is it slow?',      reports: ['latency', 'model_performance', 'ttft', 'codex_turns', 'speed_dist'] },
         { id: 'reliability', label: 'Reliability',             sub: "What's breaking, and how often?",      reports: ['reliability', 'tool_failures', 'guardian'] },
         { id: 'behavior',    label: 'Behaviour',               sub: 'How is it being used?',                reports: ['behavior', 'multi_agent', 'model_selection_heatmap', 'time_in_tool'] },
-        { id: 'ecosystem',   label: 'Ecosystem & Diagnostics', sub: "What's the tooling actually doing?",   reports: ['hook_overhead', 'capabilities', 'project_rollup'] },
+        { id: 'ecosystem',   label: 'Ecosystem & Diagnostics', sub: "What's the tooling actually doing?",   reports: ['hook_overhead', 'bob_hook_overhead', 'capabilities', 'project_rollup'] },
     ];
 
     // Extra vocabulary per report for the jump-to filter: metric names and
@@ -102,6 +103,7 @@ class AnalyticsView {
         multi_agent: ['multi-agent', 'topology', 'spawn', 'resume'],
         model_selection_heatmap: ['heatmap', 'selection', 'which tool picked'],
         hook_overhead: ['hook', 'overhead', 'pre_prompt', 'stop hook'],
+        bob_hook_overhead: ['bob hook', 'bob overhead', 'bob latency', 'bob pre_prompt'],
         capabilities: ['telemetry', 'availability', 'emitter', 'capability coverage'],
         project_rollup: ['project', 'per project', 'rollup'],
     };
@@ -132,7 +134,8 @@ class AnalyticsView {
         behavior: ['multi_agent', 'codex_turns', 'model_selection_heatmap'],
         multi_agent: ['behavior', 'roles'],
         model_selection_heatmap: ['roles', 'providers', 'session_model'],
-        hook_overhead: ['latency', 'capabilities'],
+        hook_overhead: ['latency', 'capabilities', 'bob_hook_overhead'],
+        bob_hook_overhead: ['hook_overhead', 'capabilities'],
         capabilities: ['hook_overhead', 'model_performance'],
         project_rollup: ['cost', 'session_model'],
     };
@@ -1133,6 +1136,7 @@ class AnalyticsView {
             session_model: () => this._loadSessionModelSection(),
             speed_dist: () => this._loadSpeedDistSection(),
             hook_overhead: () => this._loadHookOverheadSection(),
+            bob_hook_overhead: () => this._loadBobHookOverheadSection(),
             skills: () => this._loadSkillsSection(),
             model_selection_heatmap: () => this._loadModelSelectionHeatmapSection(),
         };
@@ -4328,6 +4332,40 @@ class AnalyticsView {
             this.loadedSections.add('hook_overhead');
         } catch (err) {
             this._setSectionError('hook_overhead', err);
+        }
+    }
+
+    // Bob hook overhead (#167): mirror of the Codex section. Bob does not
+    // emit hook telemetry yet (upstream request tracked in #167), so the
+    // empty state says so instead of implying a data gap.
+    async _loadBobHookOverheadSection() {
+        this._setSectionLoading('bob_hook_overhead');
+        try {
+            const data = await this.api.getBobHookOverhead(this._baseParams());
+            const rows = data.rows || [];
+            if (!rows.length) {
+                this._setSectionBody('bob_hook_overhead', '<div class="empty-state-hint">No Bob hook data in this window — Bob does not emit hook telemetry yet; this view activates when upstream support lands (#167).</div>');
+                this.loadedSections.add('bob_hook_overhead');
+                return;
+            }
+            const fmtMs = v => v != null ? `${Math.round(v).toLocaleString()} ms` : '—';
+            let html = `<p class="analytics-summary-line">Grand total hook time: <strong>${Number(data.grand_total_ms / 1000).toLocaleString(undefined, {maximumFractionDigits:0})} s</strong></p>`;
+            html += '<div class="analytics-table-wrap"><table class="analytics-table"><thead><tr>' +
+                '<th>Hook event</th><th>Invocations</th><th>Total time</th><th>Avg per call</th>' +
+                '</tr></thead><tbody>';
+            for (const r of rows) {
+                html += `<tr>
+                    <td>${this._esc(r.event)}</td>
+                    <td>${Number(r.count).toLocaleString()}</td>
+                    <td>${fmtMs(r.total_ms)}</td>
+                    <td>${fmtMs(r.avg_ms)}</td>
+                </tr>`;
+            }
+            html += '</tbody></table></div>';
+            this._setSectionBody('bob_hook_overhead', html);
+            this.loadedSections.add('bob_hook_overhead');
+        } catch (err) {
+            this._setSectionError('bob_hook_overhead', err);
         }
     }
 

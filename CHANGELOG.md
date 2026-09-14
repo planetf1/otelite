@@ -11,6 +11,14 @@ have to work around), not implementation detail.
 
 ## [Unreleased]
 
+### Added
+
+- Bob Hook Overhead: `otelite usage --bob-hook-overhead` and a new
+  report alongside the Codex one — per-hook-event invocation counts
+  and latency. Bob does not emit hook telemetry yet (upstream request
+  filed, tracked in #167), so the view renders an explanatory empty
+  state today and activates as soon as the telemetry lands (#167)
+
 ## [0.1.132] - 2026-09-14
 
 ### Added

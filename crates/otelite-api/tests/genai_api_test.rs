@@ -2873,3 +2873,85 @@ async fn test_time_in_tool_gaps_and_validation() {
         );
     }
 }
+
+// ── Bob hook overhead (#167) ─────────────────────────────────────────────────
+
+#[tokio::test]
+async fn test_bob_hook_overhead_scoped_to_bob_metric() {
+    let (server, storage, _temp_dir) = setup_test_server().await;
+    let app = server.build_router();
+
+    // Empty state: Bob emits no hook telemetry yet.
+    let (status, v) = get_json(&app, "/api/genai/bob_hook_overhead").await;
+    assert_eq!(status, StatusCode::OK);
+    assert!(v["rows"].as_array().unwrap().is_empty());
+    assert_eq!(v["grand_total_ms"], 0.0);
+
+    // A Codex hook row must NOT appear in the Bob view.
+    storage
+        .write_metric(&agent_metric(
+            "codex.hooks.run.duration_ms",
+            R0,
+            None,
+            Some((3, 450.0)),
+            &[("hook_name", "PreToolUse")],
+        ))
+        .await
+        .unwrap();
+    // Two Bob hook rows: PrePrompt (2 calls / 400 ms) and Stop
+    // (5 calls / 2500 ms).
+    storage
+        .write_metric(&agent_metric(
+            "bob.hooks.run.duration_ms",
+            R0,
+            None,
+            Some((2, 400.0)),
+            &[("hook_name", "PrePrompt")],
+        ))
+        .await
+        .unwrap();
+    storage
+        .write_metric(&agent_metric(
+            "bob.hooks.run.duration_ms",
+            R1,
+            None,
+            Some((5, 2500.0)),
+            &[("hook_name", "Stop")],
+        ))
+        .await
+        .unwrap();
+
+    // Windowed query — a different cache key than the empty-state call.
+    let (status, v) = get_json(
+        &app,
+        &format!("/api/genai/bob_hook_overhead?start_time={R0}&end_time={R1}"),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+
+    let rows = v["rows"].as_array().unwrap();
+    // Ordered by total_ms desc: Stop then PrePrompt; the Codex row is
+    // scoped out.
+    assert_eq!(rows.len(), 2, "{v}");
+    assert_eq!(rows[0]["event"], "Stop");
+    assert_eq!(rows[0]["count"], 5);
+    assert!(
+        (rows[0]["total_ms"].as_f64().unwrap() - 2500.0).abs() < 0.01,
+        "{v}"
+    );
+    assert!(
+        (rows[0]["avg_ms"].as_f64().unwrap() - 500.0).abs() < 0.01,
+        "{v}"
+    );
+    assert_eq!(rows[1]["event"], "PrePrompt");
+    assert_eq!(rows[1]["count"], 2);
+    assert!(
+        (rows[1]["avg_ms"].as_f64().unwrap() - 200.0).abs() < 0.01,
+        "{v}"
+    );
+    // Grand total sums the Bob rows only.
+    assert!(
+        (v["grand_total_ms"].as_f64().unwrap() - 2900.0).abs() < 0.01,
+        "{v}"
+    );
+}

@@ -422,6 +422,11 @@ pub mod metric_names {
     pub const CODEX_MCP_CALL: &str = "codex.mcp.call";
     /// Hook invocation duration histogram from Codex.
     pub const CODEX_HOOKS_RUN_DURATION: &str = "codex.hooks.run.duration_ms";
+    /// Hook invocation duration histogram from Bob (same shape as the
+    /// Codex metric: `[count, sum_ms, buckets]`, `hook_name` attribute).
+    /// Expected schema — Bob does not emit hook telemetry yet; the
+    /// upstream request is tracked in otelite issue #167.
+    pub const BOB_HOOKS_RUN_DURATION: &str = "bob.hooks.run.duration_ms";
 }
 
 /// Attribute label paths for agent metrics.

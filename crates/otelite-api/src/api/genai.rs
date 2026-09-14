@@ -3127,6 +3127,38 @@ pub async fn get_hook_overhead(
     Ok(Json(response))
 }
 
+/// Bob hook overhead (#167): the Codex hook-overhead mirror for Bob.
+/// Returns an empty response until Bob emits
+/// `bob.hooks.run.duration_ms` (upstream request tracked in #167).
+#[utoipa::path(
+    get,
+    path = "/api/genai/bob_hook_overhead",
+    params(TimeRangeQuery),
+    responses(
+        (status = 200, description = "Bob hook overhead by event type", body = otelite_core::api::HookOverheadResponse),
+        (status = 500, description = "Internal server error", body = ErrorResponse)
+    ),
+    tag = "genai"
+)]
+pub async fn get_bob_hook_overhead(
+    State(state): State<AppState>,
+    Query(query): Query<TimeRangeQuery>,
+) -> Result<Json<otelite_core::api::HookOverheadResponse>, (StatusCode, Json<ErrorResponse>)> {
+    let response = state
+        .storage
+        .query_bob_hook_overhead(query.start_time, query.end_time)
+        .await
+        .map_err(|e| {
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(ErrorResponse::storage_error(format!(
+                    "query bob_hook_overhead: {e}"
+                ))),
+            )
+        })?;
+    Ok(Json(response))
+}
+
 /// Tool failure rates from opencode.tool.duration.
 #[utoipa::path(
     get,

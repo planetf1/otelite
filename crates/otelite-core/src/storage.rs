@@ -788,6 +788,17 @@ pub trait StorageBackend: Send + Sync {
         Err(StorageError::QueryError("not implemented".to_string()))
     }
 
+    /// Bob hook overhead (#167): per-hook-event invocation counts and
+    /// durations. Empty until Bob emits `bob.hooks.run.duration_ms`.
+    async fn query_bob_hook_overhead(
+        &self,
+        start_time: Option<i64>,
+        end_time: Option<i64>,
+    ) -> Result<crate::api::HookOverheadResponse> {
+        let _ = (start_time, end_time);
+        Err(StorageError::QueryError("not implemented".to_string()))
+    }
+
     /// Codex skill injection activity (#insight-3).
     async fn query_skill_activity(
         &self,
