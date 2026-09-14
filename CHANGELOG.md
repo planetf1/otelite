@@ -38,6 +38,13 @@ have to work around), not implementation detail.
   "run_command denied 70% of the time" now sits at the top of both, where
   it belongs for tuning guardian policy (#182)
 
+### Fixed
+
+- Updated `rustls` to 0.23.45, patching RUSTSEC-2026-0285 (TLS 1.3
+  handshake messages incorrectly accepted across encryption level
+  boundaries) — the advisory landed while this release was in flight and
+  turned the CI security audit red until the lock was updated
+
 ## [0.1.133] - 2026-09-14
 
 ### Added
