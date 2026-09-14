@@ -379,15 +379,36 @@ jobs:
                       fi
                       echo "dispatched check runs not registered yet — waiting (attempt $i/$wait_limit)"
                     else
-                      echo "all checks settled without failure, but the merge is still BLOCKED — non-success check runs on head:"
-                      non_success=$(jq -r '.[] | select(.conclusion != "success") | .name + " => " + .conclusion' <<<"$runs" | sort | uniq -c)
-                      if [[ -n "$non_success" ]]; then
-                        echo "$non_success"
-                        echo "manual intervention: make the required contexts succeed (or adjust the branch protection rule)"
+                      # Re-read the merge state fresh before concluding:
+                      # $status was sampled at the top of this iteration
+                      # and the last check runs may have settled since —
+                      # GitHub propagates the green merge state within
+                      # seconds, not instantly (v0.1.129 2026-09-14: both
+                      # Coverage runs settled mid-iteration and the stale
+                      # BLOCKED reading aborted a fully-green release).
+                      fresh=$(gh pr view "$PR_NUMBER" --json mergeStateStatus -q .mergeStateStatus 2>/dev/null || echo UNKNOWN)
+                      if [[ "$fresh" == "CLEAN" || "$fresh" == "UNSTABLE" ]]; then
+                        echo "merge state cleared as the final checks settled — merging on the next iteration"
                       else
-                        echo "  (none — every check run on head is success; the block likely comes from branch protection beyond check runs, e.g. required reviews)"
+                        # List only the required contexts that are not
+                        # success: a skipped NON-required context (e.g.
+                        # 'Flake Inputs Changed' on a dispatch head) is
+                        # expected and not the cause of the block.
+                        required_bad=""
+                        while IFS= read -r ctx; do
+                          [[ -z "$ctx" ]] && continue
+                          concs=$(jq -r --arg n "$ctx" '[.[] | select(.name == $n) | .conclusion] | unique | join(", ")' <<<"$runs")
+                          [[ "$concs" == "success" ]] || required_bad+="  $ctx => ${concs:-missing}"$'\n'
+                        done <<< "$required"
+                        echo "all checks settled without failure, but the merge is still BLOCKED — required contexts that are not success on head:"
+                        if [[ -n "$required_bad" ]]; then
+                          echo "$required_bad"
+                        else
+                          echo "  (every required context is success — the block comes from beyond check runs: protection settings, reviews, or a stale PR check-rollup. Check 'gh pr checks <n>' on the PR.)"
+                        fi
+                        echo "manual intervention: if the required checks are genuinely green, merge by hand (gh pr merge <n> --squash --delete-branch), then tag the merged commit and push the tag"
+                        exit 1
                       fi
-                      exit 1
                     fi
                   else
                     echo "checks in flight — waiting (attempt $i/$wait_limit)"
