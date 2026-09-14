@@ -11,6 +11,8 @@ have to work around), not implementation detail.
 
 ## [Unreleased]
 
+## [0.1.133] - 2026-09-14
+
 ### Added
 
 - Bob Hook Overhead: `otelite usage --bob-hook-overhead` and a new
