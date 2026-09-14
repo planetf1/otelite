@@ -11,6 +11,8 @@ have to work around), not implementation detail.
 
 ## [Unreleased]
 
+## [0.1.135] - 2026-09-14
+
 ### Added
 
 - New Code Efficiency report: what 100 lines of code cost you, per tool
