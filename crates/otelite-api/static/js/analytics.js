@@ -66,12 +66,13 @@ class AnalyticsView {
         { id: 'time_in_tool',            title: 'Time in Tool',            hint: 'Active engagement per tool per day — where your AI time actually went' },
         { id: 'session_chains',          title: 'Session Chains',          hint: 'Resumed sessions rolled up into work threads — which threads you sustain vs abandon' },
         { id: 'session_duration',        title: 'Session Duration',        hint: 'Session length distribution per tool — spot too-short (frustration?) and too-long (inefficient?) sessions' },
+        { id: 'loc_efficiency',          title: 'Code Efficiency',         hint: 'Cost per 100 lines of code per tool and model — is the code worth what it costs' },
     ];
 
     // Top-level categories. A report appears in exactly one group; pinned
     // reports move to the Pinned group while pinned.
     static GROUPS = [
-        { id: 'cost',        label: 'Cost',                    sub: 'Where did the tokens go?',            reports: ['cost', 'providers', 'cost_by_project', 'session_depth', 'roles', 'session_model', 'thinking_effort', 'efficiency', 'productivity', 'skills'] },
+        { id: 'cost',        label: 'Cost',                    sub: 'Where did the tokens go?',            reports: ['cost', 'providers', 'cost_by_project', 'session_depth', 'roles', 'session_model', 'thinking_effort', 'efficiency', 'productivity', 'skills', 'loc_efficiency'] },
         { id: 'latency',     label: 'Latency',                 sub: 'How fast, and where is it slow?',      reports: ['latency', 'model_performance', 'ttft', 'tool_switch_overhead', 'codex_turns', 'speed_dist'] },
         { id: 'reliability', label: 'Reliability',             sub: "What's breaking, and how often?",      reports: ['reliability', 'tool_failures', 'guardian'] },
         { id: 'behavior',    label: 'Behaviour',               sub: 'How is it being used?',                reports: ['behavior', 'multi_agent', 'model_selection_heatmap', 'time_in_tool', 'session_chains', 'session_duration'] },
@@ -90,6 +91,7 @@ class AnalyticsView {
         time_in_tool: ['time in tool', 'time spent', 'engagement', 'active time', 'where did my time', 'attention'],
         session_chains: ['session chain', 'resumed session', 'continue', 'work thread', 'sustained', 'abandoned'],
         session_duration: ['session duration', 'session length', 'how long', 'outlier sessions', 'too long', 'too short'],
+        loc_efficiency: ['lines of code', 'loc', 'cost per line', 'code efficiency', 'expensive code', 'productivity'],
         roles: ['role', 'sub-agent', 'subagent', 'attribution', 'routing matrix'],
         session_model: ['per-session', 'session spend', 'model pair'],
         thinking_effort: ['effort', 'low', 'medium', 'high', 'xhigh', 'reasoning', 'thinking tokens', 'thinking'],
@@ -125,6 +127,7 @@ class AnalyticsView {
         time_in_tool: ['behavior', 'productivity', 'model_selection_heatmap'],
         session_chains: ['behavior', 'session_model', 'multi_agent'],
         session_duration: ['behavior', 'session_chains', 'time_in_tool'],
+        loc_efficiency: ['efficiency', 'productivity', 'cost_by_project'],
         roles: ['cost', 'session_model', 'model_selection_heatmap'],
         session_model: ['cost', 'roles'],
         thinking_effort: ['cost', 'model_performance', 'speed_dist'],
@@ -1133,6 +1136,7 @@ class AnalyticsView {
             time_in_tool: () => this._loadTimeInToolSection(),
             session_chains: () => this._loadSessionChainsSection(),
             session_duration: () => this._loadSessionDurationSection(),
+            loc_efficiency: () => this._loadLocEfficiencySection(),
             latency: () => this._loadLatencySection(),
             reliability: () => this._loadReliabilitySection(),
             behavior: () => this._loadBehaviorSection(),
@@ -4147,6 +4151,38 @@ class AnalyticsView {
                     ${labels.map(l => `<span>${this._esc(l)}</span>`).join('')}
                 </div>
             </div>`;
+    }
+
+    // Code efficiency (#178): cost per 100 added lines per
+    // (tool, model), cheapest first (unpriced last). Only the tools
+    // that emit an LOC metric appear — Claude Code per model,
+    // opencode at tool level.
+    async _loadLocEfficiencySection() {
+        this._setSectionLoading('loc_efficiency');
+        try {
+            const data = await this.api.getLocEfficiency(this._baseParams());
+            const rows = data.rows || [];
+            let html = '<p class="section-hint">Lines = lines ADDED in the window (code produced, not deletions); cost = the LLM spend for that tool/model. Cheapest per 100 lines first — unpriced models read as —, never as free. Only Claude Code and opencode emit lines-of-code metrics.</p>';
+            if (!rows.length) {
+                html += '<div class="empty-state-hint">No lines-of-code data in this window.</div>';
+            } else {
+                const fmtUsd = v => v != null ? `$${v.toFixed(2)}` : '—';
+                html += '<div class="analytics-table-wrap"><table class="analytics-table"><thead><tr>'
+                    + '<th>Tool</th><th>Model</th><th>Lines added</th><th>Cost</th><th>$ / 100 lines</th>'
+                    + '</tr></thead><tbody>';
+                for (const r of rows) {
+                    html += `<tr><td>${this._esc(r.tool)}</td><td>${this._esc(r.model)}</td>`
+                        + `<td>${Number(r.total_lines).toLocaleString()}</td>`
+                        + `<td>${fmtUsd(r.total_cost_usd)}</td>`
+                        + `<td>${fmtUsd(r.cost_per_100_lines)}</td></tr>`;
+                }
+                html += '</tbody></table></div>';
+            }
+            this._setSectionBody('loc_efficiency', html);
+            this.loadedSections.add('loc_efficiency');
+        } catch (err) {
+            this._setSectionError('loc_efficiency', err);
+        }
     }
 
     async _loadTtftSection() {

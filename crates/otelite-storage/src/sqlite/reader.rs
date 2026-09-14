@@ -13583,6 +13583,223 @@ pub fn query_session_durations(
     })
 }
 
+// ── Lines-of-code efficiency (#178) ────────────────────────────────────────
+
+/// Per-(tool, model) lines-added + token sums (#178).
+///
+/// Lines come from the cumulative LOC counters (claude_code, opencode)
+/// through the same windowed-delta mechanism as the productivity view
+/// — a plain SUM would overcount the re-reported cumulative values —
+/// restricted to the `type=added` label (code produced, not
+/// deletions). opencode's LOC metric carries no model, so its rows use
+/// the `(unknown)` convention. Tokens are the (tool, model) LLM-span
+/// sums in the same window; span model names are normalised with
+/// [`otelite_core::pricing::pricing_model_name`] so the `[1m]`
+/// context-window suffix on span attributes does not break the join.
+/// opencode has no model dimension in its LOC source, so its rows
+/// ship the tool's per-model span tokens as extra zero-line rows for
+/// the API to price and sum. The API prices the tokens.
+pub fn query_loc_efficiency(
+    conn: &Connection,
+    start_time: Option<i64>,
+    end_time: Option<i64>,
+) -> Result<otelite_core::api::LocEfficiencyStorageResponse> {
+    use otelite_core::api::{LocEfficiencyStorageResponse, LocEfficiencyStorageRow};
+    use otelite_core::pricing::pricing_model_name;
+    use otelite_core::semconv;
+    use otelite_core::semconv::metric_names as mnames;
+    use std::collections::BTreeMap;
+
+    // Finite bounds (the productivity view's convention): the delta
+    // mechanism needs them. Unbounded end -> now; unbounded start ->
+    // the earliest LOC datapoint (no datapoint -> no rows).
+    let end_ns =
+        end_time.unwrap_or_else(|| chrono::Utc::now().timestamp_nanos_opt().unwrap_or(i64::MAX));
+    let start_ns = match start_time {
+        Some(s) => s,
+        None => {
+            let mut stmt = conn
+                .prepare("SELECT MIN(timestamp) FROM metrics WHERE name IN (?, ?)")
+                .map_err(|e| {
+                    StorageError::QueryError(format!(
+                        "Failed to prepare loc_efficiency min query: {e}"
+                    ))
+                })?;
+            let min_ts = stmt
+                .query_row(
+                    rusqlite::params![
+                        mnames::CLAUDE_CODE_LINES_OF_CODE,
+                        mnames::OPENCODE_LINES_OF_CODE
+                    ],
+                    |r| r.get::<_, Option<i64>>(0),
+                )
+                .map_err(|e| {
+                    StorageError::QueryError(format!(
+                        "Failed to execute loc_efficiency min query: {e}"
+                    ))
+                })?;
+            match min_ts {
+                Some(ts) => ts,
+                None => return Ok(LocEfficiencyStorageResponse::default()),
+            }
+        },
+    };
+    if start_ns >= end_ns {
+        return Ok(LocEfficiencyStorageResponse::default());
+    }
+
+    // ── Lines added, per (tool, model) ────────────────────────────────
+    let mut lines: BTreeMap<(String, String), u64> = BTreeMap::new();
+    // claude_code: labels $.type (added|removed) and $.model.
+    for d in counter_window_deltas(
+        conn,
+        mnames::CLAUDE_CODE_LINES_OF_CODE,
+        &["$.type", "$.model"],
+        Some(start_ns),
+        Some(end_ns),
+    )? {
+        if d.labels.first().and_then(|l| l.as_deref()) != Some("added") {
+            continue;
+        }
+        let model = d
+            .labels
+            .get(1)
+            .and_then(|m| m.clone())
+            .filter(|m| !m.is_empty())
+            .unwrap_or_else(|| "(unknown)".to_string());
+        *lines.entry(("claude_code".to_string(), model)).or_default() += d.delta.max(0.0) as u64;
+    }
+    // opencode: label $.type only (the metric carries no model).
+    for d in counter_window_deltas(
+        conn,
+        mnames::OPENCODE_LINES_OF_CODE,
+        &["$.type"],
+        Some(start_ns),
+        Some(end_ns),
+    )? {
+        if d.labels.first().and_then(|l| l.as_deref()) != Some("added") {
+            continue;
+        }
+        *lines
+            .entry(("opencode".to_string(), "(unknown)".to_string()))
+            .or_default() += d.delta.max(0.0) as u64;
+    }
+
+    if lines.is_empty() {
+        return Ok(LocEfficiencyStorageResponse::default());
+    }
+
+    // ── Tokens, per (tool, model) — only the tools with an LOC source ─
+    let exprs = token_exprs();
+    let llm_guard = semconv::llm_span_guard("attributes");
+    let tool_expr = r#"CASE
+        WHEN json_extract(scope,'$.name') LIKE '%claude_code%'   THEN 'claude_code'
+        WHEN json_extract(scope,'$.name') = 'com.opencode'       THEN 'opencode'
+        WHEN json_extract(scope,'$.name') LIKE '%opencode%'      THEN 'opencode'
+        ELSE 'unknown'
+    END"#;
+    let model_expr = r#"COALESCE(json_extract(attributes,'$."gen_ai.request.model"'),
+        json_extract(attributes,'$."model"'), '(unknown)')"#;
+
+    let sql = format!(
+        "SELECT {tool} AS tool,
+                {model} AS model,
+                COALESCE(SUM({input}), 0) AS input_tokens,
+                COALESCE(SUM({output}), 0) AS output_tokens,
+                COALESCE(SUM({cache_creation}), 0) AS cache_creation_tokens,
+                COALESCE(SUM({cache_read}), 0) AS cache_read_tokens
+         FROM spans
+         WHERE {llm_guard} AND ({tool}) IN ('claude_code', 'opencode')
+           AND start_time >= ?1 AND start_time <= ?2
+         GROUP BY tool, model",
+        tool = tool_expr,
+        model = model_expr,
+        input = exprs.input,
+        output = exprs.output,
+        cache_creation = exprs.cache_creation,
+        cache_read = exprs.cache_read,
+        llm_guard = llm_guard,
+    );
+    let mut stmt = conn.prepare(&sql).map_err(|e| {
+        StorageError::QueryError(format!("Failed to prepare loc_efficiency span query: {e}"))
+    })?;
+    let token_iter = stmt
+        .query_map(rusqlite::params![start_ns, end_ns], |r| {
+            Ok((
+                r.get::<_, String>(0)?,
+                r.get::<_, String>(1)?,
+                r.get::<_, i64>(2).unwrap_or(0) as u64,
+                r.get::<_, i64>(3).unwrap_or(0) as u64,
+                r.get::<_, i64>(4).unwrap_or(0) as u64,
+                r.get::<_, i64>(5).unwrap_or(0) as u64,
+            ))
+        })
+        .map_err(|e| StorageError::QueryError(format!("{e}")))?;
+    let mut tokens: BTreeMap<(String, String), (u64, u64, u64, u64)> = BTreeMap::new();
+    for tr in token_iter {
+        let (tool, model, i, o, cc, cr) =
+            tr.map_err(|e| StorageError::QueryError(format!("{e}")))?;
+        // Collapse `[1m]` variants onto the bare model so the join
+        // matches the LOC label (and the price lookup) exactly.
+        let model = pricing_model_name(&model).to_string();
+        let e = tokens.entry((tool, model)).or_insert((0, 0, 0, 0));
+        e.0 += i;
+        e.1 += o;
+        e.2 += cc;
+        e.3 += cr;
+    }
+
+    // ── Join ─────────────────────────────────────────────────────────
+    // claude rows join per (tool, model). opencode's LOC source has no
+    // model dimension: its `(unknown)` row carries no tokens of its
+    // own, and each opencode span model is appended as a zero-line
+    // token row — the API prices each with its own model and sums them
+    // into the opencode row (a mixed-model total cannot be priced as
+    // one model).
+    let mut rows: Vec<LocEfficiencyStorageRow> = lines
+        .into_iter()
+        .map(|((tool, model), lines_added)| {
+            let (i, o, cc, cr) = if tool == "opencode" {
+                (0, 0, 0, 0)
+            } else {
+                tokens
+                    .get(&(tool.clone(), model.clone()))
+                    .copied()
+                    .unwrap_or((0, 0, 0, 0))
+            };
+            LocEfficiencyStorageRow {
+                tool,
+                model,
+                lines_added,
+                input_tokens: i,
+                output_tokens: o,
+                cache_creation_tokens: cc,
+                cache_read_tokens: cr,
+            }
+        })
+        .collect();
+    if rows.iter().any(|r| r.tool == "opencode") {
+        for ((tool, model), (i, o, cc, cr)) in &tokens {
+            if tool == "opencode" {
+                rows.push(LocEfficiencyStorageRow {
+                    tool: tool.clone(),
+                    model: model.clone(),
+                    lines_added: 0,
+                    input_tokens: *i,
+                    output_tokens: *o,
+                    cache_creation_tokens: *cc,
+                    cache_read_tokens: *cr,
+                });
+            }
+        }
+    }
+
+    Ok(LocEfficiencyStorageResponse {
+        rows,
+        filters_applied: Vec::new(),
+    })
+}
+
 #[cfg(test)]
 mod new_insight_tests {
     use super::*;
@@ -16311,6 +16528,180 @@ mod new_insight_tests_2 {
         // Empty state.
         let empty = make_conn();
         assert!(query_session_durations(&empty, None, None)
+            .unwrap()
+            .rows
+            .is_empty());
+    }
+
+    #[test]
+    fn test_loc_efficiency_lines_and_tokens() {
+        let conn = make_conn();
+        const SEC: i64 = 1_000_000_000;
+        let d1 = 1_767_225_600_000_000_000_i64; // 2026-01-01 (UTC)
+
+        let metric_row = |name: &str, ts: i64, value: u64, attrs: &str| {
+            conn.execute(
+                "INSERT INTO metrics (name, metric_type, timestamp, value_int, attributes, flags, created_at)
+                 VALUES (?, 1, ?, ?, ?, 0, 1000000000)",
+                rusqlite::params![name, ts, value, attrs],
+            )
+            .unwrap();
+        };
+
+        // claude m1 added: pre-window baseline 10, in-window last 40
+        // -> delta 30 (cumulative counter, not a sum of rows).
+        metric_row(
+            "claude_code.lines_of_code.count",
+            d1 - SEC,
+            10,
+            r#"{"type":"added","model":"m1"}"#,
+        );
+        metric_row(
+            "claude_code.lines_of_code.count",
+            d1 + 3600 * SEC,
+            40,
+            r#"{"type":"added","model":"m1"}"#,
+        );
+        // claude m1 removed: excluded (only added lines count).
+        metric_row(
+            "claude_code.lines_of_code.count",
+            d1 + 3600 * SEC,
+            5,
+            r#"{"type":"removed","model":"m1"}"#,
+        );
+        // claude m2: only outside the window (end = d1 + 2 h) -> no row.
+        metric_row(
+            "claude_code.lines_of_code.count",
+            d1 + 3 * 3600 * SEC,
+            100,
+            r#"{"type":"added","model":"m2"}"#,
+        );
+        // opencode added: baseline 10, in-window 25 -> delta 15; the
+        // removed series is excluded.
+        metric_row(
+            "opencode.lines_of_code.total",
+            d1 - SEC,
+            10,
+            r#"{"type":"added"}"#,
+        );
+        metric_row(
+            "opencode.lines_of_code.total",
+            d1 + 3600 * SEC,
+            25,
+            r#"{"type":"added"}"#,
+        );
+        metric_row(
+            "opencode.lines_of_code.total",
+            d1 + 3600 * SEC,
+            3,
+            r#"{"type":"removed"}"#,
+        );
+
+        // Spans: claude m1 in both `[1m]` and bare form — the join must
+        // collapse them onto the LOC label `m1`.
+        sc_span(
+            &conn,
+            "loc-1",
+            d1 + 30 * 60 * SEC,
+            "com.anthropic.claude_code",
+            Some("loc-s1"),
+            "m1[1m]",
+            (1000, 500, 100, 200),
+        );
+        sc_span(
+            &conn,
+            "loc-2",
+            d1 + 40 * 60 * SEC,
+            "com.anthropic.claude_code",
+            Some("loc-s1"),
+            "m1",
+            (100, 50, 0, 0),
+        );
+        // claude m2 spans: no LOC row for m2 in the window -> must not
+        // appear.
+        sc_span(
+            &conn,
+            "loc-3",
+            d1 + 50 * 60 * SEC,
+            "com.anthropic.claude_code",
+            Some("loc-s2"),
+            "m2",
+            (999, 999, 0, 0),
+        );
+        // opencode spans: two models; both feed the tool-total
+        // attribution (opencode's LOC has no model dimension).
+        sc_span(
+            &conn,
+            "loc-4",
+            d1 + 10 * 60 * SEC,
+            "com.opencode",
+            Some("loc-s3"),
+            "op-a",
+            (700, 300, 0, 0),
+        );
+        sc_span(
+            &conn,
+            "loc-5",
+            d1 + 20 * 60 * SEC,
+            "com.opencode",
+            Some("loc-s3"),
+            "op-b",
+            (100, 100, 50, 0),
+        );
+
+        let result = query_loc_efficiency(&conn, Some(d1), Some(d1 + 2 * 3600 * SEC)).unwrap();
+        // Two lines rows + the opencode per-model zero-line token rows.
+        assert_eq!(result.rows.len(), 4, "{result:?}");
+        let cc = result
+            .rows
+            .iter()
+            .find(|r| r.tool == "claude_code")
+            .unwrap();
+        assert_eq!(cc.model, "m1");
+        assert_eq!(cc.lines_added, 30);
+        // `[1m]` + bare collapse: 1100 / 550 / 100 / 200.
+        assert_eq!(cc.input_tokens, 1100);
+        assert_eq!(cc.output_tokens, 550);
+        assert_eq!(cc.cache_creation_tokens, 100);
+        assert_eq!(cc.cache_read_tokens, 200);
+        let oc = result
+            .rows
+            .iter()
+            .find(|r| r.tool == "opencode" && r.model == "(unknown)")
+            .unwrap();
+        assert_eq!(oc.lines_added, 15);
+        // The `(unknown)` row carries no tokens of its own…
+        assert_eq!(oc.input_tokens, 0);
+        assert_eq!(oc.output_tokens, 0);
+        // …each opencode span model ships as a zero-line token row for
+        // the API to price with its own model.
+        let oca = result
+            .rows
+            .iter()
+            .find(|r| r.tool == "opencode" && r.model == "op-a")
+            .unwrap();
+        assert_eq!(oca.lines_added, 0);
+        assert_eq!(oca.input_tokens, 700);
+        assert_eq!(oca.output_tokens, 300);
+        let ocb = result
+            .rows
+            .iter()
+            .find(|r| r.tool == "opencode" && r.model == "op-b")
+            .unwrap();
+        assert_eq!(ocb.lines_added, 0);
+        assert_eq!(ocb.input_tokens, 100);
+        assert_eq!(ocb.cache_creation_tokens, 50);
+
+        // A window after every LOC row (m2's is at d1+3h) yields no
+        // lines at all.
+        let none =
+            query_loc_efficiency(&conn, Some(d1 + 5 * 3600 * SEC), Some(d1 + 6 * 3600 * SEC))
+                .unwrap();
+        assert!(none.rows.is_empty(), "{none:?}");
+
+        // Empty state.
+        let empty = make_conn();
+        assert!(query_loc_efficiency(&empty, None, None)
             .unwrap()
             .rows
             .is_empty());

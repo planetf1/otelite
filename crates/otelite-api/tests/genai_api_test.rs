@@ -3469,3 +3469,137 @@ async fn test_session_duration_buckets_and_stats() {
     let p95 = stats["p95_minutes"].as_f64().unwrap();
     assert!((p95 - 400.0 / 60.0).abs() < 0.05, "{v}");
 }
+
+// ── Lines-of-code efficiency (#178) ─────────────────────────────────────────
+
+#[tokio::test]
+async fn test_loc_efficiency_cost_per_100_lines() {
+    let (server, storage, _temp_dir) = setup_test_server().await;
+    let app = server.build_router();
+
+    // Empty state.
+    let (status, v) = get_json(&app, "/api/genai/loc_efficiency").await;
+    assert_eq!(status, StatusCode::OK);
+    assert!(v["rows"].as_array().unwrap().is_empty());
+
+    const SEC: i64 = 1_000_000_000;
+    let d1 = 1_767_225_600_000_000_000_i64; // 2026-01-01 (UTC)
+
+    // claude_code added lines for claude-sonnet-5: baseline 10 before
+    // the window, 110 in it -> 100 lines. The removed series is
+    // excluded.
+    storage
+        .write_metric(&agent_metric(
+            "claude_code.lines_of_code.count",
+            d1 - SEC,
+            Some(10),
+            None,
+            &[("type", "added"), ("model", "claude-sonnet-5")],
+        ))
+        .await
+        .unwrap();
+    storage
+        .write_metric(&agent_metric(
+            "claude_code.lines_of_code.count",
+            d1 + 3600 * SEC,
+            Some(110),
+            None,
+            &[("type", "added"), ("model", "claude-sonnet-5")],
+        ))
+        .await
+        .unwrap();
+    storage
+        .write_metric(&agent_metric(
+            "claude_code.lines_of_code.count",
+            d1 + 3600 * SEC,
+            Some(50),
+            None,
+            &[("type", "removed"), ("model", "claude-sonnet-5")],
+        ))
+        .await
+        .unwrap();
+    // opencode added lines: baseline 5, 55 in the window -> 50 lines.
+    storage
+        .write_metric(&agent_metric(
+            "opencode.lines_of_code.total",
+            d1 - SEC,
+            Some(5),
+            None,
+            &[("type", "added")],
+        ))
+        .await
+        .unwrap();
+    storage
+        .write_metric(&agent_metric(
+            "opencode.lines_of_code.total",
+            d1 + 3600 * SEC,
+            Some(55),
+            None,
+            &[("type", "added")],
+        ))
+        .await
+        .unwrap();
+
+    // Spans: the claude span carries the `[1m]` context-window label —
+    // the join must still match the bare LOC model label. 1M in + 1M
+    // out at the sonnet fallback rates = $3.00 + $15.00 = $18.00.
+    let spans = vec![
+        sch_span(
+            "loc-cc",
+            "com.anthropic.claude_code",
+            "claude-sonnet-5[1m]",
+            d1 + 30 * 60 * SEC,
+            "loc-s1",
+            (1_000_000, 1_000_000),
+        ),
+        // opencode: 2M in + 2M out of opus at $15/$75 per M =
+        // $30.00 + $150.00 = $180.00 across 50 lines -> $360.00/100.
+        sch_span(
+            "loc-oc",
+            "com.opencode",
+            "claude-opus-5",
+            d1 + 20 * 60 * SEC,
+            "loc-s2",
+            (2_000_000, 2_000_000),
+        ),
+    ];
+    storage.write_span_batch(&spans).await.unwrap();
+
+    // Windowed query — a different cache key than the empty-state call.
+    let (status, v) = get_json(
+        &app,
+        &format!(
+            "/api/genai/loc_efficiency?start_time={d1}&end_time={}",
+            d1 + 86_400 * SEC
+        ),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+
+    let rows = v["rows"].as_array().unwrap();
+    // Two lines rows (opencode's per-model token row is folded in).
+    assert_eq!(rows.len(), 2, "{v}");
+    // Cheapest per 100 lines first: $18.00 before $360.00.
+    assert_eq!(rows[0]["tool"], "claude_code");
+    assert_eq!(rows[0]["model"], "claude-sonnet-5");
+    assert_eq!(rows[0]["total_lines"], 100);
+    assert!(
+        (rows[0]["total_cost_usd"].as_f64().unwrap() - 18.0).abs() < 1e-6,
+        "{v}"
+    );
+    assert!(
+        (rows[0]["cost_per_100_lines"].as_f64().unwrap() - 18.0).abs() < 1e-6,
+        "{v}"
+    );
+    assert_eq!(rows[1]["tool"], "opencode");
+    assert_eq!(rows[1]["model"], "(unknown)");
+    assert_eq!(rows[1]["total_lines"], 50);
+    assert!(
+        (rows[1]["total_cost_usd"].as_f64().unwrap() - 180.0).abs() < 1e-6,
+        "{v}"
+    );
+    assert!(
+        (rows[1]["cost_per_100_lines"].as_f64().unwrap() - 360.0).abs() < 1e-6,
+        "{v}"
+    );
+}

@@ -825,6 +825,18 @@ pub trait StorageBackend: Send + Sync {
         Err(StorageError::QueryError("not implemented".to_string()))
     }
 
+    /// Per-(tool, model) lines-added + token sums for the
+    /// lines-of-code efficiency view (#178). Only the tools that emit
+    /// an LOC metric (claude_code, opencode) produce rows.
+    async fn query_loc_efficiency(
+        &self,
+        start_time: Option<i64>,
+        end_time: Option<i64>,
+    ) -> Result<crate::api::LocEfficiencyStorageResponse> {
+        let _ = (start_time, end_time);
+        Err(StorageError::QueryError("not implemented".to_string()))
+    }
+
     /// Per-session, start-ordered LLM span rows for the tool-switch
     /// overhead analysis (#166): session id, tool, start time, and the
     /// reconciled TTFT in ms.

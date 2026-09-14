@@ -210,6 +210,10 @@ pub struct UsageCommand {
     #[arg(long)]
     pub session_duration: bool,
 
+    /// Show lines-of-code efficiency per tool and model ($ per 100 added lines)
+    #[arg(long)]
+    pub loc_efficiency: bool,
+
     /// Show cross-tool first-token latency comparison (Claude Code, opencode, pi) from spans
     #[arg(long)]
     pub cross_tool_ttft: bool,
@@ -388,6 +392,8 @@ struct UsageOutput {
     codex_idle_ratio: Option<otelite_core::api::CodexIdleRatioResponse>,
     #[serde(skip_serializing_if = "Option::is_none")]
     session_duration: Option<otelite_core::api::SessionDurationResponse>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    loc_efficiency: Option<otelite_core::api::LocEfficiencyResponse>,
     #[serde(skip_serializing_if = "Option::is_none")]
     cross_tool_ttft: Option<otelite_core::api::CrossToolTtftResponse>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -1098,6 +1104,28 @@ impl UsageCommand {
             None
         };
 
+        // --loc-efficiency
+        let loc_efficiency: Option<otelite_core::api::LocEfficiencyResponse> = if self
+            .loc_efficiency
+        {
+            let resp = storage
+                .query_loc_efficiency(Some(start_time), Some(end_time))
+                .await
+                .map_err(|e| Error::ApiError(format!("Failed to query loc_efficiency: {e}")))?;
+            // The API handler's pricing convention, so the CLI and
+            // web agree.
+            let rows = otelite_core::loc_efficiency::price_rows(
+                |model, usage: TokenUsage| pricing_db.compute_cost(Some(model), usage, None).cost,
+                &resp.rows,
+            );
+            Some(otelite_core::api::LocEfficiencyResponse {
+                rows,
+                filters_applied: Vec::new(),
+            })
+        } else {
+            None
+        };
+
         // --cross-tool-ttft
         let cross_tool_ttft: Option<otelite_core::api::CrossToolTtftResponse> =
             if self.cross_tool_ttft {
@@ -1481,6 +1509,7 @@ impl UsageCommand {
                     codex_turns,
                     codex_idle_ratio,
                     session_duration,
+                    loc_efficiency,
                     cross_tool_ttft,
                     hook_overhead,
                     bob_hook_overhead,
@@ -1694,6 +1723,11 @@ impl UsageCommand {
 
                 if let Some(ref resp) = session_duration {
                     display_session_duration(resp);
+                    println!();
+                }
+
+                if let Some(ref resp) = loc_efficiency {
+                    display_loc_efficiency(resp);
                     println!();
                 }
 
@@ -3430,6 +3464,55 @@ fn display_session_duration(resp: &otelite_core::api::SessionDurationResponse) {
     println!("{}", table);
 }
 
+/// Table cells for the code-efficiency table (#178), in response
+/// order (cheapest per 100 lines first, unpriced last): tool, model,
+/// lines added, cost, $/100 lines. Unpriced values render as a dash,
+/// never a fabricated zero.
+fn loc_efficiency_rows(resp: &otelite_core::api::LocEfficiencyResponse) -> Vec<Vec<String>> {
+    resp.rows
+        .iter()
+        .map(|r| {
+            vec![
+                r.tool.clone(),
+                r.model.clone(),
+                r.total_lines.to_string(),
+                match r.total_cost_usd {
+                    Some(c) => format!("${c:.2}"),
+                    None => "—".to_string(),
+                },
+                match r.cost_per_100_lines {
+                    Some(c) => format!("${c:.2}"),
+                    None => "—".to_string(),
+                },
+            ]
+        })
+        .collect()
+}
+
+fn display_loc_efficiency(resp: &otelite_core::api::LocEfficiencyResponse) {
+    if resp.rows.is_empty() {
+        println!("Code Efficiency: no lines-of-code data in range");
+        return;
+    }
+    let mut table = Table::new();
+    fit_to_terminal(&mut table);
+    table.load_preset(UTF8_FULL);
+    table.set_header(vec![
+        Cell::new("Tool").fg(Color::Cyan),
+        Cell::new("Model").fg(Color::Cyan),
+        Cell::new("Lines added").fg(Color::Cyan),
+        Cell::new("Cost").fg(Color::Cyan),
+        Cell::new("$/100 lines").fg(Color::Cyan),
+    ]);
+    for row in loc_efficiency_rows(resp) {
+        table.add_row(row.into_iter().map(Cell::new).collect::<Vec<_>>());
+    }
+    println!(
+        "Code Efficiency (added lines vs LLM cost; cheapest per 100 lines first, unpriced last):"
+    );
+    println!("{}", table);
+}
+
 fn display_cross_tool_ttft(resp: &otelite_core::api::CrossToolTtftResponse) {
     if resp.rows.is_empty() {
         println!("Cross-Tool TTFT: no span-level ttft_ms data in range");
@@ -4876,5 +4959,39 @@ mod tests {
 
         // Empty state: no rows.
         assert!(session_duration_rows(&SessionDurationResponse::default()).is_empty());
+    }
+
+    #[test]
+    fn test_loc_efficiency_rows() {
+        use otelite_core::api::LocEfficiencyResponse;
+        let resp = LocEfficiencyResponse {
+            rows: vec![
+                otelite_core::api::LocEfficiencyRow {
+                    tool: "claude_code".into(),
+                    model: "claude-sonnet-5".into(),
+                    total_lines: 100,
+                    total_cost_usd: Some(2.0),
+                    cost_per_100_lines: Some(2.0),
+                },
+                otelite_core::api::LocEfficiencyRow {
+                    tool: "opencode".into(),
+                    model: "(unknown)".into(),
+                    total_lines: 50,
+                    total_cost_usd: None,
+                    cost_per_100_lines: None,
+                },
+            ],
+            filters_applied: vec![],
+        };
+        let rows = loc_efficiency_rows(&resp);
+        assert_eq!(
+            rows[0],
+            vec!["claude_code", "claude-sonnet-5", "100", "$2.00", "$2.00"]
+        );
+        // Unpriced: dashes, not zeros.
+        assert_eq!(rows[1], vec!["opencode", "(unknown)", "50", "—", "—"]);
+
+        // Empty state: no rows.
+        assert!(loc_efficiency_rows(&LocEfficiencyResponse::default()).is_empty());
     }
 }

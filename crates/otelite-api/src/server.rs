@@ -84,6 +84,7 @@ use utoipa::OpenApi;
         crate::api::genai::get_codex_turn_breakdown,
         crate::api::genai::get_codex_idle_ratio,
         crate::api::genai::get_session_duration,
+        crate::api::genai::get_loc_efficiency,
         crate::api::genai::get_session_model_breakdown,
         crate::api::genai::get_speed_distribution,
         crate::api::genai::get_cross_tool_ttft,
@@ -462,6 +463,7 @@ impl DashboardServer {
             .route("/api/genai/codex_turn_breakdown", get(crate::api::genai::get_codex_turn_breakdown))
             .route("/api/genai/codex_idle_ratio", get(crate::api::genai::get_codex_idle_ratio))
             .route("/api/genai/session_duration", get(crate::api::genai::get_session_duration))
+            .route("/api/genai/loc_efficiency", get(crate::api::genai::get_loc_efficiency))
             .route("/api/genai/session_model_breakdown", get(crate::api::genai::get_session_model_breakdown))
             .route("/api/genai/speed_distribution", get(crate::api::genai::get_speed_distribution))
             .route("/api/genai/cross_tool_ttft", get(crate::api::genai::get_cross_tool_ttft))

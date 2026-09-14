@@ -39,6 +39,9 @@ pub mod session_chain;
 // Session-duration distribution (issue #183)
 pub mod session_duration;
 
+// Lines-of-code efficiency (issue #178)
+pub mod loc_efficiency;
+
 // Generic distribution binning + summary stats (issue #133)
 pub mod distribution;
 

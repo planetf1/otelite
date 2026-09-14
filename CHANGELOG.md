@@ -13,6 +13,10 @@ have to work around), not implementation detail.
 
 ### Added
 
+- New Code Efficiency report: what 100 lines of code cost you, per tool
+  and model — lines added vs the LLM spend for that tool/model, sorted
+  cheapest-first, with `otelite usage --loc-efficiency` as a table.
+  Unpriced models read as —, never as free (#178)
 - New Session Duration report: how long your sessions actually last, per
   tool — a length histogram (<5m … >60m) plus median/p95/mean, with
   `otelite usage --session-duration` as a per-tool table. opencode is

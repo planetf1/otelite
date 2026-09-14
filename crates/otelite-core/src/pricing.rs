@@ -166,7 +166,11 @@ fn has_claude_family_token(model: &str, family: &str) -> bool {
 
 /// Remove a client-side context-window label that is not part of the model ID
 /// sent to the provider.
-fn pricing_model_name(model: &str) -> &str {
+///
+/// Public so callers that join span data against model-keyed sources
+/// (e.g. the lines-of-code labels, which carry the bare name) can
+/// normalise exactly the way the price lookup does (#178).
+pub fn pricing_model_name(model: &str) -> &str {
     model.strip_suffix("[1m]").unwrap_or(model)
 }
 

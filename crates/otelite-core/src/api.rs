@@ -2938,6 +2938,65 @@ pub struct SessionDurationResponse {
     pub filters_applied: Vec<String>,
 }
 
+// ── Lines-of-code efficiency (#178) ─────────────────────────────────────────
+
+/// One (tool, model) row in the storage query behind
+/// `GET /api/genai/loc_efficiency` (#178): added lines plus the token
+/// sums the API prices.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
+pub struct LocEfficiencyStorageRow {
+    /// Short tool label, same convention as the daily tool mix.
+    pub tool: String,
+    /// Bare model name; `(unknown)` when the source carries no model
+    /// (opencode's LOC metric has none).
+    pub model: String,
+    /// Lines ADDED in the window (the counter's `type=added` label) —
+    /// code produced, not deletions.
+    pub lines_added: u64,
+    pub input_tokens: u64,
+    pub output_tokens: u64,
+    pub cache_creation_tokens: u64,
+    pub cache_read_tokens: u64,
+}
+
+/// Response of the storage query behind `GET /api/genai/loc_efficiency`
+/// (#178): one row per (tool, model) that has an LOC source, plus the
+/// opencode per-model zero-line token rows the API sums into the
+/// opencode efficiency row.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
+pub struct LocEfficiencyStorageResponse {
+    pub rows: Vec<LocEfficiencyStorageRow>,
+    pub filters_applied: Vec<String>,
+}
+
+/// One (tool, model) efficiency row (#178).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
+pub struct LocEfficiencyRow {
+    pub tool: String,
+    /// Bare model name; `(unknown)` when the source carries no model.
+    pub model: String,
+    /// Lines added in the window.
+    pub total_lines: u64,
+    /// Priced cost of the (tool, model) tokens in the window; `None`
+    /// when the model is unpriced (never fabricated as zero).
+    pub total_cost_usd: Option<f64>,
+    /// `total_cost_usd / total_lines * 100`; `None` when unpriced or
+    /// when no lines were added.
+    pub cost_per_100_lines: Option<f64>,
+}
+
+/// Response for `GET /api/genai/loc_efficiency` (#178), sorted by
+/// `cost_per_100_lines` ascending (cheapest first), unpriced rows last.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
+pub struct LocEfficiencyResponse {
+    pub rows: Vec<LocEfficiencyRow>,
+    pub filters_applied: Vec<String>,
+}
+
 // ── Session chains (#165) ────────────────────────────────────────────────────
 
 /// One time burst (segment) of a session chain (#165): a contiguous run

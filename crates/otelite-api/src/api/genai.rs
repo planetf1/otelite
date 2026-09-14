@@ -3056,6 +3056,53 @@ pub async fn get_session_duration(
     Ok(Json(response))
 }
 
+/// Lines-of-code efficiency per (tool, model) (#178): what producing
+/// 100 added lines cost. Only the tools that emit an LOC metric
+/// appear (claude_code, opencode); unpriced models read as null,
+/// never as a fabricated zero.
+#[utoipa::path(
+    get,
+    path = "/api/genai/loc_efficiency",
+    params(TimeRangeQuery),
+    responses(
+        (status = 200, description = "Lines-of-code efficiency per (tool, model)", body = otelite_core::api::LocEfficiencyResponse),
+        (status = 500, description = "Internal server error", body = ErrorResponse)
+    ),
+    tag = "genai"
+)]
+pub async fn get_loc_efficiency(
+    State(state): State<AppState>,
+    Query(query): Query<TimeRangeQuery>,
+) -> Result<Json<otelite_core::api::LocEfficiencyResponse>, (StatusCode, Json<ErrorResponse>)> {
+    use otelite_core::pricing::TokenUsage;
+
+    let resp = state
+        .storage
+        .query_loc_efficiency(query.start_time, query.end_time)
+        .await
+        .map_err(|e| {
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(ErrorResponse::storage_error(format!(
+                    "query loc_efficiency: {e}"
+                ))),
+            )
+        })?;
+
+    let pricing = state.pricing.snapshot().await;
+    let rows = otelite_core::loc_efficiency::price_rows(
+        |model, usage: TokenUsage| pricing.db.compute_cost(Some(model), usage, None).cost,
+        &resp.rows,
+    );
+
+    let mut response = otelite_core::api::LocEfficiencyResponse {
+        rows,
+        filters_applied: Vec::new(),
+    };
+    response.filters_applied = query.filters().applied(&[]);
+    Ok(Json(response))
+}
+
 /// Session × model cross-tab: tokens and cost per (session_id, model) pair (#115).
 #[utoipa::path(
     get,
