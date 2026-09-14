@@ -11,6 +11,8 @@ have to work around), not implementation detail.
 
 ## [Unreleased]
 
+## [0.1.129] - 2026-09-14
+
 ### Added
 
 - New Productivity report in the web UI and `otelite usage --productivity`:
