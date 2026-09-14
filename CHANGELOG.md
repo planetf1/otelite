@@ -11,6 +11,8 @@ have to work around), not implementation detail.
 
 ## [Unreleased]
 
+## [0.1.130] - 2026-09-14
+
 ### Added
 
 - Cost projection: the Cost report now opens with an "At this rate"
