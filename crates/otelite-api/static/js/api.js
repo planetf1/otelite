@@ -263,6 +263,7 @@ class ApiClient {
     async getEffortBreakdown(params = {}) { return this.get('/genai/effort_breakdown', params); }
     async getEfficiencyStats(params = {}) { return this.get('/genai/efficiency_stats', params); }
     async getProductivity(params = {}) { return this.get('/genai/productivity', params); }
+    async getCostProjection(params = {}) { return this.get('/genai/cost_projection', params); }
     async getCodexTtft(params = {})     { return this.get('/genai/codex_ttft', params); }
     async getProjectRollup(params = {}) { return this.get('/genai/project_rollup', params); }
     async getMcpHealth(params = {})     { return this.get('/genai/mcp_health', params); }

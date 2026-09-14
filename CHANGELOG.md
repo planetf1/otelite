@@ -11,6 +11,14 @@ have to work around), not implementation detail.
 
 ## [Unreleased]
 
+### Added
+
+- Cost projection: the Cost report now opens with an "At this rate"
+  banner (~$X this month at the trailing 7-day average, top model
+  called out), and `otelite usage --cost-projection` shows the monthly
+  projection with a per-model table — see where the month is heading
+  before the end of it, not after (#170)
+
 ## [0.1.129] - 2026-09-14
 
 ### Added

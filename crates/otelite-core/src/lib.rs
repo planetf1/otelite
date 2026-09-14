@@ -24,6 +24,9 @@ pub mod pricing;
 // Per-session cost analysis helpers (anomaly rule, log-spaced buckets)
 pub mod session_cost;
 
+// Monthly cost projection computation (issue #170)
+pub mod cost_projection;
+
 // Generic distribution binning + summary stats (issue #133)
 pub mod distribution;
 

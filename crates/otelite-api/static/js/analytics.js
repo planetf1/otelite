@@ -1184,7 +1184,8 @@ class AnalyticsView {
             const params = this._baseParams();
             const bucket = this._chooseBucket();
             const [costSeries, topSpans, cacheHitRate, cacheEconomics, reasoningShare,
-                   retryStats, errorRate, contextTypeSplit, agentsRollup, projectsRollup] =
+                   retryStats, errorRate, contextTypeSplit, agentsRollup, projectsRollup,
+                   costProjection] =
                 await Promise.all([
                     this.api.getCostSeries({ ...params, bucket }),
                     this.api.getTopSpans({ ...params, limit: 20 }),
@@ -1196,6 +1197,7 @@ class AnalyticsView {
                     this.api.getContextTypeSplit(params).catch(() => null),
                     this.api.getAgents({ ...params, bucket_secs: bucket }).catch(() => null),
                     this.api.getProjects(params).catch(() => null),
+                    this.api.getCostProjection().catch(() => null),
                 ]);
 
             const summary = this.lastSummary || { summary: {} };
@@ -1230,6 +1232,7 @@ class AnalyticsView {
                 ${zeroCacheModels.length ? `<p class="table-hint insight-alert">⚠ No caching observed for: ${zeroCacheModels.map(m => `<strong>${this._esc(m)}</strong>`).join(', ')} — these models send full context every turn.</p>` : ''}`;
 
             const html = [
+                this._buildCostProjectionBanner(costProjection),
                 cacheCard,
                 this._buildCostChart(costSeries || [], bucket),
                 this._buildCacheEconomics(cacheEconomics, cacheHitRate || [], bucket),
@@ -1248,6 +1251,17 @@ class AnalyticsView {
         } catch (err) {
             this._setSectionError('cost', err);
         }
+    }
+
+    // "At this rate" banner for the Cost report (#170): where the month
+    // lands at the trailing 7-day spend rate, with the top model's
+    // projection. Returns '' when there is no priced spend to project.
+    _buildCostProjectionBanner(data) {
+        if (!data || !(data.projected_month_total > 0)) return '';
+        const fmtUsd = v => `$${Number(v).toFixed(2)}`;
+        const top = (data.by_model || [])[0];
+        const topModel = top ? ` — top: ${this._esc(top.model)} ${fmtUsd(top.projected)}` : '';
+        return `<p class="table-hint insight-alert" style="margin-bottom:1rem"><strong>At this rate:</strong> ~${fmtUsd(data.projected_month_total)} this month (7-day avg ${fmtUsd(data.avg_daily_7d)}/day, ${data.days_remaining} days left)${topModel}</p>`;
     }
 
     _buildByModelByProvider(data) {

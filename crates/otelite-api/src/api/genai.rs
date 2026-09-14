@@ -235,6 +235,60 @@ pub async fn get_cost_series(
     }))
 }
 
+/// Query parameters for the cost projection endpoint (#170): the window
+/// is always a rolling 30 days ending at `end_time` (default: now).
+#[derive(Debug, Deserialize, Serialize, utoipa::IntoParams, utoipa::ToSchema)]
+pub struct ProjectionQuery {
+    /// As-of instant (nanoseconds since Unix epoch). The projection rolls
+    /// back 30 days from here; defaults to now.
+    pub end_time: Option<i64>,
+}
+
+/// Monthly cost projection at the trailing 7-day rate (#170): where the
+/// current month lands if recent spend holds. The 30-day rolling window
+/// is fixed so the 30-day average is always defined.
+#[utoipa::path(
+    get,
+    path = "/api/genai/cost_projection",
+    params(ProjectionQuery),
+    responses(
+        (status = 200, description = "Projected monthly spend at the trailing 7-day rate", body = otelite_core::api::CostProjectionResponse),
+        (status = 500, description = "Internal server error", body = ErrorResponse)
+    ),
+    tag = "genai"
+)]
+pub async fn get_cost_projection(
+    State(state): State<AppState>,
+    Query(query): Query<ProjectionQuery>,
+) -> Result<Json<otelite_core::api::CostProjectionResponse>, (StatusCode, Json<ErrorResponse>)> {
+    const DAY_NS: i64 = 86_400 * 1_000_000_000;
+    let as_of_ns = query
+        .end_time
+        .unwrap_or_else(|| chrono::Utc::now().timestamp_nanos_opt().unwrap_or(i64::MAX));
+    let window_start = as_of_ns - 30 * DAY_NS;
+    let filters = GenAiFilters::default();
+
+    let mut series = state
+        .storage
+        .query_cost_series(Some(window_start), Some(as_of_ns), DAY_NS, &filters)
+        .await
+        .map_err(|e| {
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(ErrorResponse::storage_error(format!(
+                    "query cost series for projection: {e}"
+                ))),
+            )
+        })?;
+
+    let pricing = state.pricing.snapshot().await;
+    enrich_cost_series(&mut series, &pricing.db);
+
+    Ok(Json(otelite_core::cost_projection::compute(
+        &series, as_of_ns,
+    )))
+}
+
 /// Query parameters for top-spans endpoint
 #[derive(Debug, Deserialize, Serialize, utoipa::IntoParams, utoipa::ToSchema)]
 pub struct TopSpansQuery {

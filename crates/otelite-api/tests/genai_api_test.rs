@@ -2330,3 +2330,82 @@ async fn test_productivity_rows_and_cost() {
     assert!(r2["cost_usd"].is_null(), "{v}");
     assert!(r2["cost_per_commit_usd"].is_null(), "{v}");
 }
+
+// ── Cost projection: trailing-rate monthly projection (#170) ─────────────────
+
+#[tokio::test]
+async fn test_cost_projection_with_and_without_data() {
+    let (server, storage, _temp_dir) = setup_test_server().await;
+    let app = server.build_router();
+
+    // Empty state: no priced spend -> all-zero projection.
+    let (status, v) = get_json(&app, "/api/genai/cost_projection").await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(v["avg_daily_7d"], 0.0);
+    assert_eq!(v["avg_daily_30d"], 0.0);
+    assert_eq!(v["projected_month_total"], 0.0);
+    assert!(v["by_model"].as_array().unwrap().is_empty());
+
+    // Three priced Claude-family spans within the trailing 7 days.
+    let now_ns = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_secs() as i64
+        * 1_000_000_000;
+    let day = 86_400 * 1_000_000_000;
+    let s1 = daily_mix_span(
+        "cp1",
+        "com.anthropic.claude_code",
+        "claude-sonnet-5",
+        now_ns - day,
+        (1000, 500),
+    );
+    let s2 = daily_mix_span(
+        "cp2",
+        "com.anthropic.claude_code",
+        "claude-sonnet-5",
+        now_ns - 2 * day,
+        (1000, 500),
+    );
+    let s3 = daily_mix_span(
+        "cp3",
+        "com.anthropic.claude_code",
+        "claude-sonnet-5",
+        now_ns - 3 * day,
+        (1000, 500),
+    );
+    storage.write_span_batch(&[s1, s2, s3]).await.unwrap();
+
+    // end_time pinned to the same instant the spans were placed relative
+    // to — and a different cache key than the empty-state call above.
+    let (status, v) = get_json(
+        &app,
+        &format!("/api/genai/cost_projection?end_time={now_ns}"),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+
+    // Claude family prices via the deterministic fallback table.
+    assert!(v["avg_daily_7d"].as_f64().unwrap() > 0.0, "{v}");
+    assert!(v["avg_daily_30d"].as_f64().unwrap() > 0.0, "{v}");
+    assert!(v["projected_month_total"].as_f64().unwrap() > 0.0, "{v}");
+
+    // days_remaining: full days after today in the current UTC month
+    // (±1 tolerance for a midnight race between the test and the server).
+    use chrono::Datelike;
+    let now_date = chrono::Utc::now().date_naive();
+    let expected_remaining = now_date.num_days_in_month() as u32 - now_date.day();
+    let remaining = v["days_remaining"].as_u64().unwrap() as u32;
+    assert!(
+        (expected_remaining as i64 - remaining as i64).abs() <= 1,
+        "expected ~{expected_remaining} days remaining, got {remaining}: {v}"
+    );
+
+    // by_model: the one priced model (the cost series carries the
+    // composite provider/model identity), projected desc.
+    let models = v["by_model"].as_array().unwrap();
+    assert_eq!(models.len(), 1, "{v}");
+    assert_eq!(models[0]["model"], "anthropic/claude-sonnet-5");
+    assert!(models[0]["avg_daily"].as_f64().unwrap() > 0.0, "{v}");
+    assert!(models[0]["projected"].as_f64().unwrap() > 0.0, "{v}");
+}

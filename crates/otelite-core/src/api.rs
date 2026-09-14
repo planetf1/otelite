@@ -2783,6 +2783,40 @@ pub struct DailyToolMixResponse {
     pub filters_applied: Vec<String>,
 }
 
+// ── Cost projection (#170) ───────────────────────────────────────────────────
+
+/// Per-model row of the monthly cost projection (#170).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
+pub struct CostProjectionModel {
+    /// Model name.
+    pub model: String,
+    /// Average daily cost over the trailing 7 calendar days (USD).
+    pub avg_daily: f64,
+    /// Projected cost for the current calendar month at the 7-day rate:
+    /// month-to-date + `avg_daily` × days remaining (USD).
+    pub projected: f64,
+}
+
+/// Response for `GET /api/genai/cost_projection` (#170).
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
+pub struct CostProjectionResponse {
+    /// Average daily spend over the trailing 7 calendar days (USD).
+    pub avg_daily_7d: f64,
+    /// Average daily spend over the trailing 30 calendar days (USD).
+    pub avg_daily_30d: f64,
+    /// Full days after today in the current UTC calendar month (0 on the
+    /// last day).
+    pub days_remaining: u32,
+    /// Projected total spend for the current calendar month at the 7-day
+    /// rate: month-to-date + `avg_daily_7d` × `days_remaining` (USD).
+    pub projected_month_total: f64,
+    /// Per-model projections, sorted by projected cost descending.
+    pub by_model: Vec<CostProjectionModel>,
+    pub filters_applied: Vec<String>,
+}
+
 // ── Productivity (#177) ──────────────────────────────────────────────────────
 
 /// Git output for one (day, tool) pair. Days are UTC calendar days, the same

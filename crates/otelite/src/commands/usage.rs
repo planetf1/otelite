@@ -223,6 +223,10 @@ pub struct UsageCommand {
     #[arg(long)]
     pub productivity: bool,
 
+    /// Project this month's cost at the trailing 7-day rate, by model (#170)
+    #[arg(long)]
+    pub cost_projection: bool,
+
     /// Show Codex skill injection counts — which skills fire implicitly and how often
     #[arg(long)]
     pub skill_activity: bool,
@@ -358,6 +362,8 @@ struct UsageOutput {
     daily_tool_mix: Option<otelite_core::api::DailyToolMixResponse>,
     #[serde(skip_serializing_if = "Option::is_none")]
     productivity: Option<otelite_core::api::ProductivityResponse>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    cost_projection: Option<otelite_core::api::CostProjectionResponse>,
     #[serde(skip_serializing_if = "Option::is_none")]
     skill_activity: Option<otelite_core::api::SkillActivityResponse>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -1089,6 +1095,39 @@ impl UsageCommand {
             None
         };
 
+        // --cost-projection (rolling from now, independent of --start/--end)
+        let cost_projection: Option<otelite_core::api::CostProjectionResponse> =
+            if self.cost_projection {
+                const DAY_NS: i64 = 86_400 * 1_000_000_000;
+                let as_of = now_ns()?;
+                let series = storage
+                    .query_cost_series(
+                        Some(as_of - 30 * DAY_NS),
+                        Some(as_of),
+                        DAY_NS,
+                        &otelite_core::filters::GenAiFilters::default(),
+                    )
+                    .await
+                    .map_err(|e| {
+                        Error::ApiError(format!("Failed to query cost_series for projection: {e}"))
+                    })?;
+                let mut priced = series;
+                for p in priced.iter_mut() {
+                    let usage = TokenUsage {
+                        input: p.input_tokens,
+                        output: p.output_tokens,
+                        cache_creation: p.cache_creation_tokens,
+                        cache_read: p.cache_read_tokens,
+                    };
+                    let cr = pricing_db.compute_cost(p.model.as_deref(), usage, None);
+                    p.cost = cr.cost;
+                    p.cost_source = Some(cr.source.as_str().to_string());
+                }
+                Some(otelite_core::cost_projection::compute(&priced, as_of))
+            } else {
+                None
+            };
+
         // --skill-activity
         let skill_activity: Option<otelite_core::api::SkillActivityResponse> =
             if self.skill_activity {
@@ -1214,6 +1253,7 @@ impl UsageCommand {
                     tool_failures,
                     daily_tool_mix,
                     productivity,
+                    cost_projection,
                     skill_activity,
                     session_quality,
                     skill_outcomes,
@@ -1430,6 +1470,11 @@ impl UsageCommand {
 
                 if let Some(ref resp) = productivity {
                     display_productivity(resp);
+                    println!();
+                }
+
+                if let Some(ref resp) = cost_projection {
+                    display_cost_projection(resp, &pricing_source);
                     println!();
                 }
 
@@ -3190,6 +3235,52 @@ fn display_productivity(resp: &otelite_core::api::ProductivityResponse) {
     println!("{}", table);
 }
 
+/// Table cells for the cost projection model table (#170): model,
+/// formatted 7-day average, formatted projected month — in response
+/// order (projected cost desc).
+fn cost_projection_rows(resp: &otelite_core::api::CostProjectionResponse) -> Vec<Vec<String>> {
+    resp.by_model
+        .iter()
+        .map(|m| {
+            vec![
+                m.model.clone(),
+                format!("${:.2}", m.avg_daily),
+                format!("${:.2}", m.projected),
+            ]
+        })
+        .collect()
+}
+
+fn display_cost_projection(resp: &otelite_core::api::CostProjectionResponse, pricing_source: &str) {
+    println!("Cost Projection ({pricing_source}):");
+    if resp.projected_month_total <= 0.0 && resp.by_model.is_empty() {
+        println!("  No priced cost data in the trailing 30 days");
+        return;
+    }
+    println!("  7-day avg daily  : ${:.2}/day", resp.avg_daily_7d);
+    println!("  30-day avg daily : ${:.2}/day", resp.avg_daily_30d);
+    println!("  Days remaining   : {}", resp.days_remaining);
+    println!(
+        "  Projected month  : ${:.2} (at the 7-day rate)",
+        resp.projected_month_total
+    );
+    if resp.by_model.is_empty() {
+        return;
+    }
+    let mut table = Table::new();
+    fit_to_terminal(&mut table);
+    table.load_preset(UTF8_FULL);
+    table.set_header(vec![
+        Cell::new("Model").fg(Color::Cyan),
+        Cell::new("Avg daily").fg(Color::Cyan),
+        Cell::new("Projected month").fg(Color::Cyan),
+    ]);
+    for row in cost_projection_rows(resp) {
+        table.add_row(row.into_iter().map(Cell::new).collect::<Vec<_>>());
+    }
+    println!("{}", table);
+}
+
 fn display_daily_tool_mix(resp: &otelite_core::api::DailyToolMixResponse) {
     if resp.rows.is_empty() {
         println!("Daily Tool Mix: no data");
@@ -3687,5 +3778,52 @@ mod tests {
 
         // Empty state: no rows.
         assert!(productivity_table_rows(&ProductivityResponse::default()).is_empty());
+    }
+
+    #[test]
+    fn test_cost_projection_rows() {
+        use otelite_core::api::{CostProjectionModel, CostProjectionResponse};
+        let resp = CostProjectionResponse {
+            avg_daily_7d: 3.0,
+            avg_daily_30d: 2.1,
+            days_remaining: 16,
+            projected_month_total: 76.0,
+            by_model: vec![
+                CostProjectionModel {
+                    model: "model-b".into(),
+                    avg_daily: 2.0,
+                    projected: 46.0,
+                },
+                CostProjectionModel {
+                    model: "model-a".into(),
+                    avg_daily: 1.0,
+                    projected: 30.0,
+                },
+            ],
+            filters_applied: vec![],
+        };
+        let rows = cost_projection_rows(&resp);
+        assert_eq!(rows.len(), 2);
+        // Response order (projected desc) is preserved; costs are
+        // formatted with two decimals and a dollar sign.
+        assert_eq!(
+            rows[0],
+            vec![
+                "model-b".to_string(),
+                "$2.00".to_string(),
+                "$46.00".to_string()
+            ]
+        );
+        assert_eq!(
+            rows[1],
+            vec![
+                "model-a".to_string(),
+                "$1.00".to_string(),
+                "$30.00".to_string()
+            ]
+        );
+
+        // Empty state: no rows.
+        assert!(cost_projection_rows(&CostProjectionResponse::default()).is_empty());
     }
 }
