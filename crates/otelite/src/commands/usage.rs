@@ -3168,16 +3168,18 @@ fn display_guardian(resp: &otelite_core::api::GuardianStatsResponse) {
         table.set_header(vec![
             Cell::new("Action").fg(Color::Cyan),
             Cell::new("Count").fg(Color::Cyan),
+            Cell::new("Denied").fg(Color::Cyan),
             Cell::new("Denial %").fg(Color::Cyan),
         ]);
         for a in &resp.by_action {
             table.add_row(vec![
                 a.action.as_str(),
                 &a.count.to_string(),
+                &a.denied.to_string(),
                 &format!("{:.1}%", a.denial_rate * 100.0),
             ]);
         }
-        println!("By action type:");
+        println!("By action type (most denied first):");
         println!("{}", table);
     }
 }

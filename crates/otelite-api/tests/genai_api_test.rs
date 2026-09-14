@@ -3211,3 +3211,77 @@ async fn test_session_chains_links_resumed_bursts() {
     let wide = v["chains"].as_array().unwrap();
     assert_eq!(wide[0]["segments"].as_array().unwrap().len(), 1, "{v}");
 }
+
+// ── Guardian action breakdown (#182) ────────────────────────────────────────
+
+#[tokio::test]
+async fn test_guardian_stats_by_action_breakdown() {
+    let (server, storage, _temp_dir) = setup_test_server().await;
+    let app = server.build_router();
+
+    // Empty state.
+    let (status, v) = get_json(&app, "/api/genai/guardian_stats").await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(v["total_reviews"], 0);
+    assert!(v["by_action"].as_array().unwrap().is_empty());
+
+    // run_command: 3 reviews, 2 denied. write_file: 2 reviews, 0 denied.
+    // Timestamps are 100 ms apart, all inside [R0, R1].
+    for (i, decision) in ["denied", "approved", "denied"].iter().enumerate() {
+        storage
+            .write_metric(&agent_metric(
+                "codex.guardian.review",
+                R0 + i as i64 * 100_000_000,
+                Some(1),
+                None,
+                &[
+                    ("risk_level", "high"),
+                    ("decision", decision),
+                    ("action", "run_command"),
+                ],
+            ))
+            .await
+            .unwrap();
+    }
+    for (i, decision) in ["approved", "approved"].iter().enumerate() {
+        storage
+            .write_metric(&agent_metric(
+                "codex.guardian.review",
+                R0 + (3 + i) as i64 * 100_000_000,
+                Some(1),
+                None,
+                &[
+                    ("risk_level", "low"),
+                    ("decision", decision),
+                    ("action", "write_file"),
+                ],
+            ))
+            .await
+            .unwrap();
+    }
+
+    // Windowed query — a different cache key than the empty-state call.
+    let (status, v) = get_json(
+        &app,
+        &format!("/api/genai/guardian_stats?start_time={R0}&end_time={R1}"),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(v["total_reviews"], 5);
+
+    // By action, denied-count desc: run_command (2 denied) before
+    // write_file (0 denied).
+    let rows = v["by_action"].as_array().unwrap();
+    assert_eq!(rows.len(), 2, "{v}");
+    assert_eq!(rows[0]["action"], "run_command");
+    assert_eq!(rows[0]["count"], 3);
+    assert_eq!(rows[0]["denied"], 2);
+    assert!(
+        (rows[0]["denial_rate"].as_f64().unwrap() - 2.0 / 3.0).abs() < 1e-9,
+        "{v}"
+    );
+    assert_eq!(rows[1]["action"], "write_file");
+    assert_eq!(rows[1]["count"], 2);
+    assert_eq!(rows[1]["denied"], 0);
+    assert_eq!(rows[1]["denial_rate"], 0.0);
+}

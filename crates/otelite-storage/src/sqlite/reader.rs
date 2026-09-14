@@ -9064,7 +9064,7 @@ pub fn query_guardian_stats(
          FROM metrics
          {where_clause}
          GROUP BY action
-         ORDER BY total_cnt DESC"
+         ORDER BY denied_cnt DESC, total_cnt DESC"
     );
 
     let param_refs: Vec<&dyn rusqlite::ToSql> = params.iter().map(|p| p.as_ref()).collect();
@@ -12628,6 +12628,66 @@ mod tests {
         assert!(
             high.approval_rate < 1.0,
             "approval_rate should be < 1 when there is a denial"
+        );
+    }
+
+    #[test]
+    fn test_query_guardian_stats_by_action_denial_rate() {
+        let conn = setup_test_db();
+        // run_command: 10 reviews, 7 denied -> 70% denial rate.
+        for i in 0..7 {
+            insert_metric(
+                &conn,
+                "codex.guardian.review",
+                1000 + i,
+                1,
+                r#"{"risk_level":"high","decision":"denied","action":"run_command"}"#,
+            );
+        }
+        for i in 7..10 {
+            insert_metric(
+                &conn,
+                "codex.guardian.review",
+                1000 + i,
+                1,
+                r#"{"risk_level":"low","decision":"approved","action":"run_command"}"#,
+            );
+        }
+        // write_file: 20 reviews, 1 denied -> 5% denial rate.
+        for i in 0..19 {
+            insert_metric(
+                &conn,
+                "codex.guardian.review",
+                2000 + i,
+                1,
+                r#"{"risk_level":"low","decision":"approved","action":"write_file"}"#,
+            );
+        }
+        insert_metric(
+            &conn,
+            "codex.guardian.review",
+            2190,
+            1,
+            r#"{"risk_level":"high","decision":"denied","action":"write_file"}"#,
+        );
+
+        let result = query_guardian_stats(&conn, None, None).unwrap();
+        // Sorted by denied count desc: run_command (7 denied) comes before
+        // write_file (1 denied) even though write_file has more reviews.
+        assert_eq!(result.by_action.len(), 2, "{result:?}");
+        assert_eq!(result.by_action[0].action, "run_command");
+        assert_eq!(result.by_action[0].count, 10);
+        assert_eq!(result.by_action[0].denied, 7);
+        assert!(
+            (result.by_action[0].denial_rate - 0.7).abs() < 1e-9,
+            "{result:?}"
+        );
+        assert_eq!(result.by_action[1].action, "write_file");
+        assert_eq!(result.by_action[1].count, 20);
+        assert_eq!(result.by_action[1].denied, 1);
+        assert!(
+            (result.by_action[1].denial_rate - 0.05).abs() < 1e-9,
+            "{result:?}"
         );
     }
 

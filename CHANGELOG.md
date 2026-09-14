@@ -25,6 +25,13 @@ have to work around), not implementation detail.
   TTFT") and `otelite usage --tool-switch-overhead` as a table — see whether
   switching tools is worth it or a habit worth breaking (#166)
 
+### Changed
+
+- Guardian Reviews' action breakdown now sorts by most-denied action first
+  (instead of most-reviewed) and the CLI table gains a Denied count column —
+  "run_command denied 70% of the time" now sits at the top of both, where
+  it belongs for tuning guardian policy (#182)
+
 ## [0.1.133] - 2026-09-14
 
 ### Added
