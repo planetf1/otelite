@@ -11,6 +11,8 @@ have to work around), not implementation detail.
 
 ## [Unreleased]
 
+## [0.1.134] - 2026-09-14
+
 ### Added
 
 - New Codex idle-ratio trend: the Codex Busy/Idle report gains an
