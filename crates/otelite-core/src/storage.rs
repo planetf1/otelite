@@ -799,6 +799,18 @@ pub trait StorageBackend: Send + Sync {
         Err(StorageError::QueryError("not implemented".to_string()))
     }
 
+    /// Per-session, start-ordered LLM span rows for the tool-switch
+    /// overhead analysis (#166): session id, tool, start time, and the
+    /// reconciled TTFT in ms.
+    async fn query_tool_switch_storage(
+        &self,
+        start_time: Option<i64>,
+        end_time: Option<i64>,
+    ) -> Result<crate::api::ToolSwitchStorageResponse> {
+        let _ = (start_time, end_time);
+        Err(StorageError::QueryError("not implemented".to_string()))
+    }
+
     /// Codex skill injection activity (#insight-3).
     async fn query_skill_activity(
         &self,

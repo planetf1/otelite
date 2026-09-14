@@ -11,6 +11,14 @@ have to work around), not implementation detail.
 
 ## [Unreleased]
 
+### Added
+
+- New Tool Switch Overhead report: what crossing a tool boundary mid-session
+  actually costs — switch gaps and cold-start TTFT at each boundary, with a
+  per-transition breakdown (e.g. "opencode → codex: 1,500 ms avg gap, +200 ms
+  TTFT") and `otelite usage --tool-switch-overhead` as a table — see whether
+  switching tools is worth it or a habit worth breaking (#166)
+
 ## [0.1.133] - 2026-09-14
 
 ### Added

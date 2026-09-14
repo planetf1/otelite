@@ -30,6 +30,9 @@ pub mod cost_projection;
 // Session depth vs cost bucketing (issue #180)
 pub mod session_depth;
 
+// Tool-switch overhead analysis (issue #166)
+pub mod tool_switch;
+
 // Generic distribution binning + summary stats (issue #133)
 pub mod distribution;
 

@@ -276,6 +276,7 @@ class ApiClient {
     async getCrossToolTtft(params = {})     { return this.get('/genai/cross_tool_ttft', params); }
     async getHookOverhead(params = {})      { return this.get('/genai/hook_overhead', params); }
     async getBobHookOverhead(params = {})   { return this.get('/genai/bob_hook_overhead', params); }
+    async getToolSwitchOverhead(params = {}) { return this.get('/genai/tool_switch_overhead', params); }
     async getSessionModelBreakdown(params = {}) { return this.get('/genai/session_model_breakdown', params); }
     async getSpeedDistribution(params = {}) { return this.get('/genai/speed_distribution', params); }
     async getAgentRoles(params = {})    { return this.get('/genai/agent_roles', params); }

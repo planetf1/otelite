@@ -3159,6 +3159,39 @@ pub async fn get_bob_hook_overhead(
     Ok(Json(response))
 }
 
+/// Tool-switch overhead (#166): where switching tools mid-session costs
+/// time — switch gaps and the cold-vs-warm TTFT comparison at each
+/// tool boundary.
+#[utoipa::path(
+    get,
+    path = "/api/genai/tool_switch_overhead",
+    params(TimeRangeQuery),
+    responses(
+        (status = 200, description = "Tool switch counts, gaps, and cold/warm TTFT", body = otelite_core::api::ToolSwitchOverheadResponse),
+        (status = 500, description = "Internal server error", body = ErrorResponse)
+    ),
+    tag = "genai"
+)]
+pub async fn get_tool_switch_overhead(
+    State(state): State<AppState>,
+    Query(query): Query<TimeRangeQuery>,
+) -> Result<Json<otelite_core::api::ToolSwitchOverheadResponse>, (StatusCode, Json<ErrorResponse>)>
+{
+    let storage_resp = state
+        .storage
+        .query_tool_switch_storage(query.start_time, query.end_time)
+        .await
+        .map_err(|e| {
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(ErrorResponse::storage_error(format!(
+                    "query tool_switch_overhead: {e}"
+                ))),
+            )
+        })?;
+    Ok(Json(otelite_core::tool_switch::analyze(&storage_resp.rows)))
+}
+
 /// Tool failure rates from opencode.tool.duration.
 #[utoipa::path(
     get,

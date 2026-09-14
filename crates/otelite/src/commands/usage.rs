@@ -214,6 +214,10 @@ pub struct UsageCommand {
     #[arg(long)]
     pub bob_hook_overhead: bool,
 
+    /// Show tool-switch overhead: gaps and cold TTFT at tool boundaries (#166)
+    #[arg(long)]
+    pub tool_switch_overhead: bool,
+
     /// Show opencode tool failure rates — which tools fail most and at what percentage
     #[arg(long)]
     pub tool_failures: bool,
@@ -374,6 +378,8 @@ struct UsageOutput {
     hook_overhead: Option<otelite_core::api::HookOverheadResponse>,
     #[serde(skip_serializing_if = "Option::is_none")]
     bob_hook_overhead: Option<otelite_core::api::HookOverheadResponse>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    tool_switch_overhead: Option<otelite_core::api::ToolSwitchOverheadResponse>,
     #[serde(skip_serializing_if = "Option::is_none")]
     tool_failures: Option<otelite_core::api::ToolFailureRatesResponse>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -1090,6 +1096,20 @@ impl UsageCommand {
                 None
             };
 
+        // --tool-switch-overhead
+        let tool_switch_overhead: Option<otelite_core::api::ToolSwitchOverheadResponse> =
+            if self.tool_switch_overhead {
+                let resp = storage
+                    .query_tool_switch_storage(Some(start_time), Some(end_time))
+                    .await
+                    .map_err(|e| {
+                        Error::ApiError(format!("Failed to query tool_switch_overhead: {e}"))
+                    })?;
+                Some(otelite_core::tool_switch::analyze(&resp.rows))
+            } else {
+                None
+            };
+
         // --tool-failures
         let tool_failures: Option<otelite_core::api::ToolFailureRatesResponse> =
             if self.tool_failures {
@@ -1375,6 +1395,7 @@ impl UsageCommand {
                     cross_tool_ttft,
                     hook_overhead,
                     bob_hook_overhead,
+                    tool_switch_overhead,
                     tool_failures,
                     daily_tool_mix,
                     productivity,
@@ -1588,6 +1609,11 @@ impl UsageCommand {
 
                 if let Some(ref resp) = bob_hook_overhead {
                     display_bob_hook_overhead(resp);
+                    println!();
+                }
+
+                if let Some(ref resp) = tool_switch_overhead {
+                    display_tool_switch_overhead(resp);
                     println!();
                 }
 
@@ -3299,6 +3325,66 @@ fn render_hook_overhead(resp: &otelite_core::api::HookOverheadResponse, tool: &s
     println!("{}", table);
 }
 
+/// Table cells for the tool-switch transition table (#166):
+/// "from -> to", count, avg gap, avg TTFT delta — in response order
+/// (count desc, then from/to asc). Unmeasured TTFT deltas render as a
+/// dash rather than a fabricated zero.
+fn tool_switch_rows(resp: &otelite_core::api::ToolSwitchOverheadResponse) -> Vec<Vec<String>> {
+    resp.by_transition
+        .iter()
+        .map(|t| {
+            vec![
+                format!("{} -> {}", t.from, t.to),
+                t.count.to_string(),
+                format!("{:.0} ms", t.avg_gap_ms),
+                t.avg_ttft_delta_ms
+                    .map(|d| format!("{d:+.0} ms"))
+                    .unwrap_or_else(|| "—".to_string()),
+            ]
+        })
+        .collect()
+}
+
+fn display_tool_switch_overhead(resp: &otelite_core::api::ToolSwitchOverheadResponse) {
+    println!("Tool Switch Overhead:");
+    if resp.switches == 0 {
+        println!("  No tool switches detected in range (single-tool sessions only)");
+        return;
+    }
+    let fmt_opt_ms = |v: Option<f64>| {
+        v.map(|x| format!("{x:.0} ms"))
+            .unwrap_or_else(|| "unmeasured".to_string())
+    };
+    println!(
+        "  {} switch(es) — avg gap {:.0} ms",
+        resp.switches, resp.avg_gap_ms
+    );
+    println!(
+        "  TTFT: cold {} · warm {} · ratio {}",
+        fmt_opt_ms(resp.avg_ttft_cold_ms),
+        fmt_opt_ms(resp.avg_ttft_warm_ms),
+        resp.overhead_ratio
+            .map(|r| format!("{r:.2}"))
+            .unwrap_or_else(|| "—".to_string())
+    );
+    if resp.by_transition.is_empty() {
+        return;
+    }
+    let mut table = Table::new();
+    fit_to_terminal(&mut table);
+    table.load_preset(UTF8_FULL);
+    table.set_header(vec![
+        Cell::new("Transition").fg(Color::Cyan),
+        Cell::new("Switches").fg(Color::Cyan),
+        Cell::new("Avg gap").fg(Color::Cyan),
+        Cell::new("Avg TTFT delta").fg(Color::Cyan),
+    ]);
+    for row in tool_switch_rows(resp) {
+        table.add_row(row.into_iter().map(Cell::new).collect::<Vec<_>>());
+    }
+    println!("{}", table);
+}
+
 fn display_tool_failure_rates(resp: &otelite_core::api::ToolFailureRatesResponse) {
     if resp.rows.is_empty() {
         println!("Tool Failure Rates: no data");
@@ -4297,5 +4383,60 @@ mod tests {
 
         // Empty state: no rows.
         assert!(time_in_tool_totals(&TimeInToolResponse::default()).is_empty());
+    }
+
+    #[test]
+    fn test_tool_switch_rows_formats_transitions() {
+        use otelite_core::api::{ToolSwitchOverheadResponse, ToolSwitchTransition};
+        let resp = ToolSwitchOverheadResponse {
+            switches: 4,
+            avg_gap_ms: 1234.0,
+            avg_ttft_cold_ms: Some(500.0),
+            avg_ttft_warm_ms: Some(110.0),
+            overhead_ratio: Some(4.5),
+            by_transition: vec![
+                ToolSwitchTransition {
+                    from: "opencode".into(),
+                    to: "codex".into(),
+                    count: 3,
+                    avg_gap_ms: 1500.0,
+                    avg_ttft_delta_ms: Some(200.0),
+                },
+                ToolSwitchTransition {
+                    from: "codex".into(),
+                    to: "opencode".into(),
+                    count: 1,
+                    avg_gap_ms: 600.0,
+                    // Unmeasured -> dash, never a fabricated zero.
+                    avg_ttft_delta_ms: None,
+                },
+            ],
+            filters_applied: vec![],
+        };
+        let rows = tool_switch_rows(&resp);
+        assert_eq!(rows.len(), 2);
+        // Response order (count desc) is preserved; gap formatted as
+        // integer ms, delta signed.
+        assert_eq!(
+            rows[0],
+            vec![
+                "opencode -> codex".to_string(),
+                "3".to_string(),
+                "1500 ms".to_string(),
+                "+200 ms".to_string(),
+            ]
+        );
+        assert_eq!(
+            rows[1],
+            vec![
+                "codex -> opencode".to_string(),
+                "1".to_string(),
+                "600 ms".to_string(),
+                "—".to_string(),
+            ]
+        );
+
+        // Empty state: no rows.
+        assert!(tool_switch_rows(&ToolSwitchOverheadResponse::default()).is_empty());
     }
 }

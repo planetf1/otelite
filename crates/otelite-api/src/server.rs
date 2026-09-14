@@ -87,6 +87,7 @@ use utoipa::OpenApi;
         crate::api::genai::get_cross_tool_ttft,
         crate::api::genai::get_hook_overhead,
         crate::api::genai::get_bob_hook_overhead,
+        crate::api::genai::get_tool_switch_overhead,
         crate::api::genai::get_tool_failure_rates,
         crate::api::genai::get_daily_tool_mix,
         crate::api::genai::get_productivity,
@@ -461,6 +462,7 @@ impl DashboardServer {
             .route("/api/genai/cross_tool_ttft", get(crate::api::genai::get_cross_tool_ttft))
             .route("/api/genai/hook_overhead", get(crate::api::genai::get_hook_overhead))
             .route("/api/genai/bob_hook_overhead", get(crate::api::genai::get_bob_hook_overhead))
+            .route("/api/genai/tool_switch_overhead", get(crate::api::genai::get_tool_switch_overhead))
             .route("/api/genai/tool_failure_rates", get(crate::api::genai::get_tool_failure_rates))
             .route("/api/genai/daily_tool_mix", get(crate::api::genai::get_daily_tool_mix))
             .route("/api/genai/productivity", get(crate::api::genai::get_productivity))

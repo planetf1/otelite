@@ -50,6 +50,7 @@ class AnalyticsView {
         { id: 'latency',                 title: 'Latency',                 hint: 'Response time · throughput · context size' },
         { id: 'model_performance',       title: 'Model Performance',       hint: 'Per-model duration · throughput · TTFT · error diagnosis vs preceding & rolling baselines' },
         { id: 'ttft',                      title: 'TTFT',                    hint: 'First-token latency per model — Codex (histogram metrics) and Claude Code / opencode / pi (span attributes)' },
+        { id: 'tool_switch_overhead',      title: 'Tool Switch Overhead',    hint: 'Switch gaps and cold-start TTFT when a session crosses a tool boundary' },
         { id: 'codex_turns',             title: 'Codex Busy/Idle',         hint: 'Average busy vs idle time per turn by model and project' },
         { id: 'speed_dist',              title: 'Speed / Effort Mode',     hint: 'Distribution of the Claude Code speed attribute (normal / extended thinking) by model' },
         { id: 'reliability',             title: 'Reliability',             hint: 'Errors · retries · truncation · drift · error events · session quality' },
@@ -69,7 +70,7 @@ class AnalyticsView {
     // reports move to the Pinned group while pinned.
     static GROUPS = [
         { id: 'cost',        label: 'Cost',                    sub: 'Where did the tokens go?',            reports: ['cost', 'providers', 'cost_by_project', 'session_depth', 'roles', 'session_model', 'thinking_effort', 'efficiency', 'productivity', 'skills'] },
-        { id: 'latency',     label: 'Latency',                 sub: 'How fast, and where is it slow?',      reports: ['latency', 'model_performance', 'ttft', 'codex_turns', 'speed_dist'] },
+        { id: 'latency',     label: 'Latency',                 sub: 'How fast, and where is it slow?',      reports: ['latency', 'model_performance', 'ttft', 'tool_switch_overhead', 'codex_turns', 'speed_dist'] },
         { id: 'reliability', label: 'Reliability',             sub: "What's breaking, and how often?",      reports: ['reliability', 'tool_failures', 'guardian'] },
         { id: 'behavior',    label: 'Behaviour',               sub: 'How is it being used?',                reports: ['behavior', 'multi_agent', 'model_selection_heatmap', 'time_in_tool'] },
         { id: 'ecosystem',   label: 'Ecosystem & Diagnostics', sub: "What's the tooling actually doing?",   reports: ['hook_overhead', 'bob_hook_overhead', 'capabilities', 'project_rollup'] },
@@ -104,6 +105,7 @@ class AnalyticsView {
         model_selection_heatmap: ['heatmap', 'selection', 'which tool picked'],
         hook_overhead: ['hook', 'overhead', 'pre_prompt', 'stop hook'],
         bob_hook_overhead: ['bob hook', 'bob overhead', 'bob latency', 'bob pre_prompt'],
+        tool_switch_overhead: ['tool switch', 'switch overhead', 'cold start', 'tool boundary', 'switch gap'],
         capabilities: ['telemetry', 'availability', 'emitter', 'capability coverage'],
         project_rollup: ['project', 'per project', 'rollup'],
     };
@@ -136,6 +138,7 @@ class AnalyticsView {
         model_selection_heatmap: ['roles', 'providers', 'session_model'],
         hook_overhead: ['latency', 'capabilities', 'bob_hook_overhead'],
         bob_hook_overhead: ['hook_overhead', 'capabilities'],
+        tool_switch_overhead: ['ttft', 'latency', 'model_performance'],
         capabilities: ['hook_overhead', 'model_performance'],
         project_rollup: ['cost', 'session_model'],
     };
@@ -1137,6 +1140,7 @@ class AnalyticsView {
             speed_dist: () => this._loadSpeedDistSection(),
             hook_overhead: () => this._loadHookOverheadSection(),
             bob_hook_overhead: () => this._loadBobHookOverheadSection(),
+            tool_switch_overhead: () => this._loadToolSwitchOverheadSection(),
             skills: () => this._loadSkillsSection(),
             model_selection_heatmap: () => this._loadModelSelectionHeatmapSection(),
         };
@@ -4366,6 +4370,39 @@ class AnalyticsView {
             this.loadedSections.add('bob_hook_overhead');
         } catch (err) {
             this._setSectionError('bob_hook_overhead', err);
+        }
+    }
+
+    // Tool switch overhead (#166): switch gaps and cold-vs-warm TTFT at
+    // tool boundaries within a session. The server returns the aggregates;
+    // this section renders the summary line + per-transition table.
+    async _loadToolSwitchOverheadSection() {
+        this._setSectionLoading('tool_switch_overhead');
+        try {
+            const data = await this.api.getToolSwitchOverhead(this._baseParams());
+            if (!data.switches) {
+                this._setSectionBody('tool_switch_overhead', '<div class="empty-state-hint">No tool switches detected in this window — every session stayed within one tool.</div>');
+                this.loadedSections.add('tool_switch_overhead');
+                return;
+            }
+            const fmtMs = v => v != null ? `${Math.round(v).toLocaleString()} ms` : 'unmeasured';
+            let html = `<p class="analytics-summary-line"><strong>${Number(data.switches).toLocaleString()}</strong> switch(es) — avg gap <strong>${Math.round(data.avg_gap_ms).toLocaleString()} ms</strong> · TTFT cold ${fmtMs(data.avg_ttft_cold_ms)} · warm ${fmtMs(data.avg_ttft_warm_ms)} · ratio ${data.overhead_ratio != null ? data.overhead_ratio.toFixed(2) : '—'}</p>`;
+            html += '<div class="analytics-table-wrap"><table class="analytics-table"><thead><tr>' +
+                '<th>Transition</th><th>Switches</th><th>Avg gap</th><th>Avg TTFT delta</th>' +
+                '</tr></thead><tbody>';
+            for (const t of data.by_transition || []) {
+                html += `<tr>
+                    <td>${this._esc(t.from)} → ${this._esc(t.to)}</td>
+                    <td>${Number(t.count).toLocaleString()}</td>
+                    <td>${Math.round(t.avg_gap_ms).toLocaleString()} ms</td>
+                    <td>${t.avg_ttft_delta_ms != null ? (t.avg_ttft_delta_ms >= 0 ? '+' : '') + Math.round(t.avg_ttft_delta_ms).toLocaleString() + ' ms' : '—'}</td>
+                </tr>`;
+            }
+            html += '</tbody></table></div>';
+            this._setSectionBody('tool_switch_overhead', html);
+            this.loadedSections.add('tool_switch_overhead');
+        } catch (err) {
+            this._setSectionError('tool_switch_overhead', err);
         }
     }
 

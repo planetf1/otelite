@@ -13045,6 +13045,96 @@ fn hook_overhead_for(
     })
 }
 
+// ── Tool switch overhead (#166) ─────────────────────────────────────────────
+
+/// Per-session, start-ordered LLM span rows for the tool-switch overhead
+/// analysis (#166): session id, tool label, start time, and the
+/// reconciled TTFT (ms, via the same three-source normaliser as the
+/// latency stats). Rows are ordered (session asc, start_time asc) —
+/// the order [`otelite_core::tool_switch::analyze`] requires.
+///
+/// The tool mapping is identical to `query_daily_tool_mix` so the
+/// reports agree on tool labels.
+pub fn query_tool_switch_storage(
+    conn: &Connection,
+    start_time: Option<i64>,
+    end_time: Option<i64>,
+) -> Result<otelite_core::api::ToolSwitchStorageResponse> {
+    use otelite_core::api::{ToolSwitchSpan, ToolSwitchStorageResponse};
+    use otelite_core::semconv;
+
+    let llm_guard = semconv::llm_span_guard("attributes");
+    let session_expr = semconv::session_id_expr("attributes");
+    let session_predicate = semconv::session_id_index_predicate("attributes");
+    let tool_expr = r#"CASE
+        WHEN json_extract(scope,'$.name') LIKE '%claude_code%'   THEN 'claude_code'
+        WHEN json_extract(scope,'$.name') = 'com.opencode'       THEN 'opencode'
+        WHEN json_extract(scope,'$.name') LIKE '%opencode%'      THEN 'opencode'
+        WHEN json_extract(scope,'$.name') = 'pi-otel'            THEN 'pi'
+        WHEN json_extract(scope,'$.name') LIKE '%codex%'         THEN 'codex'
+        WHEN json_extract(scope,'$.name') LIKE '%deekseek%'      THEN 'deepseek'
+        ELSE COALESCE(json_extract(scope,'$.name'), 'unknown')
+    END"#;
+
+    let mut where_clause = format!("WHERE {llm_guard} AND {session_predicate}");
+    let mut params: Vec<Box<dyn rusqlite::ToSql>> = Vec::new();
+    if let Some(s) = start_time {
+        where_clause.push_str(" AND start_time >= ?");
+        params.push(Box::new(s));
+    }
+    if let Some(e) = end_time {
+        where_clause.push_str(" AND start_time <= ?");
+        params.push(Box::new(e));
+    }
+
+    let sql = format!(
+        r#"
+        SELECT
+          {session} AS session_id,
+          {tool} AS tool,
+          start_time,
+          json_extract(attributes, '$."gen_ai.server.time_to_first_token"') AS otel_ttft,
+          json_extract(attributes, '$."llm.time_to_first_token"') AS llm_ttft,
+          json_extract(attributes, '$."ttft_ms"') AS custom_ttft
+        FROM spans
+        {where_clause}
+        ORDER BY session_id ASC, start_time ASC
+        "#,
+        session = session_expr,
+        tool = tool_expr,
+        where_clause = where_clause,
+    );
+
+    let param_refs: Vec<&dyn rusqlite::ToSql> = params.iter().map(|p| p.as_ref()).collect();
+    let mut stmt = conn.prepare(&sql).map_err(|e| {
+        StorageError::QueryError(format!("Failed to prepare tool_switch query: {e}"))
+    })?;
+
+    let rows: Vec<ToolSwitchSpan> = stmt
+        .query_map(param_refs.as_slice(), |r| {
+            let otel: Option<String> = r.get(3)?;
+            let llm: Option<String> = r.get(4)?;
+            let custom: Option<String> = r.get(5)?;
+            let ttft_ms = normalized_ttft_secs(otel.as_deref(), llm.as_deref(), custom.as_deref())
+                .and_then(|res| res.ok())
+                .map(|secs| secs * 1000.0);
+            Ok(ToolSwitchSpan {
+                session_id: r.get(0)?,
+                tool: r.get(1)?,
+                start_time: r.get(2)?,
+                ttft_ms,
+            })
+        })
+        .map_err(|e| StorageError::QueryError(format!("{e}")))?
+        .collect::<std::result::Result<Vec<_>, _>>()
+        .map_err(|e| StorageError::QueryError(format!("{e}")))?;
+
+    Ok(ToolSwitchStorageResponse {
+        rows,
+        filters_applied: Vec::new(),
+    })
+}
+
 #[cfg(test)]
 mod new_insight_tests {
     use super::*;
@@ -15404,6 +15494,114 @@ mod new_insight_tests_2 {
 
         // The ceiling must be positive.
         assert!(query_time_in_tool(&conn, None, None, 0).is_err());
+    }
+
+    #[test]
+    fn test_tool_switch_storage_orders_rows_and_normalises_ttft() {
+        let conn = make_conn();
+        let d1 = 1_767_225_600_000_000_000_i64; // 2026-01-01 (UTC)
+
+        let ins = |trace: &str,
+                   start: i64,
+                   scope: &str,
+                   session: Option<&str>,
+                   ttft: Option<&str>| {
+            let mut obj = serde_json::json!({
+                "gen_ai.system": "anthropic",
+                "gen_ai.request.model": "test-model",
+                "gen_ai.usage.input_tokens": 1,
+                "gen_ai.usage.output_tokens": 1,
+            });
+            if let Some(s) = session {
+                obj["session.id"] = serde_json::json!(s);
+            }
+            if let Some(t) = ttft {
+                // The OTel attribute carries seconds as a string.
+                obj["gen_ai.server.time_to_first_token"] = serde_json::json!(t);
+            }
+            let scope_json = serde_json::json!({ "name": scope });
+            conn.execute(
+                "INSERT INTO spans (trace_id, span_id, name, kind, start_time, end_time, attributes, scope, flags, created_at)
+                 VALUES (?1, ?2, 'llm_request', 0, ?3, ?3 + 1000000, ?4, ?5, 0, 1000000000)",
+                rusqlite::params![trace, format!("{trace}_s1"), start, obj.to_string(), scope_json.to_string()],
+            )
+            .unwrap();
+        };
+
+        // ts-a: opencode, opencode (no TTFT), then codex with a TTFT —
+        // one tool boundary.
+        ins("tsw1", d1, "com.opencode", Some("ts-a"), Some("0.5"));
+        ins(
+            "tsw2",
+            d1 + 1_000_000_000,
+            "com.opencode",
+            Some("ts-a"),
+            None,
+        );
+        ins(
+            "tsw3",
+            d1 + 2_000_000_000,
+            r#"{"name":"codex_exec"}"#,
+            Some("ts-a"),
+            Some("1.25"),
+        );
+        // ts-b: a single-span session (no boundary possible), placed
+        // after the window cutoff below so both sessions survive it.
+        ins(
+            "tsw4",
+            d1 + 2_500_000_000,
+            "com.anthropic.claude_code",
+            Some("ts-b"),
+            None,
+        );
+        // No session.id: excluded entirely.
+        ins("tsw5", d1, "com.opencode", None, Some("9.0"));
+
+        let result = query_tool_switch_storage(&conn, None, None).unwrap();
+
+        // (session asc, start_time asc): ts-a ×3 then ts-b.
+        assert_eq!(result.rows.len(), 4, "{result:?}");
+        let keys: Vec<(String, String, i64)> = result
+            .rows
+            .iter()
+            .map(|r| (r.session_id.clone(), r.tool.clone(), r.start_time))
+            .collect();
+        assert_eq!(
+            keys,
+            vec![
+                ("ts-a".to_string(), "opencode".to_string(), d1),
+                (
+                    "ts-a".to_string(),
+                    "opencode".to_string(),
+                    d1 + 1_000_000_000
+                ),
+                ("ts-a".to_string(), "codex".to_string(), d1 + 2_000_000_000),
+                (
+                    "ts-b".to_string(),
+                    "claude_code".to_string(),
+                    d1 + 2_500_000_000
+                ),
+            ]
+        );
+        // TTFT normalised to ms (0.5 s -> 500, 1.25 s -> 1250), None
+        // when the attribute is absent.
+        assert_eq!(result.rows[0].ttft_ms, Some(500.0), "{result:?}");
+        assert_eq!(result.rows[1].ttft_ms, None, "{result:?}");
+        assert_eq!(result.rows[2].ttft_ms, Some(1250.0), "{result:?}");
+        assert_eq!(result.rows[3].ttft_ms, None, "{result:?}");
+
+        // Window: only the last ts-a span and the ts-b span remain.
+        let windowed = query_tool_switch_storage(&conn, Some(d1 + 1_500_000_000), None).unwrap();
+        assert_eq!(windowed.rows.len(), 2, "{windowed:?}");
+        assert_eq!(windowed.rows[0].session_id, "ts-a");
+        assert_eq!(windowed.rows[1].session_id, "ts-b");
+
+        // Empty state.
+        let empty = make_conn();
+        assert!(query_tool_switch_storage(&empty, None, None)
+            .unwrap()
+            .rows
+            .is_empty());
     }
 
     #[test]

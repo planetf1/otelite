@@ -2858,6 +2858,74 @@ pub struct CostByProjectResponse {
     pub filters_applied: Vec<String>,
 }
 
+// ── Tool switch overhead (#166) ──────────────────────────────────────────────
+
+/// Per-span input to the tool-switch analysis (#166). `ttft_ms` is the
+/// reconciled first-token latency (None when the span carries no TTFT
+/// attribute the normaliser accepts).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
+pub struct ToolSwitchSpan {
+    pub session_id: String,
+    /// Short tool label, same convention as the daily tool mix.
+    pub tool: String,
+    /// Span start time, ns since epoch.
+    pub start_time: i64,
+    pub ttft_ms: Option<f64>,
+}
+
+/// Response of the storage query behind
+/// `GET /api/genai/tool_switch_overhead` (#166): rows in
+/// (session asc, start_time asc) order — the order the analysis
+/// requires.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
+pub struct ToolSwitchStorageResponse {
+    pub rows: Vec<ToolSwitchSpan>,
+    pub filters_applied: Vec<String>,
+}
+
+/// One (from, to) tool transition aggregate (#166).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
+pub struct ToolSwitchTransition {
+    pub from: String,
+    pub to: String,
+    /// Switches observed for this transition.
+    pub count: u64,
+    /// Mean gap (ms) between the last span of `from` and the first span
+    /// of `to` at each switch.
+    pub avg_gap_ms: f64,
+    /// Mean (cold TTFT − warm TTFT of the destination tool) in ms over
+    /// the switches that carry both measurements; `None` when no switch
+    /// in this transition has a usable TTFT pair.
+    pub avg_ttft_delta_ms: Option<f64>,
+}
+
+/// Response for `GET /api/genai/tool_switch_overhead` (#166).
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
+pub struct ToolSwitchOverheadResponse {
+    /// Tool boundaries detected (a boundary is a consecutive span pair in
+    /// one session whose tools differ).
+    pub switches: u64,
+    /// Mean switch gap (ms); 0.0 when there are no switches.
+    pub avg_gap_ms: f64,
+    /// Mean TTFT of first-spans-after-switch (cold), ms; `None` when no
+    /// cold span carries a TTFT measurement.
+    pub avg_ttft_cold_ms: Option<f64>,
+    /// Mean TTFT of same-tool continuation spans (warm), ms; `None`
+    /// when no warm span carries a TTFT measurement.
+    pub avg_ttft_warm_ms: Option<f64>,
+    /// `avg_ttft_cold_ms / avg_ttft_warm_ms`; `None` when either side is
+    /// unmeasured. > 1.0 means switches measurably slow the first token.
+    pub overhead_ratio: Option<f64>,
+    /// Per-transition aggregates, sorted by count desc then (from, to)
+    /// asc for determinism.
+    pub by_transition: Vec<ToolSwitchTransition>,
+    pub filters_applied: Vec<String>,
+}
+
 // ── Time in tool (#172) ─────────────────────────────────────────────────────
 
 /// Per-(tool, UTC calendar day) active-engagement row (#172).

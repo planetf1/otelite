@@ -2955,3 +2955,111 @@ async fn test_bob_hook_overhead_scoped_to_bob_metric() {
         "{v}"
     );
 }
+
+// ── Tool switch overhead (#166) ─────────────────────────────────────────────
+
+/// LLM span with session.id and an optional OTel TTFT attribute (seconds,
+/// the wire form the normaliser accepts).
+fn tsw_span(span_id: &str, scope: &str, start: i64, session: &str, ttft_secs: Option<f64>) -> Span {
+    let mut attributes: HashMap<String, String> = HashMap::new();
+    attributes.insert("otel.scope.name".to_string(), scope.to_string());
+    attributes.insert("gen_ai.system".to_string(), "anthropic".to_string());
+    attributes.insert("gen_ai.request.model".to_string(), "test-model".to_string());
+    attributes.insert("gen_ai.usage.input_tokens".to_string(), "1".to_string());
+    attributes.insert("gen_ai.usage.output_tokens".to_string(), "1".to_string());
+    attributes.insert("session.id".to_string(), session.to_string());
+    if let Some(t) = ttft_secs {
+        attributes.insert(
+            "gen_ai.server.time_to_first_token".to_string(),
+            t.to_string(),
+        );
+    }
+    Span {
+        trace_id: "t-tool-switch".to_string(),
+        span_id: span_id.to_string(),
+        parent_span_id: None,
+        name: "llm_request".to_string(),
+        kind: SpanKind::Internal,
+        start_time: start,
+        end_time: start + 1_000_000,
+        attributes,
+        status: SpanStatus {
+            code: SpanStatusCode::Ok,
+            message: None,
+        },
+        events: Vec::new(),
+        resource: None,
+    }
+}
+
+#[tokio::test]
+async fn test_tool_switch_overhead_detects_boundaries() {
+    let (server, storage, _temp_dir) = setup_test_server().await;
+    let app = server.build_router();
+
+    // Empty state: no switches.
+    let (status, v) = get_json(&app, "/api/genai/tool_switch_overhead").await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(v["switches"], 0);
+    assert!(v["by_transition"].as_array().unwrap().is_empty());
+
+    let d1 = 1_767_225_600_000_000_000_i64;
+    let ms = 1_000_000_i64;
+    // Session s1: opencode (warm continuation), then a switch to codex.
+    // Cold codex TTFT 0.8 s, warm opencode TTFT 0.1 s.
+    let spans = vec![
+        tsw_span("tsw-1", "com.opencode", d1, "s1", Some(0.1)),
+        tsw_span("tsw-2", "com.opencode", d1 + 500 * ms, "s1", Some(0.1)),
+        tsw_span("tsw-3", "codex_exec", d1 + 5_500 * ms, "s1", Some(0.8)),
+        // Session s2: a single-tool session (no boundary).
+        tsw_span("tsw-4", "com.opencode", d1, "s2", None),
+        tsw_span("tsw-5", "com.opencode", d1 + 100 * ms, "s2", None),
+    ];
+    storage.write_span_batch(&spans).await.unwrap();
+
+    // Windowed query — a different cache key than the empty-state call.
+    let (status, v) = get_json(
+        &app,
+        &format!(
+            "/api/genai/tool_switch_overhead?start_time={d1}&end_time={}",
+            d1 + 86_400_000_000_000
+        ),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+
+    // Exactly one boundary (opencode -> codex in s1).
+    assert_eq!(v["switches"], 1, "{v}");
+    // Gap = 5500 - 500 = 5000 ms.
+    assert!(
+        (v["avg_gap_ms"].as_f64().unwrap() - 5000.0).abs() < 1e-9,
+        "{v}"
+    );
+    // Cold = the boundary span (0.8 s -> 800 ms); warm = same-tool
+    // continuations: s1 opencode@500ms (0.1 s) and s2 opencode@100ms —
+    // s2 spans carry no TTFT, so warm = [100.0].
+    assert!(
+        (v["avg_ttft_cold_ms"].as_f64().unwrap() - 800.0).abs() < 1e-9,
+        "{v}"
+    );
+    assert!(
+        (v["avg_ttft_warm_ms"].as_f64().unwrap() - 100.0).abs() < 1e-9,
+        "{v}"
+    );
+    assert!(
+        (v["overhead_ratio"].as_f64().unwrap() - 8.0).abs() < 1e-9,
+        "{v}"
+    );
+
+    let t = &v["by_transition"][0];
+    assert_eq!(t["from"], "opencode");
+    assert_eq!(t["to"], "codex");
+    assert_eq!(t["count"], 1);
+    assert!(
+        (t["avg_gap_ms"].as_f64().unwrap() - 5000.0).abs() < 1e-9,
+        "{v}"
+    );
+    // The destination (codex) has no warm baseline, so the delta is
+    // unmeasured — null, not zero.
+    assert!(t["avg_ttft_delta_ms"].is_null(), "{v}");
+}
