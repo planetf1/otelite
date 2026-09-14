@@ -683,6 +683,17 @@ pub trait StorageBackend: Send + Sync {
         Err(StorageError::QueryError("not implemented".to_string()))
     }
 
+    /// Codex idle-ratio series per UTC day (#181): how the model-wait
+    /// share of turn time trends over time.
+    async fn query_codex_idle_ratio_series(
+        &self,
+        start_time: Option<i64>,
+        end_time: Option<i64>,
+    ) -> Result<crate::api::CodexIdleRatioResponse> {
+        let _ = (start_time, end_time);
+        Err(StorageError::QueryError("not implemented".to_string()))
+    }
+
     /// Session × model cross-tab: tokens and cost per (session_id, model) pair. (#115)
     async fn query_session_model_breakdown(
         &self,

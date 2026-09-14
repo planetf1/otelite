@@ -2597,6 +2597,31 @@ pub struct CodexTurnBreakdownResponse {
     pub filters_applied: Vec<String>,
 }
 
+/// One UTC calendar day in the Codex idle-ratio series (#181).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
+pub struct CodexIdleRatioRow {
+    /// UTC calendar day `YYYY-MM-DD` (same convention as the daily tool mix).
+    pub date: String,
+    /// Per-span idle ratio `idle_ns / (busy_ns + idle_ns)` averaged over
+    /// the day's spans — a fraction 0-1. High = model wait dominates;
+    /// low = tool execution dominates.
+    pub avg_idle_ratio: f64,
+    pub avg_busy_ms: f64,
+    pub avg_idle_ms: f64,
+    pub span_count: u64,
+}
+
+/// Response for `GET /api/genai/codex_idle_ratio` (#181). Empty when no
+/// Codex spans carry both `busy_ns` and `idle_ns` in the window.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
+pub struct CodexIdleRatioResponse {
+    /// Rows in date ascending order.
+    pub rows: Vec<CodexIdleRatioRow>,
+    pub filters_applied: Vec<String>,
+}
+
 /// One (session, model) row in the session×model cross-tab (#115).
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]

@@ -13,6 +13,12 @@ have to work around), not implementation detail.
 
 ### Added
 
+- New Codex idle-ratio trend: the Codex Busy/Idle report gains an
+  "Idle ratio trend" tab (and `otelite usage --codex-idle-ratio` prints
+  the same data as a per-day table) showing how the model-wait share of
+  turn time has moved day by day — a rising ratio means model latency is
+  becoming the bottleneck, a falling one means your time is in tool
+  execution (#181)
 - New Session Chains report: resumed sessions rolled up into work threads —
   a `--continue`d session keeps its ID, so each thread's activity splits
   into segments at gaps beyond 2 hours; see which threads you sustain vs

@@ -9317,6 +9317,81 @@ pub fn query_codex_turn_breakdown(
     })
 }
 
+/// Codex idle-ratio series per UTC calendar day (#181).
+///
+/// Uses the same `run_sampling_request` spans as
+/// [`query_codex_turn_breakdown`], which carry `busy_ns` (tool
+/// execution) and `idle_ns` (model wait). The per-day idle ratio is
+/// the mean of each span's `idle_ns / (busy_ns + idle_ns)` — high
+/// ratios mean the model is the bottleneck. Spans missing either
+/// attribute are excluded; the response is empty when none remain.
+pub fn query_codex_idle_ratio_series(
+    conn: &Connection,
+    start_time: Option<i64>,
+    end_time: Option<i64>,
+) -> Result<otelite_core::api::CodexIdleRatioResponse> {
+    use otelite_core::api::{CodexIdleRatioResponse, CodexIdleRatioRow};
+
+    let mut where_clause = String::from(
+        "WHERE name = 'run_sampling_request' AND json_valid(attributes)
+           AND json_extract(attributes,'$.busy_ns') IS NOT NULL
+           AND json_extract(attributes,'$.idle_ns') IS NOT NULL",
+    );
+    let mut params: Vec<Box<dyn rusqlite::ToSql>> = Vec::new();
+    if let Some(s) = start_time {
+        where_clause.push_str(" AND start_time >= ?");
+        params.push(Box::new(s));
+    }
+    if let Some(e) = end_time {
+        where_clause.push_str(" AND start_time <= ?");
+        params.push(Box::new(e));
+    }
+
+    let sql = format!(
+        "SELECT
+            strftime('%Y-%m-%d', datetime(start_time / 1000000000, 'unixepoch')) AS date,
+            COUNT(*) AS span_count,
+            AVG(CAST(json_extract(attributes,'$.busy_ns') AS REAL) / 1000000.0) AS avg_busy_ms,
+            AVG(CAST(json_extract(attributes,'$.idle_ns') AS REAL) / 1000000.0) AS avg_idle_ms,
+            AVG(
+                CASE WHEN CAST(json_extract(attributes,'$.busy_ns') AS REAL)
+                        + CAST(json_extract(attributes,'$.idle_ns') AS REAL) > 0
+                     THEN CAST(json_extract(attributes,'$.idle_ns') AS REAL)
+                          / (CAST(json_extract(attributes,'$.busy_ns') AS REAL)
+                             + CAST(json_extract(attributes,'$.idle_ns') AS REAL))
+                     ELSE NULL END
+            ) AS avg_idle_ratio
+         FROM spans
+         {where_clause}
+         GROUP BY date
+         ORDER BY date ASC"
+    );
+
+    let param_refs: Vec<&dyn rusqlite::ToSql> = params.iter().map(|p| p.as_ref()).collect();
+    let mut stmt = conn.prepare(&sql).map_err(|e| {
+        StorageError::QueryError(format!("Failed to prepare codex_idle_ratio query: {e}"))
+    })?;
+
+    let rows: Vec<CodexIdleRatioRow> = stmt
+        .query_map(param_refs.as_slice(), |r| {
+            Ok(CodexIdleRatioRow {
+                date: r.get(0)?,
+                span_count: r.get::<_, i64>(1).unwrap_or(0) as u64,
+                avg_busy_ms: r.get::<_, f64>(2).unwrap_or(0.0),
+                avg_idle_ms: r.get::<_, f64>(3).unwrap_or(0.0),
+                avg_idle_ratio: r.get::<_, Option<f64>>(4)?.unwrap_or(0.0),
+            })
+        })
+        .map_err(|e| StorageError::QueryError(format!("{e}")))?
+        .collect::<std::result::Result<Vec<_>, _>>()
+        .map_err(|e| StorageError::QueryError(format!("{e}")))?;
+
+    Ok(CodexIdleRatioResponse {
+        rows,
+        filters_applied: Vec::new(),
+    })
+}
+
 /// Session × model cross-tab: tokens and estimated cost per (session_id, model) pair. (#115)
 ///
 /// Returns rows sorted by requests descending. Spans that carry no session.id
@@ -12770,6 +12845,92 @@ mod tests {
             (row.busy_ratio - 0.5).abs() < 0.01,
             "busy ratio should be ~0.5"
         );
+    }
+
+    #[test]
+    fn test_query_codex_idle_ratio_series() {
+        let conn = setup_test_db();
+        const SEC: i64 = 1_000_000_000;
+        let d1 = 1_767_225_600_000_000_000_i64; // 2026-01-01 (UTC)
+        let d2 = d1 + 86_400 * SEC;
+
+        // Day 1: two spans — ratios 0.75 and 0.5 -> avg 0.625.
+        insert_span_simple(
+            &conn,
+            "run_sampling_request",
+            d1,
+            d1 + 2 * SEC,
+            r#"{"busy_ns":100000000,"idle_ns":300000000}"#,
+        );
+        insert_span_simple(
+            &conn,
+            "run_sampling_request",
+            d1 + 3600 * SEC,
+            d1 + 3602 * SEC,
+            r#"{"busy_ns":300000000,"idle_ns":300000000}"#,
+        );
+        // Day 2: one span — ratio 0.1 (model-wait share fell).
+        insert_span_simple(
+            &conn,
+            "run_sampling_request",
+            d2 + 60 * SEC,
+            d2 + 62 * SEC,
+            r#"{"busy_ns":900000000,"idle_ns":100000000}"#,
+        );
+        // Excluded: missing idle_ns, and a non-sampling span.
+        insert_span_simple(
+            &conn,
+            "run_sampling_request",
+            d1,
+            d1 + SEC,
+            r#"{"busy_ns":100000000}"#,
+        );
+        insert_span_simple(
+            &conn,
+            "handle_responses",
+            d1,
+            d1 + SEC,
+            r#"{"busy_ns":100000000,"idle_ns":100000000}"#,
+        );
+
+        let result = query_codex_idle_ratio_series(&conn, None, None).unwrap();
+        assert_eq!(result.rows.len(), 2, "{result:?}");
+        // Date asc.
+        assert_eq!(result.rows[0].date, "2026-01-01");
+        assert_eq!(result.rows[1].date, "2026-01-02");
+        // Day 1: mean of (0.75, 0.5), busy (100+300)/2 = 200 ms,
+        // idle (300+300)/2 = 300 ms, 2 spans.
+        assert!(
+            (result.rows[0].avg_idle_ratio - 0.625).abs() < 1e-9,
+            "{result:?}"
+        );
+        assert!(
+            (result.rows[0].avg_busy_ms - 200.0).abs() < 1e-6,
+            "{result:?}"
+        );
+        assert!(
+            (result.rows[0].avg_idle_ms - 300.0).abs() < 1e-6,
+            "{result:?}"
+        );
+        assert_eq!(result.rows[0].span_count, 2);
+        // Day 2: the idle share dropped to 0.1 — the trend point.
+        assert!(
+            (result.rows[1].avg_idle_ratio - 0.1).abs() < 1e-9,
+            "{result:?}"
+        );
+        assert_eq!(result.rows[1].span_count, 1);
+
+        // A day-2-only window drops the day-1 row.
+        let day2 = query_codex_idle_ratio_series(&conn, Some(d2), None).unwrap();
+        assert_eq!(day2.rows.len(), 1, "{day2:?}");
+        assert_eq!(day2.rows[0].date, "2026-01-02");
+
+        // Empty state.
+        let empty = setup_test_db();
+        assert!(query_codex_idle_ratio_series(&empty, None, None)
+            .unwrap()
+            .rows
+            .is_empty());
     }
 
     #[test]

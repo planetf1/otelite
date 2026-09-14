@@ -274,6 +274,7 @@ class ApiClient {
     async getGuardianStats(params = {}) { return this.get('/genai/guardian_stats', params); }
     async getMultiAgentStats(params = {}) { return this.get('/genai/multi_agent_stats', params); }
     async getCodexTurnBreakdown(params = {}) { return this.get('/genai/codex_turn_breakdown', params); }
+    async getCodexIdleRatio(params = {}) { return this.get('/genai/codex_idle_ratio', params); }
     async getCrossToolTtft(params = {})     { return this.get('/genai/cross_tool_ttft', params); }
     async getHookOverhead(params = {})      { return this.get('/genai/hook_overhead', params); }
     async getBobHookOverhead(params = {})   { return this.get('/genai/bob_hook_overhead', params); }

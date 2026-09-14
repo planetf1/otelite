@@ -3285,3 +3285,100 @@ async fn test_guardian_stats_by_action_breakdown() {
     assert_eq!(rows[1]["denied"], 0);
     assert_eq!(rows[1]["denial_rate"], 0.0);
 }
+
+// ── Codex idle ratio series (#181) ──────────────────────────────────────────
+
+/// Codex sampling-request span carrying busy_ns / idle_ns (the wire
+/// form is JSON numbers in the attributes object).
+fn idle_ratio_span(span_id: &str, start: i64, busy_ns: Option<i64>, idle_ns: Option<i64>) -> Span {
+    let mut attributes: HashMap<String, String> = HashMap::new();
+    attributes.insert("otel.scope.name".to_string(), "codex_cli_rs".to_string());
+    if let Some(b) = busy_ns {
+        attributes.insert("busy_ns".to_string(), b.to_string());
+    }
+    if let Some(i) = idle_ns {
+        attributes.insert("idle_ns".to_string(), i.to_string());
+    }
+    Span {
+        trace_id: "t-codex-idle".to_string(),
+        span_id: span_id.to_string(),
+        parent_span_id: None,
+        name: "run_sampling_request".to_string(),
+        kind: SpanKind::Internal,
+        start_time: start,
+        end_time: start + 2_000_000_000,
+        attributes,
+        status: SpanStatus {
+            code: SpanStatusCode::Ok,
+            message: None,
+        },
+        events: Vec::new(),
+        resource: None,
+    }
+}
+
+#[tokio::test]
+async fn test_codex_idle_ratio_per_day() {
+    let (server, storage, _temp_dir) = setup_test_server().await;
+    let app = server.build_router();
+
+    // Empty state.
+    let (status, v) = get_json(&app, "/api/genai/codex_idle_ratio").await;
+    assert_eq!(status, StatusCode::OK);
+    assert!(v["rows"].as_array().unwrap().is_empty());
+
+    const SEC: i64 = 1_000_000_000;
+    let d1 = 1_767_225_600_000_000_000_i64; // 2026-01-01 (UTC)
+    let d2 = d1 + 86_400 * SEC;
+
+    // Day 1: ratios 0.75 and 0.5 -> mean 0.625. Day 2: 0.1.
+    let spans = vec![
+        idle_ratio_span("ir-1", d1, Some(100_000_000), Some(300_000_000)),
+        idle_ratio_span(
+            "ir-2",
+            d1 + 3600 * SEC,
+            Some(300_000_000),
+            Some(300_000_000),
+        ),
+        idle_ratio_span("ir-3", d2 + 60 * SEC, Some(900_000_000), Some(100_000_000)),
+        // Missing idle_ns: excluded from the series.
+        idle_ratio_span("ir-4", d1, Some(100_000_000), None),
+    ];
+    storage.write_span_batch(&spans).await.unwrap();
+
+    // Windowed query — a different cache key than the empty-state call.
+    let (status, v) = get_json(
+        &app,
+        &format!(
+            "/api/genai/codex_idle_ratio?start_time={d1}&end_time={}",
+            d1 + 2 * 86_400 * SEC
+        ),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+
+    let rows = v["rows"].as_array().unwrap();
+    assert_eq!(rows.len(), 2, "{v}");
+    // Date asc; day 1 is the mean of its two per-span ratios.
+    assert_eq!(rows[0]["date"], "2026-01-01");
+    assert!(
+        (rows[0]["avg_idle_ratio"].as_f64().unwrap() - 0.625).abs() < 1e-9,
+        "{v}"
+    );
+    assert_eq!(rows[0]["span_count"], 2);
+    assert!(
+        (rows[0]["avg_busy_ms"].as_f64().unwrap() - 200.0).abs() < 1e-6,
+        "{v}"
+    );
+    assert!(
+        (rows[0]["avg_idle_ms"].as_f64().unwrap() - 300.0).abs() < 1e-6,
+        "{v}"
+    );
+    // Day 2: the idle share dropped — the trend point.
+    assert_eq!(rows[1]["date"], "2026-01-02");
+    assert!(
+        (rows[1]["avg_idle_ratio"].as_f64().unwrap() - 0.1).abs() < 1e-9,
+        "{v}"
+    );
+    assert_eq!(rows[1]["span_count"], 1);
+}

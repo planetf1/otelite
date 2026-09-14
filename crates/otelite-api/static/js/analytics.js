@@ -172,6 +172,9 @@ class AnalyticsView {
         this.trEnd = now;
         this.trStart = new Date(now.getTime() - this.trWindowHours * 3600000);
         this.topNSort = 'cost';
+        // Codex Busy/Idle section tab: 'breakdown' (per model/project)
+        // or 'trend' (idle ratio per day, #181).
+        this.codexTurnsTab = 'breakdown';
         // Global filter bar state (#135) — persisted in the URL hash query
         this.filters = parseHashQuery();
         this.appliedUnion = new Set();
@@ -4291,26 +4294,102 @@ class AnalyticsView {
     async _loadCodexTurnsSection() {
         this._setSectionLoading('codex_turns');
         try {
-            const data = await this.api.getCodexTurnBreakdown(this._baseParams());
+            // Both tab payloads up front, so tab switching re-renders
+            // from cache without refetching.
+            const [data, trend] = await Promise.all([
+                this.api.getCodexTurnBreakdown(this._baseParams()),
+                this.api.getCodexIdleRatio(this._baseParams()),
+            ]);
             const rows = data.rows || [];
-            if (!rows.length) {
+            const trendRows = (trend && trend.rows) || [];
+            if (!rows.length && !trendRows.length) {
                 this._setSectionBody('codex_turns', '<div class="empty-state-hint">No Codex turn data in this window.</div>');
                 this.loadedSections.add('codex_turns');
                 return;
             }
-            const fmtMs = v => v != null ? `${v.toFixed(0)} ms` : '—';
-            const fmtPct = v => v != null ? `${(v * 100).toFixed(1)}%` : '—';
-            let html = '<div class="analytics-table-wrap"><table class="analytics-table"><thead><tr><th>Model</th><th>Project</th><th>Turns</th><th>Avg duration</th><th>Avg busy</th><th>Avg idle</th><th>Busy ratio</th></tr></thead><tbody>';
-            for (const r of rows.slice(0, 30)) {
-                html += `<tr><td>${this._esc(r.model)}</td><td>${this._esc(r.project)}</td><td>${Number(r.turn_count).toLocaleString()}</td><td>${fmtMs(r.avg_duration_ms)}</td><td>${fmtMs(r.avg_busy_ms)}</td><td>${fmtMs(r.avg_idle_ms)}</td><td>${fmtPct(r.busy_ratio)}</td></tr>`;
-            }
-            html += '</tbody></table></div>';
-            if (rows.length > 30) html += `<p class="empty-state-hint">Showing top 30 of ${rows.length} rows.</p>`;
+            const renderContent = () => this.codexTurnsTab === 'trend'
+                ? this._codexTurnsTrendHtml(trendRows)
+                : this._codexTurnsBreakdownHtml(rows);
+            const tabButtons = [
+                { id: 'breakdown', label: 'By model / project' },
+                { id: 'trend', label: 'Idle ratio trend' },
+            ].map(t => `<button class="top-n-tab${t.id === this.codexTurnsTab ? ' active' : ''}" data-codex-tab="${t.id}">${t.label}</button>`).join('');
+            const html = `<div class="top-n-tabs" id="codex-turns-tabs">${tabButtons}</div>`
+                + `<div id="codex-turns-content">${renderContent()}</div>`;
             this._setSectionBody('codex_turns', html);
             this.loadedSections.add('codex_turns');
+            // Tab switching re-renders in place. The node loader
+            // harness has no DOM — the wiring is null-safe.
+            const tabBar = typeof document !== 'undefined' ? document.getElementById('codex-turns-tabs') : null;
+            if (tabBar) {
+                tabBar.querySelectorAll('.top-n-tab').forEach(btn => {
+                    btn.addEventListener('click', () => {
+                        const id = btn.dataset.codexTab;
+                        if (id !== 'breakdown' && id !== 'trend') return;
+                        this.codexTurnsTab = id;
+                        const content = document.getElementById('codex-turns-content');
+                        if (content) content.innerHTML = renderContent();
+                        tabBar.querySelectorAll('.top-n-tab').forEach(b => b.classList.toggle('active', b.dataset.codexTab === id));
+                    });
+                });
+            }
         } catch (err) {
             this._setSectionError('codex_turns', err);
         }
+    }
+
+    // Codex Busy/Idle tab content: per (model, project) averages (#164).
+    _codexTurnsBreakdownHtml(rows) {
+        if (!rows.length) {
+            return '<div class="empty-state-hint">No Codex turn data in this window.</div>';
+        }
+        const fmtMs = v => v != null ? `${v.toFixed(0)} ms` : '—';
+        const fmtPct = v => v != null ? `${(v * 100).toFixed(1)}%` : '—';
+        let html = '<div class="analytics-table-wrap"><table class="analytics-table"><thead><tr><th>Model</th><th>Project</th><th>Turns</th><th>Avg duration</th><th>Avg busy</th><th>Avg idle</th><th>Busy ratio</th></tr></thead><tbody>';
+        for (const r of rows.slice(0, 30)) {
+            html += `<tr><td>${this._esc(r.model)}</td><td>${this._esc(r.project)}</td><td>${Number(r.turn_count).toLocaleString()}</td><td>${fmtMs(r.avg_duration_ms)}</td><td>${fmtMs(r.avg_busy_ms)}</td><td>${fmtMs(r.avg_idle_ms)}</td><td>${fmtPct(r.busy_ratio)}</td></tr>`;
+        }
+        html += '</tbody></table></div>';
+        if (rows.length > 30) html += `<p class="empty-state-hint">Showing top 30 of ${rows.length} rows.</p>`;
+        return html;
+    }
+
+    // Codex Busy/Idle tab content: idle ratio per UTC day (#181). High
+    // ratio = model wait is the bottleneck; low = tool execution
+    // dominates. Bars on a fixed 0-100% scale so days compare.
+    _codexTurnsTrendHtml(rows) {
+        if (!rows.length) {
+            return '<div class="empty-state-hint">No Codex idle-ratio data in this window (spans need both busy_ns and idle_ns).</div>';
+        }
+        const maxDays = 30;
+        const days = rows.slice(-maxDays);
+        const width = 100;
+        const barGap = 0.5;
+        const barWidth = Math.max((width - barGap * (days.length - 1)) / days.length, 0.1);
+        const chartHeight = 100;
+        const bars = days.map((r, i) => {
+            const h = Math.min(r.avg_idle_ratio, 1) * chartHeight;
+            const x = i * (barWidth + barGap);
+            const y = chartHeight - h;
+            const title = `${r.date}\nidle ${(r.avg_idle_ratio * 100).toFixed(1)}%\navg busy ${Math.round(r.avg_busy_ms)} ms · idle ${Math.round(r.avg_idle_ms)} ms\n${r.span_count} spans`;
+            return `<rect class="cost-chart-bar" x="${x.toFixed(3)}" y="${y.toFixed(3)}" width="${barWidth.toFixed(3)}" height="${h.toFixed(3)}"><title>${this._esc(title)}</title></rect>`;
+        }).join('');
+        let html = `<h3>Idle ratio per day — ${(rows[rows.length - 1].avg_idle_ratio * 100).toFixed(1)}% on ${rows[rows.length - 1].date}</h3>
+            <div class="cost-chart">
+                <svg class="cost-chart-svg" viewBox="0 0 ${width} ${chartHeight}" preserveAspectRatio="none">${bars}</svg>
+                <div class="cost-chart-axis-labels">
+                    <span class="cost-chart-axis-left">${this._esc(days[0].date)}</span>
+                    <span class="cost-chart-axis-right">${this._esc(days[days.length - 1].date)}</span>
+                </div>
+                <p class="table-hint">Bar height = share of turn time spent waiting on the model. High = model latency is the bottleneck; low = tool execution dominates.</p>
+            </div>`;
+        html += '<div class="analytics-table-wrap"><table class="analytics-table"><thead><tr><th>Day</th><th>Idle %</th><th>Avg busy</th><th>Avg idle</th><th>Spans</th></tr></thead><tbody>';
+        for (const r of [...days].reverse()) {
+            html += `<tr><td>${this._esc(r.date)}</td><td>${(r.avg_idle_ratio * 100).toFixed(1)}%</td><td>${Math.round(r.avg_busy_ms)} ms</td><td>${Math.round(r.avg_idle_ms)} ms</td><td>${Number(r.span_count).toLocaleString()}</td></tr>`;
+        }
+        html += '</tbody></table></div>';
+        if (rows.length > maxDays) html += `<p class="empty-state-hint">Showing the last ${maxDays} of ${rows.length} days.</p>`;
+        return html;
     }
 
     async _loadSessionModelSection() {

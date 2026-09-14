@@ -2986,6 +2986,39 @@ pub async fn get_codex_turn_breakdown(
     Ok(Json(response))
 }
 
+/// Codex idle-ratio series per UTC day (#181): how the model-wait
+/// share of turn time trends over time. High ratio = the model is the
+/// bottleneck; low ratio = tool execution dominates.
+#[utoipa::path(
+    get,
+    path = "/api/genai/codex_idle_ratio",
+    params(TimeRangeQuery),
+    responses(
+        (status = 200, description = "Per-day Codex idle ratio series", body = otelite_core::api::CodexIdleRatioResponse),
+        (status = 500, description = "Internal server error", body = ErrorResponse)
+    ),
+    tag = "genai"
+)]
+pub async fn get_codex_idle_ratio(
+    State(state): State<AppState>,
+    Query(query): Query<TimeRangeQuery>,
+) -> Result<Json<otelite_core::api::CodexIdleRatioResponse>, (StatusCode, Json<ErrorResponse>)> {
+    let mut response = state
+        .storage
+        .query_codex_idle_ratio_series(query.start_time, query.end_time)
+        .await
+        .map_err(|e| {
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(ErrorResponse::storage_error(format!(
+                    "query codex_idle_ratio: {e}"
+                ))),
+            )
+        })?;
+    response.filters_applied = query.filters().applied(&[]);
+    Ok(Json(response))
+}
+
 /// Session × model cross-tab: tokens and cost per (session_id, model) pair (#115).
 #[utoipa::path(
     get,

@@ -202,6 +202,10 @@ pub struct UsageCommand {
     #[arg(long)]
     pub codex_turns: bool,
 
+    /// Show the Codex idle-ratio trend per day (model wait vs tool execution)
+    #[arg(long)]
+    pub codex_idle_ratio: bool,
+
     /// Show cross-tool first-token latency comparison (Claude Code, opencode, pi) from spans
     #[arg(long)]
     pub cross_tool_ttft: bool,
@@ -376,6 +380,8 @@ struct UsageOutput {
     codex_ttft: Option<otelite_core::api::CodexTtftResponse>,
     #[serde(skip_serializing_if = "Option::is_none")]
     codex_turns: Option<otelite_core::api::CodexTurnBreakdownResponse>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    codex_idle_ratio: Option<otelite_core::api::CodexIdleRatioResponse>,
     #[serde(skip_serializing_if = "Option::is_none")]
     cross_tool_ttft: Option<otelite_core::api::CrossToolTtftResponse>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -1058,6 +1064,21 @@ impl UsageCommand {
             None
         };
 
+        // --codex-idle-ratio
+        let codex_idle_ratio: Option<otelite_core::api::CodexIdleRatioResponse> =
+            if self.codex_idle_ratio {
+                Some(
+                    storage
+                        .query_codex_idle_ratio_series(Some(start_time), Some(end_time))
+                        .await
+                        .map_err(|e| {
+                            Error::ApiError(format!("Failed to query codex_idle_ratio: {e}"))
+                        })?,
+                )
+            } else {
+                None
+            };
+
         // --cross-tool-ttft
         let cross_tool_ttft: Option<otelite_core::api::CrossToolTtftResponse> =
             if self.cross_tool_ttft {
@@ -1439,6 +1460,7 @@ impl UsageCommand {
                     multi_agent,
                     codex_ttft,
                     codex_turns,
+                    codex_idle_ratio,
                     cross_tool_ttft,
                     hook_overhead,
                     bob_hook_overhead,
@@ -1642,6 +1664,11 @@ impl UsageCommand {
 
                 if let Some(ref resp) = codex_turns {
                     display_codex_turns(resp);
+                    println!();
+                }
+
+                if let Some(ref resp) = codex_idle_ratio {
+                    display_codex_idle_ratio(resp);
                     println!();
                 }
 
@@ -3279,6 +3306,46 @@ fn display_codex_turns(resp: &otelite_core::api::CodexTurnBreakdownResponse) {
     println!("{}", table);
 }
 
+/// Table cells for the Codex idle-ratio trend (#181), in response order
+/// (date asc): day, idle % (the model-wait share), avg busy/idle ms,
+/// span count.
+fn codex_idle_ratio_rows(resp: &otelite_core::api::CodexIdleRatioResponse) -> Vec<Vec<String>> {
+    resp.rows
+        .iter()
+        .map(|r| {
+            vec![
+                r.date.clone(),
+                format!("{:.1}%", r.avg_idle_ratio * 100.0),
+                format!("{:.0}", r.avg_busy_ms),
+                format!("{:.0}", r.avg_idle_ms),
+                r.span_count.to_string(),
+            ]
+        })
+        .collect()
+}
+
+fn display_codex_idle_ratio(resp: &otelite_core::api::CodexIdleRatioResponse) {
+    if resp.rows.is_empty() {
+        println!("Codex Idle Ratio: no Codex turn data in range");
+        return;
+    }
+    let mut table = Table::new();
+    fit_to_terminal(&mut table);
+    table.load_preset(UTF8_FULL);
+    table.set_header(vec![
+        Cell::new("Day").fg(Color::Cyan),
+        Cell::new("Idle %").fg(Color::Cyan),
+        Cell::new("Avg busy (ms)").fg(Color::Cyan),
+        Cell::new("Avg idle (ms)").fg(Color::Cyan),
+        Cell::new("Spans").fg(Color::Cyan),
+    ]);
+    for row in codex_idle_ratio_rows(resp) {
+        table.add_row(row.into_iter().map(Cell::new).collect::<Vec<_>>());
+    }
+    println!("Codex Idle Ratio Trend (idle % = model wait ÷ turn time):");
+    println!("{}", table);
+}
+
 fn display_cross_tool_ttft(resp: &otelite_core::api::CrossToolTtftResponse) {
     if resp.rows.is_empty() {
         println!("Cross-Tool TTFT: no span-level ttft_ms data in range");
@@ -4638,5 +4705,54 @@ mod tests {
 
         // Empty state: no rows.
         assert!(session_chain_rows(&SessionChainsResponse::default()).is_empty());
+    }
+
+    #[test]
+    fn test_codex_idle_ratio_rows() {
+        use otelite_core::api::{CodexIdleRatioResponse, CodexIdleRatioRow};
+        let resp = CodexIdleRatioResponse {
+            rows: vec![
+                CodexIdleRatioRow {
+                    date: "2026-01-01".into(),
+                    avg_idle_ratio: 0.625,
+                    avg_busy_ms: 200.0,
+                    avg_idle_ms: 300.0,
+                    span_count: 2,
+                },
+                CodexIdleRatioRow {
+                    date: "2026-01-02".into(),
+                    avg_idle_ratio: 0.1,
+                    avg_busy_ms: 900.0,
+                    avg_idle_ms: 100.0,
+                    span_count: 1,
+                },
+            ],
+            filters_applied: vec![],
+        };
+        let rows = codex_idle_ratio_rows(&resp);
+        assert_eq!(rows.len(), 2);
+        assert_eq!(
+            rows[0],
+            vec![
+                "2026-01-01".to_string(),
+                "62.5%".to_string(),
+                "200".to_string(),
+                "300".to_string(),
+                "2".to_string(),
+            ]
+        );
+        assert_eq!(
+            rows[1],
+            vec![
+                "2026-01-02".to_string(),
+                "10.0%".to_string(),
+                "900".to_string(),
+                "100".to_string(),
+                "1".to_string(),
+            ]
+        );
+
+        // Empty state: no rows.
+        assert!(codex_idle_ratio_rows(&CodexIdleRatioResponse::default()).is_empty());
     }
 }
