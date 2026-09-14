@@ -4121,61 +4121,122 @@ class AnalyticsView {
 
     // ── Daily Tool Mix (#insight-2) ───────────────────────────────────────────
 
+    // Daily Tool Mix (#insight-2, tokens/cost views #179). Renders three
+    // switchable views over the same (day, tool) rows: requests (metric
+    // datapoints), tokens (LLM input+output+cache-read), and cost (USD,
+    // null where no pricing data applies).
     _buildDailyToolMix(rows, tools) {
-        const dayMap = {};
-        for (const r of rows) {
-            if (!dayMap[r.day]) dayMap[r.day] = {};
-            dayMap[r.day][r.tool] = r.datapoints;
-        }
-        const days = Object.keys(dayMap).sort();
-
         const toolColours = {
             claude_code: '#f5a623',
             opencode:    '#4f8cff',
             codex:       '#34c98e',
         };
-        const defaultColours = ['#c65ce0', '#e5534b', '#5ac8c8'];
+        const defaultColours = ['#c65ce0', '#e5534b', '#5ac8c8', '#8a63d2', '#d28a3a'];
         const getColour = (tool, i) => toolColours[tool] || defaultColours[i % defaultColours.length];
 
-        const maxTotal = Math.max(...days.map(d =>
-            tools.reduce((s, t) => s + (dayMap[d][t] || 0), 0)
-        ), 1);
+        // metric view: name -> { value(r), fmt(v), unit, hint }
+        const views = {
+            requests: {
+                title: 'Requests',
+                hint: 'Metric datapoints per tool per calendar day (UTC).',
+                value: (r) => r.datapoints || 0,
+                fmt: (v) => Number(v).toLocaleString(),
+                unit: 'datapoints',
+            },
+            tokens: {
+                title: 'Tokens',
+                hint: 'LLM tokens per tool per calendar day (input + output + cache read).',
+                value: (r) => (r.input_tokens || 0) + (r.output_tokens || 0) + (r.cache_read_tokens || 0),
+                fmt: (v) => Number(v).toLocaleString(),
+                unit: 'tokens',
+            },
+            cost: {
+                title: 'Cost',
+                hint: 'Estimated USD cost per tool per calendar day; blank where no pricing data applies.',
+                value: (r) => r.total_cost_usd || 0,
+                fmt: (v) => v > 0 ? `$${v.toFixed(2)}` : '—',
+                unit: 'USD',
+            },
+        };
 
-        const bars = days.map(d => {
-            const total = tools.reduce((s, t) => s + (dayMap[d][t] || 0), 0);
-            const height = Math.max(4, Math.round((total / maxTotal) * 100));
-            const segs = tools.map((tool, i) => {
-                const v = dayMap[d][tool] || 0;
-                const segH = total > 0 ? Math.round((v / total) * height) : 0;
-                const colour = getColour(tool, i);
-                return `<div style="height:${segH}px;background:${colour};width:100%" title="${this._esc(tool)}: ${Number(v).toLocaleString()}"></div>`;
+        const daySet = new Set(rows.map(r => r.day));
+        const days = [...daySet].sort();
+
+        const viewHtml = (name) => {
+            const view = views[name];
+            const dayMap = {};
+            for (const r of rows) {
+                if (!dayMap[r.day]) dayMap[r.day] = {};
+                dayMap[r.day][r.tool] = (dayMap[r.day][r.tool] || 0) + view.value(r);
+            }
+            const anyValue = days.some(d => tools.some(t => (dayMap[d][t] || 0) > 0));
+
+            const maxTotal = Math.max(...days.map(d =>
+                tools.reduce((s, t) => s + (dayMap[d][t] || 0), 0)
+            ), 1e-9);
+
+            const bars = days.map(d => {
+                const total = tools.reduce((s, t) => s + (dayMap[d][t] || 0), 0);
+                const height = total > 0 ? Math.max(4, Math.round((total / maxTotal) * 100)) : 0;
+                const segs = total > 0 ? tools.map((tool, i) => {
+                    const v = dayMap[d][tool] || 0;
+                    const segH = Math.round((v / total) * height);
+                    const colour = getColour(tool, i);
+                    return `<div style="height:${segH}px;background:${colour};width:100%" title="${this._esc(tool)}: ${view.fmt(v)}"></div>`;
+                }).join('') : '';
+                const label = d.slice(5); // MM-DD
+                return `<div class="ce-col" title="${this._esc(d)} — ${view.fmt(total)} ${view.unit}">
+                    <div class="ce-stack" style="height:${height ? height : 2}px">${segs || '<div style="height:2px;width:100%;background:#333"></div>'}</div>
+                    <div class="ce-label">${label}</div>
+                </div>`;
             }).join('');
-            const label = d.slice(5); // MM-DD
-            return `<div class="ce-col" title="${this._esc(d)} — ${Number(total).toLocaleString()} datapoints">
-                <div class="ce-stack" style="height:${height}px">${segs}</div>
-                <div class="ce-label">${label}</div>
-            </div>`;
-        }).join('');
 
-        const legend = tools.map((t, i) =>
-            `<span><span class="ce-swatch" style="background:${getColour(t, i)}"></span>${this._esc(t)}</span>`
-        ).join(' ');
+            const legend = tools.map((t, i) =>
+                `<span><span class="ce-swatch" style="background:${getColour(t, i)}"></span>${this._esc(t)}</span>`
+            ).join(' ');
 
-        const headCells = ['Day', ...tools].map(h => `<th>${this._esc(h)}</th>`).join('');
-        const tableRows = days.map(d => {
-            const cells = tools.map(t => `<td class="num">${Number(dayMap[d][t] || 0).toLocaleString()}</td>`).join('');
-            return `<tr><td>${this._esc(d)}</td>${cells}</tr>`;
-        }).join('');
+            const headCells = ['Day', ...tools].map(h => `<th>${this._esc(h)}</th>`).join('');
+            const tableRows = days.map(d => {
+                const cells = tools.map(t => `<td class="num">${view.fmt(dayMap[d][t] || 0)}</td>`).join('');
+                return `<tr><td>${this._esc(d)}</td>${cells}</tr>`;
+            }).join('');
+
+            const body = anyValue ? `
+                <div class="ce-chart" style="align-items:flex-end">${bars}</div>
+                <div class="ce-legend">${legend}</div>
+                <div class="table-scroll-x"><table class="data-table">
+                    <thead><tr>${headCells}</tr></thead>
+                    <tbody>${tableRows}</tbody>
+                </table></div>`
+                : `<p class="table-hint">No ${view.unit} data in this window.</p>`;
+            return `<div class="dtm-view" data-view="${name}" ${name === 'requests' ? '' : 'hidden'}>${body}</div>`;
+        };
+
+        const tabs = Object.entries(views).map(([name, v]) =>
+            `<button type="button" class="dtm-tab${name === 'requests' ? ' active' : ''}" data-view="${name}" onclick="window.app.views.analytics._dailyMixView('${name}');return false;">${v.title}</button>`
+        ).join('');
 
         return `
             <h3>Daily tool activity mix</h3>
-            <p class="table-hint">Metric datapoints per tool per calendar day (UTC). Stacked bars show relative tool share each day.</p>
-            <div class="ce-chart" style="align-items:flex-end">${bars}</div>
-            <div class="ce-legend">${legend}</div>
-            <div class="table-scroll-x"><table class="data-table">
-                <thead><tr>${headCells}</tr></thead>
-                <tbody>${tableRows}</tbody>
-            </table></div>`;
+            <p class="table-hint">Per-tool daily activity: requests (metric datapoints), LLM tokens, or estimated cost. Stacked bars show relative tool share each day.</p>
+            <div id="daily-tool-mix">
+                <div class="dtm-tabs">${tabs}</div>
+                ${viewHtml('requests')}
+                ${viewHtml('tokens')}
+                ${viewHtml('cost')}
+            </div>`;
+    }
+
+    // Switch the visible Daily Tool Mix view (requests/tokens/cost) — #179.
+    _dailyMixView(name) {
+        const root = document.getElementById('daily-tool-mix');
+        if (!root) return;
+        for (const el of root.querySelectorAll('.dtm-view')) {
+            el.hidden = el.dataset.view !== name;
+        }
+        for (const el of root.querySelectorAll('.dtm-tab')) {
+            el.classList.toggle('active', el.dataset.view === name);
+        }
     }
 
     // ── Skills Activity (#insight-3) ─────────────────────────────────────────

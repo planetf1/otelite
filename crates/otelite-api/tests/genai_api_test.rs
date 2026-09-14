@@ -2048,3 +2048,126 @@ async fn test_latency_percentiles_calendar_day() {
         assert_eq!(p["end_ts"], p["ts"].as_i64().unwrap() + 3_600_000_000_000);
     }
 }
+
+// ── Daily Tool Mix: tokens + cost (#179) ──────────────────────────────────────
+
+fn daily_mix_span(span_id: &str, scope: &str, model: &str, start: i64, tokens: (u64, u64)) -> Span {
+    let (in_t, out_t) = tokens;
+    let mut attributes: HashMap<String, String> = HashMap::new();
+    attributes.insert("otel.scope.name".to_string(), scope.to_string());
+    attributes.insert("gen_ai.system".to_string(), "anthropic".to_string());
+    attributes.insert("gen_ai.request.model".to_string(), model.to_string());
+    attributes.insert("gen_ai.usage.input_tokens".to_string(), in_t.to_string());
+    attributes.insert("gen_ai.usage.output_tokens".to_string(), out_t.to_string());
+    Span {
+        trace_id: "t-daily-mix".to_string(),
+        span_id: span_id.to_string(),
+        parent_span_id: None,
+        name: "llm_request".to_string(),
+        kind: SpanKind::Internal,
+        start_time: start,
+        end_time: start + 1_000_000,
+        attributes,
+        status: SpanStatus {
+            code: SpanStatusCode::Ok,
+            message: None,
+        },
+        events: Vec::new(),
+        resource: None,
+    }
+}
+
+#[tokio::test]
+async fn test_daily_tool_mix_tokens_and_cost() {
+    let (server, storage, _temp_dir) = setup_test_server().await;
+    let app = server.build_router();
+
+    // Empty state: no rows, no model breakdown.
+    let (status, v) = get_json(&app, "/api/genai/daily_tool_mix").await;
+    assert_eq!(status, StatusCode::OK);
+    assert!(v["rows"].as_array().unwrap().is_empty());
+    assert!(v["model_rows"].as_array().unwrap().is_empty());
+
+    // Two LLM spans, same day + tool, different models.
+    // Day = 2026-01-01 (UTC).
+    let d1 = 1_767_225_600_000_000_000_i64;
+    let s1 = daily_mix_span(
+        "s1",
+        "com.anthropic.claude_code",
+        "claude-sonnet-5",
+        d1 + 1_000_000,
+        (100, 50),
+    );
+    let s2 = daily_mix_span(
+        "s2",
+        "com.anthropic.claude_code",
+        "claude-opus-5",
+        d1 + 2_000_000,
+        (200, 80),
+    );
+    // A second day + tool whose model has no pricing data (not a Claude
+    // family name, and no such model exists in any pricing source) — its
+    // row must carry a null cost, never a fabricated one.
+    let s3 = daily_mix_span(
+        "s3",
+        "pi-otel",
+        "unknown-vendor-model-9.9",
+        d1 + 86_400 * 1_000_000_000 + 1_000_000,
+        (5, 6),
+    );
+    storage.write_span_batch(&[s1, s2, s3]).await.unwrap();
+
+    // Windowed query — a different cache key than the empty-state call
+    // above (the GenAI bucket caches responses; a same-key repeat would
+    // serve the pre-write empty response).
+    let (status, v) = get_json(
+        &app,
+        &format!(
+            "/api/genai/daily_tool_mix?start_time={d1}&end_time={}",
+            d1 + 2 * 86_400 * 1_000_000_000
+        ),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+
+    // (day, tool) rows: merged token totals, no metric datapoints.
+    let rows = v["rows"].as_array().unwrap();
+    assert_eq!(rows.len(), 2, "{v}");
+    assert_eq!(rows[0]["day"], "2026-01-01");
+    assert_eq!(rows[0]["tool"], "claude_code");
+    assert_eq!(rows[0]["datapoints"], 0);
+    assert_eq!(rows[0]["input_tokens"], 300);
+    assert_eq!(rows[0]["output_tokens"], 130);
+    assert_eq!(rows[0]["cache_read_tokens"], 0);
+    // Claude family models price via the deterministic fallback table.
+    let cost = rows[0]["total_cost_usd"].as_f64();
+    assert!(
+        cost.is_some() && cost.unwrap() > 0.0,
+        "expected priced cost: {v}"
+    );
+
+    // No pricing data for granite-4.0 -> null, not a fabricated zero.
+    assert_eq!(rows[1]["day"], "2026-01-02");
+    assert_eq!(rows[1]["tool"], "pi");
+    assert_eq!(rows[1]["input_tokens"], 5);
+    assert_eq!(rows[1]["output_tokens"], 6);
+    assert!(rows[1]["total_cost_usd"].is_null(), "{v}");
+
+    // Per-model breakdown (day asc, tool asc, model asc): the API's pricing input.
+    let mr = v["model_rows"].as_array().unwrap();
+    assert_eq!(mr.len(), 3, "{v}");
+    assert_eq!(mr[0]["model"], "claude-opus-5");
+    assert_eq!(mr[0]["input_tokens"], 200);
+    assert_eq!(mr[0]["output_tokens"], 80);
+    assert_eq!(mr[0]["cache_creation_tokens"], 0);
+    assert_eq!(mr[1]["model"], "claude-sonnet-5");
+    assert_eq!(mr[1]["input_tokens"], 100);
+    assert_eq!(mr[1]["output_tokens"], 50);
+    assert_eq!(mr[2]["day"], "2026-01-02");
+    assert_eq!(mr[2]["model"], "unknown-vendor-model-9.9");
+    assert_eq!(mr[2]["input_tokens"], 5);
+    assert_eq!(mr[2]["output_tokens"], 6);
+
+    assert_eq!(v["tools"][0], "claude_code");
+    assert_eq!(v["tools"][1], "pi");
+}

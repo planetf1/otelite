@@ -2723,9 +2723,9 @@ pub struct ToolFailureRatesResponse {
     pub filters_applied: Vec<String>,
 }
 
-// ── Daily Tool Mix (#insight-2) ───────────────────────────────────────────────
+// ── Daily Tool Mix (#insight-2, tokens+cost #179) ─────────────────────────────
 
-/// One tool's datapoints for a single calendar day.
+/// One tool's activity for a single calendar day.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct DailyToolMixRow {
@@ -2735,6 +2735,38 @@ pub struct DailyToolMixRow {
     pub tool: String,
     /// Number of metric datapoints for this tool on this day.
     pub datapoints: u64,
+    /// LLM input tokens for this tool on this day (#179).
+    pub input_tokens: u64,
+    /// LLM output tokens for this tool on this day (#179).
+    pub output_tokens: u64,
+    /// LLM prompt-cache read tokens for this tool on this day (#179).
+    pub cache_read_tokens: u64,
+    /// Total USD cost for this tool on this day, priced by the API layer
+    /// from the per-model breakdown; `None` when no pricing data applies
+    /// (#179).
+    pub total_cost_usd: Option<f64>,
+}
+
+/// Per-model token breakdown behind a (day, tool) row. The API layer prices
+/// these rows to fill `DailyToolMixRow::total_cost_usd` (#179).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
+pub struct DailyToolMixModelRow {
+    /// Calendar day in ISO-8601 format (YYYY-MM-DD), UTC.
+    pub day: String,
+    /// Short tool label.
+    pub tool: String,
+    /// Model name (`(unknown)` when the span carries no model attribute).
+    pub model: String,
+    /// LLM input tokens.
+    pub input_tokens: u64,
+    /// LLM output tokens.
+    pub output_tokens: u64,
+    /// LLM prompt-cache creation tokens (priced; not part of the
+    /// user-facing token totals).
+    pub cache_creation_tokens: u64,
+    /// LLM prompt-cache read tokens.
+    pub cache_read_tokens: u64,
 }
 
 /// Response for `GET /api/genai/daily_tool_mix`.
@@ -2743,6 +2775,9 @@ pub struct DailyToolMixRow {
 pub struct DailyToolMixResponse {
     /// Rows in (day asc, tool asc) order.
     pub rows: Vec<DailyToolMixRow>,
+    /// Per-model token breakdown in (day asc, tool asc, model asc) order
+    /// (#179).
+    pub model_rows: Vec<DailyToolMixModelRow>,
     /// Distinct tool labels present in the data.
     pub tools: Vec<String>,
     pub filters_applied: Vec<String>,

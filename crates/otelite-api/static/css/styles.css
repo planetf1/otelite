@@ -2654,6 +2654,31 @@ details[open] > .json-tree-summary::before {
     color: var(--accent-color, #6366f1);
 }
 
+/* Daily Tool Mix view tabs (#179) */
+.dtm-tabs {
+    display: flex;
+    gap: 6px;
+    margin: 8px 0 12px;
+}
+.dtm-tab {
+    background: var(--bg-tertiary);
+    border: 1px solid var(--border-color, #30363d);
+    border-radius: 999px;
+    color: var(--text-primary);
+    font-size: 0.72rem;
+    padding: 2px 0.7rem;
+    cursor: pointer;
+}
+.dtm-tab:hover {
+    border-color: var(--accent-color, #6366f1);
+    color: var(--accent-color, #6366f1);
+}
+.dtm-tab.active {
+    background: var(--accent-color, #6366f1);
+    border-color: var(--accent-color, #6366f1);
+    color: #fff;
+}
+
 .analytics-group-count {
     color: var(--text-secondary);
     font-size: 0.8rem;

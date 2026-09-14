@@ -12982,16 +12982,28 @@ pub fn query_tool_failure_rates(
 
 /// Daily tool activity mix.
 ///
-/// Counts metric datapoints per tool (identified by `otel.scope.name`) per
-/// calendar day (UTC). Returns rows for claude_code, opencode, and codex only
-/// — other scopes are excluded to keep the chart focused.
+/// Two sources merged per (day, tool):
+/// - **Datapoints**: metric datapoints per tool (identified by
+///   `otel.scope.name`) per calendar day (UTC) — the original "requests"
+///   view, limited to claude_code / opencode / codex scopes.
+/// - **Tokens** (#179): LLM-span token totals per (day, tool, model) from
+///   `gen_ai.usage.*` attributes, with the tool inferred from
+///   `otel.scope.name` (same mapping as the model-selection heatmap). The
+///   per-model breakdown is returned as `model_rows` so the API layer can
+///   price it; the (day, tool) token totals are merged into the rows.
+///
+/// A (day, tool) pair present in only one source still gets a row (the
+/// other source's figures are 0 / `None`).
 pub fn query_daily_tool_mix(
     conn: &Connection,
     start_time: Option<i64>,
     end_time: Option<i64>,
 ) -> Result<otelite_core::api::DailyToolMixResponse> {
-    use otelite_core::api::{DailyToolMixResponse, DailyToolMixRow};
+    use otelite_core::api::{DailyToolMixModelRow, DailyToolMixResponse, DailyToolMixRow};
+    use otelite_core::semconv;
+    use std::collections::BTreeMap;
 
+    // ── Source 1: metric datapoints (original query, unchanged) ──────────
     // Map otel.scope.name → short label.
     let mut where_clause = String::from(
         r#"WHERE json_valid(scope)
@@ -13035,29 +13047,137 @@ pub fn query_daily_tool_mix(
         StorageError::QueryError(format!("Failed to prepare daily_tool_mix query: {e}"))
     })?;
 
-    let rows: Vec<DailyToolMixRow> = stmt
+    let datapoints: BTreeMap<(String, String), u64> = stmt
         .query_map(param_refs.as_slice(), |r| {
-            Ok(DailyToolMixRow {
+            Ok((
+                (r.get::<_, String>(0)?, r.get::<_, String>(1)?),
+                r.get::<_, i64>(2).unwrap_or(0) as u64,
+            ))
+        })
+        .map_err(|e| StorageError::QueryError(format!("{e}")))?
+        .collect::<std::result::Result<BTreeMap<_, _>, _>>()
+        .map_err(|e| StorageError::QueryError(format!("{e}")))?;
+
+    // ── Source 2: LLM-span tokens per (day, tool, model) (#179) ──────────
+    let llm_guard = semconv::llm_span_guard("attributes");
+    let input_expr =
+        semconv::coalesce_extract_cast("attributes", semconv::INPUT_TOKEN_KEYS, "INTEGER");
+    let output_expr =
+        semconv::coalesce_extract_cast("attributes", semconv::OUTPUT_TOKEN_KEYS, "INTEGER");
+    let cache_creation_expr =
+        semconv::coalesce_extract_cast("attributes", semconv::CACHE_CREATION_TOKEN_KEYS, "INTEGER");
+    let cache_read_expr =
+        semconv::coalesce_extract_cast("attributes", semconv::CACHE_READ_TOKEN_KEYS, "INTEGER");
+    // Tool mapping: identical to query_model_selection_heatmap so the report
+    // and the heatmap agree on tool labels.
+    let tool_expr = r#"CASE
+        WHEN json_extract(scope,'$.name') LIKE '%claude_code%'   THEN 'claude_code'
+        WHEN json_extract(scope,'$.name') = 'com.opencode'       THEN 'opencode'
+        WHEN json_extract(scope,'$.name') LIKE '%opencode%'      THEN 'opencode'
+        WHEN json_extract(scope,'$.name') = 'pi-otel'            THEN 'pi'
+        WHEN json_extract(scope,'$.name') LIKE '%codex%'         THEN 'codex'
+        WHEN json_extract(scope,'$.name') LIKE '%deekseek%'      THEN 'deepseek'
+        ELSE COALESCE(json_extract(scope,'$.name'), 'unknown')
+    END"#;
+    let model_expr = r#"COALESCE(json_extract(attributes,'$."gen_ai.request.model"'),
+        json_extract(attributes,'$."model"'), '(unknown)')"#;
+
+    let mut spans_where = format!("WHERE {llm_guard}");
+    let mut spans_params: Vec<Box<dyn rusqlite::ToSql>> = Vec::new();
+    if let Some(s) = start_time {
+        spans_where.push_str(" AND start_time >= ?");
+        spans_params.push(Box::new(s));
+    }
+    if let Some(e) = end_time {
+        spans_where.push_str(" AND start_time <= ?");
+        spans_params.push(Box::new(e));
+    }
+
+    let token_sql = format!(
+        r#"
+        SELECT
+          strftime('%Y-%m-%d', datetime(start_time / 1000000000, 'unixepoch')) AS day,
+          {tool_expr} AS tool,
+          {model_expr} AS model,
+          COALESCE(SUM({input_expr}), 0) AS input_tokens,
+          COALESCE(SUM({output_expr}), 0) AS output_tokens,
+          COALESCE(SUM({cache_creation_expr}), 0) AS cache_creation_tokens,
+          COALESCE(SUM({cache_read_expr}), 0) AS cache_read_tokens
+        FROM spans
+        {spans_where}
+        GROUP BY day, tool, model
+        ORDER BY day ASC, tool ASC, model ASC
+        "#
+    );
+
+    let spans_refs: Vec<&dyn rusqlite::ToSql> = spans_params.iter().map(|p| p.as_ref()).collect();
+    let mut tstmt = conn.prepare(&token_sql).map_err(|e| {
+        StorageError::QueryError(format!("Failed to prepare daily_tool_mix token query: {e}"))
+    })?;
+
+    let model_rows: Vec<DailyToolMixModelRow> = tstmt
+        .query_map(spans_refs.as_slice(), |r| {
+            Ok(DailyToolMixModelRow {
                 day: r.get(0)?,
                 tool: r.get(1)?,
-                datapoints: r.get::<_, i64>(2).unwrap_or(0) as u64,
+                model: r.get(2)?,
+                input_tokens: r.get::<_, i64>(3).unwrap_or(0) as u64,
+                output_tokens: r.get::<_, i64>(4).unwrap_or(0) as u64,
+                cache_creation_tokens: r.get::<_, i64>(5).unwrap_or(0) as u64,
+                cache_read_tokens: r.get::<_, i64>(6).unwrap_or(0) as u64,
             })
         })
         .map_err(|e| StorageError::QueryError(format!("{e}")))?
         .collect::<std::result::Result<Vec<_>, _>>()
         .map_err(|e| StorageError::QueryError(format!("{e}")))?;
 
-    // Collect distinct tools for the frontend legend.
-    let mut tools: Vec<String> = rows
+    // ── Merge into (day, tool) rows ───────────────────────────────────────
+    // Per-(day, tool) token totals from the model rows.
+    let mut tokens: BTreeMap<(String, String), (u64, u64, u64)> = BTreeMap::new();
+    for m in &model_rows {
+        let e = tokens
+            .entry((m.day.clone(), m.tool.clone()))
+            .or_insert((0, 0, 0));
+        e.0 += m.input_tokens;
+        e.1 += m.output_tokens;
+        e.2 += m.cache_read_tokens;
+    }
+
+    // Union of both sources' (day, tool) keys — BTreeSet gives (day asc,
+    // tool asc), the row order the endpoint has always returned.
+    let keys: std::collections::BTreeSet<(String, String)> = datapoints
+        .keys()
+        .cloned()
+        .chain(tokens.keys().cloned())
+        .collect();
+
+    let rows: Vec<DailyToolMixRow> = keys
+        .into_iter()
+        .map(|key| {
+            DailyToolMixRow {
+                datapoints: datapoints.get(&key).copied().unwrap_or(0),
+                input_tokens: tokens.get(&key).map(|t| t.0).unwrap_or(0),
+                output_tokens: tokens.get(&key).map(|t| t.1).unwrap_or(0),
+                cache_read_tokens: tokens.get(&key).map(|t| t.2).unwrap_or(0),
+                total_cost_usd: None, // priced by the API layer
+                day: key.0,
+                tool: key.1,
+            }
+        })
+        .collect();
+
+    // Collect distinct tools (both sources) for the frontend legend.
+    // (BTreeSet iteration is already sorted.)
+    let tools: Vec<String> = rows
         .iter()
         .map(|r| r.tool.clone())
-        .collect::<std::collections::HashSet<_>>()
+        .collect::<std::collections::BTreeSet<_>>()
         .into_iter()
         .collect();
-    tools.sort();
 
     Ok(DailyToolMixResponse {
         rows,
+        model_rows,
         tools,
         filters_applied: Vec::new(),
     })
@@ -13966,6 +14086,24 @@ mod new_insight_tests_2 {
                 scope TEXT,
                 flags INTEGER,
                 created_at INTEGER NOT NULL DEFAULT (strftime('%s','now'))
+            );
+            CREATE TABLE spans (
+                id INTEGER PRIMARY KEY,
+                trace_id TEXT NOT NULL,
+                span_id TEXT NOT NULL,
+                parent_span_id TEXT,
+                name TEXT NOT NULL,
+                kind INTEGER,
+                start_time INTEGER NOT NULL,
+                end_time INTEGER NOT NULL,
+                attributes TEXT,
+                events TEXT,
+                links TEXT,
+                status TEXT,
+                resource TEXT,
+                scope TEXT,
+                flags INTEGER,
+                created_at INTEGER NOT NULL DEFAULT (strftime('%s','now'))
             );",
         )
         .unwrap();
@@ -14034,9 +14172,137 @@ mod new_insight_tests_2 {
             .find(|r| r.tool == "claude_code")
             .unwrap();
         assert_eq!(row_cc.datapoints, 1);
+        // No LLM spans in this fixture: token fields and cost are empty
+        // (#179 additive fields, empty state).
+        assert_eq!(row_cc.input_tokens, 0);
+        assert_eq!(row_cc.output_tokens, 0);
+        assert_eq!(row_cc.cache_read_tokens, 0);
+        assert_eq!(row_cc.total_cost_usd, None);
+        assert!(result.model_rows.is_empty());
         assert!(result.tools.contains(&"claude_code".to_string()));
         assert!(result.tools.contains(&"opencode".to_string()));
         assert!(result.tools.contains(&"codex".to_string()));
+    }
+
+    #[test]
+    fn test_daily_tool_mix_tokens_from_llm_spans() {
+        let conn = make_conn();
+        // Day 1 = 2026-01-01: 1767225600000000000
+        // Day 2 = 2026-01-02: 1767312000000000000
+        let d1 = 1767225600000000000_i64;
+        let d2 = 1767312000000000000_i64;
+
+        // One metric datapoint for claude_code on day 1.
+        conn.execute(
+            "INSERT INTO metrics (name, metric_type, timestamp, attributes, scope, flags, created_at)
+             VALUES ('some.metric', 1, ?, '{}', ?, 0, 1000000000)",
+            rusqlite::params![d1, r#"{"name":"com.anthropic.claude_code"}"#],
+        )
+        .unwrap();
+
+        // LLM spans (attributes carry the gen_ai markers; scope -> tool).
+        // t-cc-1: day1, claude_code, sonnet: in 100, out 50, cache_read 25,
+        //         cache_creation 10.
+        // t-cc-2: day1, claude_code, opus:  in 200, out 80 (no cache attrs).
+        // t-oc-1: day2, opencode, granite: in 5, out 6 (no metrics datapoint
+        //         for opencode on day2 -> merge must still emit the row).
+        // t-no-llm: day1, claude_code scope but no LLM marker -> excluded.
+        for (trace, start, scope, attrs) in [
+            (
+                "t-cc-1",
+                d1 + 1_000_000,
+                r#"{"name":"com.anthropic.claude_code"}"#,
+                r#"{"gen_ai.system":"anthropic","gen_ai.request.model":"claude-sonnet-5","gen_ai.usage.input_tokens":100,"gen_ai.usage.output_tokens":50,"gen_ai.usage.cache_read_tokens":25,"gen_ai.usage.cache_creation_input_tokens":10}"#,
+            ),
+            (
+                "t-cc-2",
+                d1 + 2_000_000,
+                r#"{"name":"com.anthropic.claude_code"}"#,
+                r#"{"gen_ai.system":"anthropic","gen_ai.request.model":"claude-opus-5","gen_ai.usage.input_tokens":200,"gen_ai.usage.output_tokens":80}"#,
+            ),
+            (
+                "t-oc-1",
+                d2 + 1_000_000,
+                r#"{"name":"com.opencode"}"#,
+                r#"{"gen_ai.system":"ibm","gen_ai.request.model":"granite-4.0","gen_ai.usage.input_tokens":5,"gen_ai.usage.output_tokens":6}"#,
+            ),
+            (
+                "t-no-llm",
+                d1 + 3_000_000,
+                r#"{"name":"com.anthropic.claude_code"}"#,
+                r#"{"some.other":"attr","gen_ai.usage.input_tokens":999}"#,
+            ),
+        ] {
+            conn.execute(
+                "INSERT INTO spans (trace_id, span_id, name, kind, start_time, end_time, attributes, scope, flags, created_at)
+                 VALUES (?1, ?2, 'llm_request', 0, ?3, ?3 + 1000000, ?4, ?5, 0, 1000000000)",
+                rusqlite::params![trace, format!("{trace}_s1"), start, attrs, scope],
+            )
+            .unwrap();
+        }
+
+        let result = query_daily_tool_mix(&conn, None, None).unwrap();
+
+        // (day, tool) rows: day1/claude_code (metrics + tokens),
+        // day1/opencode? no — opencode has no day1 data. day2/opencode
+        // (tokens only, datapoints 0).
+        let cc1 = result
+            .rows
+            .iter()
+            .find(|r| r.day == "2026-01-01" && r.tool == "claude_code")
+            .unwrap();
+        assert_eq!(cc1.datapoints, 1);
+        assert_eq!(cc1.input_tokens, 300);
+        assert_eq!(cc1.output_tokens, 130);
+        assert_eq!(cc1.cache_read_tokens, 25);
+        assert_eq!(cc1.total_cost_usd, None); // storage leaves pricing to API
+
+        let oc2 = result
+            .rows
+            .iter()
+            .find(|r| r.day == "2026-01-02" && r.tool == "opencode")
+            .unwrap();
+        assert_eq!(oc2.datapoints, 0); // token-only (day, tool) pair
+        assert_eq!(oc2.input_tokens, 5);
+        assert_eq!(oc2.output_tokens, 6);
+        assert_eq!(oc2.cache_read_tokens, 0);
+
+        // No row for the non-LLM span's (day1 has none of its own).
+        assert!(!result
+            .rows
+            .iter()
+            .any(|r| r.tool != "claude_code" && r.tool != "opencode"));
+
+        // Per-model breakdown (pricing input): 3 LLM models, no (unknown).
+        let mr: Vec<(&str, &str, u64, u64, u64, u64)> = result
+            .model_rows
+            .iter()
+            .map(|m| {
+                (
+                    m.day.as_str(),
+                    m.model.as_str(),
+                    m.input_tokens,
+                    m.output_tokens,
+                    m.cache_creation_tokens,
+                    m.cache_read_tokens,
+                )
+            })
+            .collect();
+        assert_eq!(
+            mr,
+            vec![
+                ("2026-01-01", "claude-opus-5", 200, 80, 0, 0),
+                ("2026-01-01", "claude-sonnet-5", 100, 50, 10, 25),
+                ("2026-01-02", "granite-4.0", 5, 6, 0, 0),
+            ]
+        );
+
+        // Window filter: only day 1.
+        let d1_only =
+            query_daily_tool_mix(&conn, Some(d1), Some(d1 + 86_400 * 1_000_000_000)).unwrap();
+        assert!(d1_only.rows.iter().all(|r| r.day == "2026-01-01"));
+        assert_eq!(d1_only.model_rows.len(), 2);
+        assert!(d1_only.rows.iter().all(|r| r.tool == "claude_code"));
     }
 
     #[test]
@@ -14064,30 +14330,10 @@ mod new_insight_tests_2 {
             .unwrap();
         assert_eq!(triage.injections, 1);
     }
+    /// The shared fixture creates the spans table as well (#179), so this is
+    /// now an alias of [`make_conn`].
     fn make_conn_with_spans() -> Connection {
-        let conn = make_conn();
-        conn.execute_batch(
-            "CREATE TABLE spans (
-                id INTEGER PRIMARY KEY,
-                trace_id TEXT NOT NULL,
-                span_id TEXT NOT NULL,
-                parent_span_id TEXT,
-                name TEXT NOT NULL,
-                kind INTEGER,
-                start_time INTEGER NOT NULL,
-                end_time INTEGER NOT NULL,
-                attributes TEXT,
-                events TEXT,
-                links TEXT,
-                status TEXT,
-                resource TEXT,
-                scope TEXT,
-                flags INTEGER,
-                created_at INTEGER NOT NULL DEFAULT (strftime('%s','now'))
-            );",
-        )
-        .unwrap();
-        conn
+        make_conn()
     }
 
     #[test]

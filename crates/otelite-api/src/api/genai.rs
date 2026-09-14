@@ -2941,7 +2941,7 @@ pub async fn get_daily_tool_mix(
     State(state): State<AppState>,
     Query(query): Query<TimeRangeQuery>,
 ) -> Result<Json<otelite_core::api::DailyToolMixResponse>, (StatusCode, Json<ErrorResponse>)> {
-    let response = state
+    let mut response = state
         .storage
         .query_daily_tool_mix(query.start_time, query.end_time)
         .await
@@ -2953,6 +2953,30 @@ pub async fn get_daily_tool_mix(
                 ))),
             )
         })?;
+
+    // Price the per-model breakdown and roll cost up to (day, tool) (#179).
+    // `total_cost_usd` stays None for rows whose models have no pricing data.
+    let pricing = state.pricing.snapshot().await;
+    let mut cost: std::collections::HashMap<(String, String), f64> =
+        std::collections::HashMap::new();
+    for m in &response.model_rows {
+        let usage = TokenUsage {
+            input: m.input_tokens,
+            output: m.output_tokens,
+            cache_creation: m.cache_creation_tokens,
+            cache_read: m.cache_read_tokens,
+        };
+        let result = pricing.db.compute_cost(Some(m.model.as_str()), usage, None);
+        if let Some(c) = result.cost {
+            *cost.entry((m.day.clone(), m.tool.clone())).or_insert(0.0) += c;
+        }
+    }
+    for r in &mut response.rows {
+        if let Some(c) = cost.get(&(r.day.clone(), r.tool.clone())) {
+            r.total_cost_usd = Some(*c);
+        }
+    }
+
     Ok(Json(response))
 }
 

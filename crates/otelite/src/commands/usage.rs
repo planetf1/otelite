@@ -214,7 +214,8 @@ pub struct UsageCommand {
     #[arg(long)]
     pub tool_failures: bool,
 
-    /// Show daily activity mix: Claude Code / opencode / Codex datapoints per calendar day
+    /// Show daily activity mix: Claude Code / opencode / Codex datapoints per calendar day,
+    /// plus LLM token volume and estimated cost per tool per day (#179)
     #[arg(long)]
     pub daily_tool_mix: bool,
 
@@ -3094,13 +3095,44 @@ fn display_tool_failure_rates(resp: &otelite_core::api::ToolFailureRatesResponse
     println!("{}", table);
 }
 
+/// Day -> tool -> total LLM tokens (input + output + cache-read).
+type DayToolTokens = std::collections::BTreeMap<String, std::collections::BTreeMap<String, u64>>;
+
+/// Per-day token totals and costs for the Daily Token Volume table (#179).
+/// Returns (day -> tool -> input+output+cache-read tokens, skipping all-zero
+/// (day, tool) pairs; day -> summed cost over priced rows, only for days
+/// with at least one priced row; whether any row carries a cost).
+fn daily_mix_token_table(
+    resp: &otelite_core::api::DailyToolMixResponse,
+) -> (DayToolTokens, std::collections::BTreeMap<String, f64>, bool) {
+    let mut tokens: DayToolTokens = std::collections::BTreeMap::new();
+    let mut day_cost: std::collections::BTreeMap<String, f64> = std::collections::BTreeMap::new();
+    let mut any_cost = false;
+    for r in &resp.rows {
+        let total = r.input_tokens + r.output_tokens + r.cache_read_tokens;
+        if total > 0 {
+            tokens
+                .entry(r.day.clone())
+                .or_default()
+                .insert(r.tool.clone(), total);
+        }
+        if let Some(c) = r.total_cost_usd {
+            any_cost = true;
+            *day_cost.entry(r.day.clone()).or_insert(0.0) += c;
+        }
+    }
+    (tokens, day_cost, any_cost)
+}
+
 fn display_daily_tool_mix(resp: &otelite_core::api::DailyToolMixResponse) {
     if resp.rows.is_empty() {
         println!("Daily Tool Mix: no data");
         return;
     }
-    // Pivot: day → tool → datapoints
     use std::collections::BTreeMap;
+    let tools = &resp.tools;
+
+    // ── Requests (metric datapoints) — the original table ─────────────────
     let mut pivot: BTreeMap<String, BTreeMap<String, u64>> = BTreeMap::new();
     for r in &resp.rows {
         pivot
@@ -3108,7 +3140,6 @@ fn display_daily_tool_mix(resp: &otelite_core::api::DailyToolMixResponse) {
             .or_default()
             .insert(r.tool.clone(), r.datapoints);
     }
-    let tools = &resp.tools;
     let mut header = vec![Cell::new("Day").fg(Color::Cyan)];
     for t in tools {
         header.push(Cell::new(t.as_str()).fg(Color::Cyan));
@@ -3132,6 +3163,41 @@ fn display_daily_tool_mix(resp: &otelite_core::api::DailyToolMixResponse) {
     }
     println!("Daily Tool Mix:");
     println!("{}", table);
+
+    // ── Token volume per (day, tool) (#179) ───────────────────────────────
+    let (tokens, day_cost, any_cost) = daily_mix_token_table(resp);
+    if tokens.is_empty() {
+        return; // no LLM token data in the window
+    }
+    let mut theader = vec![Cell::new("Day").fg(Color::Cyan)];
+    for t in tools {
+        theader.push(Cell::new(t.as_str()).fg(Color::Cyan));
+    }
+    if any_cost {
+        theader.push(Cell::new("Cost").fg(Color::Cyan));
+    }
+    let mut ttable = Table::new();
+    fit_to_terminal(&mut ttable);
+    ttable.load_preset(UTF8_FULL);
+    ttable.set_header(theader);
+    for (day, by_tool) in &tokens {
+        let total: u64 = by_tool.values().sum();
+        let mut row = vec![Cell::new(day.as_str())];
+        for t in tools {
+            let tok = by_tool.get(t).copied().unwrap_or(0);
+            let pct = tok
+                .checked_mul(100)
+                .and_then(|v| v.checked_div(total))
+                .unwrap_or(0);
+            row.push(Cell::new(format!("{} ({pct}%)", format_number(tok))));
+        }
+        if any_cost {
+            row.push(Cell::new(format_cost(day_cost.get(day).copied())));
+        }
+        ttable.add_row(row);
+    }
+    println!("Daily Token Volume:");
+    println!("{}", ttable);
 }
 
 fn display_skill_activity(resp: &otelite_core::api::SkillActivityResponse) {
@@ -3433,5 +3499,77 @@ mod tests {
     fn test_format_cost() {
         assert_eq!(format_cost(Some(0.1234)), "$0.1234");
         assert_eq!(format_cost(None), "—");
+    }
+
+    #[test]
+    fn test_daily_mix_token_table_pivot() {
+        use otelite_core::api::{DailyToolMixResponse, DailyToolMixRow};
+        let resp = DailyToolMixResponse {
+            rows: vec![
+                DailyToolMixRow {
+                    day: "2026-01-01".into(),
+                    tool: "claude_code".into(),
+                    datapoints: 5,
+                    input_tokens: 300,
+                    output_tokens: 130,
+                    cache_read_tokens: 20,
+                    total_cost_usd: Some(0.42),
+                },
+                DailyToolMixRow {
+                    day: "2026-01-01".into(),
+                    tool: "opencode".into(),
+                    datapoints: 3,
+                    input_tokens: 5,
+                    output_tokens: 6,
+                    cache_read_tokens: 0,
+                    total_cost_usd: None,
+                },
+                DailyToolMixRow {
+                    // All-zero tokens: excluded from the token table.
+                    day: "2026-01-02".into(),
+                    tool: "codex".into(),
+                    datapoints: 9,
+                    input_tokens: 0,
+                    output_tokens: 0,
+                    cache_read_tokens: 0,
+                    total_cost_usd: Some(1.5),
+                },
+            ],
+            model_rows: vec![],
+            tools: vec!["claude_code".into(), "opencode".into(), "codex".into()],
+            filters_applied: vec![],
+        };
+        let (tokens, day_cost, any_cost) = daily_mix_token_table(&resp);
+
+        // Tokens: (day, tool) -> input+output+cache_read; the all-zero
+        // codex row is absent.
+        assert_eq!(tokens["2026-01-01"]["claude_code"], 450);
+        assert_eq!(tokens["2026-01-01"]["opencode"], 11);
+        assert!(!tokens.contains_key("2026-01-02"));
+        assert_eq!(tokens.len(), 1);
+
+        // Cost: only days with priced rows appear, summing their costs.
+        assert_eq!(day_cost["2026-01-01"], 0.42);
+        assert_eq!(day_cost["2026-01-02"], 1.5);
+        assert!(any_cost);
+
+        // No priced rows at all -> any_cost false, no cost entries.
+        let no_price = DailyToolMixResponse {
+            rows: vec![DailyToolMixRow {
+                day: "2026-01-01".into(),
+                tool: "pi".into(),
+                datapoints: 0,
+                input_tokens: 1,
+                output_tokens: 2,
+                cache_read_tokens: 0,
+                total_cost_usd: None,
+            }],
+            model_rows: vec![],
+            tools: vec!["pi".into()],
+            filters_applied: vec![],
+        };
+        let (_, day_cost2, any_cost2) = daily_mix_token_table(&no_price);
+        assert!(!any_cost2);
+        assert!(day_cost2.is_empty());
     }
 }

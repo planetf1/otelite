@@ -11,6 +11,13 @@ have to work around), not implementation detail.
 
 ## [Unreleased]
 
+### Added
+
+- Daily tool mix now shows per-tool LLM token volume and estimated cost
+  per day: switch between requests, tokens, and cost views in the
+  Behaviour report, or read the token table (with a daily cost column
+  where pricing data applies) in `otelite usage --daily-tool-mix` (#179)
+
 ### Fixed
 
 - Metrics export no longer fails with a 500 on large time ranges:
