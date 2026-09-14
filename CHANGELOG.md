@@ -11,6 +11,8 @@ have to work around), not implementation detail.
 
 ## [Unreleased]
 
+## [0.1.134] - 2026-09-14
+
 ### Added
 
 - New Session Chains report: resumed sessions rolled up into work threads —
