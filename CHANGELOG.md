@@ -11,6 +11,8 @@ have to work around), not implementation detail.
 
 ## [Unreleased]
 
+## [0.1.140] - 2026-09-15
+
 ### Added
 
 - New `otelite mcp` command exposes your telemetry to AI agents over the
