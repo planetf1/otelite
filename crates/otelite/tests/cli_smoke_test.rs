@@ -106,6 +106,7 @@ fn usage_flag_combinations_parse() {
         &["--tool-approvals"],
         &["--stop-reasons"],
         &["--context-split"],
+        &["--context-composition"],
         &["--tool-errors", "10"], // explicit N (bare --tool-errors not used with --help due to clap ordering)
         &["--hour-of-day"],
         &["--calls"],

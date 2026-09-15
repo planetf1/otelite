@@ -631,6 +631,32 @@ pub struct SessionCostRow {
     pub cost_source: Option<String>,
 }
 
+/// Context composition for one session (#113, option B — derived, no new
+/// tracing): the fixed prefix is approximated by the MINIMUM cache-read
+/// token count across the session's requests (the static portion — system
+/// prompt, tool schemas, skills — that every call replays), the peak by
+/// the maximum, and growth is the difference (conversation + tool results
+/// accumulated during the session). Only sessions with at least one
+/// request carrying cache-read telemetry are reported.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
+pub struct ContextCompositionSession {
+    pub session_id: String,
+    /// All LLM requests in the session (with or without cache telemetry).
+    pub request_count: u64,
+    /// Requests that carried cache-read tokens.
+    pub cached_requests: u64,
+    /// MIN cache_read across cached requests — the fixed-prefix estimate.
+    pub fixed_prefix: i64,
+    /// MAX cache_read across cached requests — peak replayed context.
+    pub peak_context: i64,
+    /// peak_context - fixed_prefix: conversation/tool-result growth.
+    pub growth: i64,
+    /// First/last request in the window, nanoseconds since the epoch.
+    pub first_request_ns: i64,
+    pub last_request_ns: i64,
+}
+
 /// Aggregated cost/token row for a single conversation.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]

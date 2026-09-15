@@ -2369,6 +2369,95 @@ pub fn query_top_sessions(
     Ok(rows)
 }
 
+/// Per-session context composition (#113, option B — derived from
+/// existing cache-read telemetry, no new instrumentation): the fixed
+/// prefix a session replays every call is approximated by the MINIMUM
+/// cache-read count across its requests, the peak by the maximum, and
+/// the difference is the conversation/tool-result growth. Only sessions
+/// with at least one cache-bearing request are returned.
+pub fn query_context_composition(
+    conn: &Connection,
+    start_time: Option<i64>,
+    end_time: Option<i64>,
+    filters: &GenAiFilters,
+) -> Result<Vec<otelite_core::api::ContextCompositionSession>> {
+    let exprs = token_exprs();
+    let session_expr = "json_extract(attributes, '$.\"session.id\"')";
+    let cache_read = exprs.cache_read.clone();
+    let mut where_clause = format!(
+        "WHERE {} AND {} IS NOT NULL",
+        exprs.llm_span_guard, session_expr
+    );
+    let mut params: Vec<Box<dyn rusqlite::ToSql>> = Vec::new();
+
+    if let Some(start) = start_time {
+        where_clause.push_str(" AND start_time >= ?");
+        params.push(Box::new(start));
+    }
+    if let Some(end) = end_time {
+        where_clause.push_str(" AND start_time <= ?");
+        params.push(Box::new(end));
+    }
+    push_scope(&mut where_clause, &mut params, filters.span_scope());
+
+    let sql = format!(
+        "SELECT
+            {session_expr} as session_id,
+            COUNT(*) as request_count,
+            SUM(CASE WHEN {cache_read} IS NOT NULL THEN 1 ELSE 0 END) as cached_requests,
+            MIN(CASE WHEN {cache_read} IS NOT NULL THEN {cache_read} END) as fixed_prefix,
+            MAX(COALESCE({cache_read}, 0)) as peak_context,
+            MIN(start_time) as first_request_ns,
+            MAX(start_time) as last_request_ns
+        FROM spans
+        {where_clause}
+        GROUP BY session_id
+        HAVING MIN(CASE WHEN {cache_read} IS NOT NULL THEN {cache_read} END) IS NOT NULL
+        ORDER BY fixed_prefix DESC",
+        session_expr = session_expr,
+        cache_read = cache_read,
+    );
+
+    let param_refs: Vec<&dyn rusqlite::ToSql> = params.iter().map(|p| p.as_ref()).collect();
+    let mut stmt = conn.prepare(&sql).map_err(|e| {
+        StorageError::QueryError(format!(
+            "Failed to prepare context_composition query: {}",
+            e
+        ))
+    })?;
+
+    let rows = stmt
+        .query_map(param_refs.as_slice(), |row| {
+            let fixed: i64 = row.get::<_, Option<i64>>(3)?.unwrap_or(0);
+            let peak: i64 = row.get::<_, i64>(4)?;
+            Ok(otelite_core::api::ContextCompositionSession {
+                session_id: row.get::<_, Option<String>>(0)?.unwrap_or_default(),
+                request_count: row.get::<_, i64>(1)? as u64,
+                cached_requests: row.get::<_, i64>(2)? as u64,
+                fixed_prefix: fixed,
+                peak_context: peak,
+                growth: peak - fixed,
+                first_request_ns: row.get::<_, i64>(5)?,
+                last_request_ns: row.get::<_, i64>(6)?,
+            })
+        })
+        .map_err(|e| {
+            StorageError::QueryError(format!(
+                "Failed to execute context_composition query: {}",
+                e
+            ))
+        })?
+        .collect::<std::result::Result<Vec<_>, _>>()
+        .map_err(|e| {
+            StorageError::QueryError(format!(
+                "Failed to parse context_composition results: {}",
+                e
+            ))
+        })?;
+
+    Ok(rows)
+}
+
 pub fn query_top_conversations(
     conn: &Connection,
     start_time: Option<i64>,
@@ -10335,6 +10424,100 @@ mod tests {
         assert_eq!(interaction.unwrap().calls, 2);
         assert!(sub_agent.is_some(), "sub_agent row missing");
         assert_eq!(sub_agent.unwrap().calls, 1);
+    }
+
+    fn insert_cached_llm_span(
+        conn: &Connection,
+        session: Option<&str>,
+        cache_read: Option<i64>,
+        start: i64,
+    ) {
+        let mut attrs = serde_json::json!({
+            "gen_ai.request.model": "test-model",
+            "gen_ai.usage.input_tokens": 10,
+            "gen_ai.usage.output_tokens": 5,
+        });
+        if let Some(s) = session {
+            attrs["session.id"] = serde_json::json!(s);
+        }
+        if let Some(v) = cache_read {
+            attrs["gen_ai.usage.cache_read.input_tokens"] = serde_json::json!(v);
+        }
+        conn.execute(
+            "INSERT INTO spans (trace_id, span_id, name, kind, start_time, end_time, attributes, resource, events, links, scope)
+             VALUES (?, ?, 'claude_code.llm_request', 0, ?, ? + 1000000000, ?, '{}', '[]', '[]', '{}')",
+            rusqlite::params![next_id(), next_id(), start, start, attrs.to_string()],
+        )
+        .unwrap();
+    }
+
+    #[test]
+    fn test_context_composition_fixed_prefix_and_growth() {
+        let conn = setup_test_db();
+        // Session A: cache-read 100 -> 120 -> 110 over three requests:
+        // fixed prefix 100, peak 120, growth 20.
+        insert_cached_llm_span(&conn, Some("sess-a"), Some(100), 1_000_000_000);
+        insert_cached_llm_span(&conn, Some("sess-a"), Some(120), 2_000_000_000);
+        insert_cached_llm_span(&conn, Some("sess-a"), Some(110), 3_000_000_000);
+        // Session B: a single cached request — no growth.
+        insert_cached_llm_span(&conn, Some("sess-b"), Some(50), 1_500_000_000);
+        // Session C: LLM activity but no cache telemetry — excluded.
+        insert_cached_llm_span(&conn, Some("sess-c"), None, 1_500_000_000);
+        insert_cached_llm_span(&conn, Some("sess-c"), None, 1_600_000_000);
+        // Cache-bearing span without a session id — excluded.
+        insert_cached_llm_span(&conn, None, Some(999), 1_500_000_000);
+
+        let rows = query_context_composition(&conn, None, None, &GenAiFilters::default()).unwrap();
+        assert_eq!(
+            rows.len(),
+            2,
+            "only cache-bearing sessions with ids: {rows:?}"
+        );
+
+        // Ordered by fixed prefix descending.
+        let a = &rows[0];
+        assert_eq!(a.session_id, "sess-a");
+        assert_eq!(a.request_count, 3);
+        assert_eq!(a.cached_requests, 3);
+        assert_eq!(a.fixed_prefix, 100);
+        assert_eq!(a.peak_context, 120);
+        assert_eq!(a.growth, 20);
+        assert_eq!(a.first_request_ns, 1_000_000_000);
+        assert_eq!(a.last_request_ns, 3_000_000_000);
+
+        let b = &rows[1];
+        assert_eq!(b.session_id, "sess-b");
+        assert_eq!(b.fixed_prefix, 50);
+        assert_eq!(b.peak_context, 50);
+        assert_eq!(b.growth, 0);
+    }
+
+    #[test]
+    fn test_context_composition_window_and_model_filter() {
+        let conn = setup_test_db();
+        insert_cached_llm_span(&conn, Some("sess-a"), Some(100), 1_000_000_000);
+        insert_cached_llm_span(&conn, Some("sess-a"), Some(300), 9_000_000_000);
+
+        // A window covering only the first request: fixed == peak == 100.
+        let rows = query_context_composition(
+            &conn,
+            Some(0),
+            Some(5_000_000_000),
+            &GenAiFilters::default(),
+        )
+        .unwrap();
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].fixed_prefix, 100);
+        assert_eq!(rows[0].peak_context, 100);
+        assert_eq!(rows[0].request_count, 1);
+
+        // A model filter that matches nothing excludes everything.
+        let no_match = GenAiFilters {
+            model: Some("other-model".to_string()),
+            ..Default::default()
+        };
+        let rows = query_context_composition(&conn, None, None, &no_match).unwrap();
+        assert!(rows.is_empty());
     }
 
     #[test]

@@ -505,6 +505,20 @@ impl StorageBackend for SqliteBackend {
         .await
     }
 
+    async fn query_context_composition(
+        &self,
+        start_time: Option<i64>,
+        end_time: Option<i64>,
+        filters: &GenAiFilters,
+    ) -> Result<Vec<otelite_core::api::ContextCompositionSession>> {
+        let filters = filters.clone();
+        self.read_query(move |conn| {
+            reader::query_context_composition(conn, start_time, end_time, &filters)
+                .map_err(StorageError::from)
+        })
+        .await
+    }
+
     async fn query_top_conversations(
         &self,
         start_time: Option<i64>,

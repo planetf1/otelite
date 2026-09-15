@@ -11,6 +11,15 @@ have to work around), not implementation detail.
 
 ## [Unreleased]
 
+### Added
+
+- `otelite usage --context-composition` shows what makes up the context
+  your AI agents replay: per session, the fixed prefix (the minimum
+  cache-read across its requests — the system prompt, tool schemas, and
+  skills re-sent on every call) and the in-session growth (conversation
+  and tool results added over time) — the numbers you need to decide
+  when to prune AGENTS.md, skills, or MCP config (#113)
+
 ## [0.1.140] - 2026-09-15
 
 ### Added

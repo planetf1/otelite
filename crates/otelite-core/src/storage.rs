@@ -9,8 +9,8 @@ use thiserror::Error;
 
 use crate::api::{
     AgentRolesResponse, AgentRollupStorage, CacheEconomicsResponse, CacheHitRateByModel,
-    CallsSeriesPoint, ConversationCostRow, ConversationDepthStats, CostSeriesPoint,
-    DistributionResponse, ErrorRateByModel, ErrorTypeBreakdown, FinishReasonCount,
+    CallsSeriesPoint, ContextCompositionSession, ConversationCostRow, ConversationDepthStats,
+    CostSeriesPoint, DistributionResponse, ErrorRateByModel, ErrorTypeBreakdown, FinishReasonCount,
     GenAiCapabilityResponse, LatencyByContextBin, LatencyPercentilesResponse, LatencySeriesPoint,
     LatencyStats, ModelDriftPair, ModelPerformanceQuery, ModelPerformanceResponse, ModelUsage,
     ProjectRollupStorage, ProviderMixResponse, ReasoningShareResponse, RecentErrorsResponse,
@@ -258,6 +258,20 @@ pub trait StorageBackend: Send + Sync {
         filters: &GenAiFilters,
         limit: usize,
     ) -> Result<Vec<SessionCostRow>>;
+
+    /// Per-session context composition (#113): fixed prefix (min cache-read)
+    /// vs peak cache-read, plus the growth between them. Sessions without
+    /// any cache-read telemetry are omitted.
+    async fn query_context_composition(
+        &self,
+        _start_time: Option<i64>,
+        _end_time: Option<i64>,
+        _filters: &GenAiFilters,
+    ) -> Result<Vec<ContextCompositionSession>> {
+        Err(StorageError::QueryError(
+            "Context composition reporting is not supported by this backend".to_string(),
+        ))
+    }
 
     /// Top-N conversations (gen_ai.conversation.id) by total tokens.
     async fn query_top_conversations(

@@ -154,6 +154,12 @@ pub struct UsageCommand {
     #[arg(long)]
     pub context_split: bool,
 
+    /// Show context composition per session (#113): the fixed prefix
+    /// (minimum cache-read replayed every call — system prompt, tools,
+    /// skills) vs peak context, and the growth between them
+    #[arg(long)]
+    pub context_composition: bool,
+
     /// Show top tool errors from failed tool executions (Claude Code)
     #[arg(long, value_name = "N", default_missing_value = "20")]
     pub tool_errors: Option<usize>,
@@ -370,6 +376,8 @@ struct UsageOutput {
     stop_reasons: Option<Vec<otelite_core::api::StopReasonCount>>,
     #[serde(skip_serializing_if = "Option::is_none")]
     context_split: Option<Vec<otelite_core::api::ContextTypeSplit>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    context_composition: Option<Vec<otelite_core::api::ContextCompositionSession>>,
     #[serde(skip_serializing_if = "Option::is_none")]
     tool_errors: Option<Vec<otelite_core::api::ToolErrorEntry>>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -814,6 +822,21 @@ impl UsageCommand {
         } else {
             None
         };
+
+        // --context-composition
+        let context_composition: Option<Vec<otelite_core::api::ContextCompositionSession>> =
+            if self.context_composition {
+                Some(
+                    storage
+                        .query_context_composition(Some(start_time), Some(end_time), &filters)
+                        .await
+                        .map_err(|e| {
+                            Error::ApiError(format!("Failed to query context composition: {}", e))
+                        })?,
+                )
+            } else {
+                None
+            };
 
         // --tool-errors
         let tool_errors: Option<Vec<otelite_core::api::ToolErrorEntry>> = if let Some(n) =
@@ -1555,6 +1578,7 @@ impl UsageCommand {
                     tool_approvals,
                     stop_reasons,
                     context_split,
+                    context_composition,
                     tool_errors,
                     hour_of_day,
                     calls_series,
@@ -1711,6 +1735,11 @@ impl UsageCommand {
 
                 if let Some(ref rows) = context_split {
                     display_context_split(rows);
+                    println!();
+                }
+
+                if let Some(ref rows) = context_composition {
+                    display_context_composition(rows);
                     println!();
                 }
 
@@ -2965,6 +2994,58 @@ fn display_context_split(rows: &[otelite_core::api::ContextTypeSplit]) {
         ]);
     }
     println!("Usage by Request Context (llm_request.context):");
+    println!("{}", table);
+}
+
+fn display_context_composition(rows: &[otelite_core::api::ContextCompositionSession]) {
+    if rows.is_empty() {
+        println!("Context Composition: no sessions with cache-read telemetry in range");
+        return;
+    }
+
+    // Window-level summary over the full row set (the query returns every
+    // qualifying session; the table below is the truncated view).
+    let mut fixed: Vec<i64> = rows.iter().map(|r| r.fixed_prefix).collect();
+    fixed.sort();
+    let median_fixed = fixed[fixed.len() / 2];
+    let max_fixed = *fixed.last().expect("rows is non-empty");
+
+    let mut growth: Vec<i64> = rows.iter().map(|r| r.growth).collect();
+    growth.sort();
+    let median_growth = growth[growth.len() / 2];
+
+    println!(
+        "Context Composition ({} sessions with cache data) — fixed prefix median {}, max {}; \
+         in-session growth median {}",
+        rows.len(),
+        format_number(median_fixed.max(0) as u64),
+        format_number(max_fixed.max(0) as u64),
+        format_number(median_growth.max(0) as u64),
+    );
+    println!("Fixed prefix is what every call replays (system prompt, tool schemas, skills);");
+    println!("growth is the conversation/tool-result context added over the session.");
+    println!();
+
+    let mut table = Table::new();
+    fit_to_terminal(&mut table);
+    table.load_preset(UTF8_FULL);
+    table.set_header(vec![
+        Cell::new("Session ID").fg(Color::Cyan),
+        Cell::new("Reqs").fg(Color::Cyan),
+        Cell::new("Fixed prefix").fg(Color::Cyan),
+        Cell::new("Peak context").fg(Color::Cyan),
+        Cell::new("Growth").fg(Color::Cyan),
+    ]);
+
+    for r in rows.iter().take(20) {
+        table.add_row(vec![
+            &truncate(&r.session_id, 32),
+            &r.request_count.to_string(),
+            &format_number(r.fixed_prefix.max(0) as u64),
+            &format_number(r.peak_context.max(0) as u64),
+            &format_number(r.growth.max(0) as u64),
+        ]);
+    }
     println!("{}", table);
 }
 
