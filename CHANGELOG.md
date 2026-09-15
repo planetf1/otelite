@@ -11,6 +11,8 @@ have to work around), not implementation detail.
 
 ## [Unreleased]
 
+## [0.1.139] - 2026-09-15
+
 ### Fixed
 
 - Wide-window GenAI reports no longer slow down as your database grows:
