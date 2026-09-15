@@ -42,6 +42,9 @@ pub mod session_duration;
 // Lines-of-code efficiency (issue #178)
 pub mod loc_efficiency;
 
+// Rare-tool session summary (issue #176)
+pub mod rare_tools;
+
 // Generic distribution binning + summary stats (issue #133)
 pub mod distribution;
 

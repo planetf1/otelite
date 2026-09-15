@@ -67,6 +67,7 @@ class AnalyticsView {
         { id: 'session_chains',          title: 'Session Chains',          hint: 'Resumed sessions rolled up into work threads — which threads you sustain vs abandon' },
         { id: 'session_duration',        title: 'Session Duration',        hint: 'Session length distribution per tool — spot too-short (frustration?) and too-long (inefficient?) sessions' },
         { id: 'loc_efficiency',          title: 'Code Efficiency',         hint: 'Cost per 100 lines of code per tool and model — is the code worth what it costs' },
+        { id: 'rare_tool_sessions',      title: 'Rare Tool Sessions',      hint: 'pi, deepseek and experimental harnesses — what those sessions did and what they cost' },
     ];
 
     // Top-level categories. A report appears in exactly one group; pinned
@@ -75,7 +76,7 @@ class AnalyticsView {
         { id: 'cost',        label: 'Cost',                    sub: 'Where did the tokens go?',            reports: ['cost', 'providers', 'cost_by_project', 'session_depth', 'roles', 'session_model', 'thinking_effort', 'efficiency', 'productivity', 'skills', 'loc_efficiency'] },
         { id: 'latency',     label: 'Latency',                 sub: 'How fast, and where is it slow?',      reports: ['latency', 'model_performance', 'ttft', 'tool_switch_overhead', 'codex_turns', 'speed_dist'] },
         { id: 'reliability', label: 'Reliability',             sub: "What's breaking, and how often?",      reports: ['reliability', 'tool_failures', 'guardian'] },
-        { id: 'behavior',    label: 'Behaviour',               sub: 'How is it being used?',                reports: ['behavior', 'multi_agent', 'model_selection_heatmap', 'time_in_tool', 'session_chains', 'session_duration'] },
+        { id: 'behavior',    label: 'Behaviour',               sub: 'How is it being used?',                reports: ['behavior', 'multi_agent', 'model_selection_heatmap', 'time_in_tool', 'session_chains', 'session_duration', 'rare_tool_sessions'] },
         { id: 'ecosystem',   label: 'Ecosystem & Diagnostics', sub: "What's the tooling actually doing?",   reports: ['hook_overhead', 'bob_hook_overhead', 'capabilities', 'project_rollup'] },
     ];
 
@@ -92,6 +93,7 @@ class AnalyticsView {
         session_chains: ['session chain', 'resumed session', 'continue', 'work thread', 'sustained', 'abandoned'],
         session_duration: ['session duration', 'session length', 'how long', 'outlier sessions', 'too long', 'too short'],
         loc_efficiency: ['lines of code', 'loc', 'cost per line', 'code efficiency', 'expensive code', 'productivity'],
+        rare_tool_sessions: ['rare tools', 'pi', 'deepseek', 'experimental harness', 'occasional tool', 'what did that session do'],
         roles: ['role', 'sub-agent', 'subagent', 'attribution', 'routing matrix'],
         session_model: ['per-session', 'session spend', 'model pair'],
         thinking_effort: ['effort', 'low', 'medium', 'high', 'xhigh', 'reasoning', 'thinking tokens', 'thinking'],
@@ -128,6 +130,7 @@ class AnalyticsView {
         session_chains: ['behavior', 'session_model', 'multi_agent'],
         session_duration: ['behavior', 'session_chains', 'time_in_tool'],
         loc_efficiency: ['efficiency', 'productivity', 'cost_by_project'],
+        rare_tool_sessions: ['session_duration', 'multi_agent', 'behavior'],
         roles: ['cost', 'session_model', 'model_selection_heatmap'],
         session_model: ['cost', 'roles'],
         thinking_effort: ['cost', 'model_performance', 'speed_dist'],
@@ -1137,6 +1140,7 @@ class AnalyticsView {
             session_chains: () => this._loadSessionChainsSection(),
             session_duration: () => this._loadSessionDurationSection(),
             loc_efficiency: () => this._loadLocEfficiencySection(),
+            rare_tool_sessions: () => this._loadRareToolSessionsSection(),
             latency: () => this._loadLatencySection(),
             reliability: () => this._loadReliabilitySection(),
             behavior: () => this._loadBehaviorSection(),
@@ -4182,6 +4186,54 @@ class AnalyticsView {
             this.loadedSections.add('loc_efficiency');
         } catch (err) {
             this._setSectionError('loc_efficiency', err);
+        }
+    }
+
+    // Rare tool sessions (#176): pi, deepseek and experimental
+    // harnesses — main tools excluded, tools with few sessions in the
+    // window. Each row: when, dominant model, tokens, cost, and the
+    // task hint from the dominant span name.
+    async _loadRareToolSessionsSection() {
+        this._setSectionLoading('rare_tool_sessions');
+        try {
+            const data = await this.api.getRareToolSessions(this._baseParams());
+            const rows = data.rows || [];
+            let html = '<p class="section-hint">Sessions from tools outside Claude Code, opencode, Codex and Bob with fewer than 10 sessions in this window — the exploratory work. Task hint = the dominant span name. Unpriced sessions read as —.</p>';
+            if (!rows.length) {
+                html += '<div class="empty-state-hint">No rare-tool sessions in this window.</div>';
+            } else {
+                const fmtUtc = ns => {
+                    const d = new Date(ns / 1_000_000);
+                    const p = n => String(n).padStart(2, '0');
+                    return `${d.getUTCFullYear()}-${p(d.getUTCMonth() + 1)}-${p(d.getUTCDate())} ${p(d.getUTCHours())}:${p(d.getUTCMinutes())}`;
+                };
+                const fmtSpan = ns => {
+                    const s = Math.max(0, Math.floor(ns / 1_000_000_000));
+                    if (s < 3600) return `${Math.floor(s / 60)} min`;
+                    if (s < 172_800) return `${(s / 3600).toFixed(1)} h`;
+                    return `${Math.floor(s / 86_400)} d ${Math.floor((s % 86_400) / 3600)} h`;
+                };
+                const fmtUsd = v => v != null ? `$${v.toFixed(2)}` : '—';
+                html += '<div class="analytics-table-wrap"><table class="analytics-table"><thead><tr>'
+                    + '<th>Tool</th><th>Session</th><th>Started (UTC)</th><th>Duration</th><th>Model</th><th>Tokens</th><th>Cost</th><th>Task hint</th>'
+                    + '</tr></thead><tbody>';
+                for (const r of rows) {
+                    const tokens = (r.input_tokens || 0) + (r.output_tokens || 0) + (r.cache_creation_tokens || 0) + (r.cache_read_tokens || 0);
+                    html += `<tr><td>${this._esc(r.tool)}</td>`
+                        + `<td><code>${this._esc(String(r.session_id).slice(0, 8))}</code></td>`
+                        + `<td>${fmtUtc(r.start_time)}</td>`
+                        + `<td>${fmtSpan(r.duration_ms * 1_000_000)}</td>`
+                        + `<td>${this._esc(r.model)}</td>`
+                        + `<td>${Number(tokens).toLocaleString()}</td>`
+                        + `<td>${fmtUsd(r.cost_usd)}</td>`
+                        + `<td>${r.top_span_name ? this._esc(r.top_span_name) : '—'}</td></tr>`;
+                }
+                html += '</tbody></table></div>';
+            }
+            this._setSectionBody('rare_tool_sessions', html);
+            this.loadedSections.add('rare_tool_sessions');
+        } catch (err) {
+            this._setSectionError('rare_tool_sessions', err);
         }
     }
 

@@ -85,6 +85,7 @@ use utoipa::OpenApi;
         crate::api::genai::get_codex_idle_ratio,
         crate::api::genai::get_session_duration,
         crate::api::genai::get_loc_efficiency,
+        crate::api::genai::get_rare_tool_sessions,
         crate::api::genai::get_session_model_breakdown,
         crate::api::genai::get_speed_distribution,
         crate::api::genai::get_cross_tool_ttft,
@@ -353,9 +354,23 @@ pub struct DashboardServer {
 }
 
 impl DashboardServer {
-    /// Create a new dashboard server
+    /// Create a new dashboard server (production path: the pricing
+    /// cache runs its background LiteLLM refresher).
     pub fn new(config: DashboardConfig, storage: Arc<dyn StorageBackend>) -> Self {
-        let pricing = PricingCache::new().spawn_refresher();
+        Self::with_pricing_cache(config, storage, PricingCache::new().spawn_refresher())
+    }
+
+    /// Create a dashboard server with a caller-managed pricing cache.
+    ///
+    /// Tests use this with a plain [`PricingCache::new`] (no background
+    /// refresher) so pricing behaviour is deterministic — the empty
+    /// database plus the Claude fallback table, with no live network
+    /// fetch racing the assertions.
+    pub fn with_pricing_cache(
+        config: DashboardConfig,
+        storage: Arc<dyn StorageBackend>,
+        pricing: PricingCache,
+    ) -> Self {
         let state = AppState {
             storage,
             cache: QueryCache::new(),
@@ -464,6 +479,10 @@ impl DashboardServer {
             .route("/api/genai/codex_idle_ratio", get(crate::api::genai::get_codex_idle_ratio))
             .route("/api/genai/session_duration", get(crate::api::genai::get_session_duration))
             .route("/api/genai/loc_efficiency", get(crate::api::genai::get_loc_efficiency))
+            .route(
+                "/api/genai/rare_tool_sessions",
+                get(crate::api::genai::get_rare_tool_sessions),
+            )
             .route("/api/genai/session_model_breakdown", get(crate::api::genai::get_session_model_breakdown))
             .route("/api/genai/speed_distribution", get(crate::api::genai::get_speed_distribution))
             .route("/api/genai/cross_tool_ttft", get(crate::api::genai::get_cross_tool_ttft))

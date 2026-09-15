@@ -13800,6 +13800,147 @@ pub fn query_loc_efficiency(
     })
 }
 
+// ── Rare tool sessions (#176) ──────────────────────────────────────────────
+
+/// Rare-tool session rows (#176): (session, tool, model) token
+/// groupings plus top-level span-name frequencies.
+///
+/// Only spans whose tool label is outside the main-tool set are
+/// fetched — the main tools have dedicated views, and skipping their
+/// spans here keeps the result set small on big databases. The rarity
+/// decision (session count vs threshold) happens in the pure
+/// [`otelite_core::rare_tools::build_sessions`], which also folds the
+/// rows into sessions.
+pub fn query_rare_tool_sessions(
+    conn: &Connection,
+    start_time: Option<i64>,
+    end_time: Option<i64>,
+) -> Result<otelite_core::api::RareToolSessionStorageResponse> {
+    use otelite_core::api::{
+        RareToolSessionSpanName, RareToolSessionStorageResponse, RareToolSessionStorageRow,
+    };
+    use otelite_core::rare_tools::MAIN_TOOLS;
+    use otelite_core::semconv;
+
+    let exprs = token_exprs();
+    let llm_guard = semconv::llm_span_guard("attributes");
+    let session_expr = semconv::session_id_expr("attributes");
+    let session_predicate = semconv::session_id_index_predicate("attributes");
+    let tool_expr = r#"CASE
+        WHEN json_extract(scope,'$.name') LIKE '%claude_code%'   THEN 'claude_code'
+        WHEN json_extract(scope,'$.name') = 'com.opencode'       THEN 'opencode'
+        WHEN json_extract(scope,'$.name') LIKE '%opencode%'      THEN 'opencode'
+        WHEN json_extract(scope,'$.name') = 'pi-otel'            THEN 'pi'
+        WHEN json_extract(scope,'$.name') LIKE '%codex%'         THEN 'codex'
+        WHEN json_extract(scope,'$.name') LIKE '%deekseek%'      THEN 'deepseek'
+        ELSE COALESCE(json_extract(scope,'$.name'), 'unknown')
+    END"#;
+    let model_expr = r#"COALESCE(json_extract(attributes,'$."gen_ai.request.model"'),
+        json_extract(attributes,'$."model"'), '(unknown)')"#;
+
+    let main_exclusion = MAIN_TOOLS
+        .iter()
+        .map(|t| format!("'{t}'"))
+        .collect::<Vec<_>>()
+        .join(", ");
+
+    let mut where_clause = format!(
+        "WHERE {llm_guard} AND {session_predicate}
+           AND ({tool}) NOT IN ({main_exclusion})",
+        llm_guard = llm_guard,
+        session_predicate = session_predicate,
+        tool = tool_expr,
+    );
+    let mut params: Vec<Box<dyn rusqlite::ToSql>> = Vec::new();
+    if let Some(s) = start_time {
+        where_clause.push_str(" AND start_time >= ?");
+        params.push(Box::new(s));
+    }
+    if let Some(e) = end_time {
+        where_clause.push_str(" AND start_time <= ?");
+        params.push(Box::new(e));
+    }
+
+    // ── Query A: per (session, tool, model) token groupings ──────────
+    let sql_a = format!(
+        "SELECT {session} AS session_id,
+                {tool} AS tool,
+                {model} AS model,
+                MIN(start_time) AS first_seen,
+                MAX(end_time) AS last_seen,
+                COALESCE(SUM({input}), 0) AS input_tokens,
+                COALESCE(SUM({output}), 0) AS output_tokens,
+                COALESCE(SUM({cache_creation}), 0) AS cache_creation_tokens,
+                COALESCE(SUM({cache_read}), 0) AS cache_read_tokens
+         FROM spans
+         {where_clause}
+         GROUP BY session_id, tool, model",
+        session = session_expr,
+        tool = tool_expr,
+        model = model_expr,
+        input = exprs.input,
+        output = exprs.output,
+        cache_creation = exprs.cache_creation,
+        cache_read = exprs.cache_read,
+    );
+    let param_refs: Vec<&dyn rusqlite::ToSql> = params.iter().map(|p| p.as_ref()).collect();
+    let mut stmt = conn.prepare(&sql_a).map_err(|e| {
+        StorageError::QueryError(format!("Failed to prepare rare_tool_sessions query: {e}"))
+    })?;
+    let rows: Vec<RareToolSessionStorageRow> = stmt
+        .query_map(param_refs.as_slice(), |r| {
+            Ok(RareToolSessionStorageRow {
+                session_id: r.get(0)?,
+                tool: r.get(1)?,
+                model: r.get(2)?,
+                first_seen: r.get(3)?,
+                last_seen: r.get(4)?,
+                input_tokens: r.get::<_, i64>(5).unwrap_or(0) as u64,
+                output_tokens: r.get::<_, i64>(6).unwrap_or(0) as u64,
+                cache_creation_tokens: r.get::<_, i64>(7).unwrap_or(0) as u64,
+                cache_read_tokens: r.get::<_, i64>(8).unwrap_or(0) as u64,
+            })
+        })
+        .map_err(|e| StorageError::QueryError(format!("{e}")))?
+        .collect::<std::result::Result<Vec<_>, _>>()
+        .map_err(|e| StorageError::QueryError(format!("{e}")))?;
+
+    // ── Query B: top-level span-name frequencies (the task hint) ─────
+    let sql_b = format!(
+        "SELECT {session} AS session_id,
+                {tool} AS tool,
+                name AS span_name,
+                COUNT(*) AS count
+         FROM spans
+         {where_clause}
+           AND parent_span_id IS NULL
+         GROUP BY session_id, tool, span_name",
+        session = session_expr,
+        tool = tool_expr,
+    );
+    let mut stmt = conn.prepare(&sql_b).map_err(|e| {
+        StorageError::QueryError(format!("Failed to prepare rare_tool span_names query: {e}"))
+    })?;
+    let span_names: Vec<RareToolSessionSpanName> = stmt
+        .query_map(param_refs.as_slice(), |r| {
+            Ok(RareToolSessionSpanName {
+                session_id: r.get(0)?,
+                tool: r.get(1)?,
+                span_name: r.get(2)?,
+                count: r.get::<_, i64>(3).unwrap_or(0) as u64,
+            })
+        })
+        .map_err(|e| StorageError::QueryError(format!("{e}")))?
+        .collect::<std::result::Result<Vec<_>, _>>()
+        .map_err(|e| StorageError::QueryError(format!("{e}")))?;
+
+    Ok(RareToolSessionStorageResponse {
+        rows,
+        span_names,
+        filters_applied: Vec::new(),
+    })
+}
+
 #[cfg(test)]
 mod new_insight_tests {
     use super::*;
@@ -16705,6 +16846,124 @@ mod new_insight_tests_2 {
             .unwrap()
             .rows
             .is_empty());
+    }
+
+    #[test]
+    fn test_rare_tool_sessions_excludes_main_tools() {
+        let conn = make_conn();
+        const SEC: i64 = 1_000_000_000;
+        let d1 = 1_767_225_600_000_000_000_i64; // 2026-01-01 (UTC)
+
+        // pi session rt-1: two spans, two models.
+        sc_span(
+            &conn,
+            "rt-1a",
+            d1,
+            "pi-otel",
+            Some("rt-1"),
+            "m1",
+            (10, 5, 0, 0),
+        );
+        sc_span(
+            &conn,
+            "rt-1b",
+            d1 + 60 * SEC,
+            "pi-otel",
+            Some("rt-1"),
+            "m2",
+            (20, 7, 1, 2),
+        );
+        // pi session rt-2: one span.
+        sc_span(
+            &conn,
+            "rt-2a",
+            d1 + 120 * SEC,
+            "pi-otel",
+            Some("rt-2"),
+            "m1",
+            (30, 1, 0, 0),
+        );
+        // deepseek session rt-3 (the typo'd scope the tool mix maps).
+        sc_span(
+            &conn,
+            "rt-3a",
+            d1 + 180 * SEC,
+            "deekseek",
+            Some("rt-3"),
+            "ds-m",
+            (5, 5, 0, 0),
+        );
+        // Main tools: excluded by the query itself.
+        sc_span(
+            &conn,
+            "rt-4a",
+            d1,
+            "com.anthropic.claude_code",
+            Some("rt-main"),
+            "m",
+            (999, 999, 0, 0),
+        );
+        sc_span(
+            &conn,
+            "rt-5a",
+            d1,
+            "com.opencode",
+            Some("rt-main2"),
+            "m",
+            (999, 999, 0, 0),
+        );
+
+        let result = query_rare_tool_sessions(&conn, None, None).unwrap();
+        // Four (session, tool, model) rows: rt-1 x 2 models, rt-2, rt-3.
+        assert_eq!(result.rows.len(), 4, "{result:?}");
+        let rt1a = result
+            .rows
+            .iter()
+            .find(|r| r.session_id == "rt-1" && r.model == "m1")
+            .unwrap();
+        assert_eq!(rt1a.tool, "pi");
+        assert_eq!(rt1a.first_seen, d1);
+        assert_eq!(rt1a.last_seen, d1 + 1_000_000); // sc_span's 1 ms width
+        assert_eq!(rt1a.input_tokens, 10);
+        assert_eq!(rt1a.output_tokens, 5);
+        let rt1b = result
+            .rows
+            .iter()
+            .find(|r| r.session_id == "rt-1" && r.model == "m2")
+            .unwrap();
+        assert_eq!(rt1b.input_tokens, 20);
+        assert_eq!(rt1b.cache_creation_tokens, 1);
+        assert_eq!(rt1b.cache_read_tokens, 2);
+        // No main-tool rows at all.
+        assert!(
+            result
+                .rows
+                .iter()
+                .all(|r| !otelite_core::rare_tools::is_main_tool(&r.tool)),
+            "{result:?}"
+        );
+
+        // Span-name frequencies: rt-1 has two top-level spans
+        // (sc_span's fixed name).
+        let names = result
+            .span_names
+            .iter()
+            .find(|n| n.session_id == "rt-1")
+            .unwrap();
+        assert_eq!(names.tool, "pi");
+        assert_eq!(names.span_name, "llm_request");
+        assert_eq!(names.count, 2);
+
+        // A window holding only rt-2's span.
+        let w =
+            query_rare_tool_sessions(&conn, Some(d1 + 100 * SEC), Some(d1 + 130 * SEC)).unwrap();
+        assert_eq!(w.rows.len(), 1, "{w:?}");
+        assert_eq!(w.rows[0].session_id, "rt-2");
+
+        // Empty state.
+        let empty = make_conn();
+        let e = query_rare_tool_sessions(&empty, None, None).unwrap();
+        assert!(e.rows.is_empty() && e.span_names.is_empty());
     }
 
     #[test]

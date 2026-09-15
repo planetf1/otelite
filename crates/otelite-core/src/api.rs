@@ -2997,6 +2997,98 @@ pub struct LocEfficiencyResponse {
     pub filters_applied: Vec<String>,
 }
 
+// ── Rare tool sessions (#176) ───────────────────────────────────────────────
+
+/// Per-model token breakdown within one rare-tool session (#176).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
+pub struct RareToolSessionModel {
+    pub model: String,
+    pub input_tokens: u64,
+    pub output_tokens: u64,
+    pub cache_creation_tokens: u64,
+    pub cache_read_tokens: u64,
+}
+
+/// One session of a rare tool (#176) — pi, deepseek, or any
+/// experimental harness outside the main-tool set with fewer than the
+/// rarity threshold sessions in the window.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
+pub struct RareToolSession {
+    /// Short tool label, same convention as the daily tool mix.
+    pub tool: String,
+    pub session_id: String,
+    /// First LLM span start (ns since Unix epoch).
+    pub start_time: i64,
+    /// Last span end minus first span start, in milliseconds.
+    pub duration_ms: u64,
+    /// The model with the most tokens in the session (the "which
+    /// model" summary); `(unknown)` when none carries tokens.
+    pub model: String,
+    pub input_tokens: u64,
+    pub output_tokens: u64,
+    pub cache_creation_tokens: u64,
+    pub cache_read_tokens: u64,
+    /// Priced session cost; `None` when no model is priced (partial
+    /// sums are kept, never a fabricated zero).
+    pub cost_usd: Option<f64>,
+    /// Most common top-level span name — the task hint. Empty string
+    /// when the session has no top-level spans.
+    pub top_span_name: String,
+    /// Per-model breakdown, total tokens descending (name asc on ties).
+    pub models: Vec<RareToolSessionModel>,
+}
+
+/// Response for `GET /api/genai/rare_tool_sessions` (#176), newest
+/// first.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
+pub struct RareToolSessionsResponse {
+    pub rows: Vec<RareToolSession>,
+    pub filters_applied: Vec<String>,
+}
+
+/// One (session, tool, model) row from the rare-tool storage query
+/// (#176) — the raw grouping the pure builder folds into sessions.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
+pub struct RareToolSessionStorageRow {
+    pub session_id: String,
+    pub tool: String,
+    pub model: String,
+    /// First LLM span start in the window (ns).
+    pub first_seen: i64,
+    /// Last span end in the window (ns).
+    pub last_seen: i64,
+    pub input_tokens: u64,
+    pub output_tokens: u64,
+    pub cache_creation_tokens: u64,
+    pub cache_read_tokens: u64,
+}
+
+/// Top-level span-name frequency for one (session, tool) (#176) — the
+/// source of the task hint.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
+pub struct RareToolSessionSpanName {
+    pub session_id: String,
+    pub tool: String,
+    pub span_name: String,
+    pub count: u64,
+}
+
+/// Response of the storage query behind
+/// `GET /api/genai/rare_tool_sessions` (#176). Only spans whose tool
+/// is outside the main-tool set are fetched.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
+pub struct RareToolSessionStorageResponse {
+    pub rows: Vec<RareToolSessionStorageRow>,
+    pub span_names: Vec<RareToolSessionSpanName>,
+    pub filters_applied: Vec<String>,
+}
+
 // ── Session chains (#165) ────────────────────────────────────────────────────
 
 /// One time burst (segment) of a session chain (#165): a contiguous run

@@ -277,6 +277,7 @@ class ApiClient {
     async getCodexIdleRatio(params = {}) { return this.get('/genai/codex_idle_ratio', params); }
     async getSessionDuration(params = {}) { return this.get('/genai/session_duration', params); }
     async getLocEfficiency(params = {}) { return this.get('/genai/loc_efficiency', params); }
+    async getRareToolSessions(params = {}) { return this.get('/genai/rare_tool_sessions', params); }
     async getCrossToolTtft(params = {})     { return this.get('/genai/cross_tool_ttft', params); }
     async getHookOverhead(params = {})      { return this.get('/genai/hook_overhead', params); }
     async getBobHookOverhead(params = {})   { return this.get('/genai/bob_hook_overhead', params); }

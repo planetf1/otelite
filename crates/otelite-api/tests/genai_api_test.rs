@@ -3603,3 +3603,97 @@ async fn test_loc_efficiency_cost_per_100_lines() {
         "{v}"
     );
 }
+
+// ── Rare tool sessions (#176) ───────────────────────────────────────────────
+
+#[tokio::test]
+async fn test_rare_tool_sessions_summary() {
+    let (server, storage, _temp_dir) = setup_test_server().await;
+    let app = server.build_router();
+
+    // Empty state.
+    let (status, v) = get_json(&app, "/api/genai/rare_tool_sessions").await;
+    assert_eq!(status, StatusCode::OK);
+    assert!(v["rows"].as_array().unwrap().is_empty());
+
+    // Invalid threshold: 0 -> 400.
+    let (status, _) = get_json(
+        &app,
+        "/api/genai/rare_tool_sessions?rare_session_threshold=0",
+    )
+    .await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+
+    const SEC: i64 = 1_000_000_000;
+    let d1 = 1_767_225_600_000_000_000_i64;
+
+    // pi session rare-1: two spans, one model (sonnet fallback: 1M in +
+    // 1M out = $18.00).
+    let spans = vec![
+        sch_span(
+            "rt-1",
+            "pi-otel",
+            "claude-sonnet-5",
+            d1,
+            "rare-1",
+            (500_000, 500_000),
+        ),
+        sch_span(
+            "rt-2",
+            "pi-otel",
+            "claude-sonnet-5",
+            d1 + 60 * SEC,
+            "rare-1",
+            (500_000, 500_000),
+        ),
+        // Main tool: excluded from the summary entirely.
+        sch_span(
+            "rt-3",
+            "com.anthropic.claude_code",
+            "claude-sonnet-5",
+            d1,
+            "main-1",
+            (1, 1),
+        ),
+    ];
+    storage.write_span_batch(&spans).await.unwrap();
+
+    // Windowed query — a different cache key than the empty-state call.
+    let (status, v) = get_json(
+        &app,
+        &format!(
+            "/api/genai/rare_tool_sessions?start_time={d1}&end_time={}",
+            d1 + 86_400 * SEC
+        ),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+
+    let rows = v["rows"].as_array().unwrap();
+    assert_eq!(rows.len(), 1, "{v}");
+    assert_eq!(rows[0]["tool"], "pi");
+    assert_eq!(rows[0]["session_id"], "rare-1");
+    assert_eq!(rows[0]["model"], "claude-sonnet-5");
+    assert_eq!(rows[0]["input_tokens"], 1_000_000);
+    assert_eq!(rows[0]["output_tokens"], 1_000_000);
+    assert!(
+        (rows[0]["cost_usd"].as_f64().unwrap() - 18.0).abs() < 1e-6,
+        "{v}"
+    );
+    // Task hint: the dominant span name (sch_span's fixed name).
+    assert_eq!(rows[0]["top_span_name"], "llm_request");
+    // Duration: first start to last end.
+    assert!(rows[0]["duration_ms"].as_u64().unwrap() >= 60_000, "{v}");
+
+    // A threshold of 1: pi has 1 session, not fewer than 1 -> excluded.
+    let (status, v) = get_json(
+        &app,
+        &format!(
+            "/api/genai/rare_tool_sessions?rare_session_threshold=1&start_time={d1}&end_time={}",
+            d1 + 86_400 * SEC
+        ),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    assert!(v["rows"].as_array().unwrap().is_empty(), "{v}");
+}

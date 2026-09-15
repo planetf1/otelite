@@ -214,6 +214,10 @@ pub struct UsageCommand {
     #[arg(long)]
     pub loc_efficiency: bool,
 
+    /// Show rare-tool sessions (pi, deepseek, experimental harnesses — main tools excluded)
+    #[arg(long)]
+    pub rare_tools: bool,
+
     /// Show cross-tool first-token latency comparison (Claude Code, opencode, pi) from spans
     #[arg(long)]
     pub cross_tool_ttft: bool,
@@ -394,6 +398,8 @@ struct UsageOutput {
     session_duration: Option<otelite_core::api::SessionDurationResponse>,
     #[serde(skip_serializing_if = "Option::is_none")]
     loc_efficiency: Option<otelite_core::api::LocEfficiencyResponse>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    rare_tools: Option<otelite_core::api::RareToolSessionsResponse>,
     #[serde(skip_serializing_if = "Option::is_none")]
     cross_tool_ttft: Option<otelite_core::api::CrossToolTtftResponse>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -1126,6 +1132,29 @@ impl UsageCommand {
             None
         };
 
+        // --rare-tools
+        let rare_tools: Option<otelite_core::api::RareToolSessionsResponse> = if self.rare_tools {
+            let resp = storage
+                .query_rare_tool_sessions(Some(start_time), Some(end_time))
+                .await
+                .map_err(|e| Error::ApiError(format!("Failed to query rare_tool_sessions: {e}")))?;
+            // The API handler's convention (default threshold; the
+            // CLI surfaces the summary view, the API takes the
+            // parameter).
+            let rows = otelite_core::rare_tools::build_sessions(
+                &resp.rows,
+                &resp.span_names,
+                otelite_core::rare_tools::DEFAULT_RARE_SESSION_THRESHOLD,
+                |model, usage: TokenUsage| pricing_db.compute_cost(Some(model), usage, None).cost,
+            );
+            Some(otelite_core::api::RareToolSessionsResponse {
+                rows,
+                filters_applied: Vec::new(),
+            })
+        } else {
+            None
+        };
+
         // --cross-tool-ttft
         let cross_tool_ttft: Option<otelite_core::api::CrossToolTtftResponse> =
             if self.cross_tool_ttft {
@@ -1510,6 +1539,7 @@ impl UsageCommand {
                     codex_idle_ratio,
                     session_duration,
                     loc_efficiency,
+                    rare_tools,
                     cross_tool_ttft,
                     hook_overhead,
                     bob_hook_overhead,
@@ -1728,6 +1758,11 @@ impl UsageCommand {
 
                 if let Some(ref resp) = loc_efficiency {
                     display_loc_efficiency(resp);
+                    println!();
+                }
+
+                if let Some(ref resp) = rare_tools {
+                    display_rare_tools(resp);
                     println!();
                 }
 
@@ -3513,6 +3548,63 @@ fn display_loc_efficiency(resp: &otelite_core::api::LocEfficiencyResponse) {
     println!("{}", table);
 }
 
+/// Table cells for the rare-tool session table (#176), in response
+/// order (newest first): tool, session (8-char prefix), started
+/// (UTC), duration, dominant model, total tokens, cost, task hint.
+fn rare_tool_session_rows(resp: &otelite_core::api::RareToolSessionsResponse) -> Vec<Vec<String>> {
+    resp.rows
+        .iter()
+        .map(|s| {
+            let tokens =
+                s.input_tokens + s.output_tokens + s.cache_creation_tokens + s.cache_read_tokens;
+            vec![
+                s.tool.clone(),
+                s.session_id.chars().take(8).collect(),
+                fmt_utc_ns(s.start_time),
+                fmt_chain_span_ns((s.duration_ms as i64) * 1_000_000),
+                s.model.clone(),
+                tokens.to_string(),
+                s.cost_usd
+                    .map(|c| format!("${c:.2}"))
+                    .unwrap_or_else(|| "—".to_string()),
+                if s.top_span_name.is_empty() {
+                    "—".to_string()
+                } else {
+                    s.top_span_name.clone()
+                },
+            ]
+        })
+        .collect()
+}
+
+fn display_rare_tools(resp: &otelite_core::api::RareToolSessionsResponse) {
+    println!(
+        "Rare Tool Sessions (< {} sessions in range; main tools excluded):",
+        otelite_core::rare_tools::DEFAULT_RARE_SESSION_THRESHOLD
+    );
+    if resp.rows.is_empty() {
+        println!("  No rare-tool sessions in range");
+        return;
+    }
+    let mut table = Table::new();
+    fit_to_terminal(&mut table);
+    table.load_preset(UTF8_FULL);
+    table.set_header(vec![
+        Cell::new("Tool").fg(Color::Cyan),
+        Cell::new("Session").fg(Color::Cyan),
+        Cell::new("Started (UTC)").fg(Color::Cyan),
+        Cell::new("Duration").fg(Color::Cyan),
+        Cell::new("Model").fg(Color::Cyan),
+        Cell::new("Tokens").fg(Color::Cyan),
+        Cell::new("Cost").fg(Color::Cyan),
+        Cell::new("Task hint").fg(Color::Cyan),
+    ]);
+    for row in rare_tool_session_rows(resp) {
+        table.add_row(row.into_iter().map(Cell::new).collect::<Vec<_>>());
+    }
+    println!("{}", table);
+}
+
 fn display_cross_tool_ttft(resp: &otelite_core::api::CrossToolTtftResponse) {
     if resp.rows.is_empty() {
         println!("Cross-Tool TTFT: no span-level ttft_ms data in range");
@@ -4993,5 +5085,58 @@ mod tests {
 
         // Empty state: no rows.
         assert!(loc_efficiency_rows(&LocEfficiencyResponse::default()).is_empty());
+    }
+
+    #[test]
+    fn test_rare_tool_session_rows() {
+        use otelite_core::api::{RareToolSession, RareToolSessionsResponse};
+        let resp = RareToolSessionsResponse {
+            rows: vec![RareToolSession {
+                tool: "pi".into(),
+                session_id: "aaaaaaaa-bbbb".into(),
+                start_time: 1_767_225_600_000_000_000, // 2026-01-01 00:00 UTC
+                duration_ms: 150_000,                  // 2.5 min -> "2 min" (integer)
+                model: "pi-model".into(),
+                input_tokens: 100,
+                output_tokens: 50,
+                cache_creation_tokens: 0,
+                cache_read_tokens: 10,
+                cost_usd: Some(1.234),
+                top_span_name: "pi.interaction".into(),
+                models: vec![],
+            }],
+            filters_applied: vec![],
+        };
+        let rows = rare_tool_session_rows(&resp);
+        assert_eq!(rows.len(), 1);
+        assert_eq!(
+            rows[0],
+            vec![
+                "pi",
+                "aaaaaaaa",
+                "2026-01-01 00:00",
+                "2 min",
+                "pi-model",
+                "160",
+                "$1.23",
+                "pi.interaction",
+            ]
+        );
+
+        // Unpriced cost + missing task hint render as dashes.
+        let resp = RareToolSessionsResponse {
+            rows: vec![RareToolSession {
+                cost_usd: None,
+                top_span_name: String::new(),
+                ..resp.rows[0].clone()
+            }],
+            filters_applied: vec![],
+        };
+        let rows = rare_tool_session_rows(&resp);
+        assert_eq!(rows[0][6], "—");
+        assert_eq!(rows[0][7], "—");
+
+        // Empty state: no rows.
+        assert!(rare_tool_session_rows(&RareToolSessionsResponse::default()).is_empty());
     }
 }

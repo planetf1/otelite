@@ -11,6 +11,15 @@ have to work around), not implementation detail.
 
 ## [Unreleased]
 
+### Added
+
+- New Rare Tool Sessions report: your occasional pi, deepseek, and
+  experimental-harness sessions finally have a home — when each ran,
+  how long it lasted, which model dominated, total tokens, cost, and a
+  task hint from the dominant span name, with `otelite usage
+  --rare-tools` as a table. Main tools (Claude Code, opencode, Codex,
+  Bob) and busy tools (10+ sessions) stay out of the way (#176)
+
 ## [0.1.135] - 2026-09-14
 
 ### Added

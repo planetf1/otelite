@@ -3103,6 +3103,81 @@ pub async fn get_loc_efficiency(
     Ok(Json(response))
 }
 
+/// Query parameters for GET /api/genai/rare_tool_sessions (#176).
+#[derive(Debug, Deserialize, Serialize, utoipa::IntoParams, utoipa::ToSchema)]
+pub struct RareToolSessionsQuery {
+    /// Tools with fewer sessions in the window than this are "rare"
+    /// (default 10). The main tools (claude_code, opencode, codex, bob)
+    /// are always excluded, whatever the threshold.
+    pub rare_session_threshold: Option<u64>,
+    /// Start time (nanoseconds since Unix epoch)
+    pub start_time: Option<i64>,
+    /// End time (nanoseconds since Unix epoch)
+    pub end_time: Option<i64>,
+}
+
+/// Rare-tool session summary (#176): pi, deepseek, and any
+/// experimental harness outside the main-tool set — when each session
+/// ran, which model, how much it cost, and a task hint from the
+/// dominant span name.
+#[utoipa::path(
+    get,
+    path = "/api/genai/rare_tool_sessions",
+    params(RareToolSessionsQuery),
+    responses(
+        (status = 200, description = "Rare-tool sessions, newest first", body = otelite_core::api::RareToolSessionsResponse),
+        (status = 400, description = "Invalid rare_session_threshold", body = ErrorResponse),
+        (status = 500, description = "Internal server error", body = ErrorResponse)
+    ),
+    tag = "genai"
+)]
+pub async fn get_rare_tool_sessions(
+    State(state): State<AppState>,
+    Query(query): Query<RareToolSessionsQuery>,
+) -> Result<Json<otelite_core::api::RareToolSessionsResponse>, (StatusCode, Json<ErrorResponse>)> {
+    use otelite_core::pricing::TokenUsage;
+    use otelite_core::rare_tools;
+
+    const MAX_RARE_THRESHOLD: u64 = 1000;
+    let threshold = query
+        .rare_session_threshold
+        .unwrap_or(rare_tools::DEFAULT_RARE_SESSION_THRESHOLD);
+    if threshold == 0 || threshold > MAX_RARE_THRESHOLD {
+        return Err((
+            StatusCode::BAD_REQUEST,
+            Json(ErrorResponse::bad_request(format!(
+                "rare_session_threshold must be between 1 and {MAX_RARE_THRESHOLD} sessions, got {threshold}"
+            ))),
+        ));
+    }
+
+    let resp = state
+        .storage
+        .query_rare_tool_sessions(query.start_time, query.end_time)
+        .await
+        .map_err(|e| {
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(ErrorResponse::storage_error(format!(
+                    "query rare_tool_sessions: {e}"
+                ))),
+            )
+        })?;
+
+    let pricing = state.pricing.snapshot().await;
+    let rows = rare_tools::build_sessions(
+        &resp.rows,
+        &resp.span_names,
+        threshold,
+        |model, usage: TokenUsage| pricing.db.compute_cost(Some(model), usage, None).cost,
+    );
+
+    Ok(Json(otelite_core::api::RareToolSessionsResponse {
+        rows,
+        filters_applied: Vec::new(),
+    }))
+}
+
 /// Session × model cross-tab: tokens and cost per (session_id, model) pair (#115).
 #[utoipa::path(
     get,

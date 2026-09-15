@@ -837,6 +837,18 @@ pub trait StorageBackend: Send + Sync {
         Err(StorageError::QueryError("not implemented".to_string()))
     }
 
+    /// Rare-tool session rows for the session summary (#176):
+    /// (session, tool, model) token groupings plus top-level span-name
+    /// frequencies, for the tools outside the main-tool set only.
+    async fn query_rare_tool_sessions(
+        &self,
+        start_time: Option<i64>,
+        end_time: Option<i64>,
+    ) -> Result<crate::api::RareToolSessionStorageResponse> {
+        let _ = (start_time, end_time);
+        Err(StorageError::QueryError("not implemented".to_string()))
+    }
+
     /// Per-session, start-ordered LLM span rows for the tool-switch
     /// overhead analysis (#166): session id, tool, start time, and the
     /// reconciled TTFT in ms.
