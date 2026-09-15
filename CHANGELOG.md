@@ -11,6 +11,8 @@ have to work around), not implementation detail.
 
 ## [Unreleased]
 
+## [0.1.141] - 2026-09-15
+
 ### Added
 
 - `otelite usage --context-composition` shows what makes up the context
