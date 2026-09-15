@@ -8,8 +8,20 @@
 use assert_cmd::Command;
 use predicates::prelude::*;
 
+// Test isolation (#192 gate): every invocation gets its own empty data
+// dir so the suite never touches the developer's real otelite data and
+// parallel tests never contend over one DB's first-run schema writes
+// (index creation on a large shared DB outlives the 10 s busy timeout).
+static SMOKE_DATA_DIR_COUNTER: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+
 fn otelite() -> Command {
-    Command::cargo_bin("otelite").expect("otelite binary should build")
+    let n = SMOKE_DATA_DIR_COUNTER.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    let mut cmd = Command::cargo_bin("otelite").expect("otelite binary should build");
+    cmd.env(
+        "OTELITE_DATA_DIR",
+        std::env::temp_dir().join(format!("otelite-smoke-{}-{n}", std::process::id())),
+    );
+    cmd
 }
 
 #[test]
