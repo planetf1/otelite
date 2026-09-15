@@ -1265,6 +1265,19 @@ impl StorageBackend for SqliteBackend {
         .await
     }
 
+    async fn query_human_response_latency(
+        &self,
+        start_time: Option<i64>,
+        end_time: Option<i64>,
+        max_gap_secs: u64,
+    ) -> Result<otelite_core::api::HumanLatencyStorageResponse> {
+        self.read_query(move |conn| {
+            reader::query_human_response_latency(conn, start_time, end_time, max_gap_secs)
+                .map_err(StorageError::from)
+        })
+        .await
+    }
+
     async fn query_tool_switch_storage(
         &self,
         start_time: Option<i64>,

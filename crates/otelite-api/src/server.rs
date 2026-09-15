@@ -86,6 +86,7 @@ use utoipa::OpenApi;
         crate::api::genai::get_session_duration,
         crate::api::genai::get_loc_efficiency,
         crate::api::genai::get_rare_tool_sessions,
+        crate::api::genai::get_human_response_latency,
         crate::api::genai::get_session_model_breakdown,
         crate::api::genai::get_speed_distribution,
         crate::api::genai::get_cross_tool_ttft,
@@ -482,6 +483,10 @@ impl DashboardServer {
             .route(
                 "/api/genai/rare_tool_sessions",
                 get(crate::api::genai::get_rare_tool_sessions),
+            )
+            .route(
+                "/api/genai/human_response_latency",
+                get(crate::api::genai::get_human_response_latency),
             )
             .route("/api/genai/session_model_breakdown", get(crate::api::genai::get_session_model_breakdown))
             .route("/api/genai/speed_distribution", get(crate::api::genai::get_speed_distribution))

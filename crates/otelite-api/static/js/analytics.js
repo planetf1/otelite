@@ -68,13 +68,14 @@ class AnalyticsView {
         { id: 'session_duration',        title: 'Session Duration',        hint: 'Session length distribution per tool — spot too-short (frustration?) and too-long (inefficient?) sessions' },
         { id: 'loc_efficiency',          title: 'Code Efficiency',         hint: 'Cost per 100 lines of code per tool and model — is the code worth what it costs' },
         { id: 'rare_tool_sessions',      title: 'Rare Tool Sessions',      hint: 'pi, deepseek and experimental harnesses — what those sessions did and what they cost' },
+        { id: 'human_response_latency',  title: 'Human Response Latency',  hint: 'The gap between turns — how long you take to read and reply, per tool and hour' },
     ];
 
     // Top-level categories. A report appears in exactly one group; pinned
     // reports move to the Pinned group while pinned.
     static GROUPS = [
         { id: 'cost',        label: 'Cost',                    sub: 'Where did the tokens go?',            reports: ['cost', 'providers', 'cost_by_project', 'session_depth', 'roles', 'session_model', 'thinking_effort', 'efficiency', 'productivity', 'skills', 'loc_efficiency'] },
-        { id: 'latency',     label: 'Latency',                 sub: 'How fast, and where is it slow?',      reports: ['latency', 'model_performance', 'ttft', 'tool_switch_overhead', 'codex_turns', 'speed_dist'] },
+        { id: 'latency',     label: 'Latency',                 sub: 'How fast, and where is it slow?',      reports: ['latency', 'model_performance', 'ttft', 'tool_switch_overhead', 'codex_turns', 'speed_dist', 'human_response_latency'] },
         { id: 'reliability', label: 'Reliability',             sub: "What's breaking, and how often?",      reports: ['reliability', 'tool_failures', 'guardian'] },
         { id: 'behavior',    label: 'Behaviour',               sub: 'How is it being used?',                reports: ['behavior', 'multi_agent', 'model_selection_heatmap', 'time_in_tool', 'session_chains', 'session_duration', 'rare_tool_sessions'] },
         { id: 'ecosystem',   label: 'Ecosystem & Diagnostics', sub: "What's the tooling actually doing?",   reports: ['hook_overhead', 'bob_hook_overhead', 'capabilities', 'project_rollup'] },
@@ -94,6 +95,7 @@ class AnalyticsView {
         session_duration: ['session duration', 'session length', 'how long', 'outlier sessions', 'too long', 'too short'],
         loc_efficiency: ['lines of code', 'loc', 'cost per line', 'code efficiency', 'expensive code', 'productivity'],
         rare_tool_sessions: ['rare tools', 'pi', 'deepseek', 'experimental harness', 'occasional tool', 'what did that session do'],
+        human_response_latency: ['human latency', 'response time', 'time between turns', 'reading time', 'thinking time', 'flow state', 'when do I work fastest'],
         roles: ['role', 'sub-agent', 'subagent', 'attribution', 'routing matrix'],
         session_model: ['per-session', 'session spend', 'model pair'],
         thinking_effort: ['effort', 'low', 'medium', 'high', 'xhigh', 'reasoning', 'thinking tokens', 'thinking'],
@@ -131,6 +133,7 @@ class AnalyticsView {
         session_duration: ['behavior', 'session_chains', 'time_in_tool'],
         loc_efficiency: ['efficiency', 'productivity', 'cost_by_project'],
         rare_tool_sessions: ['session_duration', 'multi_agent', 'behavior'],
+        human_response_latency: ['ttft', 'latency', 'time_in_tool'],
         roles: ['cost', 'session_model', 'model_selection_heatmap'],
         session_model: ['cost', 'roles'],
         thinking_effort: ['cost', 'model_performance', 'speed_dist'],
@@ -1141,6 +1144,7 @@ class AnalyticsView {
             session_duration: () => this._loadSessionDurationSection(),
             loc_efficiency: () => this._loadLocEfficiencySection(),
             rare_tool_sessions: () => this._loadRareToolSessionsSection(),
+            human_response_latency: () => this._loadHumanResponseLatencySection(),
             latency: () => this._loadLatencySection(),
             reliability: () => this._loadReliabilitySection(),
             behavior: () => this._loadBehaviorSection(),
@@ -4235,6 +4239,71 @@ class AnalyticsView {
         } catch (err) {
             this._setSectionError('rare_tool_sessions', err);
         }
+    }
+
+    // Human response latency (#171): the gap between an assistant
+    // turn ending and the next prompt of the same session/tool —
+    // reading and thinking time. Per-tool percentiles + an hour-of-
+    // day heatmap (deeper = slower).
+    async _loadHumanResponseLatencySection() {
+        this._setSectionLoading('human_response_latency');
+        try {
+            const data = await this.api.getHumanResponseLatency(this._baseParams());
+            const byTool = data.by_tool || [];
+            const byHour = data.by_hour || [];
+            let html = '<p class="section-hint">Gap = time between an assistant turn ending and your next prompt in the same session and tool (gaps over 30 min are excluded as context switches). A small p50 means your flow state is intact; the heatmap shows which UTC hours each tool is slowest.</p>';
+            if (!byTool.length) {
+                html += '<div class="empty-state-hint">No multi-turn sessions in this window.</div>';
+            } else {
+                const fmtSecs = v => v != null ? `${(v / 1000).toFixed(1)} s` : '—';
+                html += '<div class="analytics-table-wrap"><table class="analytics-table"><thead><tr>'
+                    + '<th>Tool</th><th>p50</th><th>p90</th><th>p95</th><th>Gaps</th>'
+                    + '</tr></thead><tbody>';
+                for (const r of byTool) {
+                    html += `<tr><td>${this._esc(r.tool)}</td><td>${fmtSecs(r.p50_ms)}</td><td>${fmtSecs(r.p90_ms)}</td><td>${fmtSecs(r.p95_ms)}</td><td>${Number(r.n).toLocaleString()}</td></tr>`;
+                }
+                html += '</tbody></table></div>';
+                html += this._buildHumanLatencyHeatmap(byTool, byHour);
+            }
+            this._setSectionBody('human_response_latency', html);
+            this.loadedSections.add('human_response_latency');
+        } catch (err) {
+            this._setSectionError('human_response_latency', err);
+        }
+    }
+
+    // Hour-of-day heatmap: one row per tool, 24 UTC-hour columns.
+    // Cell shading = the p50 gap in that hour (deeper = slower);
+    // hours with no gaps stay blank.
+    _buildHumanLatencyHeatmap(byTool, byHour) {
+        if (!byHour.length) return '';
+        const maxP50 = byHour.reduce((m, h) => Math.max(m, h.p50_ms || 0), 1);
+        const perTool = new Map();
+        for (const h of byHour) {
+            const hours = perTool.get(h.tool) || {};
+            hours[h.hour] = h;
+            perTool.set(h.tool, hours);
+        }
+        let html = '<h3>Hour of day (UTC) — p50 gap, deeper is slower</h3>'
+            + '<div class="analytics-table-wrap"><table class="analytics-table human-latency-table"><thead><tr><th>Tool</th>';
+        for (let h = 0; h < 24; h++) html += `<th>${h}</th>`;
+        html += '</tr></thead><tbody>';
+        for (const t of byTool) {
+            const hours = perTool.get(t.tool) || {};
+            html += `<tr><td>${this._esc(t.tool)}</td>`;
+            for (let h = 0; h < 24; h++) {
+                const row = hours[h];
+                if (!row) {
+                    html += '<td></td>';
+                    continue;
+                }
+                const alpha = Math.min((row.p50_ms / maxP50) * 0.85 + 0.08, 0.93);
+                html += `<td class="human-latency-cell" style="background: rgba(220, 60, 40, ${alpha.toFixed(3)})" title="${this._esc(t.tool)} ${String(h).padStart(2, '0')}:00 UTC — p50 ${(row.p50_ms / 1000).toFixed(1)} s, ${row.n} gap(s)"></td>`;
+            }
+            html += '</tr>';
+        }
+        html += '</tbody></table></div>';
+        return html;
     }
 
     async _loadTtftSection() {

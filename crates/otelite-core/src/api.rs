@@ -3089,6 +3089,66 @@ pub struct RareToolSessionStorageResponse {
     pub filters_applied: Vec<String>,
 }
 
+// ── Human response latency (#171) ───────────────────────────────────────────
+
+/// One inter-turn gap observation (#171): the wait between an
+/// assistant turn ending and the next turn of the same session and
+/// tool starting.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
+pub struct HumanLatencyGapRow {
+    /// Short tool label, same convention as the daily tool mix.
+    pub tool: String,
+    /// Start of the span that follows the gap (ns since Unix epoch).
+    pub at_ns: i64,
+    pub gap_ms: f64,
+}
+
+/// Storage response for `GET /api/genai/human_response_latency`
+/// (#171): raw gaps, already restricted to `0 < gap <= max_gap_secs`.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
+pub struct HumanLatencyStorageResponse {
+    pub rows: Vec<HumanLatencyGapRow>,
+    pub filters_applied: Vec<String>,
+}
+
+/// Per-tool human-latency aggregate (#171).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
+pub struct HumanLatencyToolRow {
+    pub tool: String,
+    pub p50_ms: f64,
+    pub p90_ms: f64,
+    pub p95_ms: f64,
+    /// Gaps counted.
+    pub n: u64,
+}
+
+/// Per (tool, UTC hour) aggregate (#171).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
+pub struct HumanLatencyHourRow {
+    /// 0-23.
+    pub hour: u8,
+    pub tool: String,
+    pub p50_ms: f64,
+    /// Gaps counted in this hour.
+    pub n: u64,
+}
+
+/// Response for `GET /api/genai/human_response_latency` (#171).
+/// Small gaps mean the flow state is intact; the hour view shows
+/// which windows you work in per tool.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
+pub struct HumanResponseLatencyResponse {
+    pub by_tool: Vec<HumanLatencyToolRow>,
+    /// (hour asc, tool asc).
+    pub by_hour: Vec<HumanLatencyHourRow>,
+    pub filters_applied: Vec<String>,
+}
+
 // ── Session chains (#165) ────────────────────────────────────────────────────
 
 /// One time burst (segment) of a session chain (#165): a contiguous run

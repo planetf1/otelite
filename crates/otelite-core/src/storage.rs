@@ -849,6 +849,20 @@ pub trait StorageBackend: Send + Sync {
         Err(StorageError::QueryError("not implemented".to_string()))
     }
 
+    /// Inter-turn human-latency gaps (#171): per (session, tool), the
+    /// wait between one LLM turn ending and the next starting,
+    /// restricted to `0 < gap <= max_gap_secs` (meal breaks and
+    /// overnight gaps are context switches, not thinking time).
+    async fn query_human_response_latency(
+        &self,
+        start_time: Option<i64>,
+        end_time: Option<i64>,
+        max_gap_secs: u64,
+    ) -> Result<crate::api::HumanLatencyStorageResponse> {
+        let _ = (start_time, end_time, max_gap_secs);
+        Err(StorageError::QueryError("not implemented".to_string()))
+    }
+
     /// Per-session, start-ordered LLM span rows for the tool-switch
     /// overhead analysis (#166): session id, tool, start time, and the
     /// reconciled TTFT in ms.

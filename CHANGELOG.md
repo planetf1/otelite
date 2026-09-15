@@ -11,6 +11,16 @@ have to work around), not implementation detail.
 
 ## [Unreleased]
 
+### Added
+
+- New Human Response Latency report: the gap between an assistant turn
+  ending and your next prompt, per tool (p50/p90/p95) and per hour of
+  day — a small p50 means your flow state is intact, and the hour
+  heatmap shows when each tool slows you down. Gaps over 30 minutes
+  (configurable via `max_gap_secs`) are treated as context switches,
+  not thinking time; `otelite usage --human-latency` prints the
+  per-tool table with each tool's busiest hours (#171)
+
 ## [0.1.136] - 2026-09-15
 
 ### Added

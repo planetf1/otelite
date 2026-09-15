@@ -3698,3 +3698,83 @@ async fn test_rare_tool_sessions_summary() {
     assert_eq!(status, StatusCode::OK);
     assert!(v["rows"].as_array().unwrap().is_empty(), "{v}");
 }
+
+// ── Human response latency (#171) ───────────────────────────────────────────
+
+#[tokio::test]
+async fn test_human_response_latency_gaps_and_percentiles() {
+    let (server, storage, _temp_dir) = setup_test_server().await;
+    let app = server.build_router();
+
+    // Empty state.
+    let (status, v) = get_json(&app, "/api/genai/human_response_latency").await;
+    assert_eq!(status, StatusCode::OK);
+    assert!(v["by_tool"].as_array().unwrap().is_empty());
+    assert!(v["by_hour"].as_array().unwrap().is_empty());
+
+    // Invalid cap: 0 -> 400.
+    let (status, _) = get_json(&app, "/api/genai/human_response_latency?max_gap_secs=0").await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+
+    const SEC: i64 = 1_000_000_000;
+    const MS: i64 = 1_000_000;
+    let d1 = 1_767_225_600_000_000_000_i64; // 2026-01-01 00:00 UTC
+
+    // pi session hl-1: three turns -> gaps of 6000 ms and 29999 ms
+    // (sch_span's 1 ms width eats off each gap).
+    let spans = vec![
+        sch_span("hl-1", "pi-otel", "m", d1, "hl-1", (1, 1)),
+        sch_span("hl-2", "pi-otel", "m", d1 + 6_001 * MS, "hl-1", (1, 1)),
+        sch_span("hl-3", "pi-otel", "m", d1 + 36_001 * MS, "hl-1", (1, 1)),
+    ];
+    storage.write_span_batch(&spans).await.unwrap();
+
+    // Windowed query — a different cache key than the empty-state call.
+    let (status, v) = get_json(
+        &app,
+        &format!(
+            "/api/genai/human_response_latency?start_time={d1}&end_time={}",
+            d1 + 86_400 * SEC
+        ),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+
+    let by_tool = v["by_tool"].as_array().unwrap();
+    assert_eq!(by_tool.len(), 1, "{v}");
+    assert_eq!(by_tool[0]["tool"], "pi");
+    assert_eq!(by_tool[0]["n"], 2);
+    // Nearest-rank on [6000, 29999]: every percentile lands on 29999.
+    assert!(
+        (by_tool[0]["p50_ms"].as_f64().unwrap() - 29_999.0).abs() < 1e-9,
+        "{v}"
+    );
+    assert!(
+        (by_tool[0]["p90_ms"].as_f64().unwrap() - 29_999.0).abs() < 1e-9,
+        "{v}"
+    );
+
+    let by_hour = v["by_hour"].as_array().unwrap();
+    assert_eq!(by_hour.len(), 1, "{v}");
+    assert_eq!(by_hour[0]["hour"], 0);
+    assert_eq!(by_hour[0]["tool"], "pi");
+    assert_eq!(by_hour[0]["n"], 2);
+
+    // A 10 s cap drops the 29.999 s gap.
+    let (status, v) = get_json(
+        &app,
+        &format!(
+            "/api/genai/human_response_latency?max_gap_secs=10&start_time={d1}&end_time={}",
+            d1 + 86_400 * SEC
+        ),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    let by_tool = v["by_tool"].as_array().unwrap();
+    assert_eq!(by_tool.len(), 1, "{v}");
+    assert_eq!(by_tool[0]["n"], 1, "{v}");
+    assert!(
+        (by_tool[0]["p50_ms"].as_f64().unwrap() - 6_000.0).abs() < 1e-9,
+        "{v}"
+    );
+}

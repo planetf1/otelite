@@ -45,6 +45,9 @@ pub mod loc_efficiency;
 // Rare-tool session summary (issue #176)
 pub mod rare_tools;
 
+// Human response latency (issue #171)
+pub mod human_latency;
+
 // Generic distribution binning + summary stats (issue #133)
 pub mod distribution;
 

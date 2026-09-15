@@ -218,6 +218,10 @@ pub struct UsageCommand {
     #[arg(long)]
     pub rare_tools: bool,
 
+    /// Show human response latency per tool (the gap between turns — reading/thinking time)
+    #[arg(long)]
+    pub human_latency: bool,
+
     /// Show cross-tool first-token latency comparison (Claude Code, opencode, pi) from spans
     #[arg(long)]
     pub cross_tool_ttft: bool,
@@ -400,6 +404,8 @@ struct UsageOutput {
     loc_efficiency: Option<otelite_core::api::LocEfficiencyResponse>,
     #[serde(skip_serializing_if = "Option::is_none")]
     rare_tools: Option<otelite_core::api::RareToolSessionsResponse>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    human_latency: Option<otelite_core::api::HumanResponseLatencyResponse>,
     #[serde(skip_serializing_if = "Option::is_none")]
     cross_tool_ttft: Option<otelite_core::api::CrossToolTtftResponse>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -1155,6 +1161,32 @@ impl UsageCommand {
             None
         };
 
+        // --human-latency
+        let human_latency: Option<otelite_core::api::HumanResponseLatencyResponse> =
+            if self.human_latency {
+                // 30-minute cap, same default as the API: gaps beyond
+                // it are context switches, not thinking time.
+                const DEFAULT_MAX_GAP_SECS: u64 = 1800;
+                let resp = storage
+                    .query_human_response_latency(
+                        Some(start_time),
+                        Some(end_time),
+                        DEFAULT_MAX_GAP_SECS,
+                    )
+                    .await
+                    .map_err(|e| {
+                        Error::ApiError(format!("Failed to query human_response_latency: {e}"))
+                    })?;
+                let (by_tool, by_hour) = otelite_core::human_latency::summarize(&resp.rows);
+                Some(otelite_core::api::HumanResponseLatencyResponse {
+                    by_tool,
+                    by_hour,
+                    filters_applied: Vec::new(),
+                })
+            } else {
+                None
+            };
+
         // --cross-tool-ttft
         let cross_tool_ttft: Option<otelite_core::api::CrossToolTtftResponse> =
             if self.cross_tool_ttft {
@@ -1540,6 +1572,7 @@ impl UsageCommand {
                     session_duration,
                     loc_efficiency,
                     rare_tools,
+                    human_latency,
                     cross_tool_ttft,
                     hook_overhead,
                     bob_hook_overhead,
@@ -1763,6 +1796,11 @@ impl UsageCommand {
 
                 if let Some(ref resp) = rare_tools {
                     display_rare_tools(resp);
+                    println!();
+                }
+
+                if let Some(ref resp) = human_latency {
+                    display_human_latency(resp);
                     println!();
                 }
 
@@ -3605,6 +3643,73 @@ fn display_rare_tools(resp: &otelite_core::api::RareToolSessionsResponse) {
     println!("{}", table);
 }
 
+/// Table cells for the human-latency per-tool table (#171): tool,
+/// p50/p90/p95 in seconds, gap count.
+fn human_latency_rows(resp: &otelite_core::api::HumanResponseLatencyResponse) -> Vec<Vec<String>> {
+    resp.by_tool
+        .iter()
+        .map(|r| {
+            vec![
+                r.tool.clone(),
+                format!("{:.1}", r.p50_ms / 1000.0),
+                format!("{:.1}", r.p90_ms / 1000.0),
+                format!("{:.1}", r.p95_ms / 1000.0),
+                r.n.to_string(),
+            ]
+        })
+        .collect()
+}
+
+/// The busiest three UTC hours for a tool (#171): most gaps first,
+/// ties by hour ascending.
+fn busiest_hours(
+    resp: &otelite_core::api::HumanResponseLatencyResponse,
+    tool: &str,
+) -> Vec<(u8, u64, f64)> {
+    let mut hours: Vec<&otelite_core::api::HumanLatencyHourRow> =
+        resp.by_hour.iter().filter(|h| h.tool == tool).collect();
+    hours.sort_by(|a, b| b.n.cmp(&a.n).then_with(|| a.hour.cmp(&b.hour)));
+    hours
+        .into_iter()
+        .take(3)
+        .map(|h| (h.hour, h.n, h.p50_ms))
+        .collect()
+}
+
+fn display_human_latency(resp: &otelite_core::api::HumanResponseLatencyResponse) {
+    println!("Human Response Latency (gap between turns, capped at 30 min):");
+    if resp.by_tool.is_empty() {
+        println!("  No multi-turn sessions in range");
+        return;
+    }
+    let mut table = Table::new();
+    fit_to_terminal(&mut table);
+    table.load_preset(UTF8_FULL);
+    table.set_header(vec![
+        Cell::new("Tool").fg(Color::Cyan),
+        Cell::new("p50 (s)").fg(Color::Cyan),
+        Cell::new("p90 (s)").fg(Color::Cyan),
+        Cell::new("p95 (s)").fg(Color::Cyan),
+        Cell::new("Gaps").fg(Color::Cyan),
+    ]);
+    for row in human_latency_rows(resp) {
+        table.add_row(row.into_iter().map(Cell::new).collect::<Vec<_>>());
+    }
+    println!("{}", table);
+    for r in &resp.by_tool {
+        let busiest = busiest_hours(resp, &r.tool);
+        if busiest.is_empty() {
+            continue;
+        }
+        let hours = busiest
+            .iter()
+            .map(|(h, n, p50)| format!("{h:02}h (n={n}, p50 {:.1}s)", p50 / 1000.0))
+            .collect::<Vec<_>>()
+            .join(", ");
+        println!("  {} busiest hours (UTC): {hours}", r.tool);
+    }
+}
+
 fn display_cross_tool_ttft(resp: &otelite_core::api::CrossToolTtftResponse) {
     if resp.rows.is_empty() {
         println!("Cross-Tool TTFT: no span-level ttft_ms data in range");
@@ -5138,5 +5243,71 @@ mod tests {
 
         // Empty state: no rows.
         assert!(rare_tool_session_rows(&RareToolSessionsResponse::default()).is_empty());
+    }
+
+    #[test]
+    fn test_human_latency_rows_and_busiest_hours() {
+        use otelite_core::api::{
+            HumanLatencyHourRow, HumanLatencyToolRow, HumanResponseLatencyResponse,
+        };
+        let resp = HumanResponseLatencyResponse {
+            by_tool: vec![HumanLatencyToolRow {
+                tool: "pi".into(),
+                p50_ms: 8200.0,
+                p90_ms: 25_000.0,
+                p95_ms: 41_200.0,
+                n: 42,
+            }],
+            by_hour: vec![
+                HumanLatencyHourRow {
+                    hour: 14,
+                    tool: "pi".into(),
+                    p50_ms: 5_000.0,
+                    n: 10,
+                },
+                HumanLatencyHourRow {
+                    hour: 9,
+                    tool: "pi".into(),
+                    p50_ms: 12_000.0,
+                    n: 12,
+                },
+                HumanLatencyHourRow {
+                    hour: 11,
+                    tool: "pi".into(),
+                    p50_ms: 9_000.0,
+                    n: 12,
+                },
+                HumanLatencyHourRow {
+                    hour: 3,
+                    tool: "pi".into(),
+                    p50_ms: 30_000.0,
+                    n: 4,
+                },
+                HumanLatencyHourRow {
+                    hour: 8,
+                    tool: "opencode".into(),
+                    p50_ms: 1_000.0,
+                    n: 99,
+                },
+            ],
+            filters_applied: vec![],
+        };
+        let rows = human_latency_rows(&resp);
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0], vec!["pi", "8.2", "25.0", "41.2", "42"]);
+
+        // Busiest: n desc, ties by hour asc, top 3, tool-filtered.
+        let busiest = busiest_hours(&resp, "pi");
+        assert_eq!(busiest.len(), 3);
+        assert_eq!(busiest[0], (9, 12, 12_000.0));
+        assert_eq!(busiest[1], (11, 12, 9_000.0));
+        assert_eq!(busiest[2], (14, 10, 5_000.0));
+        // Another tool's hours never leak in.
+        assert!(busiest_hours(&resp, "opencode")[0] == (8, 99, 1_000.0));
+
+        // Empty state: no rows, no busiest hours.
+        let empty = HumanResponseLatencyResponse::default();
+        assert!(human_latency_rows(&empty).is_empty());
+        assert!(busiest_hours(&empty, "pi").is_empty());
     }
 }

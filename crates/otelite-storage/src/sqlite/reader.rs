@@ -13941,6 +13941,120 @@ pub fn query_rare_tool_sessions(
     })
 }
 
+// ── Human response latency (#171) ──────────────────────────────────────────
+
+/// Inter-turn human-latency gaps (#171): within one session and tool,
+/// the wall time between an LLM turn ending and the next turn
+/// starting — how long the human took to read, think, and send the
+/// next prompt.
+///
+/// Gaps are capped at `max_gap_secs` (meal breaks and overnight gaps
+/// are context switches, not thinking time) and must be positive
+/// (overlapping spans have no human wait). Spans without session
+/// identity are excluded — they cannot be ordered into turns.
+pub fn query_human_response_latency(
+    conn: &Connection,
+    start_time: Option<i64>,
+    end_time: Option<i64>,
+    max_gap_secs: u64,
+) -> Result<otelite_core::api::HumanLatencyStorageResponse> {
+    use otelite_core::api::{HumanLatencyGapRow, HumanLatencyStorageResponse};
+    use otelite_core::semconv;
+
+    let llm_guard = semconv::llm_span_guard("attributes");
+    let session_expr = semconv::session_id_expr("attributes");
+    let session_predicate = semconv::session_id_index_predicate("attributes");
+    let tool_expr = r#"CASE
+        WHEN json_extract(scope,'$.name') LIKE '%claude_code%'   THEN 'claude_code'
+        WHEN json_extract(scope,'$.name') = 'com.opencode'       THEN 'opencode'
+        WHEN json_extract(scope,'$.name') LIKE '%opencode%'      THEN 'opencode'
+        WHEN json_extract(scope,'$.name') = 'pi-otel'            THEN 'pi'
+        WHEN json_extract(scope,'$.name') LIKE '%codex%'         THEN 'codex'
+        WHEN json_extract(scope,'$.name') LIKE '%deekseek%'      THEN 'deepseek'
+        ELSE COALESCE(json_extract(scope,'$.name'), 'unknown')
+    END"#;
+
+    let max_gap_ns = i64::try_from(max_gap_secs)
+        .map(|s| s * 1_000_000_000)
+        .unwrap_or(i64::MAX);
+
+    // The CTE must see spans just BEFORE the window start — otherwise
+    // the first in-window turn loses its predecessor and its gap. The
+    // grace period is exactly max_gap_ns: an earlier span can form an
+    // in-cap gap with an in-window span only within that reach. The
+    // window itself is applied to the gap's anchor (the next turn's
+    // start) in the outer query.
+    let mut cte_where = format!("WHERE {llm_guard} AND {session_predicate}");
+    let mut cte_params: Vec<Box<dyn rusqlite::ToSql>> = Vec::new();
+    if let Some(e) = end_time {
+        cte_where.push_str(" AND start_time <= ?");
+        cte_params.push(Box::new(e));
+    }
+    if let Some(s) = start_time {
+        cte_where.push_str(" AND start_time >= ?");
+        cte_params.push(Box::new(s.saturating_sub(max_gap_ns)));
+    }
+
+    let mut outer_where = String::from(
+        "WHERE prev_end IS NOT NULL AND start_time > prev_end AND (start_time - prev_end) <= ?",
+    );
+    let mut outer_params: Vec<Box<dyn rusqlite::ToSql>> = vec![Box::new(max_gap_ns)];
+    if let Some(s) = start_time {
+        outer_where.push_str(" AND start_time >= ?");
+        outer_params.push(Box::new(s));
+    }
+
+    let sql = format!(
+        r#"
+        WITH ordered AS (
+            SELECT
+              {tool} AS tool,
+              start_time,
+              LAG(end_time) OVER (
+                  PARTITION BY {session}, {tool}
+                  ORDER BY start_time
+              ) AS prev_end
+            FROM spans
+            {cte_where}
+        )
+        SELECT tool,
+               start_time AS at_ns,
+               (start_time - prev_end) / 1000000.0 AS gap_ms
+        FROM ordered
+        {outer_where}
+        ORDER BY at_ns ASC
+        "#,
+        tool = tool_expr,
+        session = session_expr,
+    );
+
+    let mut params: Vec<Box<dyn rusqlite::ToSql>> = cte_params;
+    params.append(&mut outer_params);
+    let param_refs: Vec<&dyn rusqlite::ToSql> = params.iter().map(|p| p.as_ref()).collect();
+
+    let mut stmt = conn.prepare(&sql).map_err(|e| {
+        StorageError::QueryError(format!(
+            "Failed to prepare human_response_latency query: {e}"
+        ))
+    })?;
+    let rows: Vec<HumanLatencyGapRow> = stmt
+        .query_map(param_refs.as_slice(), |r| {
+            Ok(HumanLatencyGapRow {
+                tool: r.get(0)?,
+                at_ns: r.get(1)?,
+                gap_ms: r.get::<_, f64>(2).unwrap_or(0.0),
+            })
+        })
+        .map_err(|e| StorageError::QueryError(format!("{e}")))?
+        .collect::<std::result::Result<Vec<_>, _>>()
+        .map_err(|e| StorageError::QueryError(format!("{e}")))?;
+
+    Ok(HumanLatencyStorageResponse {
+        rows,
+        filters_applied: Vec::new(),
+    })
+}
+
 #[cfg(test)]
 mod new_insight_tests {
     use super::*;
@@ -16964,6 +17078,135 @@ mod new_insight_tests_2 {
         let empty = make_conn();
         let e = query_rare_tool_sessions(&empty, None, None).unwrap();
         assert!(e.rows.is_empty() && e.span_names.is_empty());
+    }
+
+    #[test]
+    fn test_human_response_latency_gaps() {
+        let conn = make_conn();
+        const MS: i64 = 1_000_000;
+        let d1 = 1_767_225_600_000_000_000_i64; // 2026-01-01 (UTC)
+
+        // pi session hl-1: three turns -> gaps of 1000 ms and 29999 ms
+        // (sc_span's 1 ms width eats off each gap).
+        sc_span(
+            &conn,
+            "hl-1",
+            d1,
+            "pi-otel",
+            Some("hl-1"),
+            "m",
+            (1, 1, 0, 0),
+        );
+        sc_span(
+            &conn,
+            "hl-2",
+            d1 + 1_001 * MS,
+            "pi-otel",
+            Some("hl-1"),
+            "m",
+            (1, 1, 0, 0),
+        );
+        sc_span(
+            &conn,
+            "hl-3",
+            d1 + 31_001 * MS,
+            "pi-otel",
+            Some("hl-1"),
+            "m",
+            (1, 1, 0, 0),
+        );
+        // opencode session hl-2: two turns -> gap of 4999 ms.
+        sc_span(
+            &conn,
+            "hl-4",
+            d1 + 100_000 * MS,
+            "com.opencode",
+            Some("hl-2"),
+            "m",
+            (1, 1, 0, 0),
+        );
+        sc_span(
+            &conn,
+            "hl-5",
+            d1 + 105_000 * MS,
+            "com.opencode",
+            Some("hl-2"),
+            "m",
+            (1, 1, 0, 0),
+        );
+        // pi session hl-3: overlapping spans -> negative gap, excluded.
+        sc_span(
+            &conn,
+            "hl-6",
+            d1,
+            "pi-otel",
+            Some("hl-3"),
+            "m",
+            (1, 1, 0, 0),
+        );
+        sc_span(
+            &conn,
+            "hl-7",
+            d1 + 500_000,
+            "pi-otel",
+            Some("hl-3"),
+            "m",
+            (1, 1, 0, 0),
+        );
+        // No session identity: excluded entirely.
+        sc_span(
+            &conn,
+            "hl-8",
+            d1,
+            "com.anthropic.claude_code",
+            None,
+            "m",
+            (1, 1, 0, 0),
+        );
+        sc_span(
+            &conn,
+            "hl-9",
+            d1 + 10_000 * MS,
+            "com.anthropic.claude_code",
+            None,
+            "m",
+            (1, 1, 0, 0),
+        );
+
+        // Full hour cap: all three positive gaps, in start order.
+        let all = query_human_response_latency(&conn, None, None, 3600).unwrap();
+        assert_eq!(all.rows.len(), 3, "{all:?}");
+        assert_eq!(all.rows[0].tool, "pi");
+        assert_eq!(all.rows[0].at_ns, d1 + 1_001 * MS);
+        assert!((all.rows[0].gap_ms - 1000.0).abs() < 1e-9, "{all:?}");
+        assert_eq!(all.rows[1].tool, "pi");
+        assert_eq!(all.rows[1].at_ns, d1 + 31_001 * MS);
+        assert!((all.rows[1].gap_ms - 29_999.0).abs() < 1e-9, "{all:?}");
+        assert_eq!(all.rows[2].tool, "opencode");
+        assert!((all.rows[2].gap_ms - 4_999.0).abs() < 1e-9, "{all:?}");
+
+        // 5 s cap: the 29999 ms gap drops out.
+        let capped = query_human_response_latency(&conn, None, None, 5).unwrap();
+        assert_eq!(capped.rows.len(), 2, "{capped:?}");
+        assert!(capped.rows.iter().all(|r| r.gap_ms <= 5_000.0));
+
+        // A window holding only the 31 s turn.
+        let w = query_human_response_latency(
+            &conn,
+            Some(d1 + 30_000 * MS),
+            Some(d1 + 40_000 * MS),
+            3600,
+        )
+        .unwrap();
+        assert_eq!(w.rows.len(), 1, "{w:?}");
+        assert!((w.rows[0].gap_ms - 29_999.0).abs() < 1e-9, "{w:?}");
+
+        // Empty state.
+        let empty = make_conn();
+        assert!(query_human_response_latency(&empty, None, None, 1800)
+            .unwrap()
+            .rows
+            .is_empty());
     }
 
     #[test]

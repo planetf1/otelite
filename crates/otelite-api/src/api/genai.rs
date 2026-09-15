@@ -3178,6 +3178,74 @@ pub async fn get_rare_tool_sessions(
     }))
 }
 
+/// Query parameters for GET /api/genai/human_response_latency (#171).
+#[derive(Debug, Deserialize, Serialize, utoipa::IntoParams, utoipa::ToSchema)]
+pub struct HumanResponseLatencyQuery {
+    /// Gap cap in seconds: gaps beyond it are context switches (meal
+    /// breaks, overnight), not thinking time (default 1800 = 30 min).
+    pub max_gap_secs: Option<u64>,
+    /// Start time (nanoseconds since Unix epoch)
+    pub start_time: Option<i64>,
+    /// End time (nanoseconds since Unix epoch)
+    pub end_time: Option<i64>,
+}
+
+/// Human response latency (#171): the gap between an assistant turn
+/// ending and the next prompt of the same session and tool — how long
+/// reading and thinking took. Small gaps mean the flow state is
+/// intact; the hour-of-day view shows which windows you work in per
+/// tool. Gaps beyond `max_gap_secs` (default 30 min) are excluded.
+#[utoipa::path(
+    get,
+    path = "/api/genai/human_response_latency",
+    params(HumanResponseLatencyQuery),
+    responses(
+        (status = 200, description = "Per-tool and per-hour human latency percentiles", body = otelite_core::api::HumanResponseLatencyResponse),
+        (status = 400, description = "Invalid max_gap_secs", body = ErrorResponse),
+        (status = 500, description = "Internal server error", body = ErrorResponse)
+    ),
+    tag = "genai"
+)]
+pub async fn get_human_response_latency(
+    State(state): State<AppState>,
+    Query(query): Query<HumanResponseLatencyQuery>,
+) -> Result<Json<otelite_core::api::HumanResponseLatencyResponse>, (StatusCode, Json<ErrorResponse>)>
+{
+    use otelite_core::human_latency;
+
+    const DEFAULT_MAX_GAP_SECS: u64 = 1800;
+    const MAX_MAX_GAP_SECS: u64 = 86_400;
+    let max_gap_secs = query.max_gap_secs.unwrap_or(DEFAULT_MAX_GAP_SECS);
+    if max_gap_secs == 0 || max_gap_secs > MAX_MAX_GAP_SECS {
+        return Err((
+            StatusCode::BAD_REQUEST,
+            Json(ErrorResponse::bad_request(format!(
+                "max_gap_secs must be between 1 and {MAX_MAX_GAP_SECS} seconds, got {max_gap_secs}"
+            ))),
+        ));
+    }
+
+    let resp = state
+        .storage
+        .query_human_response_latency(query.start_time, query.end_time, max_gap_secs)
+        .await
+        .map_err(|e| {
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(ErrorResponse::storage_error(format!(
+                    "query human_response_latency: {e}"
+                ))),
+            )
+        })?;
+
+    let (by_tool, by_hour) = human_latency::summarize(&resp.rows);
+    Ok(Json(otelite_core::api::HumanResponseLatencyResponse {
+        by_tool,
+        by_hour,
+        filters_applied: Vec::new(),
+    }))
+}
+
 /// Session × model cross-tab: tokens and cost per (session_id, model) pair (#115).
 #[utoipa::path(
     get,
