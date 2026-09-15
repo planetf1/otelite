@@ -138,8 +138,8 @@
                     <div class="onboarding-section">
                         <h3>Otelite is listening on</h3>
                         <ul class="endpoint-list">
-                            <li><strong>OTLP gRPC:</strong> <code>localhost:4317</code></li>
-                            <li><strong>OTLP HTTP:</strong> <code>http://localhost:4318</code></li>
+                            <li><strong>OTLP gRPC:</strong> <code>__OTELITE_HOST__:__OTLP_GRPC_PORT__</code></li>
+                            <li><strong>OTLP HTTP:</strong> <code>http://__OTELITE_HOST__:__OTLP_HTTP_PORT__</code></li>
                         </ul>
                     </div>
 
@@ -151,7 +151,7 @@
                             <pre><code># Set these environment variables before running Claude Code.
 # Telemetry is off by default — CLAUDE_CODE_ENABLE_TELEMETRY=1 is required.
 export CLAUDE_CODE_ENABLE_TELEMETRY=1
-export OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4318
+export OTEL_EXPORTER_OTLP_ENDPOINT=http://__OTELITE_HOST__:__OTLP_HTTP_PORT__
 export OTEL_EXPORTER_OTLP_PROTOCOL=http/protobuf
 export OTEL_SERVICE_NAME=claude-code
 export OTEL_LOGS_EXPORTER=otlp
@@ -172,7 +172,7 @@ export OTEL_TRACES_EXPORTER=otlp
                             <pre><code># The Agent SDK runs the Claude Code CLI as a child process,
 # so the same env vars apply. Set them before launching your agent:
 export CLAUDE_CODE_ENABLE_TELEMETRY=1
-export OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4318
+export OTEL_EXPORTER_OTLP_ENDPOINT=http://__OTELITE_HOST__:__OTLP_HTTP_PORT__
 export OTEL_EXPORTER_OTLP_PROTOCOL=http/protobuf
 export OTEL_LOGS_EXPORTER=otlp
 export OTEL_METRICS_EXPORTER=otlp
@@ -188,7 +188,7 @@ from opentelemetry.exporter.otlp.proto.http.trace_exporter import OTLPSpanExport
 from opentelemetry.sdk.trace import TracerProvider
 from opentelemetry.sdk.trace.export import BatchSpanProcessor
 
-exporter = OTLPSpanExporter(endpoint="http://localhost:4318/v1/traces")
+exporter = OTLPSpanExporter(endpoint="http://__OTELITE_HOST__:__OTLP_HTTP_PORT__/v1/traces")
 provider = TracerProvider()
 provider.add_span_processor(BatchSpanProcessor(exporter))
 trace.set_tracer_provider(provider)
@@ -202,7 +202,7 @@ with tracer.start_as_current_span("my-operation"):
                         <details class="config-example">
                             <summary><strong>Mellea — build predictable AI without guesswork</strong></summary>
                             <pre><code>uv pip install "mellea[telemetry]"
-export OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4317
+export OTEL_EXPORTER_OTLP_ENDPOINT=http://__OTELITE_HOST__:__OTLP_GRPC_PORT__
 export MELLEA_TRACE_APPLICATION=true
 export MELLEA_TRACE_BACKEND=true
 export MELLEA_METRICS_ENABLED=true
@@ -219,7 +219,7 @@ from opentelemetry.sdk.trace import TracerProvider
 from opentelemetry.sdk.trace.export import BatchSpanProcessor
 import openai
 
-exporter = OTLPSpanExporter(endpoint="http://localhost:4318/v1/traces")
+exporter = OTLPSpanExporter(endpoint="http://__OTELITE_HOST__:__OTLP_HTTP_PORT__/v1/traces")
 provider = TracerProvider()
 provider.add_span_processor(BatchSpanProcessor(exporter))
 OpenAIInstrumentor().instrument()
@@ -243,7 +243,7 @@ from opentelemetry.sdk.trace import TracerProvider
 from opentelemetry.sdk.trace.export import BatchSpanProcessor
 import anthropic
 
-exporter = OTLPSpanExporter(endpoint="http://localhost:4318/v1/traces")
+exporter = OTLPSpanExporter(endpoint="http://__OTELITE_HOST__:__OTLP_HTTP_PORT__/v1/traces")
 provider = TracerProvider()
 provider.add_span_processor(BatchSpanProcessor(exporter))
 AnthropicInstrumentor().instrument()
@@ -269,7 +269,7 @@ import openai
 
 provider = TracerProvider()
 provider.add_span_processor(BatchSpanProcessor(
-    OTLPSpanExporter(endpoint="http://localhost:4318/v1/traces")))
+    OTLPSpanExporter(endpoint="http://__OTELITE_HOST__:__OTLP_HTTP_PORT__/v1/traces")))
 OpenAIInstrumentor().instrument(tracer_provider=provider)
 
 # Swap OpenAIInstrumentor for AnthropicInstrumentor (from
@@ -286,7 +286,7 @@ const { BatchSpanProcessor } = require('@opentelemetry/sdk-trace-base');
 
 const provider = new NodeTracerProvider();
 provider.addSpanProcessor(new BatchSpanProcessor(new OTLPTraceExporter({
-  url: 'http://localhost:4318/v1/traces'
+  url: 'http://__OTELITE_HOST__:__OTLP_HTTP_PORT__/v1/traces'
 })));
 provider.register();</code></pre>
                         </details>
@@ -294,7 +294,7 @@ provider.register();</code></pre>
                         <details class="config-example">
                             <summary><strong>Go (OpenTelemetry SDK)</strong></summary>
                             <pre><code>exporter, _ := otlptracehttp.New(context.Background(),
-    otlptracehttp.WithEndpoint("localhost:4318"),
+    otlptracehttp.WithEndpoint("__OTELITE_HOST__:__OTLP_HTTP_PORT__"),
     otlptracehttp.WithInsecure(),
 )
 provider := trace.NewTracerProvider(trace.WithBatcher(exporter))
@@ -304,7 +304,7 @@ otel.SetTracerProvider(provider)</code></pre>
                         <details class="config-example">
                             <summary><strong>Test with otel-cli</strong></summary>
                             <pre><code># Install: https://github.com/equinix-labs/otel-cli
-otel-cli exec --endpoint http://localhost:4318 --service my-test -- echo "Hello Otelite!"</code></pre>
+otel-cli exec --endpoint http://__OTELITE_HOST__:__OTLP_HTTP_PORT__ --service my-test -- echo "Hello Otelite!"</code></pre>
                         </details>
                     </div>
 

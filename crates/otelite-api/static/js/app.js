@@ -2,6 +2,7 @@
 
 import { api } from './api.js';
 import { CommandPalette } from './palette.js';
+import { fillEndpointPlaceholders } from './setup.js';
 
 /**
  * Main application class
@@ -43,6 +44,7 @@ class App {
         };
         this.setupNavigation();
         this.setupConnectionMonitoring();
+        this.setupEndpointPlaceholders();
         this.palette = new CommandPalette(this);
         this.loadInitialView();
 
@@ -218,6 +220,31 @@ class App {
     }
 
     /**
+     * Fill the setup view's endpoint placeholders with the actual host
+     * and OTLP ports (#73). The host is where the browser reached the
+     * dashboard (correct for remote browsing); the ports come from
+     * /api/health, which reports the server's real receiver ports
+     * (re-pointable via OTELITE_OTLP_GRPC_PORT / OTELITE_OTLP_HTTP_PORT).
+     */
+    async setupEndpointPlaceholders() {
+        const setupView = document.getElementById('setup-view');
+        if (!setupView) return;
+        let grpcPort = 4317;
+        let httpPort = 4318;
+        try {
+            const health = this.lastHealthData || (await api.getHealth());
+            if (Number.isFinite(health.otlp_grpc_port)) grpcPort = health.otlp_grpc_port;
+            if (Number.isFinite(health.otlp_http_port)) httpPort = health.otlp_http_port;
+        } catch (err) {
+            // Keep the standard defaults — the placeholders are still
+            // filled with the browser's host.
+        }
+        const host =
+            (typeof window !== 'undefined' && window.location && window.location.hostname) || 'localhost';
+        setupView.innerHTML = fillEndpointPlaceholders(setupView.innerHTML, host, grpcPort, httpPort);
+    }
+
+    /**
      * Check connection to backend
      */
     async checkConnection() {
@@ -390,12 +417,14 @@ class App {
 }
 
 // Initialize app when DOM is ready
-if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', () => {
+if (typeof document !== 'undefined') {
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', () => {
+            window.app = new App();
+        });
+    } else {
         window.app = new App();
-    });
-} else {
-    window.app = new App();
+    }
 }
 
 // Export for use in other modules

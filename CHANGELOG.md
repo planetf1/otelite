@@ -11,6 +11,14 @@ have to work around), not implementation detail.
 
 ## [Unreleased]
 
+### Fixed
+
+- The Setup tab now shows your SDK snippets with the host you actually
+  reached the dashboard from (previously hardcoded to localhost) and
+  the server's real OTLP receiver ports — correct for remote browsing
+  and for custom ports set via OTELITE_OTLP_GRPC_PORT /
+  OTELITE_OTLP_HTTP_PORT (#73)
+
 ## [0.1.137] - 2026-09-15
 
 ### Added
