@@ -11,6 +11,8 @@ have to work around), not implementation detail.
 
 ## [Unreleased]
 
+## [0.1.138] - 2026-09-15
+
 ### Added
 
 - TUI: `y` copies the selected log, trace, or metric to the clipboard
