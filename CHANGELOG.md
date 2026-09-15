@@ -11,6 +11,8 @@ have to work around), not implementation detail.
 
 ## [Unreleased]
 
+## [0.1.137] - 2026-09-15
+
 ### Added
 
 - New Human Response Latency report: the gap between an assistant turn
