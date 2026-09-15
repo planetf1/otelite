@@ -11,6 +11,8 @@ have to work around), not implementation detail.
 
 ## [Unreleased]
 
+## [0.1.136] - 2026-09-15
+
 ### Added
 
 - New Rare Tool Sessions report: your occasional pi, deepseek, and
