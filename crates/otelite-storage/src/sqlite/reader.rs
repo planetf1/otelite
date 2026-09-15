@@ -2458,6 +2458,158 @@ pub fn query_context_composition(
     Ok(rows)
 }
 
+/// Codex sub-agent analytics (#184, option B — the identity lives in the
+/// metrics, not the traces).
+///
+/// Source of the per-session join: `codex.thread.started` metrics whose
+/// `session_source` is `subagent_thread_spawn_<thread-uuid>_d1` — the uuid
+/// is the parent (main) Codex thread. All sub-agent starts observed in
+/// current Codex data are depth 1; if nested sub-agents ever appear
+/// (`_d2+`), the deeper starts would attribute to their intermediate
+/// thread rather than the main session, and this needs revisiting.
+/// There is deliberately no cost output: Codex spans carry no usage
+/// attributes, so cost is not computable from stored data.
+pub fn query_codex_subagents(
+    conn: &Connection,
+    start_time: Option<i64>,
+    end_time: Option<i64>,
+) -> Result<otelite_core::api::CodexSubagentResponse> {
+    use otelite_core::api::{
+        CodexSubagentDailyRow, CodexSubagentResponse, CodexSubagentRoleCount,
+        CodexSubagentSessionRow,
+    };
+
+    // `subagent_thread_spawn_` is 22 chars; the uuid occupies the next 36,
+    // so a well-formed value is at least 58 chars (real data also carries a
+    // `_d<depth>` suffix; the guard tolerates its absence).
+    // Underscores are escaped so the LIKE cannot match lookalikes.
+    let subagent_starts_sql = "SELECT \
+            substr(json_extract(attributes, '$.\"session_source\"'), 23, 36) AS thread_id, \
+            timestamp \
+         FROM metrics \
+         WHERE name = 'codex.thread.started' \
+           AND json_valid(attributes) \
+           AND json_extract(attributes, '$.\"session_source\"') \
+               LIKE 'subagent\\_thread\\_spawn\\_%' ESCAPE '\\' \
+           AND LENGTH(json_extract(attributes, '$.\"session_source\"')) >= 58";
+    let spawns_sql = "SELECT \
+            COALESCE(json_extract(attributes, '$.\"role\"'), '(unknown)') AS role, \
+            timestamp \
+         FROM metrics \
+         WHERE name = 'codex.multi_agent.spawn' AND json_valid(attributes)";
+    let resumes_sql =
+        "SELECT '(none)' AS role, timestamp FROM metrics WHERE name = 'codex.multi_agent.resume'";
+
+    let mut sessions: std::collections::BTreeMap<String, (u64, i64, i64)> =
+        std::collections::BTreeMap::new(); // thread_id -> (count, first, last)
+    let mut roles: std::collections::BTreeMap<String, u64> = std::collections::BTreeMap::new();
+    let mut daily: std::collections::BTreeMap<
+        i64,
+        (std::collections::BTreeSet<String>, u64, u64, u64),
+    > = std::collections::BTreeMap::new(); // day -> (session ids, subagents, spawns, resumes)
+
+    for (sql, kind) in [
+        (subagent_starts_sql, "starts"),
+        (spawns_sql, "spawns"),
+        (resumes_sql, "resumes"),
+    ] {
+        let mut full = sql.to_string();
+        let mut params: Vec<Box<dyn rusqlite::ToSql>> = Vec::new();
+        if let Some(start) = start_time {
+            full.push_str(" AND timestamp >= ?");
+            params.push(Box::new(start));
+        }
+        if let Some(end) = end_time {
+            full.push_str(" AND timestamp <= ?");
+            params.push(Box::new(end));
+        }
+        let param_refs: Vec<&dyn rusqlite::ToSql> = params.iter().map(|p| p.as_ref()).collect();
+        let mut stmt = conn.prepare(&full).map_err(|e| {
+            StorageError::QueryError(format!(
+                "Failed to prepare codex_subagents {kind} query: {e}"
+            ))
+        })?;
+        let rows = stmt
+            .query_map(param_refs.as_slice(), |row| {
+                Ok((row.get::<_, String>(0)?, row.get::<_, i64>(1)?))
+            })
+            .map_err(|e| {
+                StorageError::QueryError(format!(
+                    "Failed to execute codex_subagents {kind} query: {e}"
+                ))
+            })?
+            .collect::<std::result::Result<Vec<_>, _>>()
+            .map_err(|e| {
+                StorageError::QueryError(format!(
+                    "Failed to parse codex_subagents {kind} rows: {e}"
+                ))
+            })?;
+
+        for (key, ts) in rows {
+            let day = ts / 1_000_000_000 / 86_400 * 86_400;
+            let slot = daily.entry(day).or_default();
+            match kind {
+                "starts" => {
+                    let s = sessions.entry(key.clone()).or_insert((0, ts, ts));
+                    s.0 += 1;
+                    s.1 = s.1.min(ts);
+                    s.2 = s.2.max(ts);
+                    slot.0.insert(key);
+                    slot.1 += 1;
+                },
+                "spawns" => {
+                    *roles.entry(key).or_default() += 1;
+                    slot.2 += 1;
+                },
+                _ => slot.3 += 1,
+            }
+        }
+    }
+
+    let mut session_rows: Vec<CodexSubagentSessionRow> = sessions
+        .into_iter()
+        .map(
+            |(thread_id, (subagents, first, last))| CodexSubagentSessionRow {
+                thread_id,
+                subagents,
+                first_start_ns: first,
+                last_start_ns: last,
+            },
+        )
+        .collect();
+    session_rows.sort_by(|a, b| {
+        b.subagents
+            .cmp(&a.subagents)
+            .then(b.last_start_ns.cmp(&a.last_start_ns))
+    });
+
+    let mut role_rows: Vec<CodexSubagentRoleCount> = roles
+        .into_iter()
+        .map(|(role, spawns)| CodexSubagentRoleCount { role, spawns })
+        .collect();
+    role_rows.sort_by(|a, b| b.spawns.cmp(&a.spawns).then(a.role.cmp(&b.role)));
+
+    let mut daily_rows: Vec<CodexSubagentDailyRow> = daily
+        .into_iter()
+        .map(
+            |(day, (session_ids, subagents, spawns, resumes))| CodexSubagentDailyRow {
+                day,
+                sessions: session_ids.len() as u64,
+                subagents,
+                spawns,
+                resumes,
+            },
+        )
+        .collect();
+    daily_rows.sort_by_key(|d| std::cmp::Reverse(d.day));
+
+    Ok(CodexSubagentResponse {
+        sessions: session_rows,
+        roles: role_rows,
+        daily: daily_rows,
+    })
+}
+
 pub fn query_top_conversations(
     conn: &Connection,
     start_time: Option<i64>,
@@ -10518,6 +10670,141 @@ mod tests {
         };
         let rows = query_context_composition(&conn, None, None, &no_match).unwrap();
         assert!(rows.is_empty());
+    }
+
+    fn insert_subagent_start(conn: &Connection, parent_uuid: &str, ts: i64) {
+        insert_metric(
+            conn,
+            "codex.thread.started",
+            ts,
+            1,
+            &format!(
+                "{{\"session_source\":\"subagent_thread_spawn_{}_d1\",\"originator\":\"codex-tui\"}}",
+                parent_uuid
+            ),
+        );
+    }
+
+    #[test]
+    fn test_codex_subagents_per_session_roles_and_daily() {
+        let conn = setup_test_db();
+        let day = 1_760_000_000i64 * 1_000_000_000; // a fixed reference point
+        let uuid_a = "01a00000-0000-7000-8000-00000000000a";
+        let uuid_b = "01b00000-0000-7000-8000-00000000000b";
+        // Session A: 3 sub-agent starts over the day; session B: 1.
+        insert_subagent_start(&conn, uuid_a, day + 10_000_000_000);
+        insert_subagent_start(&conn, uuid_a, day + 20_000_000_000);
+        insert_subagent_start(&conn, uuid_b, day + 30_000_000_000);
+        insert_subagent_start(&conn, uuid_a, day + 40_000_000_000);
+        // Non-sub-agent thread starts (plain session sources) — excluded.
+        insert_metric(
+            &conn,
+            "codex.thread.started",
+            day + 11_000_000_000,
+            1,
+            "{\"session_source\":\"cli\"}",
+        );
+        insert_metric(
+            &conn,
+            "codex.thread.started",
+            day + 12_000_000_000,
+            2,
+            "{\"session_source\":\"vscode\"}",
+        );
+        // Malformed session_source (truncated uuid) — excluded by the length guard.
+        insert_metric(
+            &conn,
+            "codex.thread.started",
+            day + 13_000_000_000,
+            1,
+            "{\"session_source\":\"subagent_thread_spawn_01a00000\"}",
+        );
+        // Spawns with roles, and a resume.
+        insert_metric(
+            &conn,
+            "codex.multi_agent.spawn",
+            day + 9_000_000_000,
+            1,
+            "{\"role\":\"reviewer\"}",
+        );
+        insert_metric(
+            &conn,
+            "codex.multi_agent.spawn",
+            day + 29_000_000_000,
+            1,
+            "{\"role\":\"reviewer\"}",
+        );
+        insert_metric(
+            &conn,
+            "codex.multi_agent.spawn",
+            day + 39_000_000_000,
+            1,
+            "{\"role\":\"worker\"}",
+        );
+        insert_metric(
+            &conn,
+            "codex.multi_agent.resume",
+            day + 31_000_000_000,
+            1,
+            "{}",
+        );
+
+        let resp = query_codex_subagents(&conn, None, None).unwrap();
+
+        // Per-session: A first (3 starts), then B (1).
+        assert_eq!(resp.sessions.len(), 2, "{:?}", resp.sessions);
+        assert_eq!(resp.sessions[0].thread_id, uuid_a);
+        assert_eq!(resp.sessions[0].subagents, 3);
+        assert_eq!(resp.sessions[0].first_start_ns, day + 10_000_000_000);
+        assert_eq!(resp.sessions[0].last_start_ns, day + 40_000_000_000);
+        assert_eq!(resp.sessions[1].thread_id, uuid_b);
+        assert_eq!(resp.sessions[1].subagents, 1);
+
+        // Roles: reviewer 2, worker 1, most frequent first.
+        assert_eq!(resp.roles.len(), 2);
+        assert_eq!(resp.roles[0].role, "reviewer");
+        assert_eq!(resp.roles[0].spawns, 2);
+        assert_eq!(resp.roles[1].role, "worker");
+        assert_eq!(resp.roles[1].spawns, 1);
+
+        // Daily: one day with 2 sessions, 4 sub-agents, 3 spawns, 1 resume.
+        assert_eq!(resp.daily.len(), 1);
+        let d = &resp.daily[0];
+        assert_eq!(d.day, day / 1_000_000_000 / 86_400 * 86_400);
+        assert_eq!(d.sessions, 2);
+        assert_eq!(d.subagents, 4);
+        assert_eq!(d.spawns, 3);
+        assert_eq!(d.resumes, 1);
+    }
+
+    #[test]
+    fn test_codex_subagents_window_and_empty() {
+        let conn = setup_test_db();
+        let day = 1_760_000_000i64 * 1_000_000_000;
+        let uuid_a = "01a00000-0000-7000-8000-00000000000a";
+        insert_subagent_start(&conn, uuid_a, day + 10_000_000_000);
+        insert_subagent_start(&conn, uuid_a, day + 20_000_000_000);
+
+        // A window covering only the first start.
+        let resp = query_codex_subagents(&conn, Some(0), Some(day + 15_000_000_000)).unwrap();
+        assert_eq!(resp.sessions.len(), 1);
+        assert_eq!(resp.sessions[0].subagents, 1);
+        assert_eq!(resp.daily.len(), 1);
+        assert_eq!(resp.daily[0].subagents, 1);
+
+        // An empty window is all-empty.
+        let resp = query_codex_subagents(
+            &conn,
+            Some(day + 99_000_000_000),
+            Some(day + 100_000_000_000),
+        )
+        .unwrap();
+        assert!(resp.sessions.is_empty() && resp.roles.is_empty() && resp.daily.is_empty());
+
+        // No Codex metrics at all.
+        let empty = setup_test_db();
+        let resp = query_codex_subagents(&empty, None, None).unwrap();
+        assert!(resp.sessions.is_empty() && resp.roles.is_empty() && resp.daily.is_empty());
     }
 
     #[test]

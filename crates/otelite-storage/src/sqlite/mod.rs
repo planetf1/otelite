@@ -519,6 +519,17 @@ impl StorageBackend for SqliteBackend {
         .await
     }
 
+    async fn query_codex_subagents(
+        &self,
+        start_time: Option<i64>,
+        end_time: Option<i64>,
+    ) -> Result<otelite_core::api::CodexSubagentResponse> {
+        self.read_query(move |conn| {
+            reader::query_codex_subagents(conn, start_time, end_time).map_err(StorageError::from)
+        })
+        .await
+    }
+
     async fn query_top_conversations(
         &self,
         start_time: Option<i64>,

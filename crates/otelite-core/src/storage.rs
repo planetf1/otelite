@@ -9,14 +9,15 @@ use thiserror::Error;
 
 use crate::api::{
     AgentRolesResponse, AgentRollupStorage, CacheEconomicsResponse, CacheHitRateByModel,
-    CallsSeriesPoint, ContextCompositionSession, ConversationCostRow, ConversationDepthStats,
-    CostSeriesPoint, DistributionResponse, ErrorRateByModel, ErrorTypeBreakdown, FinishReasonCount,
-    GenAiCapabilityResponse, LatencyByContextBin, LatencyPercentilesResponse, LatencySeriesPoint,
-    LatencyStats, ModelDriftPair, ModelPerformanceQuery, ModelPerformanceResponse, ModelUsage,
-    ProjectRollupStorage, ProviderMixResponse, ReasoningShareResponse, RecentErrorsResponse,
-    RequestParamProfile, RetrievalStats, RetryIncident, RetryStats, SessionContextResponse,
-    SessionCostRow, SessionCostStorage, SystemUsage, TokenUsageSummary, ToolUsage, TopSpan,
-    TopSpanSort, TruncationRateByModel,
+    CallsSeriesPoint, CodexSubagentResponse, ContextCompositionSession, ConversationCostRow,
+    ConversationDepthStats, CostSeriesPoint, DistributionResponse, ErrorRateByModel,
+    ErrorTypeBreakdown, FinishReasonCount, GenAiCapabilityResponse, LatencyByContextBin,
+    LatencyPercentilesResponse, LatencySeriesPoint, LatencyStats, ModelDriftPair,
+    ModelPerformanceQuery, ModelPerformanceResponse, ModelUsage, ProjectRollupStorage,
+    ProviderMixResponse, ReasoningShareResponse, RecentErrorsResponse, RequestParamProfile,
+    RetrievalStats, RetryIncident, RetryStats, SessionContextResponse, SessionCostRow,
+    SessionCostStorage, SystemUsage, TokenUsageSummary, ToolUsage, TopSpan, TopSpanSort,
+    TruncationRateByModel,
 };
 use crate::filters::GenAiFilters;
 // New types referenced via crate::api:: in the trait methods below.
@@ -270,6 +271,20 @@ pub trait StorageBackend: Send + Sync {
     ) -> Result<Vec<ContextCompositionSession>> {
         Err(StorageError::QueryError(
             "Context composition reporting is not supported by this backend".to_string(),
+        ))
+    }
+
+    /// Codex sub-agent analytics (#184): per-main-thread sub-agent starts
+    /// (from `codex.thread.started`'s `subagent_thread_spawn_<uuid>_d1`
+    /// session source), spawn-role counts, and the daily rollup. Codex-only
+    /// by metric name, so there is no GenAI filter parameter.
+    async fn query_codex_subagents(
+        &self,
+        _start_time: Option<i64>,
+        _end_time: Option<i64>,
+    ) -> Result<CodexSubagentResponse> {
+        Err(StorageError::QueryError(
+            "Codex sub-agent reporting is not supported by this backend".to_string(),
         ))
     }
 

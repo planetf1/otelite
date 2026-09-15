@@ -160,6 +160,12 @@ pub struct UsageCommand {
     #[arg(long)]
     pub context_composition: bool,
 
+    /// Show Codex sub-agent analytics (#184): sub-agent thread starts per
+    /// main thread, spawn-role breakdown, and the daily rollup. Volume only
+    /// — Codex spans carry no usage attributes, so no cost figures.
+    #[arg(long)]
+    pub codex_subagents: bool,
+
     /// Show top tool errors from failed tool executions (Claude Code)
     #[arg(long, value_name = "N", default_missing_value = "20")]
     pub tool_errors: Option<usize>,
@@ -378,6 +384,8 @@ struct UsageOutput {
     context_split: Option<Vec<otelite_core::api::ContextTypeSplit>>,
     #[serde(skip_serializing_if = "Option::is_none")]
     context_composition: Option<Vec<otelite_core::api::ContextCompositionSession>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    codex_subagents: Option<otelite_core::api::CodexSubagentResponse>,
     #[serde(skip_serializing_if = "Option::is_none")]
     tool_errors: Option<Vec<otelite_core::api::ToolErrorEntry>>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -832,6 +840,21 @@ impl UsageCommand {
                         .await
                         .map_err(|e| {
                             Error::ApiError(format!("Failed to query context composition: {}", e))
+                        })?,
+                )
+            } else {
+                None
+            };
+
+        // --codex-subagents
+        let codex_subagents: Option<otelite_core::api::CodexSubagentResponse> =
+            if self.codex_subagents {
+                Some(
+                    storage
+                        .query_codex_subagents(Some(start_time), Some(end_time))
+                        .await
+                        .map_err(|e| {
+                            Error::ApiError(format!("Failed to query codex sub-agents: {}", e))
                         })?,
                 )
             } else {
@@ -1579,6 +1602,7 @@ impl UsageCommand {
                     stop_reasons,
                     context_split,
                     context_composition,
+                    codex_subagents,
                     tool_errors,
                     hour_of_day,
                     calls_series,
@@ -1740,6 +1764,11 @@ impl UsageCommand {
 
                 if let Some(ref rows) = context_composition {
                     display_context_composition(rows);
+                    println!();
+                }
+
+                if let Some(ref resp) = codex_subagents {
+                    display_codex_subagents(resp);
                     println!();
                 }
 
@@ -3047,6 +3076,94 @@ fn display_context_composition(rows: &[otelite_core::api::ContextCompositionSess
         ]);
     }
     println!("{}", table);
+}
+
+fn display_codex_subagents(resp: &otelite_core::api::CodexSubagentResponse) {
+    if resp.sessions.is_empty() {
+        println!("Codex Sub-agents: no sub-agent thread starts in range");
+        return;
+    }
+
+    // Distribution summary over the full session set (the table below is
+    // the truncated view).
+    let mut counts: Vec<u64> = resp.sessions.iter().map(|s| s.subagents).collect();
+    counts.sort();
+    let median = counts[counts.len() / 2];
+    let max = *counts.last().expect("sessions is non-empty");
+    let total: u64 = counts.iter().sum();
+
+    println!(
+        "Codex Sub-agents ({} sessions, {} sub-agent starts — median {}, max {} per session)",
+        resp.sessions.len(),
+        total,
+        median,
+        max
+    );
+    println!("Volume only — Codex spans carry no usage attributes, so cost is not reported.");
+    println!();
+
+    let mut table = Table::new();
+    fit_to_terminal(&mut table);
+    table.load_preset(UTF8_FULL);
+    table.set_header(vec![
+        Cell::new("Thread").fg(Color::Cyan),
+        Cell::new("Sub-agents").fg(Color::Cyan),
+        Cell::new("First start (UTC)").fg(Color::Cyan),
+        Cell::new("Last start (UTC)").fg(Color::Cyan),
+    ]);
+    for s in resp.sessions.iter().take(20) {
+        table.add_row(vec![
+            &truncate(&s.thread_id, 20),
+            &s.subagents.to_string(),
+            &fmt_utc_ns(s.first_start_ns),
+            &fmt_utc_ns(s.last_start_ns),
+        ]);
+    }
+    println!("{}", table);
+
+    if !resp.roles.is_empty() {
+        let mut rt = Table::new();
+        fit_to_terminal(&mut rt);
+        rt.load_preset(UTF8_FULL);
+        rt.set_header(vec![
+            Cell::new("Role").fg(Color::Cyan),
+            Cell::new("Spawns").fg(Color::Cyan),
+        ]);
+        for r in resp.roles.iter().take(15) {
+            rt.add_row(vec![&r.role, &r.spawns.to_string()]);
+        }
+        println!();
+        println!("Spawn roles:");
+        println!("{}", rt);
+    }
+
+    if !resp.daily.is_empty() {
+        let mut dt = Table::new();
+        fit_to_terminal(&mut dt);
+        dt.load_preset(UTF8_FULL);
+        dt.set_header(vec![
+            Cell::new("Day (UTC)").fg(Color::Cyan),
+            Cell::new("Sessions").fg(Color::Cyan),
+            Cell::new("Sub-agents").fg(Color::Cyan),
+            Cell::new("Spawns").fg(Color::Cyan),
+            Cell::new("Resumes").fg(Color::Cyan),
+        ]);
+        for d in resp.daily.iter().rev().take(14) {
+            let day = chrono::DateTime::from_timestamp(d.day, 0)
+                .map(|t| t.format("%Y-%m-%d").to_string())
+                .unwrap_or_else(|| d.day.to_string());
+            dt.add_row(vec![
+                &day,
+                &d.sessions.to_string(),
+                &d.subagents.to_string(),
+                &d.spawns.to_string(),
+                &d.resumes.to_string(),
+            ]);
+        }
+        println!();
+        println!("Daily (up to 14 days):");
+        println!("{}", dt);
+    }
 }
 
 fn display_tool_errors(rows: &[otelite_core::api::ToolErrorEntry]) {

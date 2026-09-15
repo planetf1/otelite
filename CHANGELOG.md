@@ -11,6 +11,14 @@ have to work around), not implementation detail.
 
 ## [Unreleased]
 
+### Added
+
+- `otelite usage --codex-subagents` shows how your Codex sessions use
+  sub-agents: per-session sub-agent thread starts (the busiest sessions
+  first), the spawn-role breakdown (reviewer, worker, ...), and a daily
+  rollup of sessions/sub-agents/spawns/resumes — volume only, since Codex
+  spans carry no usage attributes there is no cost figure yet (#184)
+
 ## [0.1.141] - 2026-09-15
 
 ### Added

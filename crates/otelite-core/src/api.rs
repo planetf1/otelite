@@ -657,6 +657,57 @@ pub struct ContextCompositionSession {
     pub last_request_ns: i64,
 }
 
+/// Codex sub-agent analytics (#184, option B): per-main-thread sub-agent
+/// starts, derived from `codex.thread.started` metrics whose
+/// `session_source` is `subagent_thread_spawn_<thread-uuid>_d1`. The
+/// uuid is the parent (main) Codex thread — in current Codex data all
+/// sub-agent starts are depth 1, so the parent is always a main session.
+/// There is deliberately no cost column: Codex spans carry no usage
+/// attributes, so cost is not computable from stored data.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
+pub struct CodexSubagentSessionRow {
+    /// Parent (main) Codex thread id.
+    pub thread_id: String,
+    /// Sub-agent threads started by this session in the window.
+    pub subagents: u64,
+    pub first_start_ns: i64,
+    pub last_start_ns: i64,
+}
+
+/// One spawn role and its count (`codex.multi_agent.spawn` rows).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
+pub struct CodexSubagentRoleCount {
+    pub role: String,
+    pub spawns: u64,
+}
+
+/// Daily rollup: distinct sessions, sub-agent starts, spawn/resume events.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
+pub struct CodexSubagentDailyRow {
+    /// UTC day start, seconds since the epoch.
+    pub day: i64,
+    /// Distinct main threads with sub-agent starts that day.
+    pub sessions: u64,
+    pub subagents: u64,
+    pub spawns: u64,
+    pub resumes: u64,
+}
+
+/// Full response for `query_codex_subagents`.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
+pub struct CodexSubagentResponse {
+    /// Per-session rows, most sub-agents first.
+    pub sessions: Vec<CodexSubagentSessionRow>,
+    /// Spawn roles, most frequent first.
+    pub roles: Vec<CodexSubagentRoleCount>,
+    /// Daily rollups, newest day first.
+    pub daily: Vec<CodexSubagentDailyRow>,
+}
+
 /// Aggregated cost/token row for a single conversation.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
