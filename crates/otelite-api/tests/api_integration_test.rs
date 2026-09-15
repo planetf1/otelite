@@ -2068,12 +2068,12 @@ async fn test_aggregate_bucket_size_zero_is_400() {
     assert!(error.error.contains("bucket_size"));
 }
 
-// #73: the setup view's module import (js/setup.js) is load-bearing —
-// a 404 here breaks the entire app.js import chain in the browser.
-// Uses the full router (the shared test router is a partial one
-// without the static-file fallback).
+// The logs view imports js/json_tree.js and the app shell imports
+// js/setup.js as ES modules — a 404 on either breaks the whole
+// import chain in the browser. Uses the full router (the shared test
+// router is a partial one without the static-file fallback).
 #[tokio::test]
-async fn test_static_setup_js_is_served() {
+async fn test_static_js_modules_are_served() {
     let (storage, _tmp) = setup_test_storage().await;
     let server = DashboardServer::with_pricing_cache(
         DashboardConfig::default(),
@@ -2082,23 +2082,25 @@ async fn test_static_setup_js_is_served() {
     );
     let app = server.build_router();
 
-    let response = app
-        .oneshot(
-            Request::builder()
-                .uri("/js/setup.js")
-                .body(Body::empty())
-                .unwrap(),
-        )
-        .await
-        .unwrap();
+    for (uri, marker) in [
+        ("/js/setup.js", "fillEndpointPlaceholders"),
+        ("/js/json_tree.js", "renderJsonTree"),
+    ] {
+        let response = app
+            .clone()
+            .oneshot(Request::builder().uri(uri).body(Body::empty()).unwrap())
+            .await
+            .unwrap();
 
-    assert_eq!(response.status(), StatusCode::OK);
-    assert_eq!(
-        response.headers().get("content-type").unwrap(),
-        "application/javascript; charset=utf-8"
-    );
+        assert_eq!(response.status(), StatusCode::OK, "{uri}");
+        assert_eq!(
+            response.headers().get("content-type").unwrap(),
+            "application/javascript; charset=utf-8",
+            "{uri}"
+        );
 
-    let body = response.into_body().collect().await.unwrap().to_bytes();
-    let text = String::from_utf8_lossy(&body);
-    assert!(text.contains("fillEndpointPlaceholders"), "{text}");
+        let body = response.into_body().collect().await.unwrap().to_bytes();
+        let text = String::from_utf8_lossy(&body);
+        assert!(text.contains(marker), "{uri} missing {marker}: {text}");
+    }
 }

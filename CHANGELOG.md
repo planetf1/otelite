@@ -11,6 +11,16 @@ have to work around), not implementation detail.
 
 ## [Unreleased]
 
+### Added
+
+- The JSON viewer in the log detail panel (attributes and bodies) now
+  supports in-value search: the search box highlights every matching
+  key or value, auto-opens the tree branches leading to a match, and
+  dims everything else — finding a specific field in a large LLM
+  request body no longer means scrolling a wall of text. The tree
+  itself stays collapsible, with the first two levels open by default
+  and deeper nesting folded (#47)
+
 ## [0.1.139] - 2026-09-15
 
 ### Fixed

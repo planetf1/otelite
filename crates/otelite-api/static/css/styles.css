@@ -1270,6 +1270,13 @@ details[open] > .json-tree-summary::before {
     opacity: 0.2;
 }
 
+.json-match-hl {
+    background: #fbbf24;
+    color: #1a1a2e;
+    border-radius: 2px;
+    padding: 0 1px;
+}
+
 .json-tree-leaf.json-match {
     background: color-mix(in srgb, var(--accent-color) 15%, transparent);
     border-radius: 2px;

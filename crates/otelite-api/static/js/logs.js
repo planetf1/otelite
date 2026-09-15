@@ -2,6 +2,8 @@
  * Logs View - Display and interact with log records
  */
 
+import { renderJsonTree } from './json_tree.js';
+
 function formatTs(date) {
     const p = n => String(n).padStart(2, '0');
     const ms = String(date.getMilliseconds()).padStart(3, '0');
@@ -468,45 +470,65 @@ class LogsView {
             });
         });
 
-        // JSON in-value search (#47)
+        // JSON in-value search (#47): highlight matching keys/values,
+        // auto-open the nodes on the path to each match, and hide
+        // everything else.
         container.querySelectorAll('.json-search').forEach(input => {
             input.addEventListener('input', (e) => {
                 e.stopPropagation();
                 const term = input.value.trim().toLowerCase();
                 const treeBlock = input.closest('.attribute-value-json, .log-body-json').querySelector('.json-tree-block');
                 if (!treeBlock) return;
-                if (!term) {
-                    // Clear all highlights/hidden
-                    treeBlock.querySelectorAll('.json-tree-leaf, .json-tree-node').forEach(el => {
-                        el.classList.remove('json-match', 'json-no-match');
-                    });
-                    treeBlock.querySelectorAll('.json-match-hl').forEach(el => {
-                        el.outerHTML = el.textContent;
-                    });
-                    return;
-                }
-                // First pass: mark leaves
-                treeBlock.querySelectorAll('.json-tree-leaf').forEach(leaf => {
-                    const text = leaf.textContent.toLowerCase();
-                    if (text.includes(term)) {
-                        leaf.classList.add('json-match');
-                        leaf.classList.remove('json-no-match');
-                    } else {
-                        leaf.classList.add('json-no-match');
-                        leaf.classList.remove('json-match');
-                    }
+
+                // Reset: unwrap previous substring marks and clear state
+                // classes. (outerHTML replacement restores the text
+                // nodes to their unmarked form.)
+                treeBlock.querySelectorAll('.json-match-hl').forEach(el => {
+                    el.outerHTML = el.textContent;
                 });
-                // Second pass: any node with a matching descendant is also shown
-                treeBlock.querySelectorAll('.json-tree-node').forEach(node => {
-                    const hasMatch = node.querySelector('.json-match');
-                    if (hasMatch) {
-                        node.classList.add('json-match');
-                        node.classList.remove('json-no-match');
-                        node.open = true;
-                    } else {
-                        node.classList.add('json-no-match');
-                        node.classList.remove('json-match');
+                treeBlock.querySelectorAll('.json-match, .json-no-match').forEach(el => {
+                    el.classList.remove('json-match', 'json-no-match');
+                });
+                if (!term) return;
+
+                // Mark matching substrings in every text node (leaf
+                // values and node summary keys alike).
+                const walker = document.createTreeWalker(treeBlock, NodeFilter.SHOW_TEXT);
+                const textNodes = [];
+                while (walker.nextNode()) textNodes.push(walker.currentNode);
+                for (const node of textNodes) {
+                    if (!node.nodeValue.toLowerCase().includes(term)) continue;
+                    const text = node.nodeValue;
+                    const lower = text.toLowerCase();
+                    const frag = document.createDocumentFragment();
+                    let last = 0;
+                    let idx = lower.indexOf(term);
+                    while (idx !== -1) {
+                        if (idx > last) frag.appendChild(document.createTextNode(text.slice(last, idx)));
+                        const mark = document.createElement('mark');
+                        mark.className = 'json-match-hl';
+                        mark.textContent = text.slice(idx, idx + term.length);
+                        frag.appendChild(mark);
+                        last = idx + term.length;
+                        idx = lower.indexOf(term, last);
                     }
+                    if (last < text.length) frag.appendChild(document.createTextNode(text.slice(last)));
+                    node.parentNode.replaceChild(frag, node);
+                }
+
+                // Show/hide: an element is a match if it (or a
+                // descendant) carries a mark. Ancestors of matches open
+                // so the match is visible without further clicking.
+                treeBlock.querySelectorAll('.json-tree-leaf').forEach(leaf => {
+                    const isMatch = !!leaf.querySelector('.json-match-hl');
+                    leaf.classList.toggle('json-match', isMatch);
+                    leaf.classList.toggle('json-no-match', !isMatch);
+                });
+                treeBlock.querySelectorAll('.json-tree-node').forEach(node => {
+                    const isMatch = !!node.querySelector('.json-match-hl');
+                    node.classList.toggle('json-match', isMatch);
+                    node.classList.toggle('json-no-match', !isMatch);
+                    if (isMatch) node.open = true;
                 });
             });
         });
@@ -734,7 +756,7 @@ class LogsView {
                         ${searchHtml}
                         <span class="json-raw-btn" title="Toggle raw/formatted">[raw]</span>
                     </div>
-                    <div class="json-block json-tree-block ${collapsed}">${this.renderJsonTree(JSON.parse(value), 0)}</div>
+                    <div class="json-block json-tree-block ${collapsed}">${renderJsonTree(JSON.parse(value), 0)}</div>
                     <pre class="raw-block json-collapsed">${this.escapeHtml(String(value))}</pre>
                 </div>
             `;
@@ -778,7 +800,7 @@ class LogsView {
                         ${searchHtml}
                         <span class="json-raw-btn" title="Toggle raw/formatted">[raw]</span>
                     </div>
-                    <div class="json-block json-tree-block ${collapsed}">${this.renderJsonTree(JSON.parse(body), 0)}</div>
+                    <div class="json-block json-tree-block ${collapsed}">${renderJsonTree(JSON.parse(body), 0)}</div>
                     <pre class="raw-block json-collapsed">${this.escapeHtml(body)}</pre>
                 </div>
             `;
@@ -912,49 +934,6 @@ class LogsView {
      * Objects and arrays become <details>/<summary> nodes; scalars are inline spans.
      * Depth is limited to 8 levels to avoid enormous trees from deeply-nested bodies.
      */
-    renderJsonTree(value, depth) {
-        const MAX_DEPTH = 8;
-        if (depth > MAX_DEPTH) {
-            return `<span class="json-scalar json-string">"…"</span>`;
-        }
-        if (value === null) {
-            return `<span class="json-scalar json-null">null</span>`;
-        }
-        if (typeof value === 'boolean') {
-            return `<span class="json-scalar json-boolean">${value}</span>`;
-        }
-        if (typeof value === 'number') {
-            return `<span class="json-scalar json-number">${value}</span>`;
-        }
-        if (typeof value === 'string') {
-            return `<span class="json-scalar json-string">${this.escapeHtml(JSON.stringify(value))}</span>`;
-        }
-        if (Array.isArray(value)) {
-            if (value.length === 0) return `<span class="json-scalar">[&thinsp;]</span>`;
-            return `<div class="json-tree-array">${value.map((item, i) => {
-                const isObj = item !== null && typeof item === 'object';
-                if (isObj) {
-                    const isOpen = depth < 2 ? ' open' : '';
-                    return `<details class="json-tree-node"${isOpen}><summary class="json-tree-summary"><span class="json-tree-key json-tree-idx">[${i}]</span></summary><div class="json-tree-children">${this.renderJsonTree(item, depth + 1)}</div></details>`;
-                }
-                return `<div class="json-tree-leaf"><span class="json-tree-key json-tree-idx">[${i}]</span><span class="json-tree-sep">:&nbsp;</span>${this.renderJsonTree(item, depth + 1)}</div>`;
-            }).join('')}</div>`;
-        }
-        // Plain object
-        const keys = Object.keys(value);
-        if (keys.length === 0) return `<span class="json-scalar">{&thinsp;}</span>`;
-        return `<div class="json-tree-obj">${keys.map(k => {
-            const v = value[k];
-            const isObj = v !== null && typeof v === 'object';
-            const keyHtml = `<span class="json-tree-key">${this.escapeHtml(k)}</span>`;
-            if (isObj) {
-                const isOpen = depth < 2 ? ' open' : '';
-                return `<details class="json-tree-node"${isOpen}><summary class="json-tree-summary">${keyHtml}</summary><div class="json-tree-children">${this.renderJsonTree(v, depth + 1)}</div></details>`;
-            }
-            return `<div class="json-tree-leaf">${keyHtml}<span class="json-tree-sep">:&nbsp;</span>${this.renderJsonTree(v, depth + 1)}</div>`;
-        }).join('')}</div>`;
-    }
-
     /**
      * Toggle log entry expansion
      */
