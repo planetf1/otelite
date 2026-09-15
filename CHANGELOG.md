@@ -20,6 +20,13 @@ have to work around), not implementation detail.
   --rare-tools` as a table. Main tools (Claude Code, opencode, Codex,
   Bob) and busy tools (10+ sessions) stay out of the way (#176)
 
+### Internal
+
+- API tests now run against a static pricing cache (no background
+  LiteLLM fetch), so cost assertions can no longer race the server's
+  pricing refresher — the identified cause of the intermittent
+  Coverage CI failures (#209)
+
 ## [0.1.135] - 2026-09-14
 
 ### Added

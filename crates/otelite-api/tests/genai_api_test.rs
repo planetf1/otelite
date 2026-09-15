@@ -4,6 +4,7 @@ use axum::{
     body::Body,
     http::{Request, StatusCode},
 };
+use otelite_api::pricing_cache::PricingCache;
 use otelite_api::{DashboardConfig, DashboardServer};
 use otelite_core::api::{AgentRollupResponse, TokenUsageResponse};
 use otelite_core::telemetry::log::{LogRecord, SeverityLevel};
@@ -23,7 +24,7 @@ async fn setup_test_server() -> (DashboardServer, Arc<dyn StorageBackend>, tempf
     storage.initialize().await.unwrap();
     let storage: Arc<dyn StorageBackend> = Arc::new(storage);
 
-    let server = DashboardServer::new(config, storage.clone());
+    let server = DashboardServer::with_pricing_cache(config, storage.clone(), PricingCache::new());
     (server, storage, temp_dir)
 }
 

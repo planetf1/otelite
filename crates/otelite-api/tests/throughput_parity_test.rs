@@ -19,6 +19,7 @@
 
 use axum::body::Body;
 use axum::http::Request;
+use otelite_api::pricing_cache::PricingCache;
 use otelite_api::{DashboardConfig, DashboardServer};
 use otelite_core::telemetry::trace::{Span, SpanKind, SpanStatus, StatusCode as SpanStatusCode};
 use otelite_storage::sqlite::SqliteBackend;
@@ -145,7 +146,11 @@ async fn api_matches_parity_fixture() {
             .unwrap();
     }
     let storage: Arc<dyn StorageBackend> = Arc::new(storage);
-    let server = DashboardServer::new(DashboardConfig::default(), storage);
+    let server = DashboardServer::with_pricing_cache(
+        DashboardConfig::default(),
+        storage,
+        PricingCache::new(),
+    );
     let app = server.build_router();
 
     let start = fixture.window.start_ns;

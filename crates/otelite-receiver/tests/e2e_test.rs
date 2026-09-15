@@ -14,6 +14,7 @@ use opentelemetry_proto::tonic::trace::v1::{
     span::SpanKind, ResourceSpans, ScopeSpans, Span, Status,
 };
 use otelite_api::config::DashboardConfig;
+use otelite_api::pricing_cache::PricingCache;
 use otelite_api::server::DashboardServer;
 use otelite_receiver::signals::{LogsHandler, MetricsHandler, TracesHandler};
 use otelite_storage::{sqlite::SqliteBackend, StorageBackend, StorageConfig};
@@ -51,7 +52,7 @@ async fn start_test_server(
 
     let config = DashboardConfig::default().with_bind_address(addr);
 
-    let server = DashboardServer::new(config, storage);
+    let server = DashboardServer::with_pricing_cache(config, storage, PricingCache::new());
     let router = server.build_router();
 
     let handle = tokio::spawn(async move {
@@ -565,7 +566,8 @@ async fn test_e2e_otlp_http_receiver_to_api_client() {
         .expect("API listener");
     let api_addr = listener.local_addr().expect("API local_addr");
     let api_cfg = DashboardConfig::default().with_bind_address(api_addr);
-    let server = DashboardServer::new(api_cfg, Arc::clone(&storage));
+    let server =
+        DashboardServer::with_pricing_cache(api_cfg, Arc::clone(&storage), PricingCache::new());
     let router = server.build_router();
     tokio::spawn(async move {
         axum::serve(listener, router.into_make_service())

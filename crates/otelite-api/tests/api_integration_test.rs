@@ -5,6 +5,7 @@ use http_body_util::BodyExt;
 use otelite_api::api::health::HealthResponse;
 use otelite_api::api::metrics::AggregateResponse;
 use otelite_api::config::DashboardConfig;
+use otelite_api::pricing_cache::PricingCache;
 use otelite_api::server::{AppState, DashboardServer, QueryCache};
 use otelite_core::api::{
     ErrorResponse, GenAiCapabilityResponse, LogEntry, LogsResponse, MetricResponse, TraceDetail,
@@ -1627,7 +1628,12 @@ async fn test_get_metric_timeseries_empty_window_existing_metric() {
 #[tokio::test]
 async fn test_openapi_spec() {
     let (storage, _tmp) = setup_test_storage().await;
-    let app = DashboardServer::new(DashboardConfig::default(), storage).build_router();
+    let app = DashboardServer::with_pricing_cache(
+        DashboardConfig::default(),
+        storage,
+        PricingCache::new(),
+    )
+    .build_router();
 
     let response = app
         .oneshot(
