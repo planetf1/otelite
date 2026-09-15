@@ -12,6 +12,7 @@ use tracing_subscriber::{fmt, layer::SubscriberExt, util::SubscriberInitExt, Env
 pub mod commands;
 pub mod config;
 pub mod error;
+pub mod mcp;
 pub mod output;
 
 use config::{Config, OutputFormat};
@@ -256,6 +257,11 @@ enum Commands {
         #[arg(long)]
         storage_path: Option<String>,
     },
+    /// Expose telemetry to AI agents via MCP (JSON-RPC over stdio)
+    #[command(
+        after_help = "Speaks the Model Context Protocol over stdin/stdout so agents like Claude Code and Cursor can query otelite directly.\n\n  mcpServers: { \"otelite\": { \"command\": \"otelite\", \"args\": [\"mcp\"]} }\n\nTools: query_logs, query_traces, get_trace, get_usage. Reads the same database as the other read-only commands (OTELITE_DATA_DIR)."
+    )]
+    Mcp,
 }
 
 #[derive(Subcommand, Debug)]
@@ -682,6 +688,13 @@ async fn run_cli() -> Result<()> {
         }) => {
             commands::import::handle_import(&file, signal_type.as_deref(), storage_path.as_deref())
                 .await
+        },
+        Some(Commands::Mcp) => {
+            // Read-only, like the other storage-backed commands. stdout is
+            // the JSON-RPC channel, so the storage/maintenance noise goes
+            // to stderr through the default tracing setup.
+            let storage = create_storage(&config).await?;
+            mcp::run(storage).await
         },
         None => run_dashboard("127.0.0.1:3000".parse().unwrap(), None).await,
     }

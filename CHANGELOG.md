@@ -13,6 +13,12 @@ have to work around), not implementation detail.
 
 ### Added
 
+- New `otelite mcp` command exposes your telemetry to AI agents over the
+  Model Context Protocol (JSON-RPC over stdio): Claude Code, Cursor, and
+  other MCP clients can query logs, list and inspect traces, and get GenAI
+  token usage without leaving the agent — add
+  `{"mcpServers": {"otelite": {"command": "otelite", "args": ["mcp"]}}}` to
+  the client's MCP config (#37)
 - The JSON viewer in the log detail panel (attributes and bodies) now
   supports in-value search: the search box highlights every matching
   key or value, auto-opens the tree branches leading to a match, and

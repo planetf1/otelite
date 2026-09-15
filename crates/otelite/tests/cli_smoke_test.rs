@@ -52,6 +52,7 @@ fn subcommand_help_succeeds() {
         "capabilities",
         "tui",
         "import",
+        "mcp",
     ];
     for sub in subcommands {
         otelite()

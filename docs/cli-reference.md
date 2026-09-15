@@ -395,6 +395,52 @@ Import complete: 1247 records imported (0 errors, 3 empty lines skipped)
 
 ---
 
+## MCP server (AI agent access)
+
+`otelite mcp` speaks the [Model Context Protocol](https://modelcontextprotocol.io) over
+stdin/stdout (newline-delimited JSON-RPC 2.0), so AI agents — Claude Code, Cursor, and any
+other MCP client — can query your telemetry directly, with no dashboard in between.
+
+### Connect Claude Code
+
+```bash
+claude mcp add otelite -- otelite mcp
+```
+
+Or in the MCP client config file:
+
+```json
+{
+  "mcpServers": {
+    "otelite": { "command": "otelite", "args": ["mcp"] }
+  }
+}
+```
+
+The server reads the same database as the other read-only commands
+(`OTELITE_DATA_DIR` or `~/.otelite/data`), so it works without a running daemon.
+
+### Tools
+
+| Tool | Arguments | Returns |
+|------|-----------|---------|
+| `query_logs` | `severity?` (min level), `search?`, `since?` (e.g. `24h`), `limit?` (≤500) | Newest-first matching logs with RFC 3339 `time`, severity, body, attributes |
+| `query_traces` | `status?` (ERROR/OK), `min_duration?` (ms), `service?`, `limit?` (≤100) | Newest-first trace summaries: root span, duration, span count, services, status |
+| `get_trace` | `trace_id` (required) | The full trace: every span with attributes, events, status, resource |
+| `get_usage` | `since?` (default `24h`), `model?` (exact or `*` glob) | GenAI token totals plus per-model and per-provider breakdowns |
+
+Tool failures (unknown severity, missing trace, ...) come back as an MCP tool result with
+`isError: true` and an actionable message, so the agent can correct itself.
+
+### Try it without an agent
+
+```bash
+echo '{"jsonrpc":"2.0","id":1,"method":"tools/list"}' | otelite mcp
+echo '{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"get_usage","arguments":{"since":"1h"}}}' | otelite mcp
+```
+
+---
+
 ## Diagnose
 
 `otelite diagnose` fetches all traces for a session and prints a per-interaction forensic

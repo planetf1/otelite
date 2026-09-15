@@ -218,6 +218,9 @@ otelite metrics list --name "http_*"
 otelite usage --since 24h
 otelite usage --since 7d --by-model
 
+# Query telemetry from an AI agent via MCP (Claude Code, Cursor, ...)
+otelite mcp
+
 # JSON output for scripting
 otelite --format json logs list | jq '.[] | select(.severity == "ERROR")'
 ```
