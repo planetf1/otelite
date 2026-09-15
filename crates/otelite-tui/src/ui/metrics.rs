@@ -458,6 +458,12 @@ fn render_status_bar(frame: &mut Frame, area: Rect, state: &MetricsState, api_er
         ));
     }
 
+    // Yank/save feedback (#31)
+    if let Some(msg) = &state.status_message {
+        status_parts.push(Span::raw(" "));
+        status_parts.push(Span::styled(msg, Style::default().fg(Color::Yellow)));
+    }
+
     // Help text
     status_parts.push(Span::raw(" | "));
     status_parts.push(Span::styled(

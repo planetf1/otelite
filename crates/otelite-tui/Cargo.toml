@@ -29,6 +29,12 @@ otelite-client = { path = "../otelite-client", version = "0.1.0" }
 chrono = { workspace = true }
 chrono-tz = { workspace = true }
 
+# Clipboard (yank selected item, #31)
+cli-clipboard = "0.4"
+
+# JSON serialization for yank/save (#31)
+serde_json = { workspace = true }
+
 # Error handling
 anyhow = "1.0"
 

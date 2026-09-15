@@ -11,6 +11,14 @@ have to work around), not implementation detail.
 
 ## [Unreleased]
 
+### Added
+
+- TUI: `y` copies the selected log, trace, or metric to the clipboard
+  as JSON, and shift+`s` saves it to
+  `otelite-export-<timestamp>.json` in your working directory — the
+  status bar confirms what was copied or saved (lowercase `s` keeps
+  its auto-scroll binding) (#31)
+
 ### Fixed
 
 - The Setup tab now shows your SDK snippets with the host you actually

@@ -43,6 +43,10 @@ pub enum AppEvent {
     ZoomOut,
     /// Refresh data
     Refresh,
+    /// Copy the selected item to the clipboard as JSON (#31)
+    Yank,
+    /// Save the selected item to an export file (#31)
+    Save,
     /// Page down (move selection by page)
     PageDown,
     /// Page up (move selection by page)
@@ -103,6 +107,10 @@ fn handle_key_event(key: KeyEvent) -> AppEvent {
         KeyCode::Char('+') | KeyCode::Char('=') => AppEvent::ZoomIn,
         KeyCode::Char('-') => AppEvent::ZoomOut,
         KeyCode::Char('r') => AppEvent::Refresh,
+        // Yank / save the selected item (#31). 's' stays bound to
+        // auto-scroll (existing behaviour), so save takes shift+s.
+        KeyCode::Char('y') => AppEvent::Yank,
+        KeyCode::Char('S') => AppEvent::Save,
         KeyCode::PageDown => AppEvent::PageDown,
         KeyCode::PageUp => AppEvent::PageUp,
         KeyCode::Char(c) => AppEvent::Char(c),
@@ -189,6 +197,19 @@ mod tests {
 
         let key = KeyEvent::new(KeyCode::Char('r'), KeyModifiers::NONE);
         assert_eq!(handle_key_event(key), AppEvent::Refresh);
+    }
+
+    #[test]
+    fn test_yank_and_save_events() {
+        let key = KeyEvent::new(KeyCode::Char('y'), KeyModifiers::NONE);
+        assert_eq!(handle_key_event(key), AppEvent::Yank);
+
+        // Save is shift+s — lowercase 's' keeps the auto-scroll binding.
+        let key = KeyEvent::new(KeyCode::Char('S'), KeyModifiers::SHIFT);
+        assert_eq!(handle_key_event(key), AppEvent::Save);
+
+        let key = KeyEvent::new(KeyCode::Char('s'), KeyModifiers::NONE);
+        assert_eq!(handle_key_event(key), AppEvent::ToggleAutoScroll);
     }
 
     #[test]

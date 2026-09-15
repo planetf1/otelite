@@ -96,6 +96,14 @@ fn create_help_text(version: &str) -> Text<'static> {
             Span::styled("  PageUp / PageDown", Style::default().fg(Color::Yellow)),
             Span::raw("  Scroll page up / down"),
         ]),
+        Line::from(vec![
+            Span::styled("  y", Style::default().fg(Color::Yellow)),
+            Span::raw("  Copy selected item to clipboard as JSON (logs/traces/metrics)"),
+        ]),
+        Line::from(vec![
+            Span::styled("  S", Style::default().fg(Color::Yellow)),
+            Span::raw("  Save selected item to otelite-export-<timestamp>.json"),
+        ]),
         Line::from(""),
         Line::from(vec![Span::styled(
             "SEARCH & FILTER (logs and traces views)",

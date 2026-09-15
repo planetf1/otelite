@@ -1005,6 +1005,12 @@ fn render_status_bar(frame: &mut Frame, area: Rect, state: &TracesState, api_err
         ));
     }
 
+    // Yank/save feedback (#31)
+    if let Some(msg) = &state.status_message {
+        status_parts.push(TextSpan::raw(" "));
+        status_parts.push(TextSpan::styled(msg, Style::default().fg(Color::Yellow)));
+    }
+
     // Help text
     status_parts.push(TextSpan::raw(" | "));
     let help_text = if state.show_span_detail {

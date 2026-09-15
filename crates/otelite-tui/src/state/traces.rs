@@ -43,6 +43,8 @@ pub struct TracesState {
     pub scroll_offset: usize,
     /// Last error message
     pub error: Option<String>,
+    /// Transient action feedback shown in the status bar (#31)
+    pub status_message: Option<String>,
     /// Update tracker for debouncing
     update_tracker: UpdateTracker,
 }
@@ -65,6 +67,7 @@ impl Default for TracesState {
             filters: HashMap::new(),
             scroll_offset: 0,
             error: None,
+            status_message: None,
             update_tracker: UpdateTracker::new(MIN_REFRESH_INTERVAL),
         }
     }

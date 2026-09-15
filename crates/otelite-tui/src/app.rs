@@ -104,6 +104,20 @@ impl App {
             return;
         }
 
+        // Any view change clears stale yank/save feedback (#31).
+        if matches!(
+            event,
+            AppEvent::SwitchToLogs
+                | AppEvent::SwitchToTraces
+                | AppEvent::SwitchToMetrics
+                | AppEvent::SwitchToUsage
+                | AppEvent::ShowHelp
+                | AppEvent::NextView
+                | AppEvent::PrevView
+        ) {
+            self.clear_status_messages();
+        }
+
         match event {
             AppEvent::Quit => self.should_quit = true,
             AppEvent::SwitchToLogs => self.current_view = View::Logs,
@@ -126,6 +140,18 @@ impl App {
                     View::Metrics => View::Traces,
                     View::Usage => View::Metrics,
                 };
+            },
+            // Yank / save the selected item (#31). Only the item views
+            // have a selection; usage/help ignore the keys.
+            AppEvent::Yank
+                if matches!(self.current_view, View::Logs | View::Traces | View::Metrics) =>
+            {
+                self.yank_selected();
+            },
+            AppEvent::Save
+                if matches!(self.current_view, View::Logs | View::Traces | View::Metrics) =>
+            {
+                self.save_selected();
             },
             AppEvent::Filter if matches!(self.current_view, View::Logs | View::Traces) => {
                 self.filter_input_active = true;
@@ -381,6 +407,76 @@ impl App {
     #[cfg(test)]
     pub fn current_view(&self) -> &View {
         &self.current_view
+    }
+
+    /// Set the status-bar message for whichever item view is current.
+    fn set_status(&mut self, message: String) {
+        match self.current_view {
+            View::Logs => self.logs_state.status_message = Some(message),
+            View::Traces => self.traces_state.status_message = Some(message),
+            View::Metrics => self.metrics_state.status_message = Some(message),
+            View::Usage | View::Help => {},
+        }
+    }
+
+    /// Clear yank/save feedback in all item views (#31).
+    fn clear_status_messages(&mut self) {
+        self.logs_state.status_message = None;
+        self.traces_state.status_message = None;
+        self.metrics_state.status_message = None;
+    }
+
+    /// Serialize the currently selected item to pretty JSON, if the
+    /// current view has a selection. Returns (label, json).
+    fn selected_item_json(&self) -> Option<(String, String)> {
+        match self.current_view {
+            View::Logs => self
+                .logs_state
+                .selected_log()
+                .and_then(|l| serde_json::to_string_pretty(l).ok())
+                .map(|j| ("log".to_string(), j)),
+            View::Traces => self
+                .traces_state
+                .selected_trace()
+                .and_then(|t| serde_json::to_string_pretty(t).ok())
+                .map(|j| ("trace".to_string(), j)),
+            View::Metrics => self
+                .metrics_state
+                .selected_metric()
+                .and_then(|m| serde_json::to_string_pretty(m).ok())
+                .map(|j| ("metric".to_string(), j)),
+            View::Usage | View::Help => None,
+        }
+    }
+
+    /// Copy the selected item to the clipboard as pretty JSON (#31).
+    fn yank_selected(&mut self) {
+        let Some((label, json)) = self.selected_item_json() else {
+            return;
+        };
+        match cli_clipboard::set_contents(json) {
+            Ok(()) => self.set_status(format!("Copied {label} to clipboard")),
+            Err(e) => self.set_status(format!("Clipboard error: {e}")),
+        }
+    }
+
+    /// Save the selected item to an export file in the working
+    /// directory (#31). A save within the same second overwrites the
+    /// previous export.
+    fn save_selected(&mut self) {
+        let Some((label, json)) = self.selected_item_json() else {
+            return;
+        };
+        let filename = Self::export_filename(chrono::Utc::now());
+        match std::fs::write(&filename, json) {
+            Ok(()) => self.set_status(format!("Saved {label} to {filename}")),
+            Err(e) => self.set_status(format!("Save failed: {e}")),
+        }
+    }
+
+    /// Export filename: otelite-export-{UTC timestamp}.json (#31).
+    fn export_filename(now: chrono::DateTime<chrono::Utc>) -> String {
+        format!("otelite-export-{}.json", now.format("%Y%m%dT%H%M%SZ"))
     }
 
     /// Render the current view
@@ -1110,5 +1206,52 @@ mod tests {
 
         assert_eq!(app.current_view(), &initial_view);
         assert_eq!(app.should_quit(), initial_quit);
+    }
+
+    #[test]
+    fn test_export_filename_format() {
+        let now = chrono::DateTime::parse_from_rfc3339("2026-01-02T03:04:05Z")
+            .unwrap()
+            .with_timezone(&chrono::Utc);
+        assert_eq!(
+            App::export_filename(now),
+            "otelite-export-20260102T030405Z.json"
+        );
+    }
+
+    fn test_log_entry() -> otelite_core::api::LogEntry {
+        otelite_core::api::LogEntry {
+            timestamp: 1_767_225_600_000_000_000,
+            severity: "INFO".to_string(),
+            severity_text: Some("INFO".to_string()),
+            body: "hello".to_string(),
+            body_length: 0,
+            body_truncated: false,
+            attributes: std::collections::HashMap::new(),
+            resource: None,
+            trace_id: None,
+            span_id: None,
+        }
+    }
+
+    #[test]
+    fn test_selected_item_json_serializes_selected_log() {
+        let mut app = App::new(create_test_config());
+        app.current_view = View::Logs;
+        app.logs_state.update_logs(vec![test_log_entry()]);
+
+        let (label, json) = app.selected_item_json().expect("selected log serializes");
+        assert_eq!(label, "log");
+        let value: serde_json::Value = serde_json::from_str(&json).unwrap();
+        assert_eq!(value["body"], "hello");
+        assert_eq!(value["severity"], "INFO");
+        assert_eq!(value["timestamp"], 1_767_225_600_000_000_000i64);
+    }
+
+    #[test]
+    fn test_selected_item_json_none_without_selection() {
+        // Empty logs list: nothing selected.
+        let app = App::new(create_test_config());
+        assert!(app.selected_item_json().is_none());
     }
 }

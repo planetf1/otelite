@@ -25,6 +25,8 @@ pub struct MetricsState {
     pub scroll_offset: usize,
     /// Last error message
     pub error: Option<String>,
+    /// Transient action feedback shown in the status bar (#31)
+    pub status_message: Option<String>,
     /// Update tracker for debouncing
     update_tracker: UpdateTracker,
     /// Metric history for sparkline charts (metric_name -> recent values)
@@ -42,6 +44,7 @@ impl Default for MetricsState {
             filters: HashMap::new(),
             scroll_offset: 0,
             error: None,
+            status_message: None,
             update_tracker: UpdateTracker::new(MIN_REFRESH_INTERVAL),
             metric_history: HashMap::new(),
         }
