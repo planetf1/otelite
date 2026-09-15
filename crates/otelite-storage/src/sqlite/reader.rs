@@ -15164,8 +15164,17 @@ pub fn query_session_quality_map(
 ) -> Result<std::collections::HashMap<String, otelite_core::api::SessionQuality>> {
     use otelite_core::api::SessionQuality;
 
+    // The json_valid conjunct is load-bearing for idx_spans_session_window
+    // eligibility (#192): the partial index's WHERE is
+    // json_valid(attributes) AND session.id IS NOT NULL, and SQLite only
+    // uses it when the query carries that predicate verbatim. It is also
+    // semantically protective — json_extract raises on malformed JSON, so
+    // without the gate one corrupt row would fail the whole report; with
+    // it, such rows are skipped (they cannot carry a trustworthy session id
+    // anyway).
     let mut where_clause =
-        "WHERE json_extract(attributes,'$.\"session.id\"') IS NOT NULL".to_string();
+        "WHERE json_valid(attributes) AND json_extract(attributes,'$.\"session.id\"') IS NOT NULL"
+            .to_string();
     let mut params: Vec<Box<dyn rusqlite::ToSql>> = Vec::new();
     if let Some(s) = start_time {
         where_clause.push_str(" AND start_time >= ?");
@@ -17375,6 +17384,148 @@ mod session_quality_tests {
         .unwrap();
         let map = query_session_quality_map(&conn, None, None).unwrap();
         assert_eq!(map["s1"], otelite_core::api::SessionQuality::Errored);
+    }
+
+    #[test]
+    fn test_session_quality_map_skips_malformed_attributes() {
+        let conn = make_conn();
+        insert_span(&conn, "s1", 0, "end_turn");
+        // Malformed-JSON attributes: without the json_valid gate the
+        // json_extract in the WHERE would raise and fail the whole
+        // report; with it the row is skipped (#192 — the gate is also
+        // what makes idx_spans_session_window eligible).
+        conn.execute(
+            "INSERT INTO spans (trace_id, span_id, name, kind, start_time, end_time, attributes, status_code, flags, created_at)
+             VALUES ('tr', 'sp-bad', 'llm', 1, 2500000000, 3000000000, \
+                     '{\"session.id\": \"s2\"', 0, 0, 1000000000)",
+            [],
+        )
+        .unwrap();
+        let map = query_session_quality_map(&conn, None, None).unwrap();
+        assert_eq!(map.len(), 1);
+        assert_eq!(map["s1"], otelite_core::api::SessionQuality::Clean);
+    }
+
+    /// 3000 valid-JSON spans without a session id / reasoning key, so the
+    /// partial indexes exclude them and the planner has a real scan to
+    /// weigh against an index range.
+    fn insert_dummy_spans(conn: &Connection, n: usize) {
+        conn.execute(
+            &format!(
+                "INSERT INTO spans (trace_id, span_id, name, kind, start_time, end_time, attributes, status_code, flags, created_at)
+                 SELECT 'tr', CAST(i AS TEXT), 'dummy', 1,
+                        1000000000 + i * 1000, 1000001000 + i * 1000,
+                        '{{}}', 0, 0, 1000000000
+                 FROM (WITH RECURSIVE cnt(i) AS (SELECT 0 UNION ALL SELECT i + 1 FROM cnt WHERE i < {}) SELECT i FROM cnt)",
+                n - 1
+            ),
+            [],
+        )
+        .unwrap();
+    }
+
+    fn explain_plan(conn: &Connection, sql: &str, params: &[i64]) -> String {
+        let mut stmt = conn.prepare(sql).unwrap();
+        let mut out = String::new();
+        let rows = stmt
+            .query_map(rusqlite::params_from_iter(params), |r| {
+                r.get::<_, String>(3)
+            })
+            .unwrap();
+        for detail in rows {
+            let d = detail.unwrap();
+            out.push_str(&d);
+            out.push('\n');
+        }
+        out
+    }
+
+    #[test]
+    fn test_session_quality_map_plan_uses_session_window_index() {
+        // Production schema (not the bare table) so the #192 indexes
+        // exist. The SQL below must stay in sync with
+        // query_session_quality_map — if the json_valid conjunct drifts,
+        // the partial index stops being eligible and this plan assertion
+        // fails (that is the point).
+        let conn = Connection::open_in_memory().unwrap();
+        crate::sqlite::schema::initialize_schema(&conn).unwrap();
+        insert_dummy_spans(&conn, 3000);
+        for i in 0..3 {
+            conn.execute(
+                "INSERT INTO spans (trace_id, span_id, name, kind, start_time, end_time, attributes, status_code, flags, created_at)
+                 VALUES ('tr', ?, 'llm', 1, 4000000000 + ?, 4000001000 + ?, ?, 0, 0, 1000000000)",
+                rusqlite::params![
+                    format!("sp{}", i),
+                    i,
+                    i,
+                    format!("{{\"session.id\":\"s{}\",\"gen_ai.response.finish_reason\":\"end_turn\"}}", i)
+                ],
+            )
+            .unwrap();
+        }
+        conn.execute_batch("ANALYZE;").unwrap();
+        let plan = explain_plan(
+            &conn,
+            "EXPLAIN QUERY PLAN SELECT
+                json_extract(attributes,'$.\"session.id\"') AS session_id,
+                COALESCE(status_code, 0) AS status_code,
+                COALESCE(
+                    json_extract(attributes,'$.\"gen_ai.response.finish_reason\"'),
+                    json_extract(attributes,'$.\"gen_ai.response.finish_reasons\"'),
+                    ''
+                ) AS finish_reason
+             FROM spans
+             WHERE json_valid(attributes)
+               AND json_extract(attributes,'$.\"session.id\"') IS NOT NULL
+               AND start_time >= ?1 AND start_time <= ?2",
+            &[4000000000, 5000000000],
+        );
+        assert!(
+            plan.contains("idx_spans_session_window"),
+            "session quality map must use idx_spans_session_window, plan: {plan}"
+        );
+    }
+
+    #[test]
+    fn test_reasoning_share_span_plan_uses_reasoning_tokens_index() {
+        // Same drift-guard purpose, for the span-level reasoning-token
+        // aggregation in query_reasoning_share (#192). Keep in sync with
+        // that function's third section.
+        let conn = Connection::open_in_memory().unwrap();
+        crate::sqlite::schema::initialize_schema(&conn).unwrap();
+        insert_dummy_spans(&conn, 3000);
+        for i in 0..2 {
+            conn.execute(
+                "INSERT INTO spans (trace_id, span_id, name, kind, start_time, end_time, attributes, status_code, flags, created_at)
+                 VALUES ('tr', ?, 'llm', 1, 4000000000 + ?, 4000001000 + ?, ?, 0, 0, 1000000000)",
+                rusqlite::params![
+                    format!("sp{}", i),
+                    i,
+                    i,
+                    format!("{{\"gen_ai.request.model\":\"m{}\",\"gen_ai.usage.reasoning_tokens\":5,\"gen_ai.usage.output_tokens\":7}}", i)
+                ],
+            )
+            .unwrap();
+        }
+        conn.execute_batch("ANALYZE;").unwrap();
+        let plan = explain_plan(
+            &conn,
+            "EXPLAIN QUERY PLAN SELECT
+                COALESCE(json_extract(attributes,'$.\"gen_ai.request.model\"'), json_extract(attributes,'$.\"model\"'), '(unknown)') AS model,
+                COALESCE(SUM(CAST(json_extract(attributes,'$.\"gen_ai.usage.reasoning_tokens\"') AS INTEGER)), 0) AS reasoning_sum,
+                COALESCE(SUM(CAST(COALESCE(json_extract(attributes,'$.\"gen_ai.usage.output_tokens\"'), json_extract(attributes,'$.\"output_tokens\"')) AS INTEGER)), 0) AS output_sum
+             FROM spans
+             WHERE json_valid(attributes)
+               AND json_extract(attributes,'$.\"gen_ai.usage.reasoning_tokens\"') IS NOT NULL
+               AND CAST(json_extract(attributes,'$.\"gen_ai.usage.reasoning_tokens\"') AS INTEGER) > 0
+               AND start_time >= ?1 AND start_time <= ?2
+             GROUP BY model",
+            &[4000000000, 5000000000],
+        );
+        assert!(
+            plan.contains("idx_spans_reasoning_tokens"),
+            "reasoning share span aggregation must use idx_spans_reasoning_tokens, plan: {plan}"
+        );
     }
 
     #[test]

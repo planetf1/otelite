@@ -119,6 +119,38 @@ pub fn initialize_schema(conn: &Connection) -> Result<()> {
             ),
             [],
         )?;
+        // Time-ordered window index for session-bearing spans (#192):
+        // query_session_quality_map scans a start_time range and needs
+        // every session-bearing row inside it. idx_spans_session_id above
+        // is keyed on the session id (point lookups); this one is keyed on
+        // start_time so the windowed report is an index range scan over
+        // the few thousand session spans per day instead of a full
+        // table scan with per-row json_extract. Same drift-proof
+        // contract as the other partial indexes: the query's WHERE must
+        // carry this predicate verbatim as conjuncts
+        // (json_valid(...) AND session.id IS NOT NULL) for eligibility.
+        conn.execute(
+            &format!(
+                "CREATE INDEX IF NOT EXISTS idx_spans_session_window \
+                 ON spans(start_time) WHERE {pred}",
+                pred = semconv::session_id_index_predicate(col)
+            ),
+            [],
+        )?;
+        // Window index for span-level reasoning-token aggregation
+        // (query_reasoning_share, #192): the query filters on
+        // json_valid(attributes) AND the reasoning key IS NOT NULL, so
+        // this partial index turns the per-row json_extract scan into an
+        // index range scan over the (rare) LLM spans carrying the key.
+        conn.execute(
+            &format!(
+                "CREATE INDEX IF NOT EXISTS idx_spans_reasoning_tokens \
+                 ON spans(start_time) WHERE json_valid({col}) \
+                 AND json_extract({col}, '$.\"{key}\"') IS NOT NULL",
+                key = semconv::REASONING_TOKEN_KEYS[0]
+            ),
+            [],
+        )?;
         conn.execute(
             &format!(
                 "CREATE INDEX IF NOT EXISTS idx_spans_finish_reason \
@@ -434,6 +466,24 @@ mod tests {
             .unwrap();
         let count: i32 = stmt.query_map([], |_| Ok(1)).unwrap().count() as i32;
         assert!(count > 0);
+    }
+
+    #[test]
+    fn test_wide_window_indexes_created() {
+        // #192: the two window indexes that the session-quality and
+        // reasoning-share reports depend on must be created by the schema.
+        let conn = Connection::open_in_memory().unwrap();
+        initialize_schema(&conn).unwrap();
+
+        let count: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM sqlite_master WHERE type='index' \
+                 AND name IN ('idx_spans_session_window', 'idx_spans_reasoning_tokens')",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(count, 2);
     }
 
     #[test]

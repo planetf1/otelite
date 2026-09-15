@@ -11,6 +11,15 @@ have to work around), not implementation detail.
 
 ## [Unreleased]
 
+### Fixed
+
+- Wide-window GenAI reports no longer slow down as your database grows:
+  the session quality and reasoning share reports are now served from
+  two small dedicated indexes, so a 30-day session-quality query that
+  took tens of seconds on a large database completes in well under a
+  second; the session quality report also no longer fails on a corrupt
+  attributes blob — such rows are skipped (#192)
+
 ## [0.1.138] - 2026-09-15
 
 ### Added
