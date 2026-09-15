@@ -11,6 +11,8 @@ have to work around), not implementation detail.
 
 ## [Unreleased]
 
+## [0.1.142] - 2026-09-15
+
 ### Added
 
 - `otelite usage --codex-subagents` shows how your Codex sessions use
