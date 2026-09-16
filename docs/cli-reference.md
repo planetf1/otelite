@@ -256,6 +256,12 @@ Each flag below adds one extra panel to the output. Stack them freely.
 --error-types         Error bucketing: rate_limit / timeout / context_length /
                       content_filter / auth / server_error / unknown
 --model-drift         Request → response model pairs (detect silent provider rerouting)
+--context-composition Per-session context composition: the fixed prefix (minimum
+                      cache-read replayed every call — system prompt, tools,
+                      skills) vs peak context, and the growth between them
+--codex-subagents     Codex sub-agent volume: thread starts per main thread,
+                      spawn-role breakdown, and a daily rollup. Volume only —
+                      Codex spans carry no usage attributes, so no cost figures
 ```
 
 ### Examples
@@ -275,6 +281,12 @@ otelite usage --model-drift
 
 # Top 10 most expensive sessions, JSON for piping
 otelite usage --by-session --top 10 --format json | jq
+
+# How much of each session's context is the fixed prefix vs what grew?
+otelite usage --since 7d --context-composition
+
+# Which Codex sessions spawn sub-agents, and what are they used for?
+otelite usage --since 7d --codex-subagents
 ```
 
 ### Capability coverage: `otelite capabilities`
