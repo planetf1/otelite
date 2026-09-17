@@ -11,6 +11,8 @@ have to work around), not implementation detail.
 
 ## [Unreleased]
 
+## [0.1.144] - 2026-09-17
+
 ### Added
 
 - Web: the GenAI analytics page gains a **Context Composition** report —
