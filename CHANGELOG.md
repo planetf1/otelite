@@ -11,6 +11,17 @@ have to work around), not implementation detail.
 
 ## [Unreleased]
 
+### Fixed
+
+- OTLP/JSON metric ingest: integer data points sent in the spec-compliant
+  proto3 JSON string form (`"asInt": "42"`) are now stored with their real
+  value instead of silently becoming 0; a non-numeric `asInt` string is
+  rejected with a clear error (#233)
+- Span kind is no longer off by one for ingested spans — server spans are
+  reported as server, client as client, and so on (OTLP's enum ordering was
+  previously used verbatim against the internal one). Kinds in data
+  ingested before this fix remain shifted (#233)
+
 ## [0.1.142] - 2026-09-15
 
 ### Added

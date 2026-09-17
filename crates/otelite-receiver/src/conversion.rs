@@ -129,7 +129,7 @@ pub fn convert_traces_with_rejections(request: ExportTraceServiceRequest) -> Tra
                     "span",
                 );
 
-                let kind = SpanKind::from_i32(span.kind).unwrap_or(SpanKind::Internal);
+                let kind = otlp_span_kind(span.kind);
 
                 let mut attributes = convert_attributes(&span.attributes);
                 attributes.extend(scope_attrs.clone());
@@ -472,6 +472,22 @@ fn convert_severity(severity_number: i32) -> SeverityLevel {
         17..=20 => SeverityLevel::Error,
         21..=24 => SeverityLevel::Fatal,
         _ => SeverityLevel::Info, // Default to Info for unknown values
+    }
+}
+
+/// Map an OTLP span kind ordinal onto the internal SpanKind. OTLP orders the
+/// kinds UNSPECIFIED=0, INTERNAL=1, SERVER=2, CLIENT=3, PRODUCER=4,
+/// CONSUMER=5, while the core enum's ordinals start at Internal=0 — feeding
+/// the raw OTLP value to `SpanKind::from_i32` shifts every kind by one
+/// (#233).
+fn otlp_span_kind(kind: i32) -> SpanKind {
+    match kind {
+        2 => SpanKind::Server,
+        3 => SpanKind::Client,
+        4 => SpanKind::Producer,
+        5 => SpanKind::Consumer,
+        // UNSPECIFIED (0), INTERNAL (1) and unknown values
+        _ => SpanKind::Internal,
     }
 }
 
@@ -1213,12 +1229,16 @@ mod tests {
 
     #[test]
     fn test_convert_span_kinds() {
+        // OTLP span kind ordinals: UNSPECIFIED=0, INTERNAL=1, SERVER=2,
+        // CLIENT=3, PRODUCER=4, CONSUMER=5.
         let kinds = vec![
             (0, SpanKind::Internal),
-            (1, SpanKind::Server),
-            (2, SpanKind::Client),
-            (3, SpanKind::Producer),
-            (4, SpanKind::Consumer),
+            (1, SpanKind::Internal),
+            (2, SpanKind::Server),
+            (3, SpanKind::Client),
+            (4, SpanKind::Producer),
+            (5, SpanKind::Consumer),
+            (99, SpanKind::Internal),
         ];
 
         for (otlp_kind, expected_kind) in kinds {
