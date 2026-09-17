@@ -11,6 +11,14 @@ have to work around), not implementation detail.
 
 ## [Unreleased]
 
+### Fixed
+
+- OTLP/JSON ingest: integer values sent in the spec-compliant proto3 JSON
+  string form (`"intValue": "42"`) are no longer silently dropped — log
+  bodies, log/span attributes and metric data-point attributes now keep
+  their integer values; a non-numeric string is rejected with a clear
+  error (#247)
+
 ## [0.1.144] - 2026-09-17
 
 ### Added
