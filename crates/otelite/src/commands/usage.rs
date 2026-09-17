@@ -36,14 +36,14 @@ pub struct UsageCommand {
     )]
     pub since: String,
 
-    /// Exact start (overrides --since). `YYYY-MM-DD` (midnight UTC),
-    /// `YYYY-MM-DDTHH:MM:SS` (UTC when no zone is given), or epoch
-    /// seconds/nanoseconds
+    /// Exact start; mutually exclusive with --since. `YYYY-MM-DD`
+    /// (midnight UTC), `YYYY-MM-DDTHH:MM:SS` (UTC when no zone is given),
+    /// or epoch seconds/nanoseconds
     #[arg(long, conflicts_with = "since")]
     pub start: Option<String>,
 
-    /// Exact end (overrides --since); same formats as --start. Defaults
-    /// to now when --start is given
+    /// Exact end; mutually exclusive with --since; same formats as
+    /// --start. Defaults to now when --start is given
     #[arg(long, conflicts_with = "since")]
     pub end: Option<String>,
 

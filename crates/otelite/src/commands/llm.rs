@@ -36,7 +36,7 @@ pub struct LlmCommand {
     #[arg(long)]
     pub session: Option<String>,
 
-    /// Filter by status: "ok" (finish_reason=end_turn) or "error" (max_tokens/tool_use/other)
+    /// Filter by status: "ok" (finish_reason=end_turn/stop) or "error" (max_tokens/tool_use/other)
     #[arg(long)]
     pub status: Option<String>,
 

@@ -1,8 +1,18 @@
 # Otelite CLI Reference
 
-The CLI queries a running `otelite serve` instance (default `localhost:3000`) and prints
-results to the terminal. Output can be formatted as a table (`--format pretty`, default) or
-JSON (`--format json`) for scripting.
+Two ways of getting data:
+
+- `logs`, `traces`, `metrics`, `llm`, `retries`, `diagnose` and `tui` query a
+  running `otelite serve` instance (default `localhost:3000`) over HTTP;
+  point them elsewhere with `--endpoint`.
+- The GenAI analytics commands — `usage`, `providers`, `cache`, `reasoning`,
+  `agents`, `projects`, `sessions`, `histogram`, `capabilities`,
+  `model-performance` — plus `mcp` open the local database directly
+  (`~/.otelite/data`, or `OTELITE_DATA_DIR` if set). They need no running
+  daemon and can be pointed at a different database.
+
+All commands print results to the terminal. Output can be formatted as a
+table (`--format pretty`, default) or JSON (`--format json`) for scripting.
 
 ## Global flags
 
@@ -64,6 +74,20 @@ Daemon behaviour worth knowing:
   (or under `OTELITE_DATA_DIR`).
 - A corrupt or stale PID file is recovered from automatically
   (removed, then the daemon is discovered via the OTLP port).
+
+### System service
+
+`otelite service` runs the daemon as a boot-persistent system service
+instead of a `start`-spawned process:
+
+```bash
+otelite service install      # create the unit, then load and start it
+otelite service uninstall    # stop it and remove the unit (data untouched)
+```
+
+On macOS this is a launchd service (`dev.otelite.daemon`); on Linux a
+systemd unit. Any `OTELITE_*` environment variables set in your shell at
+install time are carried into the service.
 
 ---
 
@@ -232,13 +256,21 @@ and analytics panels.
 
 ```text
 --since <duration>    Time range: 1h, 24h, 7d, 30d  [default: 24h]
---model <name>        Filter to one model
+--start <ts>          Exact start instead of a rolling window: YYYY-MM-DD
+                      (UTC midnight), YYYY-MM-DDTHH:MM:SS, or epoch
+                      seconds/nanoseconds
+--end <ts>            Exact end; same formats as --start, defaults to now
+                      (requires --start)
+--model <name>        Filter by model; repeatable and ORed. A value
+                      without `*` matches exactly, with `*` it is a glob
+                      (claude-opus-*). Applies to every panel
 --system <name>       Filter to one provider
 --by-model            Break down by model name
 --by-system           Break down by provider (openai, anthropic, …)
 --by-session          Break down by session.id
---top <N>             Limit to top-N rows (cost / latency)
---format <fmt>        Output format: table | json  [default: table]
+--top <N>             Add a panel of the N most expensive individual
+                      LLM calls
+--format <fmt>        Output format: pretty | json  [default: pretty]
 ```
 
 ### Analytics panels
@@ -246,22 +278,136 @@ and analytics panels.
 Each flag below adds one extra panel to the output. Stack them freely.
 
 ```text
---latency             p50/p95/p99 latency, TTFT p50/p95, derived tok/s, ctx size,
-                      out/in ratio per model
---truncation          Truncation rate per model (responses ending with finish_reason=length)
---cache-rate          Prompt-cache hit rate per model — spot prompt-caching wins
---request-params      Distribution of temperature, top_p, max_tokens per model
---conv-depth          Conversation depth distribution (turns per session)
---tools               Per-tool call counts, success rate, errors, avg duration
---error-types         Error bucketing: rate_limit / timeout / context_length /
-                      content_filter / auth / server_error / unknown
---model-drift         Request → response model pairs (detect silent provider rerouting)
---context-composition Per-session context composition: the fixed prefix (minimum
-                      cache-read replayed every call — system prompt, tools,
-                      skills) vs peak context, and the growth between them
---codex-subagents     Codex sub-agent volume: thread starts per main thread,
-                      spawn-role breakdown, and a daily rollup. Volume only —
-                      Codex spans carry no usage attributes, so no cost figures
+# latency & throughput
+--latency                 p50/p95/p99 latency, TTFT p50/p95, derived tok/s,
+                          ctx size, out/in ratio per model
+--latency-series          Latency trend over time: min/avg/p95/max per time
+                          bucket, grouped by model
+--bucket-secs             Bucket size in seconds for the time-series views
+                          (default 3600 = 1 hour)
+--calls                   Call volume trend over time: requests per time
+                          bucket, grouped by model
+--latency-context         Latency broken down by input-token context-size bin
+                          (and model)
+--latency-percentiles     p50/p90/p95/p99 latency over time, for duration and
+                          TTFT; --model narrows the cohort
+--calendar-day            Bucket --latency-percentiles by calendar day in
+                          --timezone (DST-aware 23/25-hour days, empty days
+                          shown with no percentiles) instead of the fixed
+                          --bucket-secs grid
+--timezone                IANA timezone for --calendar-day (e.g.
+                          Europe/London); default UTC
+--throughput              Tok/s p10/p50/p90 + eligible-call count columns in
+                          --latency-series; --latency and
+                          --latency-percentiles show them by default
+--cross-tool-ttft         Cross-tool first-token latency comparison (Claude
+                          Code, opencode, pi), from spans
+--human-latency           Human response latency per tool: the gap between
+                          turns — reading/thinking time — with each tool's
+                          busiest hours
+
+# cost & tokens
+--truncation              Truncation rate per model (responses ending with
+                          finish_reason=length)
+--cache-rate              Prompt-cache hit rate per model — spot
+                          prompt-caching wins
+--request-params          Distribution of temperature, max_tokens per model
+--reasoning-share         Reasoning (thinking) token share per model —
+                          opencode + Codex thinking tokens as % of output
+--effort-breakdown        Codex reasoning-effort × token-type breakdown:
+                          effort level vs cost per model
+--efficiency              Cross-agent efficiency: tokens/commit and
+                          tokens/LOC for Claude Code + opencode
+--loc-efficiency          Lines-of-code efficiency per tool and model
+                          ($ per 100 added lines)
+--cost-projection         Project this month's cost at the trailing 7-day
+                          rate, by model
+--cost-by-project         LLM cost by project × tool × model
+--session-depth-cost      Session depth vs cost: median/p95 cost by
+                          turn-count bucket
+--hour-of-day             Hour-of-day activity distribution (0–23 UTC, LLM +
+                          tool calls)
+
+# sessions & context
+--conv-depth              Conversation depth distribution (turns per session)
+--context-composition     Per-session context composition: the fixed prefix
+                          (minimum cache-read replayed every call — system
+                          prompt, tools, skills) vs peak context, and the
+                          growth between them
+--context-split           Token usage grouped by request context
+                          (llm_request.context: interaction / sub_agent / …)
+--session-models          Session × model cross-tab: which sessions used
+                          which models and at what cost
+--session-duration        Session-duration distribution per tool: length
+                          trends + outliers
+--session-chains          Session chains: resumed sessions rolled up into
+                          work threads
+--session-quality         Session quality summary — clean / degraded /
+                          errored counts
+--rare-tools              Rare-tool sessions (pi, deepseek, experimental
+                          harnesses — main tools and busy tools excluded)
+--time-in-tool            Active engagement time per tool per day: where the
+                          AI time went
+--daily-tool-mix          Daily activity mix per tool (Claude Code / opencode
+                          / Codex datapoints) plus LLM token volume and
+                          estimated cost per day
+--productivity            Git output per tool per day: commits, PRs, lines
+                          added/removed
+--model-selection-heatmap Model-selection heatmap: (role × tool × model)
+                          request counts
+
+# tools & agents
+--tools                   Per-tool call counts, success rate, errors, avg
+                          duration
+--tool-approvals          Tool approval/rejection decision summary (Claude
+                          Code)
+--tool-errors [N]         Top N tool errors from failed tool executions
+                          (Claude Code); N defaults to 20
+--tool-failures           opencode tool failure rates: which tools fail most
+                          and at what percentage
+--tool-switch-overhead    Tool-switch overhead: gaps and cold TTFT at tool
+                          boundaries
+--stop-reasons            Claude Code stop_reason distribution (tool_use /
+                          end_turn / …)
+--agent-roles             Cost and token attribution per sub-agent role
+                          (opencode agent label)
+--multi-agent             Codex multi-agent spawn/resume topology by
+                          sub-agent role
+--skill-activity          Codex skill injection counts — which skills fire
+                          implicitly and how often
+--skill-outcomes          Token efficiency comparison: sessions with vs
+                          without each skill
+--speed                   Speed/effort attribute distribution across Claude
+                          Code LLM spans
+
+# errors & health
+--error-types             Error bucketing: rate_limit / timeout /
+                          context_length / content_filter / auth /
+                          server_error / unknown
+--model-drift             Request → response model pairs (detect silent
+                          provider rerouting)
+--recent-errors           The most recent error events, from spans and logs
+                          (newest first)
+--recent-errors-limit <N> Maximum number of rows for --recent-errors
+                          (default 50)
+
+# codex
+--codex-subagents         Codex sub-agent volume: thread starts per main
+                          thread, spawn-role breakdown, and a daily rollup.
+                          Volume only — Codex spans carry no usage attributes,
+                          so no cost figures
+--codex-ttft              Codex first-token latency percentiles (p50/p90/p95)
+                          per model
+--codex-turns             Codex turn busy/idle breakdown per model and
+                          project
+--codex-idle-ratio        Codex idle-ratio trend per day: model wait vs tool
+                          execution
+--guardian                Codex Guardian review summary: risk levels,
+                          actions, approval rate
+--hook-overhead           Codex hook overhead: total and average invocation
+                          time per hook event type
+--bob-hook-overhead       Bob hook overhead (empty until Bob emits hook
+                          telemetry)
 ```
 
 ### Examples
@@ -279,7 +425,7 @@ otelite usage --since 1h --error-types
 # Did the provider serve a different model than I asked for?
 otelite usage --model-drift
 
-# Top 10 most expensive sessions, JSON for piping
+# Cost per session, plus the 10 most expensive individual calls (JSON)
 otelite usage --by-session --top 10 --format json | jq
 
 # How much of each session's context is the fixed prefix vs what grew?
@@ -287,6 +433,12 @@ otelite usage --since 7d --context-composition
 
 # Which Codex sessions spawn sub-agents, and what are they used for?
 otelite usage --since 7d --codex-subagents
+
+# Exact calendar interval instead of a rolling window
+otelite usage --start 2026-09-10 --end 2026-09-17 --by-model
+
+# Where is this month's spend heading?
+otelite usage --cost-projection
 ```
 
 ### Capability coverage: `otelite capabilities`
@@ -355,6 +507,151 @@ conclusions are suppressed when TTFT is not reliable; a zero baseline keeps
 the relative change percentage-unavailable rather than printing a fake 0%.
 See the LLM observability guide for the thresholds and what the diagnosis
 will not claim.
+
+---
+
+## Providers
+
+```bash
+otelite providers --since 24h
+otelite providers --since 7d --format json
+```
+
+The provider × model mix: per provider and model, tokens (input, output,
+cache read/write, reasoning), session count, estimated cost and share of
+total tokens. Cost is priced from the LiteLLM model table (falls back to
+built-in Claude rates); models without a known price show `—`. Like
+`usage`, reads the local database directly — no daemon required.
+
+---
+
+## Cache
+
+```bash
+otelite cache --since 24h
+otelite cache --since 7d --series --bucket-secs 86400
+```
+
+Prompt-cache economics per model: tokens served from cache vs tokens
+written, the read:write ratio (how long the cache pays for itself), hit
+rate, and estimated savings (cache reads priced at the input − cache-read
+delta). `--series` adds a time-bucketed read/write series; `--bucket-secs`
+sets the bucket size (default 3600). Models without a known cache-read
+price show `—`, and the total is flagged "partial". Reads the local
+database directly.
+
+---
+
+## Reasoning
+
+```bash
+otelite reasoning --since 7d
+```
+
+How much of each model's output was thinking tokens, with the thinking
+cost priced at the model's output rate. Also prints a reasoning-effort
+breakdown (calls and tokens per effort level) when the spans carry it.
+Models without thinking tokens show a 0% share — an empty window prints
+"No token activity". Reads the local database directly.
+
+---
+
+## Agents
+
+```bash
+otelite agents --since 24h
+```
+
+Per-harness rollup over the window: sessions, cost, tokens, tool calls
+and retries, sorted by cost. A cost marked `(actual)` comes from the
+harness's own cost counter rather than token × price. Reads the local
+database directly.
+
+---
+
+## Projects
+
+```bash
+otelite projects --since 24h
+```
+
+Per-project usage: sessions, cost, tokens and the dominant model,
+grouped by `project.id`. opencode labels its spans with the project;
+Codex and Claude Code carry no project label today, so their usage
+lands under `unattributed`. Reads the local database directly.
+
+---
+
+## Sessions
+
+```bash
+otelite sessions costs --since 24h --top 20
+otelite sessions cost-hist --since 7d --buckets 30
+```
+
+`costs` lists the top-cost sessions (default 50, `--top` to change) with
+agent, cost, tokens, wall-clock duration, and an anomaly flag (`!`) when
+a session costs more than 3× the median. `cost-hist` is a log-spaced
+ASCII histogram of per-session costs.
+
+```bash
+otelite sessions context <session-id>
+```
+
+Everything observed for one session: spans, logs and metric aggregates
+on one timeline, plus a merged event timeline. `--start`/`--end` (epoch
+nanoseconds) bound the window and `--limit` caps rows (default 500, cap
+5000). Session IDs come from `sessions costs` or the web Sessions tab.
+Reads the local database directly.
+
+---
+
+## Histogram
+
+```bash
+otelite histogram session_cost --since 7d --scale log
+otelite histogram ttft --since 24h --buckets 30
+```
+
+Distribution of a named metric cohort as an ASCII histogram with summary
+stats (n, min, p50, p95, p99, max, mean). Cohorts: `session_cost` (USD),
+`tool_duration`, `llm_duration`, `ttft` (ms) and `output_tokens`.
+`--buckets` sets the bucket count (default 20, cap 100); `--scale log`
+switches to log-spaced bins, which suits the heavy tails of cost and
+latency. Reads the local database directly.
+
+---
+
+## LLM requests
+
+```bash
+otelite llm
+otelite llm --model claude-sonnet --status error
+otelite llm --trace <trace-id>
+```
+
+Recent individual LLM requests: time, model, in / cached / out tokens,
+duration, cost, status and a short trace id. `--status ok` keeps
+`end_turn`/`stop` finish reasons, `error` keeps the rest (filtered
+client-side); `--model` is a substring match, `--session` filters by
+session ID, `--since` defaults to 1h and `--limit` to 30. `--trace`
+prints every span in that trace with its `gen_ai.*` attributes. Unlike
+most analytics commands, `llm` queries the running daemon via
+`--endpoint`.
+
+---
+
+## Retries
+
+```bash
+otelite retries
+otelite retries --model claude-sonnet --limit 50
+```
+
+Recent retried LLM calls: requests that failed on the first attempt and
+then succeeded. Each row shows time, model, attempt number, TTFT, stop
+reason and short session/trace ids for drill-down. `--since` defaults to
+24h and `--limit` to 20. Queries the running daemon via `--endpoint`.
 
 ---
 

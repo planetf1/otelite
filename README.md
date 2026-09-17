@@ -69,12 +69,15 @@ Open `http://localhost:3000` in your browser to view telemetry.
 - **Web Dashboard**: View and filter telemetry data at `http://localhost:3000`
 - **Terminal UI**: Full-featured TUI with `otelite tui`
 - **CLI**: Query and export data with `otelite logs`, `otelite traces`, `otelite metrics`, `otelite usage`
+- **MCP server**: Expose logs, traces and GenAI usage to AI agents (Claude Code, Cursor, ...) via `otelite mcp`
 - **Offline import**: Load telemetry from JSONL files with `otelite import` — useful for CI artifacts and air-gapped environments
 - **Single Binary**: Zero runtime dependencies
 - **GenAI/LLM analytics**: First-class OTel GenAI semconv — cost estimation per provider,
   latency p50/p95/p99 with TTFT, error type breakdown (rate_limit / timeout / context_length /
   content_filter / auth / server_error), per-tool success rate, prompt-cache hit rate, model
-  drift detection (silent provider rerouting), conversation depth, output/input ratio
+  drift detection (silent provider rerouting), conversation depth, output/input ratio, session
+  cost analysis, per-agent and per-project rollups, cost projection — ~50 panels in total
+  (`otelite usage --help`)
 
 ## Screenshots
 
@@ -336,7 +339,7 @@ See [docs/architecture.md](docs/architecture.md) for detailed design.
 
 ## Project Status
 
-**Current version:** 0.1.0 — early release, core features stable. REST API may evolve.
+**Current version:** 0.1.144 — early release, core features stable. REST API may evolve.
 
 ## License
 
