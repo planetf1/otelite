@@ -11,6 +11,8 @@ have to work around), not implementation detail.
 
 ## [Unreleased]
 
+## [0.1.143] - 2026-09-17
+
 ### Fixed
 
 - OTLP/JSON metric ingest: integer data points sent in the spec-compliant
