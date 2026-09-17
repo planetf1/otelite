@@ -11,6 +11,8 @@ have to work around), not implementation detail.
 
 ## [Unreleased]
 
+## [0.1.145] - 2026-09-17
+
 ### Fixed
 
 - OTLP/JSON ingest: integer values sent in the spec-compliant proto3 JSON
