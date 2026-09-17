@@ -11,6 +11,8 @@ have to work around), not implementation detail.
 
 ## [Unreleased]
 
+## [0.1.146] - 2026-09-17
+
 ### Fixed
 
 - The daily tool-mix analytics (and the web Behaviour report built on it)
