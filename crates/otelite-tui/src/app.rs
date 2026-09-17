@@ -811,6 +811,34 @@ impl App {
                     }
                     self.usage_state.model_perf_fetched = true;
                 }
+                // Context composition panel (#113/#245): fixed 7-day window,
+                // the same convention as the capability and daily-throughput
+                // panels. Optional panel — a failure only blanks this panel.
+                {
+                    let now_ns = std::time::SystemTime::now()
+                        .duration_since(std::time::UNIX_EPOCH)
+                        .map(|d| d.as_nanos() as i64)
+                        .unwrap_or(0);
+                    let cc_start = (now_ns - 7 * 86_400_000_000_000).to_string();
+                    let cc_end = now_ns.to_string();
+                    match self
+                        .api_client
+                        .fetch_context_composition(vec![
+                            ("start_time", cc_start),
+                            ("end_time", cc_end),
+                        ])
+                        .await
+                    {
+                        Ok(resp) => {
+                            self.usage_state.context_composition =
+                                crate::ui::usage::context_composition_rows(&resp);
+                        },
+                        Err(_) => {
+                            self.usage_state.context_composition = Vec::new();
+                        },
+                    }
+                    self.usage_state.context_composition_fetched = true;
+                }
                 // best-effort — Claude Code only; ignore errors silently
                 if let Ok(resp) = self.api_client.fetch_tool_approvals(vec![]).await {
                     self.usage_state.tool_approvals = Some(resp);

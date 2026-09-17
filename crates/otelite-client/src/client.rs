@@ -351,6 +351,25 @@ impl ApiClient {
         Ok(response.json().await?)
     }
 
+    /// Fetch per-session context composition (#113/#245): fixed prompt
+    /// prefix (minimum cache-read) vs peak context per session, plus the
+    /// in-session growth. Sessions without cache-read telemetry are
+    /// omitted server-side.
+    pub async fn fetch_context_composition(
+        &self,
+        params: Vec<(&str, String)>,
+    ) -> Result<otelite_core::api::ContextCompositionResponse> {
+        let url = format!("{}/api/genai/context_composition", self.base_url);
+        let response = self.client.get(&url).query(&params).send().await?;
+        if !response.status().is_success() {
+            return Err(non_success(
+                response.status(),
+                "Failed to fetch context composition",
+            ));
+        }
+        Ok(response.json().await?)
+    }
+
     pub async fn fetch_truncation_rate(
         &self,
         params: Vec<(&str, String)>,
@@ -1489,6 +1508,77 @@ mod tests {
         assert_eq!(diag.preceding_window.end_time, 100);
         assert!(diag.rolling_window.is_none());
         assert!(diag.identities.is_empty());
+    }
+
+    #[tokio::test]
+    async fn test_fetch_context_composition_success() {
+        let mut server = Server::new_async().await;
+        let mock = server
+            .mock("GET", "/api/genai/context_composition")
+            .match_query(mockito::Matcher::UrlEncoded(
+                "start_time".to_string(),
+                "100".to_string(),
+            ))
+            .match_query(mockito::Matcher::UrlEncoded(
+                "end_time".to_string(),
+                "200".to_string(),
+            ))
+            .with_status(200)
+            .with_header("content-type", "application/json")
+            .with_body(
+                r#"{
+                    "sessions": [
+                        {
+                            "session_id": "12345678-aaaa-bbbb-cccc-ddddeeee0000",
+                            "request_count": 133,
+                            "cached_requests": 120,
+                            "fixed_prefix": 212389,
+                            "peak_context": 403280,
+                            "growth": 190891,
+                            "first_request_ns": 1000,
+                            "last_request_ns": 2000
+                        }
+                    ]
+                }"#,
+            )
+            .create_async()
+            .await;
+
+        let client = ApiClient::new(server.url(), Duration::from_secs(30)).unwrap();
+        let result = client
+            .fetch_context_composition(vec![
+                ("start_time", "100".to_string()),
+                ("end_time", "200".to_string()),
+            ])
+            .await;
+
+        mock.assert_async().await;
+        let resp = result.unwrap();
+        assert_eq!(resp.sessions.len(), 1);
+        assert_eq!(
+            resp.sessions[0].session_id,
+            "12345678-aaaa-bbbb-cccc-ddddeeee0000"
+        );
+        assert_eq!(resp.sessions[0].fixed_prefix, 212389);
+        assert_eq!(resp.sessions[0].growth, 190891);
+    }
+
+    #[tokio::test]
+    async fn test_fetch_context_composition_empty() {
+        let mut server = Server::new_async().await;
+        let mock = server
+            .mock("GET", "/api/genai/context_composition")
+            .with_status(200)
+            .with_header("content-type", "application/json")
+            .with_body(r#"{"sessions": []}"#)
+            .create_async()
+            .await;
+
+        let client = ApiClient::new(server.url(), Duration::from_secs(30)).unwrap();
+        let result = client.fetch_context_composition(vec![]).await;
+
+        mock.assert_async().await;
+        assert!(result.unwrap().sessions.is_empty());
     }
 
     #[tokio::test]

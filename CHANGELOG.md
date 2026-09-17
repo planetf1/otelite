@@ -17,6 +17,9 @@ have to work around), not implementation detail.
   per-session fixed prompt prefix (system prompt, tool schemas, skills,
   estimated from minimum cache-read) vs peak context, and the growth
   between them, with median/max summary over the window (#244)
+- TUI: the Usage view gains a context-composition panel — per-session
+  fixed prompt prefix (min cache-read), peak context and growth over the
+  last 7 days, same data as the web report (#245)
 
 ## [0.1.143] - 2026-09-17
 

@@ -1,10 +1,13 @@
-use crate::state::usage::{CapabilityRow, DailyThroughputRow, ModelPerfRow, ModelPerfWindows};
+use crate::state::usage::{
+    CapabilityRow, ContextCompositionRow, DailyThroughputRow, ModelPerfRow, ModelPerfWindows,
+};
 use crate::state::UsageState;
 use crate::ui::render_tab_bar;
 use chrono::{DateTime, Datelike, TimeZone, Timelike, Utc};
 use otelite_core::api::{
-    GenAiCapabilityResponse, GenAiMetricCapability, LatencyPercentilesResponse,
-    ModelPerformanceDelta, ModelPerformanceDiagnosis, ModelPerformanceWindow,
+    ContextCompositionResponse, GenAiCapabilityResponse, GenAiMetricCapability,
+    LatencyPercentilesResponse, ModelPerformanceDelta, ModelPerformanceDiagnosis,
+    ModelPerformanceWindow,
 };
 use ratatui::{
     layout::{Constraint, Direction, Layout, Rect},
@@ -127,6 +130,23 @@ pub fn unidentified_rows(resp: &GenAiCapabilityResponse) -> Vec<(String, usize)>
     resp.unidentified
         .iter()
         .map(|u| (u.required_attributes.join(" + "), u.span_count))
+        .collect()
+}
+
+/// Context-composition rows (#113/#245) from the API response: server
+/// order (fixed_prefix desc) is preserved; token cells are pre-formatted
+/// (k/M) and the session id truncated to 8 chars.
+pub fn context_composition_rows(resp: &ContextCompositionResponse) -> Vec<ContextCompositionRow> {
+    resp.sessions
+        .iter()
+        .map(|s| ContextCompositionRow {
+            session: truncate(&s.session_id, 8),
+            requests: s.request_count.to_string(),
+            cached: s.cached_requests.to_string(),
+            prefix: fmt_tokens(s.fixed_prefix.max(0) as u64),
+            peak: fmt_tokens(s.peak_context.max(0) as u64),
+            growth: fmt_tokens(s.growth.max(0) as u64),
+        })
         .collect()
 }
 
@@ -367,6 +387,8 @@ fn render_tables(frame: &mut Frame, area: Rect, state: &UsageState) {
     // Model performance (#154): shown once its first fetch has completed
     // (rows or an explicit no-data state) so the empty window stays visible.
     let show_perf = !state.model_perf.is_empty() || state.model_perf_fetched;
+    // Context composition (#245): same first-fetch convention.
+    let show_ctxcomp = !state.context_composition.is_empty() || state.context_composition_fetched;
     let show_tool_failures = state
         .tool_failure_rates
         .as_ref()
@@ -392,6 +414,9 @@ fn render_tables(frame: &mut Frame, area: Rect, state: &UsageState) {
     }
     if show_perf {
         constraints.push(Constraint::Length(14));
+    }
+    if show_ctxcomp {
+        constraints.push(Constraint::Length(10));
     }
     if show_tools {
         constraints.push(Constraint::Length(6));
@@ -445,6 +470,10 @@ fn render_tables(frame: &mut Frame, area: Rect, state: &UsageState) {
     }
     if show_perf {
         render_model_perf_table(frame, sections[idx], state);
+        idx += 1;
+    }
+    if show_ctxcomp {
+        render_context_composition_table(frame, sections[idx], state);
         idx += 1;
     }
     if show_tools {
@@ -952,6 +981,64 @@ fn render_model_perf_table(frame: &mut Frame, area: Rect, state: &UsageState) {
         .split(area);
     frame.render_widget(Paragraph::new(win_lines).block(Block::default()), chunks[0]);
     frame.render_widget(table, chunks[1]);
+}
+
+fn render_context_composition_table(frame: &mut Frame, area: Rect, state: &UsageState) {
+    let block = Block::default()
+        .borders(Borders::ALL)
+        .title(" Context composition (fixed prefix = min cache-read; 7d) ");
+
+    if state.context_composition.is_empty() {
+        let msg = if state.is_loading {
+            "Loading…"
+        } else {
+            "No sessions with cache data in this window"
+        };
+        frame.render_widget(Paragraph::new(msg).block(block), area);
+        return;
+    }
+
+    let header_style = Style::default()
+        .fg(Color::Cyan)
+        .add_modifier(Modifier::BOLD);
+    let header = Row::new(vec![
+        Cell::from("Session").style(header_style),
+        Cell::from("Reqs").style(header_style),
+        Cell::from("Cached").style(header_style),
+        Cell::from("Prefix").style(header_style),
+        Cell::from("Peak").style(header_style),
+        Cell::from("Growth").style(header_style),
+    ]);
+
+    let rows: Vec<Row> = state
+        .context_composition
+        .iter()
+        .map(|r| {
+            Row::new(vec![
+                Cell::from(r.session.clone()),
+                Cell::from(r.requests.clone()),
+                Cell::from(r.cached.clone()),
+                Cell::from(r.prefix.clone()),
+                Cell::from(r.peak.clone()),
+                Cell::from(r.growth.clone()),
+            ])
+        })
+        .collect();
+
+    let table = Table::new(
+        rows,
+        [
+            Constraint::Length(10), // Session
+            Constraint::Length(6),  // Reqs
+            Constraint::Length(6),  // Cached
+            Constraint::Length(7),  // Prefix
+            Constraint::Length(7),  // Peak
+            Constraint::Length(7),  // Growth
+        ],
+    )
+    .header(header)
+    .block(block);
+    frame.render_widget(table, area);
 }
 
 fn render_trunc_cache_row(
@@ -2322,6 +2409,55 @@ mod tests {
         );
         assert_eq!(rows[0].1, 3);
         assert_eq!(rows[1], ("otel.scope.name".to_string(), 1));
+    }
+
+    // --- context-composition panel projection tests (#113/#245) --------
+
+    #[test]
+    fn test_context_composition_rows_preformat_cells() {
+        let resp = otelite_core::api::ContextCompositionResponse {
+            sessions: vec![
+                otelite_core::api::ContextCompositionSession {
+                    session_id: "12345678-aaaa-bbbb-cccc-ddddeeee0000".to_string(),
+                    request_count: 133,
+                    cached_requests: 120,
+                    fixed_prefix: 212_389,
+                    peak_context: 403_280,
+                    growth: 190_891,
+                    first_request_ns: 1,
+                    last_request_ns: 2,
+                },
+                otelite_core::api::ContextCompositionSession {
+                    session_id: "ab".to_string(),
+                    request_count: 8,
+                    cached_requests: 6,
+                    fixed_prefix: 950,
+                    peak_context: 1_500,
+                    growth: 550,
+                    first_request_ns: 3,
+                    last_request_ns: 4,
+                },
+            ],
+        };
+        let rows = context_composition_rows(&resp);
+        assert_eq!(rows.len(), 2);
+        // Server order (fixed_prefix desc) is preserved.
+        assert_eq!(rows[0].session, "1234567…");
+        assert_eq!(rows[0].requests, "133");
+        assert_eq!(rows[0].cached, "120");
+        assert_eq!(rows[0].prefix, "212.4k");
+        assert_eq!(rows[0].peak, "403.3k");
+        assert_eq!(rows[0].growth, "190.9k");
+        // Short ids are not truncated; small values stay raw.
+        assert_eq!(rows[1].session, "ab");
+        assert_eq!(rows[1].prefix, "950");
+        assert_eq!(rows[1].growth, "550");
+    }
+
+    #[test]
+    fn test_context_composition_rows_empty() {
+        let resp = otelite_core::api::ContextCompositionResponse::default();
+        assert!(context_composition_rows(&resp).is_empty());
     }
 
     // --- model-performance panel projection tests (#154) ---------------

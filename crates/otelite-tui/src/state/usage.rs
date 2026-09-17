@@ -65,6 +65,20 @@ pub struct ModelPerfWindows {
     pub lines: Vec<String>,
 }
 
+/// One per-session context-composition row (#113/#245). Cell text is
+/// pre-formatted (tokens as k/M, session id truncated) so the render path
+/// stays trivially testable.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ContextCompositionRow {
+    /// First 8 chars of the session id ("…" when truncated).
+    pub session: String,
+    pub requests: String,
+    pub cached: String,
+    pub prefix: String,
+    pub peak: String,
+    pub growth: String,
+}
+
 /// State for the Usage analytics view.
 #[derive(Debug, Default)]
 pub struct UsageState {
@@ -107,6 +121,11 @@ pub struct UsageState {
     pub daily_tool_mix: Option<DailyToolMixResponse>,
     /// Skill activity; `None` until fetched.
     pub skill_activity: Option<SkillActivityResponse>,
+    /// Context composition rows (#113/#245); empty until fetched.
+    pub context_composition: Vec<ContextCompositionRow>,
+    /// True once the first context-composition fetch has completed (success
+    /// or failure) so the panel renders its no-data state instead of hiding.
+    pub context_composition_fetched: bool,
     pub error: Option<String>,
     pub is_loading: bool,
 }
