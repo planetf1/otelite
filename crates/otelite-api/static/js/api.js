@@ -247,6 +247,7 @@ class ApiClient {
     async getSessionCosts(params = {}) { return this.get('/sessions/costs', params); }
     async getSessionCostDistribution(params = {}) { return this.get('/sessions/cost-distribution', params); }
     async getSessionChains(params = {}) { return this.get('/sessions/chains', params); }
+    async getContextComposition(params = {}) { return this.get('/genai/context_composition', params); }
     async getRequestParamProfile(params = {}) { return this.get('/genai/request_param_profile', params); }
     async getConversationDepth(params = {}) { return this.get('/genai/conversation_depth', params); }
     async getCallsSeries(params = {}) { return this.get('/genai/calls_series', { bucket_secs: 3600, ...params }); }

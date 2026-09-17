@@ -641,6 +641,52 @@ pub async fn get_top_sessions(
     }))
 }
 
+/// Per-session context composition (#113, #244): fixed prompt prefix
+/// (minimum cache-read) vs peak context, plus the in-session growth.
+/// Sessions without any cache-read telemetry are omitted.
+#[utoipa::path(
+    get,
+    path = "/api/genai/context_composition",
+    params(TopGroupQuery),
+    responses(
+        (
+            status = 200,
+            description = "Sessions with context composition, fixed_prefix desc",
+            body = otelite_core::api::ContextCompositionResponse
+        ),
+        (status = 500, description = "Internal server error", body = ErrorResponse)
+    ),
+    tag = "genai"
+)]
+pub async fn get_context_composition(
+    State(state): State<AppState>,
+    Query(query): Query<TopGroupQuery>,
+) -> Result<Json<otelite_core::api::ContextCompositionResponse>, (StatusCode, Json<ErrorResponse>)>
+{
+    let limit = query.limit.unwrap_or(20).clamp(1, 100);
+    let filters = query.filters();
+
+    let mut sessions = state
+        .storage
+        .query_context_composition(query.start_time, query.end_time, &filters)
+        .await
+        .map_err(|e| {
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(ErrorResponse::storage_error(format!(
+                    "query context composition: {}",
+                    e
+                ))),
+            )
+        })?;
+    // The query returns rows in (fixed_prefix desc) order; take the top N.
+    sessions.truncate(limit);
+
+    Ok(Json(otelite_core::api::ContextCompositionResponse {
+        sessions,
+    }))
+}
+
 /// Get the top-N conversations (gen_ai.conversation.id) by total token usage
 #[utoipa::path(
     get,

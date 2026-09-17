@@ -11,6 +11,13 @@ have to work around), not implementation detail.
 
 ## [Unreleased]
 
+### Added
+
+- Web: the GenAI analytics page gains a **Context Composition** report —
+  per-session fixed prompt prefix (system prompt, tool schemas, skills,
+  estimated from minimum cache-read) vs peak context, and the growth
+  between them, with median/max summary over the window (#244)
+
 ## [0.1.143] - 2026-09-17
 
 ### Fixed

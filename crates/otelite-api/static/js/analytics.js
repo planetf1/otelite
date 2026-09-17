@@ -43,6 +43,7 @@ class AnalyticsView {
         { id: 'session_depth',           title: 'Session Depth vs Cost',   hint: 'Median / p95 session cost by tool and turn-count bucket — where cost explodes' },
         { id: 'roles',                   title: 'Agent Roles',             hint: 'Sub-agent attribution · cost & tokens per role · role × model routing matrix (opencode)' },
         { id: 'session_model',           title: 'Session × Model',         hint: 'Token and cost breakdown per (session, model) pair — spot opus spend in specific sessions' },
+        { id: 'context_composition',     title: 'Context Composition',     hint: 'Fixed prompt prefix (min cache-read) vs peak context per session, and the growth between them' },
         { id: 'thinking_effort',         title: 'Thinking & Effort',       hint: 'Thinking and effort token usage — Claude Code effort levels, opencode + Codex reasoning share' },
         { id: 'efficiency',              title: 'Agent Efficiency',        hint: 'Tokens per commit · tokens per line of code · cross-agent comparison' },
         { id: 'productivity',            title: 'Productivity',            hint: 'Commits · PRs · lines of code per day per tool — what the spend produced' },
@@ -74,7 +75,7 @@ class AnalyticsView {
     // Top-level categories. A report appears in exactly one group; pinned
     // reports move to the Pinned group while pinned.
     static GROUPS = [
-        { id: 'cost',        label: 'Cost',                    sub: 'Where did the tokens go?',            reports: ['cost', 'providers', 'cost_by_project', 'session_depth', 'roles', 'session_model', 'thinking_effort', 'efficiency', 'productivity', 'skills', 'loc_efficiency'] },
+        { id: 'cost',        label: 'Cost',                    sub: 'Where did the tokens go?',            reports: ['cost', 'providers', 'cost_by_project', 'session_depth', 'roles', 'session_model', 'context_composition', 'thinking_effort', 'efficiency', 'productivity', 'skills', 'loc_efficiency'] },
         { id: 'latency',     label: 'Latency',                 sub: 'How fast, and where is it slow?',      reports: ['latency', 'model_performance', 'ttft', 'tool_switch_overhead', 'codex_turns', 'speed_dist', 'human_response_latency'] },
         { id: 'reliability', label: 'Reliability',             sub: "What's breaking, and how often?",      reports: ['reliability', 'tool_failures', 'guardian'] },
         { id: 'behavior',    label: 'Behaviour',               sub: 'How is it being used?',                reports: ['behavior', 'multi_agent', 'model_selection_heatmap', 'time_in_tool', 'session_chains', 'session_duration', 'rare_tool_sessions'] },
@@ -98,6 +99,7 @@ class AnalyticsView {
         human_response_latency: ['human latency', 'response time', 'time between turns', 'reading time', 'thinking time', 'flow state', 'when do I work fastest'],
         roles: ['role', 'sub-agent', 'subagent', 'attribution', 'routing matrix'],
         session_model: ['per-session', 'session spend', 'model pair'],
+        context_composition: ['context composition', 'fixed prefix', 'system prompt', 'prompt cache', 'cache-read', 'context growth', 'prefix tokens'],
         thinking_effort: ['effort', 'low', 'medium', 'high', 'xhigh', 'reasoning', 'thinking tokens', 'thinking'],
         efficiency: ['efficiency', 'commits', 'lines of code', 'loc', 'tokens per commit'],
         productivity: ['productivity', 'pull requests', 'prs', 'cost per commit', 'shipped', 'output'],
@@ -136,6 +138,7 @@ class AnalyticsView {
         human_response_latency: ['ttft', 'latency', 'time_in_tool'],
         roles: ['cost', 'session_model', 'model_selection_heatmap'],
         session_model: ['cost', 'roles'],
+        context_composition: ['latency', 'cost', 'session_model'],
         thinking_effort: ['cost', 'model_performance', 'speed_dist'],
         efficiency: ['cost', 'skills', 'productivity'],
         productivity: ['efficiency', 'cost', 'behavior'],
@@ -1141,6 +1144,7 @@ class AnalyticsView {
             session_depth: () => this._loadSessionDepthSection(),
             time_in_tool: () => this._loadTimeInToolSection(),
             session_chains: () => this._loadSessionChainsSection(),
+            context_composition: () => this._loadContextCompositionSection(),
             session_duration: () => this._loadSessionDurationSection(),
             loc_efficiency: () => this._loadLocEfficiencySection(),
             rare_tool_sessions: () => this._loadRareToolSessionsSection(),
@@ -4076,6 +4080,57 @@ class AnalyticsView {
             this.loadedSections.add('session_chains');
         } catch (err) {
             this._setSectionError('session_chains', err);
+        }
+    }
+
+    // Context Composition (#113/#244): per-session fixed prefix (minimum
+    // cache-read — system prompt, tool schemas, skills) vs peak context and
+    // the in-session growth. Sessions without cache-read telemetry are
+    // omitted server-side; the summary line mirrors the CLI panel.
+    async _loadContextCompositionSection() {
+        this._setSectionLoading('context_composition');
+        try {
+            const data = await this.api.getContextComposition(this._baseParams());
+            const sessions = data.sessions || [];
+            let html = '<p class="section-hint">Fixed prefix is what every call replays (system prompt, tool schemas, skills) — estimated as the session\'s minimum cache-read; growth is the conversation/tool-result context added over the session. Only sessions with cache-read telemetry appear.</p>';
+            if (!sessions.length) {
+                html += '<div class="empty-state-hint">No sessions with cache data in this window.</div>';
+            } else {
+                const median = arr => {
+                    const s = [...arr].sort((a, b) => a - b);
+                    const mid = Math.floor(s.length / 2);
+                    return s.length % 2 ? s[mid] : (s[mid - 1] + s[mid]) / 2;
+                };
+                const prefixes = sessions.map(s => Number(s.fixed_prefix));
+                const growths = sessions.map(s => Number(s.growth));
+                const fmtN = v => Number(v).toLocaleString();
+                html += `<p class="table-hint"><strong>${sessions.length}</strong> session(s) with cache data — fixed prefix median <strong>${fmtN(median(prefixes))}</strong>, max <strong>${fmtN(Math.max(...prefixes))}</strong>; in-session growth median <strong>${fmtN(median(growths))}</strong></p>`;
+                const fmtUtc = ns => {
+                    const d = new Date(Number(ns) / 1_000_000);
+                    const p = n => String(n).padStart(2, '0');
+                    return `${d.getUTCFullYear()}-${p(d.getUTCMonth() + 1)}-${p(d.getUTCDate())} ${p(d.getUTCHours())}:${p(d.getUTCMinutes())}`;
+                };
+                html += '<div class="analytics-table-wrap"><table class="analytics-table"><thead><tr>'
+                    + '<th>Session</th><th>Reqs</th><th>Cached</th><th>Fixed prefix</th><th>Peak context</th><th>Growth</th><th>First (UTC)</th><th>Last (UTC)</th>'
+                    + '</tr></thead><tbody>';
+                for (const s of sessions) {
+                    html += `<tr>`
+                        + `<td title="${this._esc(s.session_id)}">${this._esc((s.session_id || '').slice(0, 8))}</td>`
+                        + `<td>${fmtN(s.request_count)}</td>`
+                        + `<td>${fmtN(s.cached_requests)}</td>`
+                        + `<td>${fmtN(s.fixed_prefix)}</td>`
+                        + `<td>${fmtN(s.peak_context)}</td>`
+                        + `<td>${fmtN(s.growth)}</td>`
+                        + `<td>${fmtUtc(s.first_request_ns)}</td>`
+                        + `<td>${fmtUtc(s.last_request_ns)}</td>`
+                        + `</tr>`;
+                }
+                html += '</tbody></table></div>';
+            }
+            this._setSectionBody('context_composition', html);
+            this.loadedSections.add('context_composition');
+        } catch (err) {
+            this._setSectionError('context_composition', err);
         }
     }
 

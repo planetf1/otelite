@@ -657,6 +657,15 @@ pub struct ContextCompositionSession {
     pub last_request_ns: i64,
 }
 
+/// Response for `GET /api/genai/context_composition` (#244): per-session
+/// context composition, in (fixed_prefix desc) order — the SQL ordering of
+/// `query_context_composition`.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
+pub struct ContextCompositionResponse {
+    pub sessions: Vec<ContextCompositionSession>,
+}
+
 /// Codex sub-agent analytics (#184, option B): per-main-thread sub-agent
 /// starts, derived from `codex.thread.started` metrics whose
 /// `session_source` is `subagent_thread_spawn_<thread-uuid>_d1`. The

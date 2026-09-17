@@ -42,6 +42,7 @@ use utoipa::OpenApi;
         crate::api::genai::get_top_spans,
         crate::api::genai::get_recent_retries,
         crate::api::genai::get_top_sessions,
+        crate::api::genai::get_context_composition,
         crate::api::genai::get_top_conversations,
         crate::api::genai::get_finish_reasons,
         crate::api::genai::get_distributions,
@@ -428,6 +429,10 @@ impl DashboardServer {
             .route("/api/genai/top_spans", get(crate::api::genai::get_top_spans))
             .route("/api/genai/retries", get(crate::api::genai::get_recent_retries))
             .route("/api/genai/top_sessions", get(crate::api::genai::get_top_sessions))
+            .route(
+                "/api/genai/context_composition",
+                get(crate::api::genai::get_context_composition),
+            )
             .route("/api/genai/top_conversations", get(crate::api::genai::get_top_conversations))
             .route("/api/genai/finish_reasons", get(crate::api::genai::get_finish_reasons))
             .route("/api/genai/latency_stats", get(crate::api::genai::get_latency_stats))
