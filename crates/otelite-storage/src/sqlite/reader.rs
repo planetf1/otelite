@@ -16224,6 +16224,54 @@ mod new_insight_tests_2 {
     }
 
     #[test]
+    fn test_daily_tool_mix_plan_uses_scope_index() {
+        // Planner contract (#251): query_daily_tool_mix source 1 must
+        // resolve through the partial covering index on (scope-name,
+        // timestamp), not a full metrics scan. The SQL below mirrors the
+        // reader's query verbatim (same expressions, same WHERE shape);
+        // divergence between the index and this query degrades to a full
+        // scan (59 s on the 2026-09-17 production DB).
+        // Production schema (in-memory) so the plan reflects the real index
+        // set, not a minimal test table.
+        let conn = rusqlite::Connection::open_in_memory().unwrap();
+        crate::sqlite::schema::initialize_schema(&conn).unwrap();
+        let mut stmt = conn
+            .prepare(
+                "EXPLAIN QUERY PLAN SELECT
+                   strftime('%Y-%m-%d', datetime(timestamp / 1000000000, 'unixepoch')) AS day,
+                   CASE json_extract(scope,'$.name')
+                     WHEN 'com.anthropic.claude_code' THEN 'claude_code'
+                     WHEN 'com.opencode'              THEN 'opencode'
+                     WHEN 'codex'                     THEN 'codex'
+                     ELSE json_extract(scope,'$.name')
+                   END AS tool,
+                   COUNT(*) AS datapoints
+                 FROM metrics
+                 WHERE json_valid(scope)
+                   AND json_extract(scope,'$.name') IN (
+                       'com.anthropic.claude_code',
+                       'com.opencode',
+                       'codex'
+                   )
+                   AND timestamp >= 1
+                   AND timestamp <= 2
+                 GROUP BY day, tool
+                 ORDER BY day ASC, tool ASC",
+            )
+            .unwrap();
+        let plan = stmt
+            .query_map([], |r| r.get::<_, String>(3))
+            .unwrap()
+            .collect::<std::result::Result<Vec<_>, _>>()
+            .unwrap()
+            .join("\n");
+        assert!(
+            plan.contains("idx_metrics_tool_scope_ts"),
+            "daily_tool_mix source 1 must use the covering scope index:\n{plan}"
+        );
+    }
+
+    #[test]
     fn test_daily_tool_mix_basic() {
         let conn = make_conn();
         // Two events per tool; timestamps in different days (ns since epoch).

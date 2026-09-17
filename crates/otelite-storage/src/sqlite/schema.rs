@@ -299,6 +299,22 @@ pub fn initialize_schema(conn: &Connection) -> Result<()> {
           WHERE name = 'claude_code.token.usage';",
     )?;
 
+    // Covering partial index for the tool-mix datapoint scan
+    // (reader::query_daily_tool_mix source 1): the index columns are exactly
+    // the reader's WHERE/SELECT expressions, so the 30d (day, tool)
+    // aggregation is an index-only scan over the three tool scopes instead
+    // of a full metrics-table scan with per-row JSON extraction (59 s on
+    // the 2026-09-17 production DB, #251). The partial predicate duplicates
+    // the reader's WHERE verbatim (planner contract): any divergence
+    // degrades the query to a full scan.
+    conn.execute_batch(
+        "CREATE INDEX IF NOT EXISTS idx_metrics_tool_scope_ts ON metrics(
+             json_extract(scope,'$.name'),
+             timestamp)
+          WHERE json_valid(scope) AND json_extract(scope,'$.name')
+                IN ('com.anthropic.claude_code','com.opencode','codex');",
+    )?;
+
     // Expression index for Codex cwd-based project rollup (#160/#164).
     // Covers run_sampling_request spans only; the cwd value and start_time
     // let project-rollup and busy/idle breakdown queries seek by project

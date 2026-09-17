@@ -11,6 +11,13 @@ have to work around), not implementation detail.
 
 ## [Unreleased]
 
+### Fixed
+
+- The daily tool-mix analytics (and the web Behaviour report built on it)
+  no longer full-scans the metrics table on wide windows — a covering
+  index on the tool scope makes the 30-day aggregation index-only (59 s →
+  instant on a production-scale database) (#251)
+
 ## [0.1.145] - 2026-09-17
 
 ### Fixed
