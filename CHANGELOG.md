@@ -11,6 +11,8 @@ have to work around), not implementation detail.
 
 ## [Unreleased]
 
+## [0.1.149] - 2026-09-18
+
 ### Fixed
 
 - `otelite metrics list` and `/api/metrics` (all-time, no filter) no longer
