@@ -11,7 +11,7 @@ members = [
 ]
 
 [workspace.package]
-version = "0.1.152"
+version = "0.1.153"
 edition = "2021"
 rust-version = "1.77"
 authors = ["Otelite Contributors"]
