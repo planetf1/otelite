@@ -2130,151 +2130,164 @@ pub fn query_token_usage(
     }
     push_scope(&mut where_clause, &mut params, filters.span_scope());
 
-    let input_expr = exprs.input;
-    let output_expr = exprs.output;
-    let cache_creation_expr = exprs.cache_creation;
-    let cache_read_expr = exprs.cache_read;
-
-    // Query overall summary
-    let summary_query = format!(
-        "SELECT
-            COALESCE(SUM({input_expr}), 0) as total_input,
-            COALESCE(SUM({output_expr}), 0) as total_output,
-            COUNT(*) as total_requests,
-            COALESCE(SUM({cache_creation_expr}), 0) as cache_creation,
-            COALESCE(SUM({cache_read_expr}), 0) as cache_read
-        FROM spans
-        {where_clause}"
+    // Single pass (#251): every aggregate below shares the same WHERE, so
+    // fetch each matching span's derived columns once and aggregate in
+    // memory. The old form ran four separate scans and re-evaluated the
+    // per-row JSON extractions four times (6.4 s for a 30-day window of
+    // ~34k LLM spans on a production-scale database; the single pass is
+    // well under a second).
+    let sql = format!(
+        "SELECT {input_expr}, {output_expr}, {cache_creation_expr}, {cache_read_expr}, \
+         {identity}, {system}, {request_model}, {response_model} \
+         FROM spans {where_clause}",
+        input_expr = exprs.input,
+        output_expr = exprs.output,
+        cache_creation_expr = exprs.cache_creation,
+        cache_read_expr = exprs.cache_read,
+        identity = exprs.identity,
+        system = exprs.system,
+        request_model = exprs.request_model,
+        response_model = exprs.response_model,
     );
-
     let param_refs: Vec<&dyn rusqlite::ToSql> = params.iter().map(|p| p.as_ref()).collect();
-
-    let summary = conn
-        .query_row(&summary_query, param_refs.as_slice(), |row| {
-            Ok(otelite_core::api::TokenUsageSummary {
-                total_input_tokens: row.get::<_, i64>(0)? as u64,
-                total_output_tokens: row.get::<_, i64>(1)? as u64,
-                total_requests: row.get::<_, i64>(2)? as usize,
-                total_cache_creation_tokens: row.get::<_, i64>(3)? as u64,
-                total_cache_read_tokens: row.get::<_, i64>(4)? as u64,
-            })
-        })
-        .map_err(|e| StorageError::QueryError(format!("Failed to query token summary: {}", e)))?;
-
-    // Query by model identity (`provider/model`, bare model when no provider
-    // is recorded). Rerouted calls stay in the request-model identity and are
-    // counted in `rerouted_count` (#143).
-    let model_expr = exprs.identity.clone();
-    let request_model_expr = exprs.request_model.clone();
-    let response_model_expr = exprs.response_model.clone();
-    let model_query = format!(
-        "SELECT
-            {model_expr} as model,
-            COALESCE(SUM({input_expr}), 0) as input_tokens,
-            COALESCE(SUM({output_expr}), 0) as output_tokens,
-            COUNT(*) as requests,
-            SUM(CASE WHEN {request_model_expr} IS NOT NULL
-                     AND {response_model_expr} IS NOT NULL
-                     AND {request_model_expr} != {response_model_expr}
-                THEN 1 ELSE 0 END) as rerouted
-        FROM spans
-        {where_clause}
-        GROUP BY model
-        HAVING model IS NOT NULL
-        ORDER BY input_tokens + output_tokens DESC"
-    );
-
-    let mut stmt = conn
-        .prepare(&model_query)
-        .map_err(|e| StorageError::QueryError(format!("Failed to prepare model query: {}", e)))?;
-
-    let param_refs: Vec<&dyn rusqlite::ToSql> = params.iter().map(|p| p.as_ref()).collect();
-
-    let mut by_model = stmt
-        .query_map(param_refs.as_slice(), |row| {
-            Ok(otelite_core::api::ModelUsage {
-                model: row.get(0)?,
-                input_tokens: row.get::<_, i64>(1)? as u64,
-                output_tokens: row.get::<_, i64>(2)? as u64,
-                requests: row.get::<_, i64>(3)? as usize,
-                response_model: None,
-                rerouted_count: row.get::<_, i64>(4)? as usize,
-            })
-        })
-        .map_err(|e| StorageError::QueryError(format!("Failed to execute model query: {}", e)))?
-        .collect::<std::result::Result<Vec<_>, _>>()
-        .map_err(|e| StorageError::QueryError(format!("Failed to parse model results: {}", e)))?;
-
-    // Dominant differing response model per identity (rerouting analysis).
-    // Ordered so the first row per identity is the mode (ties: lexicographic).
-    let response_query = format!(
-        "SELECT
-            {model_expr} as model,
-            {response_model_expr} as response_model,
-            COUNT(*) as n
-        FROM spans
-        {where_clause}
-        GROUP BY model, response_model
-        HAVING response_model IS NOT NULL AND response_model != {request_model_expr}
-        ORDER BY model, n DESC, response_model ASC"
-    );
-    let mut stmt = conn.prepare(&response_query).map_err(|e| {
-        StorageError::QueryError(format!("Failed to prepare response-model query: {}", e))
+    let mut stmt = conn.prepare(&sql).map_err(|e| {
+        StorageError::QueryError(format!("Failed to prepare token usage query: {}", e))
     })?;
-    let param_refs: Vec<&dyn rusqlite::ToSql> = params.iter().map(|p| p.as_ref()).collect();
-    let mut dominant: std::collections::HashMap<String, String> = std::collections::HashMap::new();
     let rows = stmt
         .query_map(param_refs.as_slice(), |row| {
-            Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+            Ok((
+                row.get::<_, Option<i64>>(0)?,
+                row.get::<_, Option<i64>>(1)?,
+                row.get::<_, Option<i64>>(2)?,
+                row.get::<_, Option<i64>>(3)?,
+                row.get::<_, Option<String>>(4)?,
+                row.get::<_, Option<String>>(5)?,
+                row.get::<_, Option<String>>(6)?,
+                row.get::<_, Option<String>>(7)?,
+            ))
         })
         .map_err(|e| {
-            StorageError::QueryError(format!("Failed to execute response-model query: {}", e))
+            StorageError::QueryError(format!("Failed to execute token usage query: {}", e))
         })?;
-    for row in rows {
-        let (m, rm) = row.map_err(|e| {
-            StorageError::QueryError(format!("Failed to parse response-model row: {}", e))
-        })?;
-        dominant.entry(m).or_insert(rm);
+
+    #[derive(Default)]
+    struct ModelAgg {
+        input: u64,
+        output: u64,
+        requests: u64,
+        rerouted: u64,
     }
-    for usage in by_model.iter_mut() {
-        if let Some(rm) = dominant.remove(&usage.model) {
-            usage.response_model = Some(rm);
+    let mut models: std::collections::BTreeMap<String, ModelAgg> =
+        std::collections::BTreeMap::new();
+    // identity -> response_model -> count (rerouted rows only), for the
+    // dominant-response-model analysis.
+    let mut resp_counts: std::collections::HashMap<String, std::collections::HashMap<String, u64>> =
+        std::collections::HashMap::new();
+    let mut systems: std::collections::BTreeMap<String, (u64, u64, u64)> =
+        std::collections::BTreeMap::new();
+
+    let mut total_input: u64 = 0;
+    let mut total_output: u64 = 0;
+    let mut total_cache_creation: u64 = 0;
+    let mut total_cache_read: u64 = 0;
+    let mut total_requests: usize = 0;
+
+    for row in rows {
+        let (
+            input,
+            output,
+            cache_creation,
+            cache_read,
+            identity,
+            system,
+            request_model,
+            response_model,
+        ) = row.map_err(|e| {
+            StorageError::QueryError(format!("Failed to parse token usage row: {}", e))
+        })?;
+        let (input, output, cache_creation, cache_read) = (
+            input.unwrap_or(0) as u64,
+            output.unwrap_or(0) as u64,
+            cache_creation.unwrap_or(0) as u64,
+            cache_read.unwrap_or(0) as u64,
+        );
+        total_input += input;
+        total_output += output;
+        total_cache_creation += cache_creation;
+        total_cache_read += cache_read;
+        total_requests += 1;
+
+        if let Some(model) = identity {
+            let m = models.entry(model.clone()).or_default();
+            m.input += input;
+            m.output += output;
+            m.requests += 1;
+            let rerouted = matches!(
+                (&request_model, &response_model),
+                (Some(r), Some(a)) if r != a
+            );
+            if rerouted {
+                m.rerouted += 1;
+                *resp_counts
+                    .entry(model)
+                    .or_default()
+                    .entry(response_model.clone().unwrap())
+                    .or_default() += 1;
+            }
+        }
+        if let Some(system) = system {
+            let s = systems.entry(system).or_insert((0, 0, 0));
+            s.0 += input;
+            s.1 += output;
+            s.2 += 1;
         }
     }
 
-    // Query by system/provider — accept the OTel-standard names plus llm.* variants.
-    let system_expr = exprs.system;
-    let system_query = format!(
-        "SELECT
-            {system_expr} as system,
-            COALESCE(SUM({input_expr}), 0) as input_tokens,
-            COALESCE(SUM({output_expr}), 0) as output_tokens,
-            COUNT(*) as requests
-        FROM spans
-        {where_clause}
-        GROUP BY system
-        HAVING system IS NOT NULL
-        ORDER BY input_tokens + output_tokens DESC"
-    );
+    let summary = otelite_core::api::TokenUsageSummary {
+        total_input_tokens: total_input,
+        total_output_tokens: total_output,
+        total_requests,
+        total_cache_creation_tokens: total_cache_creation,
+        total_cache_read_tokens: total_cache_read,
+    };
 
-    let mut stmt = conn
-        .prepare(&system_query)
-        .map_err(|e| StorageError::QueryError(format!("Failed to prepare system query: {}", e)))?;
-
-    let param_refs: Vec<&dyn rusqlite::ToSql> = params.iter().map(|p| p.as_ref()).collect();
-
-    let by_system = stmt
-        .query_map(param_refs.as_slice(), |row| {
-            Ok(otelite_core::api::SystemUsage {
-                system: row.get(0)?,
-                input_tokens: row.get::<_, i64>(1)? as u64,
-                output_tokens: row.get::<_, i64>(2)? as u64,
-                requests: row.get::<_, i64>(3)? as usize,
-            })
+    // Dominant differing response model per identity: highest count, ties
+    // broken lexicographically — the old SQL did ORDER BY n DESC,
+    // response_model ASC and took the first row per model.
+    let mut by_model: Vec<otelite_core::api::ModelUsage> = models
+        .into_iter()
+        .map(|(model, a)| otelite_core::api::ModelUsage {
+            response_model: resp_counts.get(&model).and_then(|counts| {
+                counts
+                    .iter()
+                    .max_by(|x, y| x.1.cmp(y.1).then_with(|| y.0.cmp(x.0)))
+                    .map(|(rm, _)| rm.clone())
+            }),
+            model,
+            input_tokens: a.input,
+            output_tokens: a.output,
+            requests: a.requests as usize,
+            rerouted_count: a.rerouted as usize,
         })
-        .map_err(|e| StorageError::QueryError(format!("Failed to execute system query: {}", e)))?
-        .collect::<std::result::Result<Vec<_>, _>>()
-        .map_err(|e| StorageError::QueryError(format!("Failed to parse system results: {}", e)))?;
+        .collect();
+    by_model.sort_by(|a, b| {
+        (b.input_tokens + b.output_tokens).cmp(&(a.input_tokens + a.output_tokens))
+    });
+
+    let mut by_system: Vec<otelite_core::api::SystemUsage> = systems
+        .into_iter()
+        .map(
+            |(system, (input, output, requests))| otelite_core::api::SystemUsage {
+                system,
+                input_tokens: input,
+                output_tokens: output,
+                requests: requests as usize,
+            },
+        )
+        .collect();
+    by_system.sort_by(|a, b| {
+        (b.input_tokens + b.output_tokens).cmp(&(a.input_tokens + a.output_tokens))
+    });
 
     Ok((summary, by_model, by_system))
 }

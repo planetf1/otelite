@@ -11,6 +11,14 @@ have to work around), not implementation detail.
 
 ## [Unreleased]
 
+### Fixed
+
+- Token usage endpoint (`otelite usage` / `/api/genai/usage`): the four
+  aggregates (summary, by-model, by-system, reroute analysis) are now
+  computed in a single scan over the window's spans with in-memory
+  aggregation, instead of four separate scans that re-evaluated the
+  per-span JSON extractions four times (#251)
+
 ## [0.1.149] - 2026-09-18
 
 ### Fixed
