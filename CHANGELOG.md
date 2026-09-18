@@ -11,6 +11,8 @@ have to work around), not implementation detail.
 
 ## [Unreleased]
 
+## [0.1.151] - 2026-09-18
+
 ### Changed
 
 - Trace list (`otelite traces` / `/api/traces`): a trace now qualifies for a
