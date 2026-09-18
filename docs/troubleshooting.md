@@ -82,7 +82,7 @@ sudo pacman -S base-devel pkg-config openssl
 # Check what's using the port
 lsof -i :4317
 lsof -i :4318
-lsof -i :8080
+lsof -i :3000
 ```
 
 **Solution 1**: Stop the conflicting process
@@ -371,7 +371,7 @@ Otelite has no rate-limiting knobs. Usual culprits, in order:
 ps aux | grep otelite
 
 # Check if ports are listening
-netstat -an | grep LISTEN | grep -E '4317|4318|8080'
+netstat -an | grep LISTEN | grep -E '4317|4318|3000'
 
 # Test connection
 curl http://localhost:4318/v1/metrics
@@ -379,7 +379,7 @@ curl http://localhost:4318/v1/metrics
 
 **Solution**:
 1. **Start Otelite**: `otelite start`
-2. **Check firewall**: Allow ports 4317, 4318, 8080
+2. **Check firewall**: Allow ports 4317, 4318, 3000
 3. **Verify endpoint**: Use correct URL in application
 4. **Check logs**: `otelite logs` for errors
 

@@ -72,8 +72,8 @@ Common issues and solutions for the Otelite Terminal User Interface.
 
 1. **Verify API is running**:
    ```bash
-   curl http://localhost:8080/health
-   # Should return: {"status":"healthy"}
+   curl http://localhost:3000/api/health
+   # Should return JSON including: "status":"healthy"
    ```
 
 2. **Check API URL in config**:
@@ -84,17 +84,17 @@ Common issues and solutions for the Otelite Terminal User Interface.
 
 3. **Test with explicit URL**:
    ```bash
-   otelite-tui --api-url http://localhost:8080
+   otelite-tui --api-url http://localhost:3000
    ```
 
 4. **Check firewall settings**:
-   - Ensure port 8080 is not blocked
+   - Ensure port 3000 is not blocked
    - Try disabling firewall temporarily to test
 
 5. **Verify network connectivity**:
    ```bash
    ping localhost
-   telnet localhost 8080
+   telnet localhost 3000
    ```
 
 ### Intermittent Connection Drops
@@ -298,9 +298,9 @@ Common issues and solutions for the Otelite Terminal User Interface.
 
 1. **Verify data exists in API**:
    ```bash
-   curl http://localhost:8080/api/v1/logs | jq
-   curl http://localhost:8080/api/v1/traces | jq
-   curl http://localhost:8080/api/v1/metrics | jq
+   curl http://localhost:3000/api/logs | jq
+   curl http://localhost:3000/api/traces | jq
+   curl http://localhost:3000/api/metrics | jq
    ```
 
 2. **Check time range filters**:
@@ -330,7 +330,7 @@ Common issues and solutions for the Otelite Terminal User Interface.
 3. **Check API is receiving new data**:
    ```bash
    # Send test data
-   curl -X POST http://localhost:8080/v1/logs \
+   curl -X POST http://localhost:4318/v1/logs \
      -H "Content-Type: application/json" \
      -d '{"resourceLogs":[...]}'
    ```
@@ -345,7 +345,7 @@ Common issues and solutions for the Otelite Terminal User Interface.
 
 1. **Verify data format** in API response:
    ```bash
-   curl http://localhost:8080/api/v1/logs | jq '.[0]'
+   curl http://localhost:3000/api/logs | jq '.logs[0]'
    ```
 
 2. **Check for API version mismatch**:
