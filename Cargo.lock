@@ -2393,7 +2393,7 @@ dependencies = [
 
 [[package]]
 name = "otelite"
-version = "0.1.146"
+version = "0.1.147"
 dependencies = [
  "assert_cmd",
  "chrono",
@@ -2426,7 +2426,7 @@ dependencies = [
 
 [[package]]
 name = "otelite-api"
-version = "0.1.146"
+version = "0.1.147"
 dependencies = [
  "async-trait",
  "axum 0.8.9",
@@ -2454,7 +2454,7 @@ dependencies = [
 
 [[package]]
 name = "otelite-client"
-version = "0.1.146"
+version = "0.1.147"
 dependencies = [
  "mockito",
  "otelite-core",
@@ -2467,7 +2467,7 @@ dependencies = [
 
 [[package]]
 name = "otelite-core"
-version = "0.1.146"
+version = "0.1.147"
 dependencies = [
  "assert_matches",
  "async-trait",
@@ -2484,7 +2484,7 @@ dependencies = [
 
 [[package]]
 name = "otelite-receiver"
-version = "0.1.146"
+version = "0.1.147"
 dependencies = [
  "anyhow",
  "async-compression",
@@ -2516,7 +2516,7 @@ dependencies = [
 
 [[package]]
 name = "otelite-storage"
-version = "0.1.146"
+version = "0.1.147"
 dependencies = [
  "async-trait",
  "chrono",
@@ -2536,7 +2536,7 @@ dependencies = [
 
 [[package]]
 name = "otelite-tui"
-version = "0.1.146"
+version = "0.1.147"
 dependencies = [
  "anyhow",
  "chrono",
