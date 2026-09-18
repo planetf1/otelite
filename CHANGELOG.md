@@ -11,6 +11,8 @@ have to work around), not implementation detail.
 
 ## [Unreleased]
 
+## [0.1.152] - 2026-09-18
+
 ### Changed
 
 - OTLP ingest is now bounded: the receiver caps concurrent exports in
