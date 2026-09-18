@@ -11,6 +11,21 @@ have to work around), not implementation detail.
 
 ## [Unreleased]
 
+### Fixed
+
+- `otelite metrics list` and `/api/metrics` (all-time, no filter) no longer
+  scan the entire metrics table to find each metric's latest point — a
+  write-maintained latest-per-metric table makes the all-time list
+  near-instant on a production-scale database (13 s → 0.2 s measured);
+  windowed and filtered queries are unchanged (#251)
+- The trace list no longer downloads every span of recent traces: the
+  per-trace summary (root operation, duration, exact span count, error
+  flag, services) is computed in SQL over a covering index, taking
+  `/api/traces?limit=50` from ~14 s to well under a second on
+  production-scale data (the top-50 1 h traces sat behind 2.7M spans).
+  First start builds the index once (~2 min on a large database,
+  announced in the log) (#251)
+
 ## [0.1.148] - 2026-09-18
 
 ### Fixed
@@ -35,18 +50,6 @@ have to work around), not implementation detail.
   timeout. Duplicates already present from past retries are removed once on
   the first start after upgrading (a one-time, log-line-announced cleanup;
   first start is slower on large databases) (#254)
-- `otelite metrics list` and `/api/metrics` (all-time, no filter) no longer
-  scan the entire metrics table to find each metric's latest point — a
-  write-maintained latest-per-metric table makes the all-time list
-  near-instant on a production-scale database (13 s → 0.2 s measured);
-  windowed and filtered queries are unchanged (#251)
-- The trace list no longer downloads every span of recent traces: the
-  per-trace summary (root operation, duration, exact span count, error
-  flag, services) is computed in SQL over a covering index, taking
-  `/api/traces?limit=50` from ~14 s to well under a second on
-  production-scale data (the top-50 1 h traces sat behind 2.7M spans).
-  First start builds the index once (~2 min on a large database,
-  announced in the log) (#251)
 
 ## [0.1.147] - 2026-09-18
 
