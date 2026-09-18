@@ -11,6 +11,8 @@ have to work around), not implementation detail.
 
 ## [Unreleased]
 
+## [0.1.148] - 2026-09-18
+
 ### Fixed
 
 - Double-valued counters (e.g. `claude_code.cost.usage`, USD cost sums) are
