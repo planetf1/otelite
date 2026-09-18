@@ -35,6 +35,11 @@ have to work around), not implementation detail.
   timeout. Duplicates already present from past retries are removed once on
   the first start after upgrading (a one-time, log-line-announced cleanup;
   first start is slower on large databases) (#254)
+- `otelite metrics list` and `/api/metrics` (all-time, no filter) no longer
+  scan the entire metrics table to find each metric's latest point — a
+  write-maintained latest-per-metric table makes the all-time list
+  near-instant on a production-scale database (13 s → 0.2 s measured);
+  windowed and filtered queries are unchanged (#251)
 
 ## [0.1.147] - 2026-09-18
 

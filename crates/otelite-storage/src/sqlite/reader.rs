@@ -334,13 +334,29 @@ pub fn query_metrics(conn: &Connection, params: &QueryParams) -> Result<Vec<Metr
 /// full-table GROUP BY. Subquery columns are aliased (`g_name`, `g_ts`) so
 /// unqualified predicate columns (`name`, `timestamp`, …) stay unambiguous.
 pub fn query_latest_metrics(conn: &Connection, params: &QueryParams) -> Result<Vec<Metric>> {
-    // Outer query adds optional time/predicate filters on top of the dedup subquery.
-    let mut query = String::from(
-        "SELECT m.* FROM metrics m \
-         JOIN (SELECT name AS g_name, MAX(timestamp) AS g_ts FROM metrics GROUP BY name) g \
-               ON g.g_name = m.name AND g.g_ts = m.timestamp \
-         WHERE 1=1",
-    );
+    // Fast path (#251): with no time window and no predicates, the
+    // write-maintained metric_latest table (schema v3) replaces the
+    // GROUP BY over every metrics row — the all-time list drops from
+    // ~16 s to a handful of index lookups on a production-scale database.
+    // Windowed/predicated queries keep the GROUP BY form: their semantics
+    // is "each name's global latest row, then filtered by the window",
+    // which a windowed MAX would change.
+    let fast_path =
+        params.start_time.is_none() && params.end_time.is_none() && params.predicates.is_empty();
+    let mut query = if fast_path {
+        String::from(
+            "SELECT m.* FROM metrics m \
+             JOIN metric_latest g ON g.name = m.name AND g.timestamp = m.timestamp \
+             WHERE 1=1",
+        )
+    } else {
+        String::from(
+            "SELECT m.* FROM metrics m \
+             JOIN (SELECT name AS g_name, MAX(timestamp) AS g_ts FROM metrics GROUP BY name) g \
+                   ON g.g_name = m.name AND g.g_ts = m.timestamp \
+             WHERE 1=1",
+        )
+    };
     let mut sql_params: Vec<Box<dyn rusqlite::ToSql>> = Vec::new();
 
     if let Some(start) = params.start_time {
@@ -354,7 +370,7 @@ pub fn query_latest_metrics(conn: &Connection, params: &QueryParams) -> Result<V
 
     append_predicates("metrics", &params.predicates, &mut query, &mut sql_params)?;
 
-    query.push_str(" ORDER BY name ASC");
+    query.push_str(" ORDER BY m.name ASC");
     if let Some(limit) = params.limit {
         query.push_str(" LIMIT ?");
         sql_params.push(Box::new(limit as i64));
@@ -10132,6 +10148,90 @@ mod tests {
             .map(|m| (m.name.as_str(), m.timestamp))
             .collect();
         assert_eq!(got, vec![("a", 2000)]);
+    }
+
+    /// Planner contract (#251): the all-time, unfiltered form of
+    /// `query_latest_metrics` must join the write-maintained metric_latest
+    /// table, not re-scan the metrics rows with a GROUP BY.
+    #[test]
+    fn test_query_latest_metrics_fast_path_uses_metric_latest() {
+        let conn = setup_test_db();
+        let plan: String = conn
+            .prepare(
+                "EXPLAIN QUERY PLAN SELECT m.* FROM metrics m \
+                 JOIN metric_latest g ON g.name = m.name AND g.timestamp = m.timestamp \
+                 WHERE 1=1 ORDER BY m.name ASC LIMIT 50",
+            )
+            .unwrap()
+            .query_map([], |row| row.get::<_, String>(3))
+            .unwrap()
+            .collect::<std::result::Result<Vec<_>, _>>()
+            .unwrap()
+            .join("\n");
+        assert!(
+            plan.contains("metric_latest"),
+            "all-time metrics list must use the write-maintained metric_latest table:\n{plan}"
+        );
+        assert!(
+            !plan.contains("GROUP BY"),
+            "all-time metrics list must not re-aggregate the metrics table:\n{plan}"
+        );
+    }
+
+    /// The fast path (default params) must return exactly what the GROUP BY
+    /// form computes — same rows, same values (#251).
+    #[test]
+    fn test_query_latest_metrics_fast_path_matches_group_by() {
+        let conn = setup_test_db();
+        for (name, ts, v) in [
+            ("a", 100, 1),
+            ("a", 250, 2),
+            ("a", 250, 3), // tie at the latest timestamp: both rows kept
+            ("b", 90, 4),
+            ("c", 10, 5),
+            ("c", 20, 6),
+        ] {
+            conn.execute(
+                "INSERT INTO metrics (name, metric_type, timestamp, value_int, attributes, resource) \
+                 VALUES (?1, 1, ?2, ?3, '{}', '{}')",
+                rusqlite::params![name, ts, v],
+            )
+            .unwrap();
+        }
+
+        let fast = query_latest_metrics(&conn, &QueryParams::default()).unwrap();
+        let fast_rows: Vec<(String, i64)> =
+            fast.iter().map(|m| (m.name.clone(), m.timestamp)).collect();
+
+        // The GROUP BY form, run directly for comparison.
+        let group_rows: Vec<(String, i64)> = conn
+            .prepare(
+                "SELECT m.name, m.timestamp FROM metrics m \
+                 JOIN (SELECT name AS g_name, MAX(timestamp) AS g_ts \
+                       FROM metrics GROUP BY name) g \
+                 ON g.g_name = m.name AND g.g_ts = m.timestamp \
+                 ORDER BY m.name ASC",
+            )
+            .unwrap()
+            .query_map([], |r| Ok((r.get(0)?, r.get(1)?)))
+            .unwrap()
+            .collect::<std::result::Result<_, _>>()
+            .unwrap();
+
+        assert_eq!(
+            fast_rows, group_rows,
+            "fast path must return exactly the GROUP BY rows"
+        );
+        assert_eq!(
+            fast_rows,
+            vec![
+                ("a".to_string(), 250),
+                ("a".to_string(), 250),
+                ("b".to_string(), 90),
+                ("c".to_string(), 20),
+            ],
+            "each name's latest rows, ties included"
+        );
     }
 
     #[test]

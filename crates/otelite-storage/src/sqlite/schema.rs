@@ -247,6 +247,38 @@ pub fn initialize_schema(conn: &Connection) -> Result<()> {
          CREATE INDEX IF NOT EXISTS idx_metrics_name_ts ON metrics(name, timestamp);",
     )?;
 
+    // Write-maintained "latest row per metric name" table (#251). The
+    // all-time metrics list used to compute it with a GROUP BY over every
+    // metrics row (16 s on a production-scale database); with this table
+    // it is a handful of index lookups. Triggers keep it in sync — the
+    // delete trigger fires only when the deleted row was the latest, so
+    // bulk purges of old rows (which never are) stay cheap.
+    conn.execute_batch(
+        "CREATE TABLE IF NOT EXISTS metric_latest (
+            name TEXT PRIMARY KEY,
+            timestamp INTEGER NOT NULL,
+            id INTEGER NOT NULL
+        );
+         CREATE TRIGGER IF NOT EXISTS trg_metric_latest_ai AFTER INSERT ON metrics
+         BEGIN
+             INSERT INTO metric_latest(name, timestamp, id)
+             VALUES (new.name, new.timestamp, new.id)
+             ON CONFLICT(name) DO UPDATE SET
+                 timestamp = MAX(excluded.timestamp, metric_latest.timestamp),
+                 id = CASE WHEN excluded.timestamp > metric_latest.timestamp
+                           THEN excluded.id ELSE metric_latest.id END;
+         END;
+         CREATE TRIGGER IF NOT EXISTS trg_metric_latest_ad AFTER DELETE ON metrics
+         WHEN old.id = (SELECT id FROM metric_latest WHERE name = old.name)
+         BEGIN
+             DELETE FROM metric_latest WHERE name = old.name;
+             INSERT INTO metric_latest(name, timestamp, id)
+             SELECT name, MAX(timestamp), MAX(id) FROM metrics
+             WHERE name = old.name
+             HAVING MAX(timestamp) IS NOT NULL;
+         END;",
+    )?;
+
     // Covering index for cumulative-counter windowed queries
     // (reader::counter_window_deltas): the per-series baseline lookup seeks by
     // the full label set + timestamp and reads the value without a table
@@ -448,6 +480,22 @@ pub fn initialize_schema(conn: &Connection) -> Result<()> {
         )?;
         conn.pragma_update(None, "user_version", 2)?;
     }
+    if version < 3 {
+        // v3 (#251): backfill metric_latest for databases that predate the
+        // write-maintained table. One-time cost scales with the metrics
+        // table (same GROUP BY the old all-time list ran per query).
+        let names = conn.execute(
+            "INSERT INTO metric_latest(name, timestamp, id) \
+             SELECT name, MAX(timestamp), MAX(id) FROM metrics GROUP BY name",
+            [],
+        )?;
+        if names > 0 {
+            tracing::info!(
+                "schema v3: backfilled metric_latest for {names} metric names (one-time)"
+            );
+        }
+        conn.pragma_update(None, "user_version", 3)?;
+    }
 
     Ok(())
 }
@@ -519,11 +567,12 @@ mod tests {
             .unwrap();
         assert_eq!(total, 2);
 
-        // Constraint + version are set.
+        // Constraint + version are set (v3 = latest; the v2 block ran
+        // inside it).
         let version: i32 = conn
             .query_row("PRAGMA user_version", [], |row| row.get(0))
             .unwrap();
-        assert_eq!(version, 2);
+        assert_eq!(version, 3);
         let has_index: bool = conn
             .query_row(
                 "SELECT COUNT(*) FROM sqlite_master \
@@ -540,6 +589,127 @@ mod tests {
             .query_row("SELECT COUNT(*) FROM spans", [], |row| row.get(0))
             .unwrap();
         assert_eq!(total_after, 2);
+    }
+
+    /// metric_latest must track the newest row per name under
+    /// out-of-order inserts, and recompute when the latest row is
+    /// deleted (#251).
+    #[test]
+    fn test_metric_latest_triggers_maintain_table() {
+        let conn = Connection::open_in_memory().unwrap();
+        initialize_schema(&conn).unwrap();
+
+        let insert = |name: &str, ts: i64| {
+            conn.execute(
+                "INSERT INTO metrics (name, metric_type, timestamp, value_int) \
+                 VALUES (?1, 0, ?2, 1)",
+                rusqlite::params![name, ts],
+            )
+            .unwrap();
+        };
+        let latest = |name: &str| -> Option<i64> {
+            conn.query_row(
+                "SELECT timestamp FROM metric_latest WHERE name = ?1",
+                rusqlite::params![name],
+                |r| r.get(0),
+            )
+            .ok()
+        };
+
+        // In-order: latest advances.
+        insert("m.a", 100);
+        assert_eq!(latest("m.a"), Some(100));
+        insert("m.a", 200);
+        assert_eq!(latest("m.a"), Some(200));
+
+        // Out-of-order (an older row arriving later): latest unchanged.
+        insert("m.a", 50);
+        assert_eq!(latest("m.a"), Some(200));
+
+        // Deleting a non-latest row: latest unchanged.
+        let old_id: i64 = conn
+            .query_row(
+                "SELECT id FROM metrics WHERE name = 'm.a' AND timestamp = 50",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        conn.execute(
+            "DELETE FROM metrics WHERE id = ?1",
+            rusqlite::params![old_id],
+        )
+        .unwrap();
+        assert_eq!(latest("m.a"), Some(200));
+
+        // Deleting the latest row: latest recomputes to the new max.
+        let newest_id: i64 = conn
+            .query_row(
+                "SELECT id FROM metrics WHERE name = 'm.a' AND timestamp = 200",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        conn.execute(
+            "DELETE FROM metrics WHERE id = ?1",
+            rusqlite::params![newest_id],
+        )
+        .unwrap();
+        assert_eq!(latest("m.a"), Some(100));
+
+        // Deleting the final row: the entry disappears.
+        let last_id: i64 = conn
+            .query_row(
+                "SELECT id FROM metrics WHERE name = 'm.a' AND timestamp = 100",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        conn.execute(
+            "DELETE FROM metrics WHERE id = ?1",
+            rusqlite::params![last_id],
+        )
+        .unwrap();
+        assert_eq!(latest("m.a"), None);
+    }
+
+    /// v3 backfill: a database predating metric_latest (simulated by
+    /// clearing the table and resetting user_version to 2) gets the
+    /// table repopulated from the metrics rows on re-init (#251).
+    #[test]
+    fn test_schema_v3_backfills_metric_latest() {
+        let conn = Connection::open_in_memory().unwrap();
+        initialize_schema(&conn).unwrap();
+
+        for (name, ts) in [("m.a", 100), ("m.a", 250), ("m.b", 90)] {
+            conn.execute(
+                "INSERT INTO metrics (name, metric_type, timestamp, value_int) \
+                 VALUES (?1, 0, ?2, 1)",
+                rusqlite::params![name, ts],
+            )
+            .unwrap();
+        }
+
+        // Simulate a pre-v3 database: no metric_latest contents, version 2.
+        conn.execute("DELETE FROM metric_latest", []).unwrap();
+        conn.pragma_update(None, "user_version", 2).unwrap();
+
+        initialize_schema(&conn).unwrap();
+
+        let version: i32 = conn
+            .query_row("PRAGMA user_version", [], |row| row.get(0))
+            .unwrap();
+        assert_eq!(version, 3);
+        let rows: Vec<(String, i64)> = conn
+            .prepare("SELECT name, timestamp FROM metric_latest ORDER BY name")
+            .unwrap()
+            .query_map([], |r| Ok((r.get(0)?, r.get(1)?)))
+            .unwrap()
+            .collect::<std::result::Result<Vec<_>, _>>()
+            .unwrap();
+        assert_eq!(
+            rows,
+            vec![("m.a".to_string(), 250), ("m.b".to_string(), 90)]
+        );
     }
 
     #[test]
