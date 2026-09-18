@@ -29,6 +29,7 @@ pub fn create_sample_metrics_request() -> ExportMetricsServiceRequest {
                     ),
                 ),
             }),
+            ..Default::default()
         }],
         start_time_unix_nano: timestamp - 1_000_000_000, // 1 second ago
         time_unix_nano: timestamp,
@@ -71,6 +72,7 @@ pub fn create_sample_metrics_request() -> ExportMetricsServiceRequest {
                         ),
                     ),
                 }),
+                ..Default::default()
             }],
             dropped_attributes_count: 0,
             entity_refs: vec![],
@@ -112,6 +114,7 @@ pub fn create_sample_logs_request() -> ExportLogsServiceRequest {
                     ),
                 ),
             }),
+            ..Default::default()
         }],
         dropped_attributes_count: 0,
         flags: 0,
@@ -142,6 +145,7 @@ pub fn create_sample_logs_request() -> ExportLogsServiceRequest {
                         ),
                     ),
                 }),
+                ..Default::default()
             }],
             dropped_attributes_count: 0,
             entity_refs: vec![],
@@ -180,6 +184,7 @@ pub fn create_sample_traces_request() -> ExportTraceServiceRequest {
                     ),
                 ),
             }),
+            ..Default::default()
         }],
         dropped_attributes_count: 0,
         events: vec![],
@@ -212,6 +217,7 @@ pub fn create_sample_traces_request() -> ExportTraceServiceRequest {
                         ),
                     ),
                 }),
+                ..Default::default()
             }],
             dropped_attributes_count: 0,
             entity_refs: vec![],

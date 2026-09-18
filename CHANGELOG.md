@@ -11,6 +11,13 @@ have to work around), not implementation detail.
 
 ## [Unreleased]
 
+### Fixed
+
+- OTLP/JSON ingest: histogram and summary exports with spec-compliant
+  string-encoded 64-bit counts (`"count"`, `"bucketCounts"`, …) are now
+  accepted — previously the entire export was rejected (opentelemetry-proto
+  0.32); a non-numeric count string is rejected with a clear error (#255)
+
 ## [0.1.146] - 2026-09-17
 
 ### Fixed

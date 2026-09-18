@@ -97,6 +97,7 @@ async fn test_logs_e2e_flow() {
             value: Some(AnyValue {
                 value: Some(any_value::Value::StringValue("test_value".to_string())),
             }),
+            ..Default::default()
         }],
         dropped_attributes_count: 0,
         flags: 0,
@@ -195,6 +196,7 @@ async fn test_traces_e2e_flow() {
             value: Some(AnyValue {
                 value: Some(any_value::Value::StringValue("span_value".to_string())),
             }),
+            ..Default::default()
         }],
         dropped_attributes_count: 0,
         events: vec![],
@@ -289,6 +291,7 @@ async fn test_metrics_e2e_flow() {
                     value: Some(AnyValue {
                         value: Some(any_value::Value::StringValue("metric_value".to_string())),
                     }),
+                    ..Default::default()
                 }],
                 start_time_unix_nano: 0,
                 time_unix_nano: timestamp,

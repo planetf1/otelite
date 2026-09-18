@@ -380,18 +380,21 @@ async fn test_logs_with_custom_attributes() {
                 value: Some(AnyValue {
                     value: Some(any_value::Value::StringValue("DatabaseError".to_string())),
                 }),
+                ..Default::default()
             },
             KeyValue {
                 key: "error.code".to_string(),
                 value: Some(AnyValue {
                     value: Some(any_value::Value::IntValue(500)),
                 }),
+                ..Default::default()
             },
             KeyValue {
                 key: "user.id".to_string(),
                 value: Some(AnyValue {
                     value: Some(any_value::Value::StringValue("user123".to_string())),
                 }),
+                ..Default::default()
             },
         ],
         dropped_attributes_count: 0,

@@ -61,6 +61,7 @@ fn resource_with_service(service: &str) -> Option<ProtoResource> {
         attributes: vec![KeyValue {
             key: "service.name".to_string(),
             value: any_value(service),
+            ..Default::default()
         }],
         dropped_attributes_count: 0,
         entity_refs: vec![],
@@ -82,6 +83,7 @@ fn log_request(service: &str, body: &str) -> ExportLogsServiceRequest {
                     attributes: vec![KeyValue {
                         key: "component".to_string(),
                         value: any_value("receiver-test"),
+                        ..Default::default()
                     }],
                     dropped_attributes_count: 0,
                     flags: 0,
@@ -115,10 +117,12 @@ fn trace_request() -> ExportTraceServiceRequest {
                         KeyValue {
                             key: "http.method".to_string(),
                             value: any_value("GET"),
+                            ..Default::default()
                         },
                         KeyValue {
                             key: "http.status_code".to_string(),
                             value: any_value("200"),
+                            ..Default::default()
                         },
                     ],
                     dropped_attributes_count: 0,
@@ -151,6 +155,7 @@ fn metric_request() -> ExportMetricsServiceRequest {
                             attributes: vec![KeyValue {
                                 key: "test_key".to_string(),
                                 value: any_value("test_value"),
+                                ..Default::default()
                             }],
                             start_time_unix_nano: TS_NS - 1_000_000_000,
                             time_unix_nano: TS_NS,

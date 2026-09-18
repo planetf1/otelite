@@ -170,6 +170,7 @@ async fn test_grpc_payload_limit() {
                                         StringValue("z".repeat(name_size)),
                                 ),
                             }),
+                            ..Default::default()
                         }],
                     start_time_unix_nano: 1_700_000_000_000_000_000,
                     end_time_unix_nano: 1_700_000_000_000_000_000,

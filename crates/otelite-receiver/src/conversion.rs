@@ -402,6 +402,13 @@ fn any_value_to_string(value: &AnyValue) -> String {
                 .collect();
             format!("{{{}}}", pairs.join(", "))
         },
+        Some(any_value::Value::StringValueStrindex(i)) => {
+            // Profile string-table reference (opentelemetry-proto 0.32,
+            // profiles v1.10+): the table only travels with the profiles
+            // signal, so in log/trace/metric envelopes the reference is
+            // unresolvable — mark it rather than silently drop.
+            format!("(unresolved strindex {i})")
+        },
         None => String::new(),
     }
 }
@@ -608,12 +615,14 @@ mod tests {
                 value: Some(AnyValue {
                     value: Some(any_value::Value::StringValue("value1".to_string())),
                 }),
+                ..Default::default()
             },
             KeyValue {
                 key: "key2".to_string(),
                 value: Some(AnyValue {
                     value: Some(any_value::Value::IntValue(42)),
                 }),
+                ..Default::default()
             },
         ];
 
@@ -631,6 +640,7 @@ mod tests {
                 value: Some(AnyValue {
                     value: Some(any_value::Value::StringValue("test-service".to_string())),
                 }),
+                ..Default::default()
             }],
             dropped_attributes_count: 0,
             entity_refs: vec![],
@@ -677,6 +687,7 @@ mod tests {
                         value: Some(AnyValue {
                             value: Some(any_value::Value::StringValue("test-service".to_string())),
                         }),
+                        ..Default::default()
                     }],
                     dropped_attributes_count: 0,
                     entity_refs: vec![],
@@ -701,6 +712,7 @@ mod tests {
                             value: Some(AnyValue {
                                 value: Some(any_value::Value::StringValue("log.value".to_string())),
                             }),
+                            ..Default::default()
                         }],
                         dropped_attributes_count: 0,
                         flags: 0,
@@ -749,6 +761,7 @@ mod tests {
                             value: Some(AnyValue {
                                 value: Some(any_value::Value::StringValue("service1".to_string())),
                             }),
+                            ..Default::default()
                         }],
                         dropped_attributes_count: 0,
                         entity_refs: vec![],
@@ -781,6 +794,7 @@ mod tests {
                             value: Some(AnyValue {
                                 value: Some(any_value::Value::StringValue("service2".to_string())),
                             }),
+                            ..Default::default()
                         }],
                         dropped_attributes_count: 0,
                         entity_refs: vec![],
@@ -930,6 +944,7 @@ mod tests {
                         value: Some(AnyValue {
                             value: Some(any_value::Value::StringValue("test-service".to_string())),
                         }),
+                        ..Default::default()
                     }],
                     dropped_attributes_count: 0,
                     entity_refs: vec![],
@@ -1161,6 +1176,7 @@ mod tests {
                                         "event.value".to_string(),
                                     )),
                                 }),
+                                ..Default::default()
                             }],
                             dropped_attributes_count: 0,
                         }],
@@ -1842,6 +1858,7 @@ mod tests {
                     values: vec![KeyValue {
                         key: format!("d{depth}"),
                         value: Some(make_kvlist(depth - 1, leaf)),
+                        ..Default::default()
                     }],
                 })),
             }
@@ -1862,6 +1879,7 @@ mod tests {
         let kvs = vec![KeyValue {
             key: "empty_key".to_string(),
             value: None,
+            ..Default::default()
         }];
         let attrs = convert_attributes(&kvs);
         assert_eq!(attrs.len(), 1);
@@ -1877,6 +1895,7 @@ mod tests {
                 value: Some(AnyValue {
                     value: Some(any_value::Value::IntValue(i)),
                 }),
+                ..Default::default()
             })
             .collect();
         let attrs = convert_attributes(&kvs);

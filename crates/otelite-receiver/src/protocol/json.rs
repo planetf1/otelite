@@ -24,6 +24,19 @@ pub fn parse_metrics_json(data: &[u8]) -> Result<ExportMetricsServiceRequest, Re
 /// bodies, log/span/metric attribute values).
 const INT64_KEYS: [&str; 2] = ["asInt", "intValue"];
 
+/// JSON keys of the uint64 fields in metrics data points. opentelemetry-proto
+/// 0.32 accepts both string and number forms, but a *mismatched* value
+/// (e.g. a non-numeric string count) makes `serde(flatten)` silently drop
+/// the whole histogram/summary oneof — so validate here and fail loudly,
+/// the same contract as INT64_KEYS (#233/#247/#255).
+const UINT64_KEYS: [&str; 5] = [
+    "count",
+    "bucketCounts",
+    "zeroCount",
+    "positiveBucketCounts",
+    "negativeBucketCounts",
+];
+
 /// Proto3 JSON encodes int64 fields as strings, and spec-compliant SDKs send
 /// `"asInt": "42"` / `"intValue": "42"`. The `with-serde` derive of
 /// `opentelemetry-proto` expects a JSON number for these oneof arms (its
@@ -35,18 +48,43 @@ const INT64_KEYS: [&str; 2] = ["asInt", "intValue"];
 fn normalize_int64_strings(value: &mut serde_json::Value) -> Result<(), ReceiverError> {
     match value {
         serde_json::Value::Object(map) => {
-            for key in INT64_KEYS {
-                if let Some(serde_json::Value::String(s)) = map.get_mut(key) {
-                    let parsed: i64 = s.parse().map_err(|_| {
-                        ReceiverError::MissingField(format!(
-                            "{key} value {s:?} is not a valid int64"
-                        ))
-                    })?;
-                    *map.get_mut(key).expect("checked above") =
-                        serde_json::Value::Number(serde_json::Number::from(parsed));
+            for (key, v) in map.iter_mut() {
+                let k = key.as_str();
+                if INT64_KEYS.contains(&k) {
+                    if let serde_json::Value::String(s) = v {
+                        let parsed: i64 = s.parse().map_err(|_| {
+                            ReceiverError::MissingField(format!(
+                                "{k} value {s:?} is not a valid int64"
+                            ))
+                        })?;
+                        *v = serde_json::Value::Number(serde_json::Number::from(parsed));
+                    }
+                } else if UINT64_KEYS.contains(&k) {
+                    match v {
+                        serde_json::Value::String(s) => {
+                            let parsed: u64 = s.parse().map_err(|_| {
+                                ReceiverError::MissingField(format!(
+                                    "{k} value {s:?} is not a valid uint64"
+                                ))
+                            })?;
+                            *v = serde_json::Value::Number(serde_json::Number::from(parsed));
+                        },
+                        serde_json::Value::Array(items) => {
+                            for item in items.iter_mut() {
+                                if let serde_json::Value::String(s) = item {
+                                    let parsed: u64 = s.parse().map_err(|_| {
+                                        ReceiverError::MissingField(format!(
+                                            "{k} element {s:?} is not a valid uint64"
+                                        ))
+                                    })?;
+                                    *item =
+                                        serde_json::Value::Number(serde_json::Number::from(parsed));
+                                }
+                            }
+                        },
+                        _ => {},
+                    }
                 }
-            }
-            for v in map.values_mut() {
                 normalize_int64_strings(v)?;
             }
         },
@@ -392,6 +430,117 @@ mod tests {
             value.as_ref().expect("value present").value,
             Some(opentelemetry_proto::tonic::common::v1::any_value::Value::IntValue(42))
         );
+    }
+
+    // --- Histogram/summary string counts (proto3 JSON uint64, #255) -----
+    // opentelemetry-proto 0.32 deserialises the spec-compliant string form
+    // of the fixed64 count fields; 0.31 rejected the whole export with a
+    // 400.
+
+    #[test]
+    fn test_parse_metrics_json_histogram_string_counts() {
+        let json = r#"{
+            "resourceMetrics": [{
+                "scopeMetrics": [{
+                    "metrics": [{
+                        "name": "h",
+                        "histogram": {
+                            "dataPoints": [{
+                                "count": "3",
+                                "sum": 6.0,
+                                "bucketCounts": ["1", "2", "0"],
+                                "explicitBounds": [1.0, 2.0]
+                            }]
+                        }
+                    }]
+                }]
+            }]
+        }"#;
+        let req = parse_metrics_json(json.as_bytes()).unwrap();
+        let dp = &req.resource_metrics[0].scope_metrics[0].metrics[0];
+        match &dp.data {
+            Some(opentelemetry_proto::tonic::metrics::v1::metric::Data::Histogram(h)) => {
+                let p = &h.data_points[0];
+                assert_eq!(p.count, 3);
+                assert_eq!(p.bucket_counts, vec![1, 2, 0]);
+            },
+            _ => panic!("expected a Histogram data point"),
+        }
+    }
+
+    #[test]
+    fn test_parse_metrics_json_histogram_number_counts() {
+        // Number form must keep working alongside the string form.
+        let json = r#"{
+            "resourceMetrics": [{
+                "scopeMetrics": [{
+                    "metrics": [{
+                        "name": "h",
+                        "histogram": {
+                            "dataPoints": [{
+                                "count": 3,
+                                "sum": 6.0,
+                                "bucketCounts": [1, 2, 0],
+                                "explicitBounds": [1.0, 2.0]
+                            }]
+                        }
+                    }]
+                }]
+            }]
+        }"#;
+        let req = parse_metrics_json(json.as_bytes()).unwrap();
+        let dp = &req.resource_metrics[0].scope_metrics[0].metrics[0];
+        match &dp.data {
+            Some(opentelemetry_proto::tonic::metrics::v1::metric::Data::Histogram(h)) => {
+                assert_eq!(h.data_points[0].count, 3);
+            },
+            _ => panic!("expected a Histogram data point"),
+        }
+    }
+
+    #[test]
+    fn test_parse_metrics_json_summary_string_counts() {
+        let json = r#"{
+            "resourceMetrics": [{
+                "scopeMetrics": [{
+                    "metrics": [{
+                        "name": "s",
+                        "summary": {
+                            "dataPoints": [{
+                                "count": "2",
+                                "sum": 5.0,
+                                "quantileValues": [{ "quantile": 0.5, "value": 2.5 }]
+                            }]
+                        }
+                    }]
+                }]
+            }]
+        }"#;
+        let req = parse_metrics_json(json.as_bytes()).unwrap();
+        let dp = &req.resource_metrics[0].scope_metrics[0].metrics[0];
+        match &dp.data {
+            Some(opentelemetry_proto::tonic::metrics::v1::metric::Data::Summary(s)) => {
+                assert_eq!(s.data_points[0].count, 2);
+            },
+            _ => panic!("expected a Summary data point"),
+        }
+    }
+
+    #[test]
+    fn test_parse_metrics_json_histogram_invalid_count_string_is_error() {
+        let json = r#"{
+            "resourceMetrics": [{
+                "scopeMetrics": [{
+                    "metrics": [{
+                        "name": "h",
+                        "histogram": {
+                            "dataPoints": [{ "count": "not-a-number" }]
+                        }
+                    }]
+                }]
+            }]
+        }"#;
+        assert!(parse_metrics_json(json.as_bytes()).is_err());
     }
 
     #[test]

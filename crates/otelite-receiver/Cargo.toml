@@ -28,7 +28,7 @@ hyper = "1.0"
 tower = { version = "0.4", features = ["limit", "timeout"] }
 
 # OTLP protocol definitions
-opentelemetry-proto = { version = "0.31", features = ["gen-tonic", "metrics", "logs", "trace", "with-serde"] }
+opentelemetry-proto = { version = "0.32", features = ["gen-tonic", "metrics", "logs", "trace", "with-serde"] }
 
 # Internal crates
 otelite-core = { path = "../otelite-core", version = "0.1.0" }
