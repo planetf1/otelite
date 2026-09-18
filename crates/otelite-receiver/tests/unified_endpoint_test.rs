@@ -1,6 +1,11 @@
-// Tests for the legacy unified OTLP endpoint (/v1/otlp) (#16):
-// it sniffs the protobuf payload and routes to the matching signal
-// handler, and rejects bodies that parse as no known signal type.
+// Tests for the legacy unified OTLP endpoint (/v1/otlp).
+//
+// #16 added it as a sniff-and-route fallback; #256 removed the trial
+// decode: protobuf wire types routinely parse as the *wrong* message, so
+// a logs export could be silently stored as traces, and the endpoint
+// ignored Content-Encoding. The endpoint now fails loudly with a 400
+// pointing at the per-signal endpoints — a client error, so exporters do
+// not loop retrying it as if it were a transient server fault.
 //
 // The server binds 127.0.0.1:0 (OS-assigned free port) and uses a fresh
 // TempDir database.
@@ -33,10 +38,11 @@ async fn start_server() -> (String, HttpServer, TempDir, Arc<dyn StorageBackend>
     (format!("http://{addr}"), server, temp_dir, storage)
 }
 
-/// A trace protobuf posted to the legacy unified endpoint must be
-/// processed as a trace — not just accepted.
+/// A valid trace protobuf posted to the deprecated unified endpoint must
+/// be rejected with a 400 that names the per-signal endpoints — and must
+/// NOT be stored as anything (the old trial-decode stored it as a trace).
 #[tokio::test]
-async fn test_unified_endpoint_routes_trace_protobuf() {
+async fn test_unified_endpoint_rejects_valid_trace_with_400_and_stores_nothing() {
     let (base, server, _temp, storage) = start_server().await;
     let client = reqwest::Client::new();
 
@@ -50,83 +56,19 @@ async fn test_unified_endpoint_routes_trace_protobuf() {
 
     assert_eq!(
         response.status(),
-        200,
-        "unified endpoint must accept a trace protobuf"
+        400,
+        "the deprecated endpoint must fail loudly with 400 (not 200, not 5xx)"
     );
     let body: serde_json::Value = response.json().await.expect("json body");
-    assert_eq!(body["status"], "success");
+    let error = body["error"].as_str().expect("error message");
+    for endpoint in ["/v1/traces", "/v1/metrics", "/v1/logs"] {
+        assert!(
+            error.contains(endpoint),
+            "the 400 must point at {endpoint}: {error}"
+        );
+    }
 
-    // The span must actually be stored, not merely acknowledged.
-    let spans = storage
-        .query_spans(&QueryParams::default())
-        .await
-        .expect("query spans");
-    assert!(
-        !spans.is_empty(),
-        "span from unified endpoint must be persisted"
-    );
-
-    server.shutdown();
-    tokio::time::sleep(Duration::from_millis(100)).await;
-}
-
-/// A log protobuf posted to the legacy unified endpoint must be
-/// processed as a log.
-#[tokio::test]
-async fn test_unified_endpoint_routes_log_protobuf() {
-    let (base, server, _temp, storage) = start_server().await;
-    let client = reqwest::Client::new();
-
-    let response = client
-        .post(format!("{base}/v1/otlp"))
-        .header("Content-Type", "application/x-protobuf")
-        .body(create_logs_protobuf())
-        .send()
-        .await
-        .expect("send");
-
-    assert_eq!(
-        response.status(),
-        200,
-        "unified endpoint must accept a log protobuf"
-    );
-
-    // The log must actually be stored, not merely acknowledged.
-    let logs = storage
-        .query_logs(&QueryParams::default())
-        .await
-        .expect("query logs");
-    assert!(
-        !logs.is_empty(),
-        "log from unified endpoint must be persisted"
-    );
-
-    server.shutdown();
-    tokio::time::sleep(Duration::from_millis(100)).await;
-}
-
-/// A body that parses as no known OTLP signal type must be rejected with
-/// a 4xx client error, not a 500.
-#[tokio::test]
-async fn test_unified_endpoint_rejects_unknown_content() {
-    let (base, server, _temp, storage) = start_server().await;
-    let client = reqwest::Client::new();
-
-    let response = client
-        .post(format!("{base}/v1/otlp"))
-        .header("Content-Type", "application/x-protobuf")
-        .body(create_invalid_protobuf())
-        .send()
-        .await
-        .expect("send");
-
-    let status = response.status();
-    assert!(
-        (400..500).contains(&status.as_u16()),
-        "unknown content must be a client error, got {status}"
-    );
-
-    // Nothing must have been stored.
+    // Nothing may have been stored — no mis-routing.
     let spans = storage
         .query_spans(&QueryParams::default())
         .await
@@ -139,7 +81,74 @@ async fn test_unified_endpoint_rejects_unknown_content() {
         .query_metrics(&QueryParams::default())
         .await
         .expect("query metrics");
-    assert!(spans.is_empty() && logs.is_empty() && metrics.is_empty());
+    assert!(
+        spans.is_empty() && logs.is_empty() && metrics.is_empty(),
+        "the deprecated endpoint must never store anything"
+    );
+
+    server.shutdown();
+    tokio::time::sleep(Duration::from_millis(100)).await;
+}
+
+/// Same contract for logs and garbage bodies: 400, nothing stored.
+#[tokio::test]
+async fn test_unified_endpoint_rejects_logs_and_garbage() {
+    let (base, server, _temp, storage) = start_server().await;
+    let client = reqwest::Client::new();
+
+    for (name, body) in [
+        ("logs protobuf", create_logs_protobuf()),
+        ("unparseable body", create_invalid_protobuf()),
+    ] {
+        let response = client
+            .post(format!("{base}/v1/otlp"))
+            .header("Content-Type", "application/x-protobuf")
+            .body(body)
+            .send()
+            .await
+            .expect("send");
+        assert_eq!(response.status(), 400, "{name} via /v1/otlp must be a 400");
+    }
+
+    let spans = storage
+        .query_spans(&QueryParams::default())
+        .await
+        .expect("query spans");
+    let logs = storage
+        .query_logs(&QueryParams::default())
+        .await
+        .expect("query logs");
+    assert!(spans.is_empty() && logs.is_empty(), "nothing may be stored");
+
+    server.shutdown();
+    tokio::time::sleep(Duration::from_millis(100)).await;
+}
+
+/// The per-signal endpoints keep working (the 400 points at them): a trace
+/// POSTed to /v1/traces is still stored.
+#[tokio::test]
+async fn test_per_signal_endpoints_still_work() {
+    let (base, server, _temp, storage) = start_server().await;
+    let client = reqwest::Client::new();
+
+    let response = client
+        .post(format!("{base}/v1/traces"))
+        .header("Content-Type", "application/x-protobuf")
+        .body(create_traces_protobuf())
+        .send()
+        .await
+        .expect("send");
+    assert_eq!(
+        response.status(),
+        200,
+        "/v1/traces must keep accepting traces"
+    );
+
+    let spans = storage
+        .query_spans(&QueryParams::default())
+        .await
+        .expect("query spans");
+    assert!(!spans.is_empty(), "span from /v1/traces must be persisted");
 
     server.shutdown();
     tokio::time::sleep(Duration::from_millis(100)).await;

@@ -506,6 +506,49 @@ async fn main() {
     }
 }
 
+/// Daily-rotating log appender with bounded retention (#256).
+///
+/// Two growth paths are capped:
+/// - the *dated* files (`otelite.log.YYYY-MM-DD`) accumulate one per day
+///   for the daemon's lifetime — `max_log_files` makes the appender prune
+///   the oldest of them at construction, keeping two weeks on disk;
+/// - the *base* (undated) file is where launchd's `StandardOutPath` /
+///   `StandardErrorPath` point (see the generated plist), so crash-loop
+///   runs — panic backtraces, pre-tracing errors, the launchd start
+///   header — append there forever. Truncating it at every startup means
+///   each run starts from a clean file; the rotated daily files already
+///   carry the tracing output.
+///
+/// Pure enough to test: no daemon or launchd involvement.
+fn bounded_daily_appender(
+    log_file: &std::path::Path,
+) -> tracing_appender::rolling::RollingFileAppender {
+    // Truncate the base file if a previous run left content in it.
+    // Failure to truncate (permissions, races) is non-fatal: logging
+    // itself must not take the daemon down.
+    match std::fs::metadata(log_file) {
+        Ok(meta) if meta.is_file() => {
+            let _ = std::fs::File::create(log_file);
+        },
+        _ => {},
+    }
+    let directory = log_file
+        .parent()
+        .unwrap_or_else(|| std::path::Path::new("."));
+    let prefix = log_file
+        .file_name()
+        .unwrap_or_else(|| std::ffi::OsStr::new("otelite.log"));
+    // The builder form adds the retention cap; if it fails to initialise
+    // (e.g. the directory cannot be created), fall back to the unbounded
+    // daily appender rather than take the daemon down over logging.
+    tracing_appender::rolling::RollingFileAppender::builder()
+        .rotation(tracing_appender::rolling::Rotation::DAILY)
+        .filename_prefix(prefix.to_string_lossy())
+        .max_log_files(14)
+        .build(directory)
+        .unwrap_or_else(|_| tracing_appender::rolling::daily(directory, prefix))
+}
+
 async fn run_cli() -> Result<()> {
     let cli = Cli::parse();
 
@@ -529,15 +572,9 @@ async fn run_cli() -> Result<()> {
     // the tail of the log (the previous `mem::forget` skipped that final
     // flush).
     let _appender_guard = if let Some(log_file) = &cli.log_file {
-        // Log to file with daily rotation
-        let file_appender = tracing_appender::rolling::daily(
-            log_file
-                .parent()
-                .unwrap_or_else(|| std::path::Path::new(".")),
-            log_file
-                .file_name()
-                .unwrap_or_else(|| std::ffi::OsStr::new("otelite.log")),
-        );
+        // Bounded daily-rotating appender (#256): retention cap plus the
+        // launchd base-file truncation live in the helper below.
+        let file_appender = bounded_daily_appender(log_file);
         let (non_blocking, guard) = tracing_appender::non_blocking(file_appender);
 
         // Choose format based on --log-format flag
@@ -795,8 +832,16 @@ async fn run_dashboard(addr: SocketAddr, storage_path: Option<PathBuf>) -> Resul
     let http_addr = SocketAddr::new(addr.ip(), http_port);
     let receiver_config = otelite_receiver::ReceiverConfig::new().with_grpc_addr(grpc_addr);
 
-    let grpc_server =
-        otelite_receiver::grpc::GrpcServer::new(receiver_config.clone(), storage.clone());
+    // Both transports share one health state (#256): a write failing on
+    // either gRPC or HTTP degrades the /health endpoint, and the
+    // exporter-facing 503/UNAVAILABLE reflects the combined state.
+    let receiver_health = Arc::new(otelite_receiver::health::HealthChecker::new());
+
+    let grpc_server = otelite_receiver::grpc::GrpcServer::with_health(
+        receiver_config.clone(),
+        storage.clone(),
+        receiver_health.clone(),
+    );
 
     grpc_server
         .start()
@@ -808,7 +853,7 @@ async fn run_dashboard(addr: SocketAddr, storage_path: Option<PathBuf>) -> Resul
     // Start HTTP receiver
     let http_config = receiver_config.with_http_addr(http_addr);
 
-    let http_server = otelite_receiver::http::HttpServer::new(http_config);
+    let http_server = otelite_receiver::http::HttpServer::with_health(http_config, receiver_health);
 
     http_server
         .start(storage.clone())
@@ -1122,5 +1167,63 @@ mod otlp_port_tests {
         assert!(otlp_port_from_env("OTELITE_TEST_PORT_INVALID", 4317).is_err());
         std::env::set_var("OTELITE_TEST_PORT_INVALID", "99999");
         assert!(otlp_port_from_env("OTELITE_TEST_PORT_INVALID", 4317).is_err());
+    }
+}
+
+#[cfg(test)]
+mod appender_tests {
+    use super::*;
+
+    #[test]
+    fn test_bounded_daily_appender_truncates_base_file() {
+        let tmp = tempfile::TempDir::new().unwrap();
+        let base = tmp.path().join("otelite.log");
+        std::fs::write(&base, "crash-loop residue from a previous run").unwrap();
+
+        bounded_daily_appender(&base);
+
+        let content = std::fs::read_to_string(&base).unwrap();
+        assert_eq!(
+            content, "",
+            "the launchd base file (stdout/stderr target) must be \
+             truncated at every startup"
+        );
+    }
+
+    #[test]
+    fn test_bounded_daily_appender_prunes_old_dated_files() {
+        let tmp = tempfile::TempDir::new().unwrap();
+        let base = tmp.path().join("otelite.log");
+        // 20 stale dated files, well past the 14-file retention cap.
+        for day in 1..=20u32 {
+            let dated = tmp.path().join(format!("otelite.log.2026-08-{day:02}"));
+            std::fs::write(&dated, "old log").unwrap();
+        }
+
+        bounded_daily_appender(&base);
+
+        let dated_count = std::fs::read_dir(tmp.path())
+            .unwrap()
+            .filter_map(|e| e.ok())
+            .filter(|e| {
+                e.file_name()
+                    .to_string_lossy()
+                    .starts_with("otelite.log.2026-08-")
+            })
+            .count();
+        // 20 stale + the file created for today = 21 total; the cap
+        // prunes the oldest down to 14.
+        assert_eq!(
+            dated_count, 13,
+            "retention must prune the oldest dated files to the cap \
+             (13 stale + 1 for today = 14 total)"
+        );
+    }
+
+    #[test]
+    fn test_bounded_daily_appender_missing_base_file_is_fine() {
+        let tmp = tempfile::TempDir::new().unwrap();
+        let base = tmp.path().join("does-not-exist.log");
+        bounded_daily_appender(&base); // must not error
     }
 }

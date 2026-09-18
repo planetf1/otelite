@@ -6,18 +6,29 @@ use opentelemetry_proto::tonic::collector::trace::v1::{
     ExportTracePartialSuccess, ExportTraceServiceRequest, ExportTraceServiceResponse,
 };
 use std::sync::Arc;
+use tokio::sync::Semaphore;
 use tonic::{Request, Response, Status};
 use tracing::{debug, error};
 
 /// Implementation of the OTLP TraceService
 pub struct TraceServiceImpl {
     handler: Arc<TracesHandler>,
+    /// Acquired per in-flight export: real backpressure (#256).
+    request_semaphore: Arc<Semaphore>,
 }
 
 impl TraceServiceImpl {
     /// Create a new TraceService implementation
     pub fn new(handler: Arc<TracesHandler>) -> Self {
-        Self { handler }
+        Self::with_concurrency_limit(handler, 1000)
+    }
+
+    /// Create a service bounded to `max_concurrent` in-flight exports.
+    pub fn with_concurrency_limit(handler: Arc<TracesHandler>, max_concurrent: usize) -> Self {
+        Self {
+            handler,
+            request_semaphore: Arc::new(Semaphore::new(max_concurrent)),
+        }
     }
 
     /// Convert into a tonic service
@@ -33,6 +44,15 @@ impl TraceService for TraceServiceImpl {
         request: Request<ExportTraceServiceRequest>,
     ) -> Result<Response<ExportTraceServiceResponse>, Status> {
         debug!("Received trace export request");
+
+        // Hold the permit for the whole export; dropped at return.
+        let _permit = self
+            .request_semaphore
+            .clone()
+            .try_acquire_owned()
+            .map_err(|_| {
+                Status::unavailable("otelite receiver at its concurrency limit; retry the export")
+            })?;
 
         let req = request.into_inner();
 

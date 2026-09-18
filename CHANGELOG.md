@@ -11,6 +11,47 @@ have to work around), not implementation detail.
 
 ## [Unreleased]
 
+### Changed
+
+- OTLP ingest is now bounded: the receiver caps concurrent exports in
+  flight (default 1000, `ReceiverConfig::max_concurrent_requests`).
+  Exports beyond the cap are rejected immediately with a retryable
+  error (HTTP 503 / gRPC UNAVAILABLE) that OTLP exporters retry —
+  previously a burst could hold unbounded request bodies, conversions
+  and write batches in memory, and the write backlog stalled read
+  queries (#256)
+
+- While otelite cannot store telemetry (disk full, database corrupt,
+  permissions lost), `/health` now reports 503 instead of healthy:
+  three consecutive persistent write failures flip it, and the next
+  successful write restores it. Transient failures (e.g. a busy
+  database) do not count (#256)
+
+- Unsupported or dropped telemetry is now reported instead of
+  silently discarded: exponential-histogram points, unset metric
+  values and histogram points with a `+Inf` overflow tail come back in
+  the OTLP partial-success response as rejected data points, and the
+  daemon logs "Stored X of Y metrics"; span links (which the internal
+  span model cannot store) are counted and logged the same way (#256)
+
+### Fixed
+
+- Daemon log disk usage is now bounded: rotated daily log files are
+  kept for 14 days, the unrotated base log file (launchd's stdout /
+  stderr target) is truncated at every startup instead of growing
+  without limit in a crash loop, and launchd restarts a failing daemon
+  at most once every 10 s (#256)
+
+- `POST /v1/otlp` now answers with an explicit 400 pointing at
+  `/v1/traces`, `/v1/metrics` and `/v1/logs` per signal, instead of a
+  trial decode that could mis-route or reject a valid payload (#256)
+
+- Maintenance work no longer wedges ingest: database ANALYZE runs with
+  a gate that makes writes fail fast with a clear retryable error
+  during the window (previously they stalled on the 10 s busy timeout
+  and 500'd), and purge failures are logged at error level instead of
+  being swallowed (#256)
+
 ## [0.1.151] - 2026-09-18
 
 ### Changed
@@ -19,6 +60,7 @@ have to work around), not implementation detail.
   time window when its newest span *starts* inside the window, so long agent
   runs that cross the window's end are included instead of silently dropping
   out (#251)
+
 - Daily tool mix (`/api/genai/daily_tool_mix`): time windows now apply at
   day granularity — the report's natural unit — so the first and last days of
   a window are counted in full (#251)
@@ -30,11 +72,13 @@ have to work around), not implementation detail.
   re-scanning every metric datapoint and LLM span in the window — a 30-day
   query on a production-scale database drops from ~40 s to well under 1 s
   (#251)
+
 - Trace list (`/api/traces`): selecting the most recent N traces now reads a
   write-maintained newest-span-per-trace rollup instead of walking spans
   newest-first through multi-million-span agent traces, and each listed
   trace's root-span name is a direct index seek — a 1-hour top-50 query drops
   from ~16 s to well under 2 s (#251)
+
 - Database upgrade: the 0.1.149 "latest value per metric" backfill is now
   idempotent and every schema migration runs inside a transaction, so an
   interrupted upgrade (or two daemon processes upgrading at once) can no

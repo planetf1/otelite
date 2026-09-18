@@ -18,9 +18,96 @@ use std::collections::HashMap;
 const TRACE_ID_BYTES: usize = 16;
 const SPAN_ID_BYTES: usize = 8;
 
+/// Telemetry that OTLP carries but the internal model cannot store
+/// (#256). Counted at conversion and reported to the exporter (partial
+/// success) and the operator (warn log) — never silently dropped, and
+/// never asserted stored.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct DroppedCounts {
+    /// ExponentialHistogram data points (no internal exponential-histogram
+    /// type).
+    pub exponential_histogram_points: u64,
+    /// Gauge/Sum data points with no value set. Storing them would
+    /// fabricate a 0 measurement, so they are skipped.
+    pub unset_value_data_points: u64,
+    /// Classic-histogram data points that carried observations in the
+    /// `+Inf` overflow bucket: bucket bounds are finite, so that tail
+    /// cannot be represented in `HistogramBucket` and is not stored (the
+    /// reader reconstructs tail mass from `count`/`sum`).
+    pub histogram_overflow_data_points: u64,
+    /// Total observations inside those overflow buckets.
+    pub histogram_overflow_observations: u64,
+    /// Span links (the internal span model has no links).
+    pub span_links: u64,
+}
+
+impl DroppedCounts {
+    pub fn total(&self) -> u64 {
+        self.exponential_histogram_points
+            + self.unset_value_data_points
+            + self.histogram_overflow_data_points
+            + self.histogram_overflow_observations
+            + self.span_links
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.total() == 0
+    }
+
+    /// Data points that were not fully accepted — the unit of the OTLP
+    /// `rejected_data_points` field (a `0`/absent value means the request
+    /// was fully accepted, so lossily-stored points count too):
+    /// exponential-histogram points and unset-value points were not stored
+    /// at all, overflow points lost their `+Inf` bucket.
+    pub fn rejected_data_points(&self) -> u64 {
+        self.exponential_histogram_points
+            .saturating_add(self.unset_value_data_points)
+            .saturating_add(self.histogram_overflow_data_points)
+    }
+
+    /// One-line breakdown for warn logs and partial-success messages.
+    pub fn summary(&self) -> String {
+        let mut parts = Vec::new();
+        if self.exponential_histogram_points > 0 {
+            parts.push(format!(
+                "{} exponential-histogram data point(s) (unsupported type)",
+                self.exponential_histogram_points
+            ));
+        }
+        if self.unset_value_data_points > 0 {
+            parts.push(format!(
+                "{} data point(s) with no value set",
+                self.unset_value_data_points
+            ));
+        }
+        if self.histogram_overflow_data_points > 0 {
+            parts.push(format!(
+                "{} histogram data point(s) with {} observation(s) in the +Inf overflow bucket (bucket bounds are finite; tail not stored)",
+                self.histogram_overflow_data_points,
+                self.histogram_overflow_observations
+            ));
+        }
+        if self.span_links > 0 {
+            parts.push(format!("{} span link(s) (not supported)", self.span_links));
+        }
+        parts.join(", ")
+    }
+}
+
 pub struct TraceConversion {
     pub traces: Vec<Trace>,
     pub rejected_spans: usize,
+    /// Telemetry dropped from *accepted* spans (reported separately from
+    /// `rejected_spans`, which the protocol reserves for whole-span
+    /// rejections).
+    pub dropped: DroppedCounts,
+}
+
+/// Result of converting one OTLP metrics export: the storable metrics plus
+/// everything the internal model could not represent (#256).
+pub struct MetricConversion {
+    pub metrics: Vec<Metric>,
+    pub dropped: DroppedCounts,
 }
 
 /// Convert OTLP logs request to internal log records
@@ -94,6 +181,7 @@ pub fn convert_traces(request: ExportTraceServiceRequest) -> Vec<Trace> {
 pub fn convert_traces_with_rejections(request: ExportTraceServiceRequest) -> TraceConversion {
     let mut traces: HashMap<String, Trace> = HashMap::new();
     let mut rejected_spans = 0;
+    let mut dropped = DroppedCounts::default();
 
     for resource_spans in request.resource_spans {
         let resource = convert_resource(resource_spans.resource);
@@ -130,6 +218,10 @@ pub fn convert_traces_with_rejections(request: ExportTraceServiceRequest) -> Tra
                 );
 
                 let kind = otlp_span_kind(span.kind);
+
+                // Span links have no home in the internal span model:
+                // count them so the drop is reported, not silent (#256).
+                dropped.span_links += span.links.len() as u64;
 
                 let mut attributes = convert_attributes(&span.attributes);
                 attributes.extend(scope_attrs.clone());
@@ -189,12 +281,21 @@ pub fn convert_traces_with_rejections(request: ExportTraceServiceRequest) -> Tra
     TraceConversion {
         traces: traces.into_values().collect(),
         rejected_spans,
+        dropped,
     }
 }
 
 /// Convert OTLP metrics request to internal metrics
 pub fn convert_metrics(request: ExportMetricsServiceRequest) -> Vec<Metric> {
+    convert_metrics_with_drops(request).metrics
+}
+
+/// Convert an OTLP metrics request, counting the telemetry the internal
+/// model cannot represent (#256). The thin [`convert_metrics`] wrapper
+/// keeps existing callers (CLI import, tests) unchanged.
+pub fn convert_metrics_with_drops(request: ExportMetricsServiceRequest) -> MetricConversion {
     let mut metrics = Vec::new();
+    let mut dropped = DroppedCounts::default();
 
     for resource_metrics in request.resource_metrics {
         let resource = convert_resource(resource_metrics.resource);
@@ -229,18 +330,20 @@ pub fn convert_metrics(request: ExportMetricsServiceRequest) -> Vec<Metric> {
                     match data {
                         Data::Gauge(gauge) => {
                             for data_point in gauge.data_points {
+                                // A data point with no value set carries no
+                                // measurement: storing 0.0 would fabricate
+                                // one, so count the drop instead (#256).
+                                let Some(value) = data_point.value else {
+                                    dropped.unset_value_data_points += 1;
+                                    continue;
+                                };
+                                let value = match value {
+                                    opentelemetry_proto::tonic::metrics::v1::number_data_point::Value::AsDouble(v) => v,
+                                    opentelemetry_proto::tonic::metrics::v1::number_data_point::Value::AsInt(v) => v as f64,
+                                };
+
                                 let mut attributes = convert_attributes(&data_point.attributes);
                                 attributes.extend(scope_attrs.clone());
-
-                                let value = match data_point.value {
-                                    Some(
-                                        opentelemetry_proto::tonic::metrics::v1::number_data_point::Value::AsDouble(v),
-                                    ) => v,
-                                    Some(
-                                        opentelemetry_proto::tonic::metrics::v1::number_data_point::Value::AsInt(v),
-                                    ) => v as f64,
-                                    None => 0.0,
-                                };
 
                                 metrics.push(Metric {
                                     name: metric.name.clone(),
@@ -255,22 +358,27 @@ pub fn convert_metrics(request: ExportMetricsServiceRequest) -> Vec<Metric> {
                         },
                         Data::Sum(sum) => {
                             for data_point in sum.data_points {
-                                let mut attributes = convert_attributes(&data_point.attributes);
-                                attributes.extend(scope_attrs.clone());
-
-                                let metric_type: MetricType = match data_point.value {
-                                    Some(
-                                        opentelemetry_proto::tonic::metrics::v1::number_data_point::Value::AsInt(v),
-                                    ) => MetricType::Counter(v as u64),
+                                // Unset value: count the drop, don't store a
+                                // fabricated 0 counter (#256).
+                                let Some(value) = data_point.value else {
+                                    dropped.unset_value_data_points += 1;
+                                    continue;
+                                };
+                                let metric_type: MetricType = match value {
+                                    opentelemetry_proto::tonic::metrics::v1::number_data_point::Value::AsInt(v) => {
+                                        MetricType::Counter(v as u64)
+                                    },
                                     // Double-typed sums (e.g. USD cost
                                     // counters) keep their fractional value
                                     // instead of being floored to an integer
                                     // at ingest (#252).
-                                    Some(
-                                        opentelemetry_proto::tonic::metrics::v1::number_data_point::Value::AsDouble(v),
-                                    ) => MetricType::CounterDouble(v),
-                                    None => MetricType::Counter(0),
+                                    opentelemetry_proto::tonic::metrics::v1::number_data_point::Value::AsDouble(v) => {
+                                        MetricType::CounterDouble(v)
+                                    },
                                 };
+
+                                let mut attributes = convert_attributes(&data_point.attributes);
+                                attributes.extend(scope_attrs.clone());
 
                                 metrics.push(Metric {
                                     name: metric.name.clone(),
@@ -285,18 +393,34 @@ pub fn convert_metrics(request: ExportMetricsServiceRequest) -> Vec<Metric> {
                         },
                         Data::Histogram(histogram) => {
                             for data_point in histogram.data_points {
-                                let mut attributes = convert_attributes(&data_point.attributes);
-                                attributes.extend(scope_attrs.clone());
+                                // The OTLP spec gives `bucket_counts` one
+                                // more entry than `explicit_bounds`: the
+                                // trailing entry is the `+Inf` overflow
+                                // bucket. Bounds are finite, so those
+                                // observations are counted, not stored —
+                                // the reader reconstructs the tail mass
+                                // from `count`/`sum` (#256).
+                                let bounds = data_point.explicit_bounds.len();
+                                let overflow: u64 =
+                                    data_point.bucket_counts.iter().skip(bounds).copied().sum();
+                                if overflow > 0 {
+                                    dropped.histogram_overflow_data_points += 1;
+                                    dropped.histogram_overflow_observations += overflow;
+                                }
 
                                 let buckets: Vec<HistogramBucket> = data_point
                                     .bucket_counts
                                     .iter()
+                                    .take(bounds)
                                     .zip(data_point.explicit_bounds.iter())
                                     .map(|(count, bound)| HistogramBucket {
                                         upper_bound: *bound,
                                         count: *count,
                                     })
                                     .collect();
+
+                                let mut attributes = convert_attributes(&data_point.attributes);
+                                attributes.extend(scope_attrs.clone());
 
                                 metrics.push(Metric {
                                     name: metric.name.clone(),
@@ -342,8 +466,11 @@ pub fn convert_metrics(request: ExportMetricsServiceRequest) -> Vec<Metric> {
                                 });
                             }
                         },
-                        Data::ExponentialHistogram(_) => {
-                            // Not supported in internal types, skip
+                        Data::ExponentialHistogram(exp) => {
+                            // Not supported in internal types: count the
+                            // points so the exporter and the logs know they
+                            // did not land (#256).
+                            dropped.exponential_histogram_points += exp.data_points.len() as u64;
                         },
                     }
                 }
@@ -351,7 +478,7 @@ pub fn convert_metrics(request: ExportMetricsServiceRequest) -> Vec<Metric> {
         }
     }
 
-    metrics
+    MetricConversion { metrics, dropped }
 }
 
 // Helper functions
@@ -510,12 +637,13 @@ mod tests {
         LogRecord as OtlpLogRecord, ResourceLogs, ScopeLogs,
     };
     use opentelemetry_proto::tonic::metrics::v1::{
-        metric::Data, number_data_point, summary_data_point::ValueAtQuantile, Gauge, Histogram,
-        HistogramDataPoint, Metric as OtlpMetric, NumberDataPoint, ResourceMetrics, ScopeMetrics,
-        Sum, Summary, SummaryDataPoint,
+        metric::Data, number_data_point, summary_data_point::ValueAtQuantile, ExponentialHistogram,
+        ExponentialHistogramDataPoint, Gauge, Histogram, HistogramDataPoint, Metric as OtlpMetric,
+        NumberDataPoint, ResourceMetrics, ScopeMetrics, Sum, Summary, SummaryDataPoint,
     };
     use opentelemetry_proto::tonic::trace::v1::{
-        span::Event, ResourceSpans, ScopeSpans, Span as OtlpSpan, Status,
+        span::{Event, Link as OtlpSpanLink},
+        ResourceSpans, ScopeSpans, Span as OtlpSpan, Status,
     };
 
     // Helper tests
@@ -1546,6 +1674,8 @@ mod tests {
         assert_eq!(metrics[1].metric_type, MetricType::Gauge(20.0));
     }
 
+    /// A data point with no value set is counted and skipped — not stored
+    /// as a fabricated 0 (#256).
     #[test]
     fn test_convert_missing_metric_value() {
         let request = ExportMetricsServiceRequest {
@@ -1575,9 +1705,12 @@ mod tests {
             }],
         };
 
-        let metrics = convert_metrics(request);
-        assert_eq!(metrics.len(), 1);
-        assert_eq!(metrics[0].metric_type, MetricType::Gauge(0.0));
+        let conversion = convert_metrics_with_drops(request);
+        assert!(
+            conversion.metrics.is_empty(),
+            "an unset value must not be stored as a fabricated 0 (#256)"
+        );
+        assert_eq!(conversion.dropped.unset_value_data_points, 1);
     }
 
     // ── Edge-case tests for issue #17 ────────────────────────────────────────
@@ -1733,9 +1866,10 @@ mod tests {
         assert_eq!(metrics[0].metric_type, MetricType::CounterDouble(19.87));
     }
 
-    /// ExponentialHistogram data points are silently skipped (not stored and not panicked on).
+    /// ExponentialHistogram data points are not stored (no internal
+    /// type) and are counted as dropped telemetry (#256).
     #[test]
-    fn test_exponential_histogram_silently_skipped() {
+    fn test_exponential_histogram_not_stored() {
         use opentelemetry_proto::tonic::metrics::v1::ExponentialHistogram;
         let request = ExportMetricsServiceRequest {
             resource_metrics: vec![ResourceMetrics {
@@ -1943,5 +2077,181 @@ mod tests {
         assert_eq!(attrs.len(), 120);
         assert_eq!(attrs.get("key.0"), Some(&"0".to_string()));
         assert_eq!(attrs.get("key.119"), Some(&"119".to_string()));
+    }
+
+    // ── #256: dropped telemetry is counted, never silent ─────────────────
+
+    fn proto_gauge(name: &str, value: Option<number_data_point::Value>) -> OtlpMetric {
+        OtlpMetric {
+            name: name.to_string(),
+            description: String::new(),
+            unit: String::new(),
+            data: Some(Data::Gauge(Gauge {
+                data_points: vec![NumberDataPoint {
+                    attributes: vec![],
+                    start_time_unix_nano: 0,
+                    time_unix_nano: 1,
+                    value,
+                    exemplars: vec![],
+                    flags: 0,
+                }],
+            })),
+            metadata: vec![],
+        }
+    }
+
+    fn proto_metrics_req(metrics: Vec<OtlpMetric>) -> ExportMetricsServiceRequest {
+        ExportMetricsServiceRequest {
+            resource_metrics: vec![ResourceMetrics {
+                resource: None,
+                scope_metrics: vec![ScopeMetrics {
+                    scope: None,
+                    metrics,
+                    schema_url: String::new(),
+                }],
+                schema_url: String::new(),
+            }],
+        }
+    }
+
+    /// An ExponentialHistogram point has no internal representation: it is
+    /// counted (and reported to the exporter), never stored.
+    #[test]
+    fn test_exponential_histogram_points_counted_not_stored() {
+        let metric = OtlpMetric {
+            name: "exp".to_string(),
+            description: String::new(),
+            unit: String::new(),
+            data: Some(Data::ExponentialHistogram(ExponentialHistogram {
+                aggregation_temporality: 1,
+                data_points: vec![ExponentialHistogramDataPoint {
+                    count: 5,
+                    ..Default::default()
+                }],
+            })),
+            metadata: vec![],
+        };
+        let conversion = convert_metrics_with_drops(proto_metrics_req(vec![metric]));
+        assert!(conversion.metrics.is_empty(), "nothing storable was stored");
+        assert_eq!(conversion.dropped.exponential_histogram_points, 1);
+        assert_eq!(conversion.dropped.rejected_data_points(), 1);
+        assert!(
+            conversion
+                .dropped
+                .summary()
+                .contains("exponential-histogram"),
+            "the summary must name the drop: {}",
+            conversion.dropped.summary()
+        );
+    }
+
+    /// A gauge/sum data point with no value set must be counted and
+    /// skipped — not stored as a fabricated 0.
+    #[test]
+    fn test_unset_value_data_points_counted_not_stored_as_zero() {
+        let conversion =
+            convert_metrics_with_drops(proto_metrics_req(vec![proto_gauge("g", None)]));
+        assert!(
+            conversion.metrics.is_empty(),
+            "an unset value must not be stored (old code stored 0.0)"
+        );
+        assert_eq!(conversion.dropped.unset_value_data_points, 1);
+        assert_eq!(conversion.dropped.rejected_data_points(), 1);
+    }
+
+    /// The +Inf overflow bucket (the N+1th bucket_counts entry) is counted
+    /// as dropped observations on a lossy point — not silently truncated,
+    /// not stored (bucket bounds are finite).
+    #[test]
+    fn test_histogram_overflow_bucket_counted() {
+        let metric = OtlpMetric {
+            name: "h".to_string(),
+            description: String::new(),
+            unit: String::new(),
+            data: Some(Data::Histogram(Histogram {
+                aggregation_temporality: 1,
+                data_points: vec![HistogramDataPoint {
+                    count: 5,
+                    sum: Some(100.0),
+                    // 1 bound → 2 bucket entries; the last is the +Inf tail.
+                    bucket_counts: vec![2, 3],
+                    explicit_bounds: vec![10.0],
+                    ..Default::default()
+                }],
+            })),
+            metadata: vec![],
+        };
+        let conversion = convert_metrics_with_drops(proto_metrics_req(vec![metric]));
+        // The data point itself is stored (lossily)…
+        assert_eq!(conversion.metrics.len(), 1);
+        // …and the overflow observations are counted.
+        assert_eq!(conversion.dropped.histogram_overflow_data_points, 1);
+        assert_eq!(conversion.dropped.histogram_overflow_observations, 3);
+        assert_eq!(conversion.dropped.rejected_data_points(), 1);
+    }
+
+    /// A clean histogram (zero overflow) drops nothing.
+    #[test]
+    fn test_histogram_without_overflow_drops_nothing() {
+        let metric = OtlpMetric {
+            name: "h".to_string(),
+            description: String::new(),
+            unit: String::new(),
+            data: Some(Data::Histogram(Histogram {
+                aggregation_temporality: 1,
+                data_points: vec![HistogramDataPoint {
+                    count: 5,
+                    sum: Some(100.0),
+                    bucket_counts: vec![5, 0],
+                    explicit_bounds: vec![10.0],
+                    ..Default::default()
+                }],
+            })),
+            metadata: vec![],
+        };
+        let conversion = convert_metrics_with_drops(proto_metrics_req(vec![metric]));
+        assert_eq!(conversion.metrics.len(), 1);
+        assert!(conversion.dropped.is_empty());
+    }
+
+    /// Span links have no internal home: counted per accepted span, kept
+    /// out of rejected_spans (the protocol field is for whole spans).
+    #[test]
+    fn test_span_links_counted_not_rejected() {
+        let req = ExportTraceServiceRequest {
+            resource_spans: vec![ResourceSpans {
+                resource: None,
+                scope_spans: vec![ScopeSpans {
+                    scope: None,
+                    spans: vec![OtlpSpan {
+                        trace_id: vec![1; 16],
+                        span_id: vec![2; 8],
+                        name: "s".to_string(),
+                        links: vec![OtlpSpanLink::default(), OtlpSpanLink::default()],
+                        ..Default::default()
+                    }],
+                    schema_url: String::new(),
+                }],
+                schema_url: String::new(),
+            }],
+        };
+        let conversion = convert_traces_with_rejections(req);
+        assert_eq!(conversion.traces.len(), 1, "the span itself is accepted");
+        assert_eq!(conversion.rejected_spans, 0);
+        assert_eq!(conversion.dropped.span_links, 2);
+        assert_eq!(conversion.dropped.total(), 2);
+    }
+
+    /// The thin convert_metrics wrapper still returns the storable metrics
+    /// (existing callers — CLI import, older tests — are unchanged).
+    #[test]
+    fn test_convert_metrics_wrapper_unchanged() {
+        let req = proto_metrics_req(vec![proto_gauge(
+            "g",
+            Some(number_data_point::Value::AsInt(3)),
+        )]);
+        let metrics = convert_metrics(req);
+        assert_eq!(metrics.len(), 1);
+        assert_eq!(metrics[0].name, "g");
     }
 }

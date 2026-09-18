@@ -778,6 +778,8 @@ fn build_plist(
     <true/>
     <key>KeepAlive</key>
     <true/>
+    <key>ThrottleInterval</key>
+    <integer>10</integer>
     <key>StandardOutPath</key>
     <string>{log}</string>
     <key>StandardErrorPath</key>
@@ -1427,6 +1429,28 @@ mod daemon_args_tests {
         );
         assert!(!plist.contains("EnvironmentVariables"));
         assert_eq!(plist.matches("<dict>").count(), 1);
+    }
+
+    #[test]
+    fn test_build_plist_bounds_crash_loop_with_throttle_interval() {
+        // #256: a crash-looping daemon must be restarted on a bounded
+        // cadence by launchd (ThrottleInterval), not as fast as possible.
+        let plist = build_plist(
+            std::path::Path::new("/usr/local/bin/otelite"),
+            std::path::Path::new("/tmp/otelite.log"),
+            &[],
+        );
+        assert!(
+            plist.contains("<key>ThrottleInterval</key>\n    <integer>10</integer>"),
+            "plist must set ThrottleInterval to bound crash-loop restarts:\n{plist}"
+        );
+        // Both standard streams still point at the (now startup-truncated,
+        // see bounded_daily_appender) base log file, so pre-tracing crash
+        // output has somewhere to go.
+        let out = plist.matches("<key>StandardOutPath</key>").count();
+        let err = plist.matches("<key>StandardErrorPath</key>").count();
+        assert_eq!(out, 1);
+        assert_eq!(err, 1);
     }
 
     #[test]

@@ -6,18 +6,29 @@ use opentelemetry_proto::tonic::collector::logs::v1::{
     ExportLogsServiceRequest, ExportLogsServiceResponse,
 };
 use std::sync::Arc;
+use tokio::sync::Semaphore;
 use tonic::{Request, Response, Status};
 use tracing::{debug, error};
 
 /// Implementation of the OTLP LogsService
 pub struct LogsServiceImpl {
     handler: Arc<LogsHandler>,
+    /// Acquired per in-flight export: real backpressure (#256).
+    request_semaphore: Arc<Semaphore>,
 }
 
 impl LogsServiceImpl {
     /// Create a new LogsService implementation
     pub fn new(handler: Arc<LogsHandler>) -> Self {
-        Self { handler }
+        Self::with_concurrency_limit(handler, 1000)
+    }
+
+    /// Create a service bounded to `max_concurrent` in-flight exports.
+    pub fn with_concurrency_limit(handler: Arc<LogsHandler>, max_concurrent: usize) -> Self {
+        Self {
+            handler,
+            request_semaphore: Arc::new(Semaphore::new(max_concurrent)),
+        }
     }
 
     /// Convert into a tonic service
@@ -33,6 +44,15 @@ impl LogsService for LogsServiceImpl {
         request: Request<ExportLogsServiceRequest>,
     ) -> Result<Response<ExportLogsServiceResponse>, Status> {
         debug!("Received logs export request");
+
+        // Hold the permit for the whole export; dropped at return.
+        let _permit = self
+            .request_semaphore
+            .clone()
+            .try_acquire_owned()
+            .map_err(|_| {
+                Status::unavailable("otelite receiver at its concurrency limit; retry the export")
+            })?;
 
         let req = request.into_inner();
 

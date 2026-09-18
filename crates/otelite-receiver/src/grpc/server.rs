@@ -9,7 +9,7 @@ use std::pin::Pin;
 use std::sync::Arc;
 use std::task::{Context, Poll};
 use std::time::Duration;
-use tokio::sync::{Notify, Semaphore};
+use tokio::sync::Notify;
 use tonic::transport::Server;
 use tracing::{info, warn};
 
@@ -19,8 +19,6 @@ pub struct GrpcServer {
     health_checker: Arc<HealthChecker>,
     shutdown_notify: Arc<Notify>,
     local_addr: Arc<tokio::sync::RwLock<Option<std::net::SocketAddr>>>,
-    /// Semaphore for limiting concurrent requests (backpressure)
-    request_semaphore: Arc<Semaphore>,
     /// Signal handlers
     metrics_handler: Arc<MetricsHandler>,
     logs_handler: Arc<LogsHandler>,
@@ -33,18 +31,32 @@ impl GrpcServer {
         config: ReceiverConfig,
         storage: Arc<dyn otelite_core::storage::StorageBackend>,
     ) -> Self {
-        // Default to 1000 concurrent requests for backpressure
-        let max_concurrent_requests = 1000;
+        Self::with_health(config, storage, Arc::new(HealthChecker::new()))
+    }
 
+    /// Create a server that shares its health state (and therefore its
+    /// `/health` view) with another transport, e.g. the HTTP receiver
+    /// (#256): a write failing on either transport degrades the combined
+    /// health.
+    pub fn with_health(
+        config: ReceiverConfig,
+        storage: Arc<dyn otelite_core::storage::StorageBackend>,
+        health_checker: Arc<HealthChecker>,
+    ) -> Self {
         Self {
             config,
-            health_checker: Arc::new(HealthChecker::new()),
+            health_checker: health_checker.clone(),
             shutdown_notify: Arc::new(Notify::new()),
             local_addr: Arc::new(tokio::sync::RwLock::new(None)),
-            request_semaphore: Arc::new(Semaphore::new(max_concurrent_requests)),
-            metrics_handler: Arc::new(MetricsHandler::new(storage.clone())),
-            logs_handler: Arc::new(LogsHandler::new(storage.clone())),
-            traces_handler: Arc::new(TracesHandler::new(storage)),
+            metrics_handler: Arc::new(MetricsHandler::with_health(
+                storage.clone(),
+                health_checker.clone(),
+            )),
+            logs_handler: Arc::new(LogsHandler::with_health(
+                storage.clone(),
+                health_checker.clone(),
+            )),
+            traces_handler: Arc::new(TracesHandler::with_health(storage, health_checker)),
         }
     }
 
@@ -54,16 +66,7 @@ impl GrpcServer {
         storage: Arc<dyn otelite_core::storage::StorageBackend>,
         max_concurrent: usize,
     ) -> Self {
-        Self {
-            config,
-            health_checker: Arc::new(HealthChecker::new()),
-            shutdown_notify: Arc::new(Notify::new()),
-            local_addr: Arc::new(tokio::sync::RwLock::new(None)),
-            request_semaphore: Arc::new(Semaphore::new(max_concurrent)),
-            metrics_handler: Arc::new(MetricsHandler::new(storage.clone())),
-            logs_handler: Arc::new(LogsHandler::new(storage.clone())),
-            traces_handler: Arc::new(TracesHandler::new(storage)),
-        }
+        Self::new(config.with_max_concurrent_requests(max_concurrent), storage)
     }
 
     /// Start the gRPC server
@@ -95,10 +98,19 @@ impl GrpcServer {
         let logs_handler = self.logs_handler.clone();
         let traces_handler = self.traces_handler.clone();
 
-        // Create gRPC services
-        let metrics_service = crate::grpc::metrics::MetricsServiceImpl::new(metrics_handler);
-        let logs_service = crate::grpc::logs::LogsServiceImpl::new(logs_handler);
-        let traces_service = crate::grpc::traces::TraceServiceImpl::new(traces_handler);
+        // Create gRPC services. The concurrency limit bounds in-flight
+        // exports across all connections: once exhausted, exports fail
+        // immediately with UNAVAILABLE (which exporters retry) instead of
+        // piling up unbounded memory and blocking-pool occupancy (#256).
+        let limit = self.config.max_concurrent_requests;
+        let metrics_service = crate::grpc::metrics::MetricsServiceImpl::with_concurrency_limit(
+            metrics_handler,
+            limit,
+        );
+        let logs_service =
+            crate::grpc::logs::LogsServiceImpl::with_concurrency_limit(logs_handler, limit);
+        let traces_service =
+            crate::grpc::traces::TraceServiceImpl::with_concurrency_limit(traces_handler, limit);
 
         // Build server with backpressure configuration
         // Note: Compression is configured per-service in tonic 0.11+
@@ -177,16 +189,6 @@ impl GrpcServer {
     /// Get health checker
     pub fn health_checker(&self) -> Arc<HealthChecker> {
         self.health_checker.clone()
-    }
-
-    /// Get request semaphore for backpressure control
-    pub fn request_semaphore(&self) -> Arc<Semaphore> {
-        self.request_semaphore.clone()
-    }
-
-    /// Check if server can accept more requests (backpressure check)
-    pub fn can_accept_request(&self) -> bool {
-        self.request_semaphore.available_permits() > 0
     }
 }
 
@@ -267,19 +269,10 @@ mod tests {
     fn test_grpc_server_with_concurrency_limit() {
         let config = ReceiverConfig::new();
         let (storage, _temp_dir) = create_test_storage();
+        // The limit now lives in the config (#256) and is applied per
+        // service in start(); the server must build with it.
         let server = GrpcServer::with_concurrency_limit(config, storage, 100);
-        assert!(server.can_accept_request());
-        assert_eq!(server.request_semaphore().available_permits(), 100);
-    }
-
-    #[test]
-    fn test_grpc_server_backpressure_check() {
-        let config = ReceiverConfig::new();
-        let (storage, _temp_dir) = create_test_storage();
-        let server = GrpcServer::new(config, storage);
-        // Default limit is 1000
-        assert!(server.can_accept_request());
-        assert_eq!(server.request_semaphore().available_permits(), 1000);
+        assert!(server.health_checker().is_alive());
     }
 
     /// Get a free port by binding to port 0 and releasing it.

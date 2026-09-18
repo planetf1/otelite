@@ -11,6 +11,7 @@ use otelite_core::telemetry::{LogRecord, Metric, Span};
 use parking_lot::Mutex;
 use rusqlite::Connection;
 use std::path::PathBuf;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 
 pub mod pool;
@@ -36,6 +37,12 @@ pub struct SqliteBackend {
     purge_lock: Arc<purge::PurgeLock>,
     purge_handle: Arc<Mutex<Option<tokio::task::JoinHandle<()>>>>,
     stats_handle: Arc<Mutex<Option<tokio::task::JoinHandle<()>>>>,
+    /// Set while the stats-maintenance task holds the write lock running
+    /// `ANALYZE` (#256). The write path fails fast against it instead of
+    /// waiting out the 10 s busy timeout and then 500ing the export —
+    /// the exporter retries and the batch commits once ANALYZE releases
+    /// the lock. All-or-nothing transactions make that retry safe (#254).
+    maintenance_active: Arc<AtomicBool>,
 }
 
 impl SqliteBackend {
@@ -48,6 +55,7 @@ impl SqliteBackend {
             purge_lock: Arc::new(purge::PurgeLock::new()),
             purge_handle: Arc::new(Mutex::new(None)),
             stats_handle: Arc::new(Mutex::new(None)),
+            maintenance_active: Arc::new(AtomicBool::new(false)),
         }
     }
 
@@ -117,6 +125,28 @@ impl SqliteBackend {
         Ok(conn)
     }
 
+    /// Fail fast while the stats-maintenance ANALYZE holds the write lock
+    /// (#256). ANALYZE can hold it up to ~96 s on a large database, far
+    /// past the 10 s busy timeout: without this gate a write landing in
+    /// that window would wait 10 s and then error after contending for the
+    /// lock. A clean, immediate rejection is safer — the all-or-nothing
+    /// transaction means nothing committed, so the exporter's retry of the
+    /// whole batch cannot duplicate rows, and it re-lands once ANALYZE
+    /// releases the lock. (Blocking the export until ANALYZE finished
+    /// instead is not viable: the gRPC request timeout is 30 s, shorter
+    /// than ANALYZE's worst case, and logs/metrics are append-only with no
+    /// retry dedup.)
+    fn check_maintenance_gate(&self) -> Result<()> {
+        if self.maintenance_active.load(Ordering::SeqCst) {
+            Err(StorageError::WriteError(
+                "write deferred: planner statistics refresh (ANALYZE) is holding the write lock; retry the export"
+                    .to_string(),
+            ))
+        } else {
+            Ok(())
+        }
+    }
+
     /// Run `op` on the writer connection inside a single transaction, on
     /// a blocking thread so a slow batch cannot stall the async runtime.
     /// All-or-nothing: any error rolls the whole transaction back.
@@ -124,6 +154,10 @@ impl SqliteBackend {
         &self,
         op: impl FnOnce(&Connection) -> Result<()> + Send + 'static,
     ) -> Result<()> {
+        // Fail fast while the stats-maintenance ANALYZE holds the write
+        // lock (#256) — see check_maintenance_gate.
+        self.check_maintenance_gate()?;
+
         let conn_opt = std::sync::Arc::clone(&self.conn);
         tokio::task::spawn_blocking(move || {
             let mut conn_guard = conn_opt.lock();
@@ -205,6 +239,7 @@ impl StorageBackend for SqliteBackend {
     }
 
     async fn write_log(&self, log: &LogRecord) -> Result<()> {
+        self.check_maintenance_gate()?;
         let conn_guard = self.conn.lock();
         let conn = conn_guard
             .as_ref()
@@ -214,6 +249,7 @@ impl StorageBackend for SqliteBackend {
     }
 
     async fn write_span(&self, span: &Span) -> Result<()> {
+        self.check_maintenance_gate()?;
         let conn_guard = self.conn.lock();
         let conn = conn_guard
             .as_ref()
@@ -223,6 +259,7 @@ impl StorageBackend for SqliteBackend {
     }
 
     async fn write_metric(&self, metric: &Metric) -> Result<()> {
+        self.check_maintenance_gate()?;
         let conn_guard = self.conn.lock();
         let conn = conn_guard
             .as_ref()
@@ -1469,36 +1506,64 @@ impl SqliteBackend {
 
                 tokio::time::sleep(duration).await;
 
-                if let Ok(_guard) = purge_lock.try_lock() {
-                    let cutoff =
-                        chrono::Utc::now() - chrono::Duration::days(config.retention_days as i64);
-                    let cutoff_timestamp = cutoff.timestamp_nanos_opt().unwrap_or(0);
+                let _guard = match purge_lock.try_lock() {
+                    Ok(g) => g,
+                    Err(e) => {
+                        // A manual purge is in progress — skip this tick,
+                        // the next one runs tomorrow.
+                        tracing::debug!("Automatic purge skipped: {e}");
+                        continue;
+                    },
+                };
 
-                    if let Ok(record) = purge::purge_old_data(
-                        &mut conn,
-                        cutoff_timestamp,
-                        10000,
-                        &[
-                            crate::SignalType::Logs,
-                            crate::SignalType::Traces,
-                            crate::SignalType::Metrics,
-                        ],
-                        false,
-                    ) {
+                let cutoff =
+                    chrono::Utc::now() - chrono::Duration::days(config.retention_days as i64);
+                let cutoff_timestamp = cutoff.timestamp_nanos_opt().unwrap_or(0);
+
+                // The batched deletes run on the blocking pool with the
+                // dedicated connection moved in and back out (the
+                // stats-maintenance pattern): a multi-gigabyte purge must
+                // never do rusqlite work on an async worker, and a failure
+                // must be logged, not swallowed (#256).
+                let (result, c) = match tokio::task::spawn_blocking(move || {
+                    let mut c = conn;
+                    let result = run_scheduled_purge(&mut c, cutoff_timestamp);
+                    if result.is_ok() {
+                        // VACUUM requires exclusive access and cannot run
+                        // while the main connection is open. Run a passive
+                        // checkpoint instead to keep the WAL from growing
+                        // unboundedly after bulk deletes.
+                        if let Err(e) = purge::checkpoint(&mut c) {
+                            tracing::warn!("Purge scheduler: WAL checkpoint failed: {}", e);
+                        }
+                    }
+                    (result, c)
+                })
+                .await
+                {
+                    Ok(rc) => rc,
+                    Err(e) => {
+                        // The connection moved into the task and is gone with
+                        // it — the scheduler cannot continue.
+                        tracing::error!("Purge scheduler: purge task failed to join: {e}");
+                        return;
+                    },
+                };
+
+                match result {
+                    Ok(record) => {
                         tracing::info!(
                             "Automatic purge completed: {} logs, {} spans, {} metrics deleted",
                             record.logs_deleted,
                             record.spans_deleted,
                             record.metrics_deleted
                         );
-                        // VACUUM requires exclusive access and cannot run while the main
-                        // connection is open. Run a passive checkpoint instead to keep
-                        // the WAL from growing unboundedly after bulk deletes.
-                        if let Err(e) = conn.execute_batch("PRAGMA wal_checkpoint(PASSIVE);") {
-                            tracing::warn!("Purge scheduler: WAL checkpoint failed: {}", e);
-                        }
-                    }
+                    },
+                    Err(e) => {
+                        tracing::error!("Automatic purge failed: {e}");
+                    },
                 }
+                conn = c;
             }
         });
 
@@ -1522,6 +1587,7 @@ impl SqliteBackend {
     /// never block an async runtime worker — on a single-threaded runtime
     /// that starvation breaks concurrent write tests.
     fn start_stats_maintenance(&self, db_path: PathBuf) {
+        let maintenance_active = self.maintenance_active.clone();
         let handle = tokio::spawn(async move {
             let mut conn = match tokio::task::spawn_blocking(move || {
                 let c = match Connection::open(&db_path) {
@@ -1548,16 +1614,24 @@ impl SqliteBackend {
 
                 // The (idle) connection moves into the blocking task for the
                 // check + optional refresh and back out — its lifetime spans
-                // the whole loop.
+                // the whole loop. A fresh clone of the maintenance flag moves
+                // in too; it is set for the duration of the ANALYZE so the
+                // write path fails fast instead of contending for the lock
+                // the refresh holds (#256).
+                let maintenance = maintenance_active.clone();
                 conn = match tokio::task::spawn_blocking(move || {
                     let mut c = conn;
                     match stats::should_refresh_now(&mut c) {
                         Ok(true) => {
-                            match stats::maybe_refresh_planner_stats(&mut c, stats::STATS_MAX_AGE) {
+                            maintenance.store(true, Ordering::SeqCst);
+                            let refresh =
+                                stats::maybe_refresh_planner_stats(&mut c, stats::STATS_MAX_AGE);
+                            maintenance.store(false, Ordering::SeqCst);
+                            match refresh {
                                 Ok(true) => {
                                     tracing::info!(
-                                    "Planner statistics refreshed (ANALYZE, maintenance window)"
-                                );
+                                        "Planner statistics refreshed (ANALYZE, maintenance window)"
+                                    );
                                 },
                                 Ok(false) => {},
                                 Err(e) => {
@@ -1582,6 +1656,26 @@ impl SqliteBackend {
 
         *self.stats_handle.lock() = Some(handle);
     }
+}
+
+/// One automatic-purge pass: batched deletes of all three signals older
+/// than `cutoff_timestamp`. Split from the scheduler loop so the pass is
+/// testable without sleeping until 02:00 — and so the loop's only job is
+/// scheduling plus logging the outcome (#256: purge failures used to be
+/// swallowed by an `if let Ok` with no else).
+fn run_scheduled_purge(conn: &mut Connection, cutoff_timestamp: i64) -> Result<purge::PurgeRecord> {
+    purge::purge_old_data(
+        conn,
+        cutoff_timestamp,
+        10_000,
+        &[
+            crate::SignalType::Logs,
+            crate::SignalType::Traces,
+            crate::SignalType::Metrics,
+        ],
+        false,
+    )
+    .map_err(StorageError::from)
 }
 
 #[cfg(test)]
@@ -1909,5 +2003,76 @@ mod tests {
 
         let stats = backend.stats().await.unwrap();
         assert_eq!(stats.log_count, 1, "only the new log may remain");
+    }
+
+    // ── #256 hardening ──────────────────────────────────────────────────
+
+    /// The scheduled purge pass must surface failures instead of
+    /// swallowing them (the old `if let Ok` had no else arm, so a broken
+    /// 02:00 purge left no trace in the log).
+    #[test]
+    fn test_run_scheduled_purge_success_and_failure() {
+        // Success: a schema-initialised in-memory DB with one old row.
+        let mut conn = Connection::open_in_memory().unwrap();
+        crate::sqlite::schema::initialize_schema(&conn).unwrap();
+        conn.execute(
+            "INSERT INTO logs (timestamp, severity_number, body) VALUES (?, ?, ?)",
+            rusqlite::params![1, 3, "old log"],
+        )
+        .unwrap();
+
+        let cutoff = (chrono::Utc::now() - chrono::Duration::hours(1))
+            .timestamp_nanos_opt()
+            .unwrap();
+        let record = run_scheduled_purge(&mut conn, cutoff).expect("purge pass must succeed");
+        assert_eq!(record.logs_deleted, 1);
+        assert_eq!(record.spans_deleted, 0);
+        assert_eq!(record.metrics_deleted, 0);
+
+        // Failure: a connection without the schema must come back as an
+        // Err the scheduler can log — not a silent no-op.
+        let mut bare = Connection::open_in_memory().unwrap();
+        let err = run_scheduled_purge(&mut bare, cutoff)
+            .expect_err("purge over a schema-less DB must fail");
+        assert!(
+            err.to_string().contains("no such table"),
+            "failure must carry the SQLite error, got: {err}"
+        );
+    }
+
+    /// While the stats-maintenance flag is set (ANALYZE holding the write
+    /// lock), writes must fail fast with a retry-oriented error instead of
+    /// sitting out the 10 s busy timeout; once cleared, the same write
+    /// succeeds (#256).
+    #[tokio::test]
+    async fn test_write_deferred_during_maintenance() {
+        let temp_dir = TempDir::new().unwrap();
+        let config = StorageConfig::default().with_data_dir(temp_dir.path().to_path_buf());
+        let mut backend = SqliteBackend::new(config);
+        backend.initialize().await.unwrap();
+
+        let flag = backend.maintenance_active.clone();
+        flag.store(true, std::sync::atomic::Ordering::SeqCst);
+
+        let start = std::time::Instant::now();
+        let err = backend
+            .write_log(&test_log(1_000))
+            .await
+            .expect_err("write must be deferred while ANALYZE is in flight");
+        let elapsed = start.elapsed();
+        assert!(
+            elapsed < std::time::Duration::from_secs(1),
+            "deferral must fail fast, not wait out the busy timeout (took {elapsed:?})"
+        );
+        assert!(
+            err.to_string().contains("ANALYZE"),
+            "error must tell the exporter this is retryable maintenance, got: {err}"
+        );
+
+        flag.store(false, std::sync::atomic::Ordering::SeqCst);
+        backend
+            .write_log(&test_log(2_000))
+            .await
+            .expect("write must succeed once maintenance is done");
     }
 }

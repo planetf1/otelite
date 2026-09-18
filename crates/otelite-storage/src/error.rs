@@ -48,6 +48,48 @@ pub enum StorageError {
 }
 
 impl StorageError {
+    /// Classify a raw `rusqlite::Error` by its SQLite result code.
+    ///
+    /// Without this, SQLITE_FULL and SQLITE_CORRUPT surface as generic
+    /// `DatabaseError`s (and, after the writer's `WriteError` wrapping, as
+    /// opaque strings): the health checker and the API layer cannot tell a
+    /// full disk or a corrupt database apart from a transient busy timeout
+    /// (#256).
+    pub fn from_rusqlite(e: rusqlite::Error) -> Self {
+        let code = match &e {
+            rusqlite::Error::SqliteFailure(ffi, _) => ffi.code,
+            _ => return StorageError::DatabaseError(e),
+        };
+        use rusqlite::ffi::ErrorCode;
+        match code {
+            ErrorCode::DiskFull => StorageError::DiskFullError(e.to_string()),
+            ErrorCode::DatabaseCorrupt | ErrorCode::NotADatabase => {
+                StorageError::CorruptionError(e.to_string())
+            },
+            ErrorCode::PermissionDenied | ErrorCode::ReadOnly => {
+                StorageError::PermissionError(e.to_string())
+            },
+            ErrorCode::DatabaseBusy | ErrorCode::DatabaseLocked => {
+                StorageError::WriteError(format!("database busy (retry the export): {}", e))
+            },
+            _ => StorageError::DatabaseError(e),
+        }
+    }
+
+    /// A write failure that will keep failing until a human intervenes
+    /// (full disk, corruption, permissions) — as opposed to a transient
+    /// busy/locked timeout that an exporter retry will clear. The receiver
+    /// uses this to flip `/health` to unhealthy after sustained failures
+    /// (#256).
+    pub fn is_persistent(&self) -> bool {
+        matches!(
+            self,
+            StorageError::DiskFullError(_)
+                | StorageError::CorruptionError(_)
+                | StorageError::PermissionError(_)
+        )
+    }
+
     pub fn is_recoverable(&self) -> bool {
         matches!(
             self,
@@ -117,5 +159,99 @@ mod tests {
 
         let err = StorageError::WriteError("test".to_string());
         assert!(!err.is_disk_full());
+    }
+
+    /// Build a raw `rusqlite::Error::SqliteFailure` for a given result code,
+    /// mirroring what the SQLite C layer produces.
+    fn sqlite_failure(code: rusqlite::ffi::ErrorCode) -> rusqlite::Error {
+        rusqlite::Error::SqliteFailure(
+            rusqlite::ffi::Error {
+                code,
+                extended_code: 0,
+            },
+            Some(format!("simulated sqlite error {code:?}")),
+        )
+    }
+
+    #[test]
+    fn test_from_rusqlite_classifies_disk_full() {
+        let err = StorageError::from_rusqlite(sqlite_failure(rusqlite::ffi::ErrorCode::DiskFull));
+        assert!(matches!(err, StorageError::DiskFullError(_)));
+        assert!(err.is_persistent());
+        assert!(err.is_disk_full());
+    }
+
+    #[test]
+    fn test_from_rusqlite_classifies_corruption() {
+        use rusqlite::ffi::ErrorCode;
+        for code in [ErrorCode::DatabaseCorrupt, ErrorCode::NotADatabase] {
+            let err = StorageError::from_rusqlite(sqlite_failure(code));
+            assert!(
+                matches!(err, StorageError::CorruptionError(_)),
+                "code {code:?} must be corruption"
+            );
+            assert!(err.is_persistent());
+            assert!(err.is_corruption());
+        }
+    }
+
+    #[test]
+    fn test_from_rusqlite_classifies_permission() {
+        use rusqlite::ffi::ErrorCode;
+        for code in [ErrorCode::PermissionDenied, ErrorCode::ReadOnly] {
+            let err = StorageError::from_rusqlite(sqlite_failure(code));
+            assert!(
+                matches!(err, StorageError::PermissionError(_)),
+                "code {code:?} must be a permission error"
+            );
+            assert!(err.is_persistent());
+        }
+    }
+
+    #[test]
+    fn test_from_rusqlite_classifies_busy_as_transient_write() {
+        use rusqlite::ffi::ErrorCode;
+        for code in [ErrorCode::DatabaseBusy, ErrorCode::DatabaseLocked] {
+            let err = StorageError::from_rusqlite(sqlite_failure(code));
+            assert!(
+                matches!(err, StorageError::WriteError(_)),
+                "code {code:?} must be a transient write error"
+            );
+            // A busy/locked timeout is retryable — it must NOT flip health.
+            assert!(
+                !err.is_persistent(),
+                "busy must be transient, not persistent"
+            );
+            assert!(err.to_string().contains("busy"));
+        }
+    }
+
+    #[test]
+    fn test_from_rusqlite_default_is_database_error() {
+        // An unrecognised code falls through to the generic DatabaseError,
+        // which is not persistent (so it cannot wedge /health unhealthy).
+        let err =
+            StorageError::from_rusqlite(sqlite_failure(rusqlite::ffi::ErrorCode::SchemaChanged));
+        assert!(matches!(err, StorageError::DatabaseError(_)));
+        assert!(!err.is_persistent());
+
+        // Non-SqliteFailure variants pass through as DatabaseError too.
+        let err = StorageError::from_rusqlite(rusqlite::Error::InvalidPath(
+            std::path::PathBuf::from("/nonexistent"),
+        ));
+        assert!(matches!(err, StorageError::DatabaseError(_)));
+        assert!(!err.is_persistent());
+    }
+
+    #[test]
+    fn test_persistent_covers_the_three_failure_modes() {
+        assert!(StorageError::DiskFullError("x".into()).is_persistent());
+        assert!(StorageError::CorruptionError("x".into()).is_persistent());
+        assert!(StorageError::PermissionError("x".into()).is_persistent());
+        assert!(!StorageError::WriteError("x".into()).is_persistent());
+        assert!(!StorageError::QueryError("x".into()).is_persistent());
+        assert!(!StorageError::InitializationError("x".into()).is_persistent());
+        assert!(!StorageError::ConfigError("x".into()).is_persistent());
+        assert!(!StorageError::PurgeError("x".into()).is_persistent());
     }
 }

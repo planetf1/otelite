@@ -1,6 +1,7 @@
 // HTTP request handlers for OTLP endpoints
 
 use crate::error::ReceiverError;
+use crate::health::HealthStatus;
 use crate::http::routes::AppState;
 use crate::protocol::{json as json_parser, protobuf};
 use axum::{
@@ -14,18 +15,23 @@ use opentelemetry_proto::tonic::collector::logs::v1::ExportLogsServiceRequest;
 use opentelemetry_proto::tonic::collector::metrics::v1::ExportMetricsServiceRequest;
 use opentelemetry_proto::tonic::collector::trace::v1::ExportTraceServiceRequest;
 use serde_json::json;
-use tracing::{debug, error};
+use tracing::{debug, error, warn};
 
 /// Health check endpoint handler
+///
+/// Reports the *combined* health (#256): the bind-time ready flag AND the
+/// write-path state. A full disk or corruption that degrades writes makes
+/// `/health` return 503 even though the socket is still bound and serving.
 pub async fn handle_health(State(state): State<AppState>) -> Response {
-    if state.health_checker.is_ready() {
-        (StatusCode::OK, Json(json!({"status": "healthy"}))).into_response()
-    } else {
-        (
+    match state.health_checker.status() {
+        HealthStatus::Healthy => {
+            (StatusCode::OK, Json(json!({"status": "healthy"}))).into_response()
+        },
+        HealthStatus::Unhealthy => (
             StatusCode::SERVICE_UNAVAILABLE,
             Json(json!({"status": "unhealthy"})),
         )
-            .into_response()
+            .into_response(),
     }
 }
 
@@ -74,7 +80,29 @@ pub async fn handle_metrics(
 
     // Process metrics
     match state.metrics_handler.process(request).await {
-        Ok(_) => (StatusCode::OK, Json(json!({"status": "success"}))).into_response(),
+        Ok(result) => {
+            // partialSuccess (OTLP HTTP JSON shape) reports the data
+            // points conversion dropped — exponential histograms, unset
+            // values, +Inf overflow tails — so spec-aware exporters learn
+            // they did not fully land (#256). Absent when nothing was
+            // dropped.
+            let rejected = result.dropped.rejected_data_points();
+            let mut payload = serde_json::Map::new();
+            payload.insert("status".into(), json!("success"));
+            if rejected > 0 {
+                payload.insert(
+                    "partialSuccess".into(),
+                    json!({
+                        "rejectedDataPoints": rejected,
+                        "errorMessage": format!(
+                            "otelite dropped telemetry it cannot store: {}",
+                            result.dropped.summary()
+                        ),
+                    }),
+                );
+            }
+            (StatusCode::OK, Json(serde_json::Value::Object(payload))).into_response()
+        },
         Err(e) => {
             error!("Failed to process metrics: {}", e);
             e.into_response()
@@ -197,49 +225,31 @@ pub async fn handle_traces(
 }
 
 /// Unified endpoint handler (legacy support)
-/// Routes to appropriate handler based on URL path or content inspection
+///
+/// The OTLP spec defines per-signal endpoints only; this legacy unified
+/// path used to guess the signal by trial-decoding the body as each type
+/// in turn — protobuf wire types routinely parse as the *wrong* message,
+/// so a logs export could be silently stored as traces (#256). It also
+/// ignored Content-Encoding. Rather than keep a mis-routing hazard, the
+/// endpoint now fails loudly with a 400 pointing at the per-signal
+/// endpoints. A 400 (not 5xx) is deliberate: it tells exporters to stop
+/// retrying this path instead of looping on a "server error".
 pub async fn handle_unified(
-    State(state): State<AppState>,
-    headers: HeaderMap,
+    State(_state): State<AppState>,
+    _headers: HeaderMap,
     body: Bytes,
 ) -> Response {
-    debug!("Received unified OTLP request: {} bytes", body.len());
-
-    // Validate Content-Type
-    if let Err(e) = validate_content_type(&headers, "application/x-protobuf") {
-        return e.into_response();
-    }
-
-    // Try to parse as each type and route accordingly
-    // In practice, clients should use signal-specific endpoints
-    // This is a fallback for legacy clients
-
-    // Try metrics first
-    if let Ok(request) = protobuf::parse_message::<ExportMetricsServiceRequest>(&body) {
-        return match state.metrics_handler.process(request).await {
-            Ok(_) => (StatusCode::OK, Json(json!({"status": "success"}))).into_response(),
-            Err(e) => e.into_response(),
-        };
-    }
-
-    // Try logs
-    if let Ok(request) = protobuf::parse_message::<ExportLogsServiceRequest>(&body) {
-        return match state.logs_handler.process(request).await {
-            Ok(_) => (StatusCode::OK, Json(json!({"status": "success"}))).into_response(),
-            Err(e) => e.into_response(),
-        };
-    }
-
-    // Try traces
-    if let Ok(request) = protobuf::parse_message::<ExportTraceServiceRequest>(&body) {
-        return match state.traces_handler.process(request).await {
-            Ok(_) => (StatusCode::OK, Json(json!({"status": "success"}))).into_response(),
-            Err(e) => e.into_response(),
-        };
-    }
-
-    // Could not parse as any known type
-    ReceiverError::InvalidSignalType("Could not parse as any OTLP signal type".to_string())
+    warn!(
+        bytes = body.len(),
+        "Legacy unified OTLP endpoint /v1/otlp hit — it is deprecated; POST to /v1/traces, /v1/metrics or /v1/logs"
+    );
+    (
+        StatusCode::BAD_REQUEST,
+        Json(json!({
+            "error": "The legacy unified OTLP endpoint /v1/otlp is no longer supported: trial-decoding the body could mis-route exports to the wrong signal. POST to the per-signal endpoints instead: /v1/traces, /v1/metrics, or /v1/logs.",
+            "status": 400,
+        })),
+    )
         .into_response()
 }
 
@@ -333,19 +343,6 @@ fn get_content_type(headers: &HeaderMap) -> Result<String, ReceiverError> {
     }
 }
 
-/// Validate Content-Type header (legacy function for backward compatibility)
-fn validate_content_type(headers: &HeaderMap, expected: &str) -> Result<(), ReceiverError> {
-    let content_type = get_content_type(headers)?;
-    if content_type.starts_with(expected) {
-        Ok(())
-    } else {
-        Err(ReceiverError::InvalidContentType(format!(
-            "Expected Content-Type: {}, got: {}",
-            expected, content_type
-        )))
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -388,38 +385,5 @@ mod tests {
     fn test_get_content_type_missing() {
         let headers = HeaderMap::new();
         assert!(get_content_type(&headers).is_err());
-    }
-
-    #[test]
-    fn test_validate_content_type_success() {
-        let mut headers = HeaderMap::new();
-        headers.insert(CONTENT_TYPE, "application/x-protobuf".parse().unwrap());
-
-        assert!(validate_content_type(&headers, "application/x-protobuf").is_ok());
-    }
-
-    #[test]
-    fn test_validate_content_type_with_charset() {
-        let mut headers = HeaderMap::new();
-        headers.insert(
-            CONTENT_TYPE,
-            "application/x-protobuf; charset=utf-8".parse().unwrap(),
-        );
-
-        assert!(validate_content_type(&headers, "application/x-protobuf").is_ok());
-    }
-
-    #[test]
-    fn test_validate_content_type_missing() {
-        let headers = HeaderMap::new();
-        assert!(validate_content_type(&headers, "application/x-protobuf").is_err());
-    }
-
-    #[test]
-    fn test_validate_content_type_wrong() {
-        let mut headers = HeaderMap::new();
-        headers.insert(CONTENT_TYPE, "application/json".parse().unwrap());
-
-        assert!(validate_content_type(&headers, "application/x-protobuf").is_err());
     }
 }

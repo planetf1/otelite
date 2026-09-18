@@ -95,6 +95,20 @@ impl StorageError {
     pub fn is_disk_full(&self) -> bool {
         matches!(self, StorageError::DiskFullError(_))
     }
+
+    /// A write failure that will keep failing until a human intervenes
+    /// (full disk, corruption, permissions) — as opposed to a transient
+    /// busy/locked timeout that an exporter retry will clear. The receiver
+    /// uses this to flip `/health` to unhealthy after sustained failures
+    /// (#256).
+    pub fn is_persistent(&self) -> bool {
+        matches!(
+            self,
+            StorageError::DiskFullError(_)
+                | StorageError::CorruptionError(_)
+                | StorageError::PermissionError(_)
+        )
+    }
 }
 
 /// Statistics returned after a `purge_all` operation.

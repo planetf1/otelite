@@ -6,40 +6,93 @@ use crate::http::handlers::{
 };
 use crate::signals::{LogsHandler, MetricsHandler, TracesHandler};
 use axum::{
+    extract::{Request, State},
+    http::StatusCode,
+    middleware,
+    response::Response,
     routing::{get, post},
-    Router,
+    Json, Router,
 };
+use serde_json::json;
 use std::sync::Arc;
+use tokio::sync::Semaphore;
 
-/// Create the main router with all OTLP endpoints
+/// Create the main router with all OTLP endpoints.
 ///
 /// `max_body_size` bounds the decoded (post-decompression) request
 /// body; see [`crate::http::handlers::decode_body`].
+///
+/// `max_concurrent` bounds in-flight exports (#256): the four export
+/// routes sit under a shared `try_acquire` semaphore — a burst of
+/// exporters cannot pile up unbounded in-flight work (each holding a
+/// 10 MB body, a conversion, and a blocking-pool write). Requests beyond
+/// the limit are rejected immediately with 503, which OTLP exporters
+/// retry. (tower's `ConcurrencyLimitLayer` was considered first, but it
+/// *queues* excess requests rather than rejecting them — the point is
+/// bounded memory plus a fast, retryable failure.) `/health` is outside
+/// the limit so the saturation itself stays observable and reads are
+/// unaffected.
+#[allow(clippy::too_many_arguments)] // router factory: every component is a required peer
 pub fn create_router(
     metrics_handler: Arc<MetricsHandler>,
     logs_handler: Arc<LogsHandler>,
     traces_handler: Arc<TracesHandler>,
     health_checker: Arc<HealthChecker>,
     max_body_size: usize,
+    max_concurrent: usize,
 ) -> Router {
-    Router::new()
-        // Health check endpoint
-        .route("/health", get(handle_health))
-        .route("/healthz", get(handle_health))
+    let state = AppState {
+        metrics_handler,
+        logs_handler,
+        traces_handler,
+        health_checker,
+        max_body_size,
+    };
+
+    let concurrency = Arc::new(Semaphore::new(max_concurrent));
+
+    let exports = Router::new()
         // OTLP v1 signal-specific endpoints (recommended)
         .route("/v1/metrics", post(handle_metrics))
         .route("/v1/logs", post(handle_logs))
         .route("/v1/traces", post(handle_traces))
-        // Legacy unified endpoint (for backward compatibility)
+        // Legacy unified endpoint (deprecated — see handle_unified)
         .route("/v1/otlp", post(handle_unified))
-        // Add shared state
-        .with_state(AppState {
-            metrics_handler,
-            logs_handler,
-            traces_handler,
-            health_checker,
-            max_body_size,
-        })
+        .layer(middleware::from_fn_with_state(
+            concurrency,
+            concurrency_limit,
+        ))
+        .with_state(state.clone());
+
+    let health = Router::new()
+        .route("/health", get(handle_health))
+        .route("/healthz", get(handle_health))
+        .with_state(state);
+
+    health.merge(exports)
+}
+
+/// Reject with 503 the moment the export concurrency limit is reached.
+///
+/// The permit is held for the whole request (body decode + parse + write)
+/// and released when the response is produced.
+async fn concurrency_limit(
+    State(concurrency): State<Arc<Semaphore>>,
+    req: Request,
+    next: axum::middleware::Next,
+) -> Result<Response, (StatusCode, Json<serde_json::Value>)> {
+    let _permit = concurrency.try_acquire_owned().map_err(|_| {
+        (
+            StatusCode::SERVICE_UNAVAILABLE,
+            Json(json!({
+                "error": "otelite receiver at its concurrency limit; retry the export",
+                "status": 503,
+            })),
+        )
+    })?;
+    let response = next.run(req).await;
+    drop(_permit);
+    Ok(response)
 }
 
 /// Shared application state
@@ -80,6 +133,7 @@ mod tests {
             traces_handler,
             health_checker,
             10 * 1024 * 1024,
+            100,
         );
 
         // Router created successfully - test passes if no panic

@@ -6,43 +6,44 @@ use crate::health::HealthChecker;
 use crate::http::routes::create_router;
 use crate::signals::{LogsHandler, MetricsHandler, TracesHandler};
 use std::sync::Arc;
-use tokio::sync::{Notify, Semaphore};
+use tokio::sync::Notify;
 use tracing::{info, warn};
 
-/// HTTP server for OTLP protocol with backpressure support
+/// HTTP server for OTLP protocol with backpressure support.
+///
+/// Backpressure is real (#256): the export routes sit under a shared
+/// `try_acquire` concurrency limit (see `routes::create_router`), so
+/// in-flight exports are bounded by `ReceiverConfig::max_concurrent_requests`
+/// and the excess gets a 503 the exporter retries.
 pub struct HttpServer {
     config: ReceiverConfig,
     health_checker: Arc<HealthChecker>,
     shutdown_notify: Arc<Notify>,
     local_addr: Arc<tokio::sync::RwLock<Option<std::net::SocketAddr>>>,
-    /// Semaphore for limiting concurrent requests (backpressure)
-    request_semaphore: Arc<Semaphore>,
 }
 
 impl HttpServer {
     /// Create a new HTTP server with the given configuration
     pub fn new(config: ReceiverConfig) -> Self {
-        // Default to 1000 concurrent requests for backpressure
-        let max_concurrent_requests = 1000;
+        Self::with_health(config, Arc::new(HealthChecker::new()))
+    }
 
+    /// Create a server that shares its health state (and therefore its
+    /// `/health` view) with another transport, e.g. the gRPC receiver
+    /// (#256): a write failing on either transport degrades the combined
+    /// health.
+    pub fn with_health(config: ReceiverConfig, health_checker: Arc<HealthChecker>) -> Self {
         Self {
             config,
-            health_checker: Arc::new(HealthChecker::new()),
+            health_checker,
             shutdown_notify: Arc::new(Notify::new()),
             local_addr: Arc::new(tokio::sync::RwLock::new(None)),
-            request_semaphore: Arc::new(Semaphore::new(max_concurrent_requests)),
         }
     }
 
-    /// Create a new HTTP server with custom concurrency limit
+    /// Create a new HTTP server with a custom concurrency limit
     pub fn with_concurrency_limit(config: ReceiverConfig, max_concurrent: usize) -> Self {
-        Self {
-            config,
-            health_checker: Arc::new(HealthChecker::new()),
-            shutdown_notify: Arc::new(Notify::new()),
-            local_addr: Arc::new(tokio::sync::RwLock::new(None)),
-            request_semaphore: Arc::new(Semaphore::new(max_concurrent)),
-        }
+        Self::new(config.with_max_concurrent_requests(max_concurrent))
     }
 
     /// Start the HTTP server
@@ -57,14 +58,17 @@ impl HttpServer {
         // Mark server as ready
         self.health_checker.set_ready(true);
 
-        // Create signal handlers
-        let metrics_handler = Arc::new(MetricsHandler::new(storage.clone()));
-        let logs_handler = Arc::new(LogsHandler::new(storage.clone()));
-        let traces_handler = Arc::new(TracesHandler::new(storage));
+        // Create signal handlers, sharing the write-health state with the
+        // /health endpoint (#256).
+        let health = self.health_checker.clone();
+        let metrics_handler =
+            Arc::new(MetricsHandler::with_health(storage.clone(), health.clone()));
+        let logs_handler = Arc::new(LogsHandler::with_health(storage.clone(), health.clone()));
+        let traces_handler = Arc::new(TracesHandler::with_health(storage, health));
 
-        // Create router with all routes
-        // Note: Backpressure is handled via semaphore in handlers
-        // and connection limits at the TCP level.
+        // The export routes are bounded by a shared try_acquire concurrency
+        // limit (applied inside create_router, with /health outside it); the
+        // body cap below covers every route.
         //
         // Cap the request body at the configured maximum message size:
         // without this, axum's built-in 2 MB limit silently rejects
@@ -77,6 +81,7 @@ impl HttpServer {
             traces_handler,
             self.health_checker.clone(),
             self.config.max_message_size,
+            self.config.max_concurrent_requests,
         )
         .layer(axum::extract::DefaultBodyLimit::max(
             self.config.max_message_size,
@@ -131,16 +136,6 @@ impl HttpServer {
     pub fn health_checker(&self) -> Arc<HealthChecker> {
         self.health_checker.clone()
     }
-
-    /// Get request semaphore for backpressure control
-    pub fn request_semaphore(&self) -> Arc<Semaphore> {
-        self.request_semaphore.clone()
-    }
-
-    /// Check if server can accept more requests (backpressure check)
-    pub fn can_accept_request(&self) -> bool {
-        self.request_semaphore.available_permits() > 0
-    }
 }
 
 #[cfg(test)]
@@ -164,18 +159,10 @@ mod tests {
 
     #[test]
     fn test_http_server_with_concurrency_limit() {
+        // The limit lives in the config (#256) and is applied per route in
+        // create_router; the server must build with it.
         let config = ReceiverConfig::new();
         let server = HttpServer::with_concurrency_limit(config, 100);
-        assert!(server.can_accept_request());
-        assert_eq!(server.request_semaphore().available_permits(), 100);
-    }
-
-    #[test]
-    fn test_http_server_backpressure_check() {
-        let config = ReceiverConfig::new();
-        let server = HttpServer::new(config);
-        // Default limit is 1000
-        assert!(server.can_accept_request());
-        assert_eq!(server.request_semaphore().available_permits(), 1000);
+        assert!(server.health_checker().is_alive());
     }
 }

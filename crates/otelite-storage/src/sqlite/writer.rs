@@ -20,6 +20,21 @@ fn scope_json(attributes: &HashMap<String, String>) -> Result<String> {
     }
 }
 
+/// Classify a SQLite write failure before wrapping it.
+///
+/// Disk-full and corruption errors keep their dedicated `StorageError`
+/// variants (the receiver's health checker flips `/health` unhealthy on
+/// sustained failures of exactly those, #256); everything else keeps the
+/// contextual `WriteError` the callers always produced.
+fn classify_write_error(e: rusqlite::Error, context: &str) -> StorageError {
+    match StorageError::from_rusqlite(e) {
+        StorageError::DatabaseError(inner) => {
+            StorageError::WriteError(format!("{context}: {inner}"))
+        },
+        classified => classified,
+    }
+}
+
 /// Write a log record to the database
 pub fn write_log(conn: &Connection, log: &LogRecord) -> Result<()> {
     // Serialize complex fields to JSON
@@ -46,7 +61,7 @@ pub fn write_log(conn: &Connection, log: &LogRecord) -> Result<()> {
             scope,
         ],
     )
-    .map_err(|e| StorageError::WriteError(format!("Failed to write log: {}", e)))?;
+    .map_err(|e| classify_write_error(e, "Failed to write log"))?;
 
     Ok(())
 }
@@ -86,7 +101,7 @@ pub fn write_span(conn: &Connection, span: &Span) -> Result<()> {
             scope,
         ],
     )
-    .map_err(|e| StorageError::WriteError(format!("Failed to write span: {}", e)))?;
+    .map_err(|e| classify_write_error(e, "Failed to write span"))?;
 
     Ok(())
 }
@@ -143,7 +158,7 @@ pub fn write_metric(conn: &Connection, metric: &Metric) -> Result<()> {
             scope,
         ],
     )
-    .map_err(|e| StorageError::WriteError(format!("Failed to write metric: {}", e)))?;
+    .map_err(|e| classify_write_error(e, "Failed to write metric"))?;
 
     Ok(())
 }

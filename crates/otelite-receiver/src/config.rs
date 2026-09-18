@@ -13,6 +13,13 @@ pub struct ReceiverConfig {
 
     /// Maximum message size in bytes (default: 10MB)
     pub max_message_size: usize,
+
+    /// Maximum concurrent in-flight exports per transport (#256).
+    /// Beyond this, HTTP exports get 503 and gRPC exports get
+    /// UNAVAILABLE — both retried by OTLP exporters. Default 1000 keeps
+    /// headroom for bursty multi-agent workloads while bounding memory
+    /// (10 MB body + conversion + write per in-flight export).
+    pub max_concurrent_requests: usize,
 }
 
 impl Default for ReceiverConfig {
@@ -21,6 +28,7 @@ impl Default for ReceiverConfig {
             grpc_addr: "0.0.0.0:4317".parse().expect("valid address"),
             http_addr: "0.0.0.0:4318".parse().expect("valid address"),
             max_message_size: 10 * 1024 * 1024, // 10MB
+            max_concurrent_requests: 1000,
         }
     }
 }
@@ -48,6 +56,12 @@ impl ReceiverConfig {
         self.max_message_size = size;
         self
     }
+
+    /// Set the maximum concurrent in-flight exports (backpressure, #256)
+    pub fn with_max_concurrent_requests(mut self, max_concurrent: usize) -> Self {
+        self.max_concurrent_requests = max_concurrent;
+        self
+    }
 }
 
 #[cfg(test)]
@@ -60,6 +74,7 @@ mod tests {
         assert_eq!(config.grpc_addr.port(), 4317);
         assert_eq!(config.http_addr.port(), 4318);
         assert_eq!(config.max_message_size, 10 * 1024 * 1024);
+        assert_eq!(config.max_concurrent_requests, 1000);
     }
 
     #[test]
@@ -67,10 +82,12 @@ mod tests {
         let config = ReceiverConfig::new()
             .with_grpc_addr("127.0.0.1:5317".parse().unwrap())
             .with_http_addr("127.0.0.1:5318".parse().unwrap())
-            .with_max_message_size(5 * 1024 * 1024);
+            .with_max_message_size(5 * 1024 * 1024)
+            .with_max_concurrent_requests(7);
 
         assert_eq!(config.grpc_addr.port(), 5317);
         assert_eq!(config.http_addr.port(), 5318);
         assert_eq!(config.max_message_size, 5 * 1024 * 1024);
+        assert_eq!(config.max_concurrent_requests, 7);
     }
 }
