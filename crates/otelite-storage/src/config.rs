@@ -10,7 +10,7 @@ pub struct StorageConfig {
     /// Data directory path
     pub data_dir: PathBuf,
 
-    /// Retention period in days (1-365)
+    /// Retention period in days (0-365; 0 disables purging)
     pub retention_days: u32,
 
     /// Purge schedule (cron-like format)
@@ -50,6 +50,13 @@ impl StorageConfig {
             .join("data")
     }
 
+    /// Whether the background purge scheduler should run for this
+    /// configuration: explicit opt-out wins over a positive retention, and
+    /// `retention_days = 0` means "keep forever" (#253).
+    pub fn purge_scheduler_enabled(&self) -> bool {
+        self.auto_purge_enabled && self.retention_days > 0
+    }
+
     /// Create configuration from environment variables
     pub fn from_env() -> Result<Self> {
         let mut config = Self::default();
@@ -82,9 +89,11 @@ impl StorageConfig {
 
     /// Validate configuration
     pub fn validate(&self) -> Result<()> {
-        if self.retention_days < 1 || self.retention_days > 365 {
+        // 0 means "keep forever" (the purge scheduler is gated on
+        // retention_days > 0); otherwise 1–365.
+        if self.retention_days > 365 {
             return Err(StorageError::ConfigError(
-                "Retention days must be between 1 and 365".to_string(),
+                "Retention days must be between 0 and 365 (0 disables purging)".to_string(),
             ));
         }
 
@@ -165,8 +174,9 @@ mod tests {
         let mut config = StorageConfig::default();
         assert!(config.validate().is_ok());
 
+        // 0 is valid: "keep forever" (purging is gated on retention > 0).
         config.retention_days = 0;
-        assert!(config.validate().is_err());
+        assert!(config.validate().is_ok());
 
         config.retention_days = 366;
         assert!(config.validate().is_err());
@@ -184,5 +194,27 @@ mod tests {
 
         assert_eq!(config.retention_days, 30);
         assert!(!config.auto_purge_enabled);
+    }
+
+    /// The purge scheduler runs only when both the explicit opt-in state
+    /// and a finite retention window hold (#253): auto-purge disabled wins
+    /// over any retention, and retention 0 ("keep forever") wins over an
+    /// enabled auto-purge.
+    #[test]
+    fn test_purge_scheduler_enabled_matrix() {
+        let base = StorageConfig::default(); // enabled, 90d
+        assert!(base.purge_scheduler_enabled());
+
+        let disabled = base.clone().with_auto_purge(false);
+        assert!(!disabled.purge_scheduler_enabled(), "opt-out must win");
+
+        let keep_forever = base.clone().with_retention_days(0);
+        assert!(
+            !keep_forever.purge_scheduler_enabled(),
+            "0 days keeps forever"
+        );
+
+        let both_off = disabled.clone().with_retention_days(0);
+        assert!(!both_off.purge_scheduler_enabled());
     }
 }

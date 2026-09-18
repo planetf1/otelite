@@ -19,6 +19,13 @@ have to work around), not implementation detail.
   (a cost counter that read `$19.x` now shows its true value); UpDownCounter
   deltas (negative double sums) are preserved instead of saturating to zero
   (#252)
+- `serve`/`import` now honour `OTELITE_DATA_DIR`, `OTELITE_RETENTION_DAYS`
+  and `OTELITE_AUTO_PURGE_ENABLED` like the rest of the CLI: a
+  service-installed daemon no longer ingests into `~/.otelite/data` while
+  the configured environment points elsewhere (`--storage-path` still wins
+  over the environment); `OTELITE_RETENTION_DAYS=0` now means "keep
+  forever" and turns the daily purge off, as does
+  `OTELITE_AUTO_PURGE_ENABLED=false` (#253)
 
 ## [0.1.147] - 2026-09-18
 

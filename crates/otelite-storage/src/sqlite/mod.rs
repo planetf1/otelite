@@ -197,7 +197,7 @@ impl StorageBackend for SqliteBackend {
             }
         }
 
-        if self.config.retention_days > 0 {
+        if self.config.purge_scheduler_enabled() {
             self.start_purge_scheduler(db_path);
         }
 

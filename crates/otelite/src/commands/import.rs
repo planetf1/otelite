@@ -61,13 +61,15 @@ pub async fn handle_import(
         Box::new(BufReader::new(f))
     };
 
-    let data_dir: PathBuf = match storage_path {
-        Some(p) => PathBuf::from(p),
-        None => StorageConfig::default().data_dir,
-    };
-
-    let config = StorageConfig::default()
-        .with_data_dir(data_dir)
+    // Honour the same environment as the read paths (OTELITE_DATA_DIR,
+    // …): an import must land in the database the rest of the CLI uses,
+    // not a hardcoded default (#253). --storage-path wins over the env.
+    let mut config = StorageConfig::from_env()
+        .map_err(|e| Error::ApiError(format!("Failed to build storage configuration: {}", e)))?;
+    if let Some(p) = storage_path {
+        config = config.with_data_dir(PathBuf::from(p));
+    }
+    let config = config
         .with_auto_purge(false)
         // Short-lived CLI: no background maintenance task (its startup log
         // would pollute stdout, and a fire-and-forget ANALYZE would be

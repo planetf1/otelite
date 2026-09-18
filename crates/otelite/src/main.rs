@@ -725,10 +725,16 @@ async fn create_storage(_config: &Config) -> Result<Arc<dyn StorageBackend>> {
 }
 
 async fn run_dashboard(addr: SocketAddr, storage_path: Option<PathBuf>) -> Result<()> {
-    let storage_config = match storage_path {
-        Some(path) => StorageConfig::default().with_data_dir(path),
-        None => StorageConfig::default(),
-    };
+    // The daemon is long-lived and must honour the same environment as
+    // every CLI read path (OTELITE_DATA_DIR, OTELITE_RETENTION_DAYS,
+    // OTELITE_AUTO_PURGE_ENABLED, …): a service install bakes those into
+    // the launchd plist and passes no --storage-path (#253). An explicit
+    // --storage-path wins over the environment.
+    let mut storage_config = StorageConfig::from_env()
+        .map_err(|e| Error::ApiError(format!("Failed to build storage configuration: {}", e)))?;
+    if let Some(path) = storage_path {
+        storage_config = storage_config.with_data_dir(path);
+    }
 
     let is_first_run = Config::is_first_run();
     if is_first_run {

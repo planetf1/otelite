@@ -2413,6 +2413,7 @@ dependencies = [
  "otelite-tui",
  "predicates",
  "reqwest",
+ "rusqlite",
  "serde",
  "serde_json",
  "tempfile",
