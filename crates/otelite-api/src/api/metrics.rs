@@ -224,6 +224,7 @@ pub async fn list_metrics(
             let (metric_type_str, value) = match &metric.metric_type {
                 MetricType::Gauge(v) => ("gauge", MetricValue::Gauge(*v)),
                 MetricType::Counter(v) => ("counter", MetricValue::Counter(*v as i64)),
+                MetricType::CounterDouble(v) => ("counter", MetricValue::CounterDouble(*v)),
                 MetricType::Histogram {
                     count,
                     sum,
@@ -426,6 +427,10 @@ pub async fn aggregate_metrics(
                         sum += *v as f64;
                         count += 1;
                     },
+                    MetricType::CounterDouble(v) => {
+                        sum += *v;
+                        count += 1;
+                    },
                     MetricType::Histogram { sum: s, .. } => {
                         sum += s;
                         count += 1;
@@ -455,6 +460,10 @@ pub async fn aggregate_metrics(
                     },
                     MetricType::Counter(v) => {
                         sum += *v as f64;
+                        count += 1;
+                    },
+                    MetricType::CounterDouble(v) => {
+                        sum += *v;
                         count += 1;
                     },
                     MetricType::Histogram {
@@ -493,6 +502,10 @@ pub async fn aggregate_metrics(
                         min = min.min(*v as f64);
                         count += 1;
                     },
+                    MetricType::CounterDouble(v) => {
+                        min = min.min(*v);
+                        count += 1;
+                    },
                     _ => {},
                 }
             }
@@ -515,6 +528,10 @@ pub async fn aggregate_metrics(
                     },
                     MetricType::Counter(v) => {
                         max = max.max(*v as f64);
+                        count += 1;
+                    },
+                    MetricType::CounterDouble(v) => {
+                        max = max.max(*v);
                         count += 1;
                     },
                     _ => {},
@@ -568,6 +585,10 @@ pub async fn aggregate_metrics(
                                     sum += *v as f64;
                                     count += 1;
                                 },
+                                MetricType::CounterDouble(v) => {
+                                    sum += *v;
+                                    count += 1;
+                                },
                                 MetricType::Histogram { sum: s, .. } => {
                                     sum += s;
                                     count += 1;
@@ -591,6 +612,10 @@ pub async fn aggregate_metrics(
                                 },
                                 MetricType::Counter(v) => {
                                     sum += *v as f64;
+                                    count += 1;
+                                },
+                                MetricType::CounterDouble(v) => {
+                                    sum += *v;
                                     count += 1;
                                 },
                                 MetricType::Histogram {
@@ -764,6 +789,10 @@ pub async fn get_metric_timeseries(
                     },
                     MetricType::Counter(v) => {
                         sum += *v as f64;
+                        count += 1;
+                    },
+                    MetricType::CounterDouble(v) => {
+                        sum += *v;
                         count += 1;
                     },
                     MetricType::Histogram {

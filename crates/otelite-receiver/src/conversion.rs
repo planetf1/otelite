@@ -258,21 +258,25 @@ pub fn convert_metrics(request: ExportMetricsServiceRequest) -> Vec<Metric> {
                                 let mut attributes = convert_attributes(&data_point.attributes);
                                 attributes.extend(scope_attrs.clone());
 
-                                let value = match data_point.value {
+                                let metric_type: MetricType = match data_point.value {
                                     Some(
                                         opentelemetry_proto::tonic::metrics::v1::number_data_point::Value::AsInt(v),
-                                    ) => v as u64,
+                                    ) => MetricType::Counter(v as u64),
+                                    // Double-typed sums (e.g. USD cost
+                                    // counters) keep their fractional value
+                                    // instead of being floored to an integer
+                                    // at ingest (#252).
                                     Some(
                                         opentelemetry_proto::tonic::metrics::v1::number_data_point::Value::AsDouble(v),
-                                    ) => v as u64,
-                                    None => 0,
+                                    ) => MetricType::CounterDouble(v),
+                                    None => MetricType::Counter(0),
                                 };
 
                                 metrics.push(Metric {
                                     name: metric.name.clone(),
                                     description: description.clone(),
                                     unit: unit.clone(),
-                                    metric_type: MetricType::Counter(value),
+                                    metric_type,
                                     timestamp: data_point.time_unix_nano as i64,
                                     attributes,
                                     resource: resource.clone(),
@@ -1655,9 +1659,10 @@ mod tests {
         assert_eq!(metrics[0].metric_type, MetricType::Counter(u64::MAX));
     }
 
-    /// Sum with a negative f64 value: Rust saturating float→u64 cast gives 0.
+    /// Sum with a negative f64 value (UpDownCounter delta): preserved in the
+    /// fractional counter arm instead of being saturated to 0 (#252).
     #[test]
-    fn test_sum_negative_double_saturates_to_zero() {
+    fn test_sum_negative_double_preserved_as_counter_double() {
         let request = ExportMetricsServiceRequest {
             resource_metrics: vec![ResourceMetrics {
                 resource: None,
@@ -1688,8 +1693,44 @@ mod tests {
         };
         let metrics = convert_metrics(request);
         assert_eq!(metrics.len(), 1);
-        // Saturating cast: negative f64 → 0u64.
-        assert_eq!(metrics[0].metric_type, MetricType::Counter(0));
+        assert_eq!(metrics[0].metric_type, MetricType::CounterDouble(-42.0));
+    }
+
+    /// Sum with a fractional f64 value (e.g. USD cost counters): preserved
+    /// exactly instead of being floored to an integer at ingest (#252).
+    #[test]
+    fn test_sum_double_fraction_preserved() {
+        let request = ExportMetricsServiceRequest {
+            resource_metrics: vec![ResourceMetrics {
+                resource: None,
+                scope_metrics: vec![ScopeMetrics {
+                    scope: None,
+                    metrics: vec![OtlpMetric {
+                        name: "cost.usage".to_string(),
+                        description: "".to_string(),
+                        unit: "USD".to_string(),
+                        metadata: vec![],
+                        data: Some(Data::Sum(Sum {
+                            data_points: vec![NumberDataPoint {
+                                attributes: vec![],
+                                start_time_unix_nano: 0,
+                                time_unix_nano: 1000,
+                                value: Some(number_data_point::Value::AsDouble(19.87)),
+                                exemplars: vec![],
+                                flags: 0,
+                            }],
+                            aggregation_temporality: 0,
+                            is_monotonic: true,
+                        })),
+                    }],
+                    schema_url: "".to_string(),
+                }],
+                schema_url: "".to_string(),
+            }],
+        };
+        let metrics = convert_metrics(request);
+        assert_eq!(metrics.len(), 1);
+        assert_eq!(metrics[0].metric_type, MetricType::CounterDouble(19.87));
     }
 
     /// ExponentialHistogram data points are silently skipped (not stored and not panicked on).

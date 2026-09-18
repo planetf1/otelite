@@ -91,6 +91,7 @@ impl MetricsState {
         match value {
             MetricValue::Gauge(v) => Some(*v),
             MetricValue::Counter(v) => Some(*v as f64),
+            MetricValue::CounterDouble(v) => Some(*v),
             MetricValue::Histogram(h) => Some(h.sum / h.count as f64), // Average
             MetricValue::Summary(s) => Some(s.sum / s.count as f64),   // Average
         }

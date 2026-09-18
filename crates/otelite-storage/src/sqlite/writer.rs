@@ -98,6 +98,7 @@ pub fn write_metric(conn: &Connection, metric: &Metric) -> Result<()> {
         match &metric.metric_type {
             MetricType::Gauge(v) => (0, None, Some(*v), None, None),
             MetricType::Counter(v) => (1, Some(*v as i64), None, None, None),
+            MetricType::CounterDouble(v) => (1, None, Some(*v), None, None),
             MetricType::Histogram {
                 count,
                 sum,
@@ -294,6 +295,78 @@ mod tests {
             .query_row("SELECT COUNT(*) FROM metrics", [], |row| row.get(0))
             .unwrap();
         assert_eq!(count, 1);
+    }
+
+    /// Fractional (double-typed OTLP sum) counters round-trip through
+    /// `value_double` without integer truncation; integer counters stay in
+    /// `value_int` (#252).
+    #[test]
+    fn test_write_metric_counter_double_roundtrip() {
+        use crate::sqlite::reader::query_metrics;
+        use otelite_core::storage::QueryParams;
+
+        let conn = setup_test_db();
+
+        let int_metric = Metric {
+            name: "test.counter.int".to_string(),
+            description: None,
+            unit: Some("{token}".to_string()),
+            metric_type: MetricType::Counter(42),
+            timestamp: 1000,
+            attributes: HashMap::new(),
+            resource: None,
+        };
+        let double_metric = Metric {
+            name: "test.counter.double".to_string(),
+            description: None,
+            unit: Some("USD".to_string()),
+            metric_type: MetricType::CounterDouble(19.87),
+            timestamp: 2000,
+            attributes: HashMap::new(),
+            resource: None,
+        };
+        write_metric(&conn, &int_metric).unwrap();
+        write_metric(&conn, &double_metric).unwrap();
+
+        // Double counter lands in value_double with value_int NULL.
+        let (value_int, value_double): (Option<i64>, Option<f64>) = conn
+            .query_row(
+                "SELECT value_int, value_double FROM metrics \
+                 WHERE name = 'test.counter.double'",
+                [],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
+            .unwrap();
+        assert_eq!(value_int, None);
+        assert_eq!(value_double, Some(19.87));
+
+        // Reader maps value_int -> Counter and value_double -> CounterDouble.
+        let params = QueryParams {
+            start_time: None,
+            end_time: None,
+            limit: None,
+            trace_id: None,
+            span_id: None,
+            min_severity: None,
+            search_text: None,
+            predicates: vec![],
+        };
+        let read = query_metrics(&conn, &params)
+            .unwrap()
+            .into_iter()
+            .filter(|m| m.name.starts_with("test.counter."))
+            .collect::<Vec<_>>();
+        assert_eq!(read.len(), 2);
+        let m = read
+            .iter()
+            .find(|m| m.name == "test.counter.int")
+            .expect("int counter present");
+        assert_eq!(m.metric_type, MetricType::Counter(42));
+        let m = read
+            .iter()
+            .find(|m| m.name == "test.counter.double")
+            .expect("double counter present");
+        assert_eq!(m.metric_type, MetricType::CounterDouble(19.87));
     }
 
     #[test]

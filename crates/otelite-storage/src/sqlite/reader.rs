@@ -733,8 +733,15 @@ fn parse_metric_row(row: &Row) -> rusqlite::Result<Metric> {
             MetricType::Gauge(value)
         },
         1 => {
-            let value: i64 = row.get("value_int")?;
-            MetricType::Counter(value as u64)
+            // metric_type 1 = counter: integer-valued counters in
+            // value_int, double-typed OTLP sums in value_double (#252).
+            let value_int: Option<i64> = row.get("value_int")?;
+            let value_double: Option<f64> = row.get("value_double")?;
+            match (value_int, value_double) {
+                (Some(v), _) => MetricType::Counter(v as u64),
+                (None, Some(v)) => MetricType::CounterDouble(v),
+                (None, None) => MetricType::Counter(0),
+            }
         },
         2 => {
             let histogram_json: String = row.get("value_histogram")?;
@@ -4521,8 +4528,7 @@ pub(crate) struct CounterWindowDelta {
     pub delta: f64,
 }
 /// Scalar counter value (value_int, falling back to value_double).
-pub(crate) const COUNTER_SCALAR_VALUE_SQL: &str =
-    "COALESCE(value_int, CAST(value_double AS INTEGER))";
+pub(crate) const COUNTER_SCALAR_VALUE_SQL: &str = "COALESCE(value_int, value_double)";
 /// Cumulative-histogram observation count (`value_histogram[0]`).
 pub(crate) const HISTOGRAM_COUNT_VALUE_SQL: &str = "CASE WHEN json_valid(value_histogram) \
                                                     THEN CAST(json_extract(value_histogram, '$[0]') AS REAL) END";
@@ -4764,7 +4770,7 @@ fn opencode_usage_rows(
 
     let sql = format!(
         "SELECT {}, timestamp, \
-         COALESCE(value_int, CAST(value_double AS INTEGER)) FROM metrics {}",
+         COALESCE(value_int, value_double) FROM metrics {}",
         label_exprs.join(", "),
         where_clause
     );
@@ -4821,10 +4827,10 @@ fn opencode_usage_baselines(
         predicate.push_str(&format!(" AND {expr} IS ?{}", 3 + i));
     }
     let baseline_sql = format!(
-        "SELECT COALESCE(value_int, CAST(value_double AS INTEGER)) FROM metrics \
+        "SELECT COALESCE(value_int, value_double) FROM metrics \
          WHERE name = ?1 AND timestamp < ?2{predicate} \
          ORDER BY timestamp DESC, \
-           COALESCE(value_int, CAST(value_double AS INTEGER)) DESC \
+           COALESCE(value_int, value_double) DESC \
          LIMIT 1"
     );
     let known_series: Vec<Vec<Option<String>>> = rows.iter().map(|(l, _, _)| l.clone()).collect();
@@ -5651,7 +5657,7 @@ pub fn query_agent_rollup(
             "SELECT CASE WHEN json_valid(attributes) THEN json_extract(attributes, '{}') END AS model, \
                     CASE WHEN json_valid(attributes) THEN json_extract(attributes, '{}') END AS token_type, \
                     (timestamp / ?2) * ?2 AS bucket, \
-                    COALESCE(SUM(COALESCE(value_int, CAST(value_double AS INTEGER))), 0) AS total \
+                    COALESCE(SUM(COALESCE(value_int, value_double)), 0) AS total \
              FROM metrics {where_clause} \
              GROUP BY model, token_type, bucket",
             lbl::MODEL, lbl::TYPE
@@ -6042,7 +6048,7 @@ fn codex_event_totals(
     let sessions: i64 = conn
         .query_row(
             &format!(
-                "SELECT COALESCE(SUM(COALESCE(value_int, CAST(value_double AS INTEGER))), 0) \
+                "SELECT COALESCE(SUM(COALESCE(value_int, value_double)), 0) \
                  FROM metrics WHERE name = ?1 AND timestamp >= ?2 AND timestamp <= ?3 \
                  AND {ss_expr} = 'cli'"
             ),
@@ -6055,7 +6061,7 @@ fn codex_event_totals(
 
     let tool_calls: i64 = conn
         .query_row(
-            "SELECT COALESCE(SUM(COALESCE(value_int, CAST(value_double AS INTEGER))), 0) \
+            "SELECT COALESCE(SUM(COALESCE(value_int, value_double)), 0) \
              FROM metrics WHERE name = ?1 AND timestamp >= ?2 AND timestamp <= ?3",
             rusqlite::params![mnames::CODEX_TOOL_CALL.to_string(), start, end],
             |r| r.get(0),
@@ -6069,7 +6075,7 @@ fn codex_event_totals(
     let retries: i64 = conn
         .query_row(
             &format!(
-                "SELECT COALESCE(SUM(COALESCE(value_int, CAST(value_double AS INTEGER))), 0) \
+                "SELECT COALESCE(SUM(COALESCE(value_int, value_double)), 0) \
                  FROM metrics WHERE name = ?1 AND timestamp >= ?2 AND timestamp <= ?3 \
                  AND {ok_expr} = 'false'"
             ),
@@ -11225,6 +11231,41 @@ mod tests {
             by_label.get("a"),
             Some(&120.0),
             "reset -> delta is in-window last value"
+        );
+    }
+
+    #[test]
+    fn counter_window_deltas_fractional_counter_keeps_precision() {
+        // Double-typed OTLP sums (e.g. USD cost counters) land in
+        // value_double and must not be integer-cast on read (#252).
+        let conn = setup_test_db();
+        let a = r#"{"agent":"a","session.id":"s1"}"#;
+        conn.execute(
+            "INSERT INTO metrics (name, metric_type, timestamp, value_double, attributes) \
+             VALUES (?1, 1, ?2, ?3, ?4)",
+            rusqlite::params!["cost.usage", T0, 10.5_f64, a],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO metrics (name, metric_type, timestamp, value_double, attributes) \
+             VALUES (?1, 1, ?2, ?3, ?4)",
+            rusqlite::params!["cost.usage", T0 + 1, 19.87_f64, a],
+        )
+        .unwrap();
+
+        let deltas = counter_window_deltas(
+            &conn,
+            "cost.usage",
+            &["$.agent"],
+            Some(T0 + 1),
+            Some(T0 + 1),
+        )
+        .unwrap();
+        let by_label = deltas_by_label(deltas);
+        let delta = by_label.get("a").copied().unwrap_or(f64::NAN);
+        assert!(
+            (delta - 9.37).abs() < 1e-9,
+            "19.87 - 10.5 must not be floored to 9 by an integer cast; got {delta}"
         );
     }
 

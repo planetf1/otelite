@@ -377,6 +377,13 @@ pub fn print_metrics_table(metrics: &[MetricResponse], config: &Config) -> io::R
                     format!("{}", v)
                 }
             },
+            MetricValue::CounterDouble(v) => {
+                if metric.unit.as_deref() == Some("USD") {
+                    format!("${:.4}", v)
+                } else {
+                    format!("{}", v)
+                }
+            },
             MetricValue::Histogram(h) => format!("count={}, sum={:.2}", h.count, h.sum),
             MetricValue::Summary(s) => format!("count={}, sum={:.2}", s.count, s.sum),
         };
@@ -414,6 +421,13 @@ pub fn print_metric_details(metric: &MetricResponse, config: &Config) -> io::Res
         MetricValue::Counter(v) => {
             if metric.unit.as_deref() == Some("USD") {
                 writeln!(output, "Value:     ${:.4}", *v as f64).unwrap();
+            } else {
+                writeln!(output, "Value:     {}", v).unwrap();
+            }
+        },
+        MetricValue::CounterDouble(v) => {
+            if metric.unit.as_deref() == Some("USD") {
+                writeln!(output, "Value:     ${:.4}", v).unwrap();
             } else {
                 writeln!(output, "Value:     {}", v).unwrap();
             }

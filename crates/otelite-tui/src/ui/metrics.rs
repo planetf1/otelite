@@ -92,6 +92,7 @@ fn render_metrics_table(frame: &mut Frame, area: Rect, state: &MetricsState) {
             let latest_value = match &metric.value {
                 MetricValue::Gauge(v) => format!("{:.2}", v),
                 MetricValue::Counter(v) => format!("{}", v),
+                MetricValue::CounterDouble(v) => format!("{}", v),
                 MetricValue::Histogram(h) if h.count > 0 => {
                     format!("avg {:.1}", h.sum / h.count as f64)
                 },
@@ -215,6 +216,7 @@ fn render_metric_info(frame: &mut Frame, area: Rect, metric: &Metric) {
     let latest_value = match &metric.value {
         MetricValue::Gauge(v) => format!("{:.2}", v),
         MetricValue::Counter(v) => format!("{}", v),
+        MetricValue::CounterDouble(v) => format!("{}", v),
         MetricValue::Histogram(h) => format!("sum={:.2}, count={}", h.sum, h.count),
         MetricValue::Summary(s) => format!("sum={:.2}, count={}", s.sum, s.count),
     };
@@ -361,6 +363,7 @@ fn render_metric_chart(frame: &mut Frame, area: Rect, metric: &Metric, state: &M
     let display_text = match &metric.value {
         MetricValue::Gauge(v) => format!("Current: {:.2}", v),
         MetricValue::Counter(v) => format!("Total: {}", v),
+        MetricValue::CounterDouble(v) => format!("Total: {}", v),
         MetricValue::Histogram(h) => {
             format!(
                 "Count: {}, Sum: {:.2}, Buckets: {}",

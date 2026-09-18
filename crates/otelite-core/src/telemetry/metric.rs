@@ -34,8 +34,13 @@ pub enum MetricType {
     /// Gauge metric (instantaneous value)
     Gauge(f64),
 
-    /// Counter metric (monotonically increasing)
+    /// Counter metric (monotonically increasing), integer-valued
     Counter(u64),
+
+    /// Counter metric with a fractional value: OTLP double-typed Sums
+    /// (e.g. USD cost counters). Stored in `value_double`; integer
+    /// counters stay in `value_int` (#252).
+    CounterDouble(f64),
 
     /// Histogram metric (distribution of values)
     Histogram {

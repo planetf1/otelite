@@ -222,6 +222,7 @@ pub struct MetricResponse {
 pub enum MetricValue {
     Gauge(f64),
     Counter(i64),
+    CounterDouble(f64),
     Histogram(HistogramValue),
     Summary(SummaryValue),
 }
@@ -339,6 +340,7 @@ impl From<crate::telemetry::Metric> for MetricResponse {
         let (metric_type_str, value) = match metric.metric_type {
             MetricType::Gauge(v) => ("gauge", MetricValue::Gauge(v)),
             MetricType::Counter(v) => ("counter", MetricValue::Counter(v as i64)),
+            MetricType::CounterDouble(v) => ("counter", MetricValue::CounterDouble(v)),
             MetricType::Histogram {
                 count,
                 sum,

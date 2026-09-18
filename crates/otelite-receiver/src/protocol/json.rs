@@ -432,6 +432,49 @@ mod tests {
         );
     }
 
+    // --- Double-typed sums: JSON transport (#252) -------------------------
+    // The conversion layer (shared by both transports) maps AsDouble to the
+    // fractional counter arm; this pins the JSON transport end to end.
+
+    const AS_DOUBLE_SUM_JSON: &str = r#"{
+        "resourceMetrics": [{
+            "scopeMetrics": [{
+                "metrics": [{
+                    "name": "cost.usage",
+                    "sum": {
+                        "dataPoints": [{ "asDouble": __V__ }],
+                        "aggregationTemporality": 2,
+                        "isMonotonic": true
+                    }
+                }]
+            }]
+        }]
+    }"#;
+
+    #[test]
+    fn test_parse_metrics_json_double_sum_keeps_fraction() {
+        let json = AS_DOUBLE_SUM_JSON.replace("__V__", "19.87");
+        let value = sum_value(json.as_bytes());
+        assert_eq!(
+            value,
+            Some(
+                opentelemetry_proto::tonic::metrics::v1::number_data_point::Value::AsDouble(19.87)
+            )
+        );
+    }
+
+    #[test]
+    fn test_parse_metrics_json_negative_double_sum_preserved() {
+        // UpDownCounter delta: must survive the wire, the conversion
+        // (CounterDouble) and the saturating-cast era is over (#252).
+        let json = AS_DOUBLE_SUM_JSON.replace("__V__", "-1.5");
+        let value = sum_value(json.as_bytes());
+        assert_eq!(
+            value,
+            Some(opentelemetry_proto::tonic::metrics::v1::number_data_point::Value::AsDouble(-1.5))
+        );
+    }
+
     // --- Histogram/summary string counts (proto3 JSON uint64, #255) -----
     // opentelemetry-proto 0.32 deserialises the spec-compliant string form
     // of the fixed64 count fields; 0.31 rejected the whole export with a

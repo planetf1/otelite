@@ -11,6 +11,15 @@ have to work around), not implementation detail.
 
 ## [Unreleased]
 
+### Fixed
+
+- Double-valued counters (e.g. `claude_code.cost.usage`, USD cost sums) are
+  no longer truncated to integers at ingest — fractional values are stored
+  and read back exactly, and the CLI/API now render them with their decimals
+  (a cost counter that read `$19.x` now shows its true value); UpDownCounter
+  deltas (negative double sums) are preserved instead of saturating to zero
+  (#252)
+
 ## [0.1.147] - 2026-09-18
 
 ### Fixed
