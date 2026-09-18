@@ -26,6 +26,13 @@ have to work around), not implementation detail.
   over the environment); `OTELITE_RETENTION_DAYS=0` now means "keep
   forever" and turns the daily purge off, as does
   `OTELITE_AUTO_PURGE_ENABLED=false` (#253)
+- Retried span exports no longer duplicate rows: spans carry a unique
+  `(trace_id, span_id)` identity and a re-ingested batch is dropped
+  idempotently, so session token and cost totals no longer inflate when an
+  OTLP exporter retries a batch whose first write committed after its
+  timeout. Duplicates already present from past retries are removed once on
+  the first start after upgrading (a one-time, log-line-announced cleanup;
+  first start is slower on large databases) (#254)
 
 ## [0.1.147] - 2026-09-18
 

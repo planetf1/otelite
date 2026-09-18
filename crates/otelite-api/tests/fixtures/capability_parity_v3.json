@@ -1,7 +1,7 @@
 {
  "api": {
   "canonical_span_count": 31,
-  "duplicate_span_count": 1,
+  "duplicate_span_count": 0,
   "filters_applied": [],
   "reports": [
    {
@@ -469,7 +469,7 @@
  },
  "cli": {
   "canonical_span_count": 31,
-  "duplicate_span_count": 1,
+  "duplicate_span_count": 0,
   "filters_applied": [],
   "reports": [
    {
@@ -951,7 +951,7 @@
   "reports": [],
   "truncated": false
  },
- "description": "Frozen capability-parity fixture (#120/#149). Spans cover: full native telemetry (standard-otel), sparse output + invalid TTFT, a degenerate TTFT group (n=12, 95% buffered), claude-code flat token keys with one duplicate OTLP delivery, opencode zero-input tokens, codex timing-only (no token signature), and one unidentified LLM-ish span (un1: model + system, no usage attribute) feeding the unidentified-emitter diagnostics. Regenerate only with a version bump and a changelog note; tests deep-equal the CLI json-compact output against the API response.",
+ "description": "Frozen capability-parity fixture (#120/#149). Spans cover: full native telemetry (standard-otel), sparse output + invalid TTFT, a degenerate TTFT group (n=12, 95% buffered), claude-code flat token keys with one duplicate OTLP delivery (collapsed at ingest by the storage-layer span identity constraint, #254), opencode zero-input tokens, codex timing-only (no token signature), and one unidentified LLM-ish span (un1: model + system, no usage attribute) feeding the unidentified-emitter diagnostics. Regenerate only with a version bump and a changelog note; tests deep-equal the CLI json-compact output against the API response.",
  "spans": [
   {
    "attrs": {

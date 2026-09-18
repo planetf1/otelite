@@ -153,7 +153,7 @@ async fn cli_capabilities_pretty_prints_vocabulary() {
     assert!(stdout.contains("sparse/invalid"));
     assert!(stdout.contains("available/degenerate"));
     assert!(stdout.contains("absent/not_assessed/unavailable"));
-    assert!(stdout.contains("1 duplicate deliveries collapsed"));
+    assert!(stdout.contains("0 duplicate deliveries collapsed"));
     // Codex correlation provenance renders as candidate counts (v2).
     assert!(stdout.contains("1/2/1/2"));
     assert!(stdout.contains("sparse/reliable/correlated"));

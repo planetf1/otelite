@@ -360,6 +360,10 @@ fn test_analytics_adapters_select_codex_requests_and_opencode_llm_calls() {
 #[test]
 fn test_genai_capability_report_keeps_codex_usage_unavailable_and_deduplicates_spans() {
     let conn = setup_test_db();
+    // Retried exports used to insert a second identical (trace_id, span_id)
+    // row, which the reader then had to dedup at query time. Since the
+    // storage-layer identity constraint (#254) the duplicate can no longer
+    // be inserted at all — the writer drops it, raw inserts are rejected.
     conn.execute(
         r#"INSERT INTO spans (trace_id, span_id, name, kind, start_time, end_time, attributes, status_code)
            VALUES ('codex-trace', 'request', 'run_sampling_request', 0, 0, 4000000000,
@@ -367,13 +371,16 @@ fn test_genai_capability_report_keeps_codex_usage_unavailable_and_deduplicates_s
         [],
     )
     .unwrap();
-    conn.execute(
+    let retry = conn.execute(
         r#"INSERT INTO spans (trace_id, span_id, name, kind, start_time, end_time, attributes, status_code)
            VALUES ('codex-trace', 'request', 'run_sampling_request', 0, 0, 4000000000,
                    '{"model":"codex-test-model","otel.scope.name":"codex_cli_rs"}', 1)"#,
         [],
-    )
-    .unwrap();
+    );
+    assert!(
+        retry.is_err(),
+        "duplicate (trace_id, span_id) must be rejected by the storage layer"
+    );
     conn.execute(
         r#"INSERT INTO spans (trace_id, span_id, name, kind, start_time, end_time, attributes, status_code)
            VALUES ('opencode-trace', 'request', 'opencode.llm', 0, 0, 2000000000,
@@ -385,7 +392,7 @@ fn test_genai_capability_report_keeps_codex_usage_unavailable_and_deduplicates_s
     let report =
         reader::query_genai_capabilities(&conn, None, None, &GenAiFilters::default()).unwrap();
     assert_eq!(report.canonical_span_count, 2);
-    assert_eq!(report.duplicate_span_count, 1);
+    assert_eq!(report.duplicate_span_count, 0);
     let codex = report
         .reports
         .iter()

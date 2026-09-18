@@ -245,7 +245,16 @@ pub fn create_logs_batch(count: usize) -> Vec<ExportLogsServiceRequest> {
 
 /// Create a batch of traces requests for load testing
 pub fn create_traces_batch(count: usize) -> Vec<ExportTraceServiceRequest> {
-    (0..count).map(|_| create_sample_traces_request()).collect()
+    (0..count)
+        .map(|i| {
+            let mut request = create_sample_traces_request();
+            // Unique span identity per request: (trace_id, span_id) is the
+            // storage-layer identity (#254), so a batch of identical
+            // samples would collapse to a single stored row.
+            request.resource_spans[0].scope_spans[0].spans[0].span_id[7] = (i % 251) as u8 + 1;
+            request
+        })
+        .collect()
 }
 
 #[cfg(test)]

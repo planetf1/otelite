@@ -298,9 +298,15 @@ fn create_test_log_with_attributes() -> LogRecord {
 }
 
 fn create_test_span(name: &str) -> Span {
+    // Unique identity per span: the (trace_id, span_id) pair is a
+    // uniqueness constraint since the retry-dedup schema change (#254), so
+    // deriving both from name length (as before) would collide across
+    // same-length names.
+    static COUNTER: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1);
+    let n = COUNTER.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
     Span {
-        trace_id: format!("{:032x}", name.len()),
-        span_id: format!("{:016x}", name.len()),
+        trace_id: format!("{:032x}", n),
+        span_id: format!("{:016x}", n),
         parent_span_id: None,
         name: name.to_string(),
         kind: SpanKind::Internal,

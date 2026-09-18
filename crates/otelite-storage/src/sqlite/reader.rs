@@ -9816,6 +9816,56 @@ mod tests {
         assert_eq!(logs.len(), 0);
     }
 
+    /// #254: a retried llm_request export (the exporter retries a batch
+    /// after a timeout while the first write commits) must not double the
+    /// session token totals that genai/usage is built on. Pre-fix the
+    /// retry inserted a second span row and both were summed.
+    #[test]
+    fn session_costs_unaffected_by_retried_span_export() {
+        use crate::sqlite::writer::write_span;
+        use otelite_core::telemetry::trace::{SpanKind, SpanStatus, StatusCode};
+        use otelite_core::telemetry::Span;
+
+        let conn = setup_test_db();
+        let attrs: HashMap<String, String> = [
+            ("session.id".to_string(), "sess1".to_string()),
+            ("model".to_string(), "claude-sonnet-4-5".to_string()),
+            ("input_tokens".to_string(), "100".to_string()),
+            ("output_tokens".to_string(), "50".to_string()),
+            ("cache_read_tokens".to_string(), "10".to_string()),
+            ("cache_creation_tokens".to_string(), "5".to_string()),
+        ]
+        .into_iter()
+        .collect();
+        let span = Span {
+            trace_id: "t1".to_string(),
+            span_id: "s1".to_string(),
+            parent_span_id: None,
+            name: otelite_core::semconv::LLM_REQUEST_SPAN_NAME.to_string(),
+            kind: SpanKind::Internal,
+            start_time: 1_700_000_000_000_000_000,
+            end_time: 1_700_000_000_500_000_000,
+            attributes: attrs,
+            events: Vec::new(),
+            status: SpanStatus {
+                code: StatusCode::Ok,
+                message: None,
+            },
+            resource: None,
+        };
+        write_span(&conn, &span).unwrap();
+        // The exporter's retry of the same batch:
+        write_span(&conn, &span).unwrap();
+
+        let rows = query_session_costs(&conn, None, None).unwrap();
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].session_id, "sess1");
+        assert_eq!(
+            rows[0].tokens, 165,
+            "the retried export must not double the session token total"
+        );
+    }
+
     #[test]
     fn test_parse_log_row_tolerates_malformed_json() {
         let conn = setup_test_db();
@@ -10179,7 +10229,7 @@ mod tests {
             conn.execute(
                 "INSERT INTO spans (trace_id, span_id, name, kind, start_time, end_time,
                                     attributes, events, resource, status_code)
-                 VALUES (?1, ?1 || '-s', 'n', 0, ?2, ?3, '{}', '[]', '{}', 0)",
+                 VALUES (?1, ?1 || '-' || ?3, 'n', 0, ?2, ?3, '{}', '[]', '{}', 0)",
                 rusqlite::params![trace, start, end],
             )
             .unwrap();

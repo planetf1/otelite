@@ -140,10 +140,12 @@ async fn capability_fixture_semantic_guards() {
     let fx = fixture();
     let api = &fx["api"];
 
-    // Duplicate OTLP delivery of (d0,s0) collapsed to one canonical span.
-    // v2 adds three Codex request spans (cx1/cx2/cx4).
+    // Duplicate OTLP delivery of (d0,s0) is dropped at ingest by the
+    // storage-layer span identity constraint (#254); the report sees the
+    // single canonical span. v2 adds three Codex request spans
+    // (cx1/cx2/cx4).
     assert_eq!(api["canonical_span_count"], 31);
-    assert_eq!(api["duplicate_span_count"], 1);
+    assert_eq!(api["duplicate_span_count"], 0);
     assert_eq!(api["truncated"], false);
 
     let reports: Vec<&serde_json::Value> = api["reports"].as_array().unwrap().iter().collect();

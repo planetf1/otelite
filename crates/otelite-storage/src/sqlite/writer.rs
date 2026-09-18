@@ -59,12 +59,17 @@ pub fn write_span(conn: &Connection, span: &Span) -> Result<()> {
     let resource = serde_json::to_string(&span.resource)?;
     let scope = scope_json(&span.attributes)?;
 
+    // ON CONFLICT DO NOTHING: a span's identity is (trace_id, span_id), and
+    // an OTLP exporter retrying a batch whose commit won the race re-sends
+    // the same identity — the duplicate is dropped instead of inflating
+    // span-based analytics (#254). Other constraint violations still error.
     conn.execute(
         "INSERT INTO spans (
             trace_id, span_id, parent_span_id, name, kind,
             start_time, end_time, attributes, events,
             status_code, status_message, resource, scope
-        ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13)",
+        ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13)
+        ON CONFLICT(trace_id, span_id) DO NOTHING",
         rusqlite::params![
             &span.trace_id,
             &span.span_id,
@@ -241,6 +246,38 @@ mod tests {
             .query_row("SELECT COUNT(*) FROM spans", [], |row| row.get(0))
             .unwrap();
         assert_eq!(count, 1);
+    }
+
+    /// Exporter retry: re-inserting a span with the same identity must not
+    /// duplicate the row (#254).
+    #[test]
+    fn test_write_span_retry_same_identity_not_duplicated() {
+        let conn = setup_test_db();
+
+        let span = Span {
+            trace_id: "trace123".to_string(),
+            span_id: "span456".to_string(),
+            parent_span_id: None,
+            name: "test-span".to_string(),
+            kind: SpanKind::Internal,
+            start_time: 1234567890,
+            end_time: 1234567900,
+            attributes: HashMap::new(),
+            events: Vec::new(),
+            status: SpanStatus {
+                code: StatusCode::Ok,
+                message: None,
+            },
+            resource: None,
+        };
+
+        write_span(&conn, &span).unwrap();
+        write_span(&conn, &span).unwrap(); // the retried export
+
+        let count: i64 = conn
+            .query_row("SELECT COUNT(*) FROM spans", [], |row| row.get(0))
+            .unwrap();
+        assert_eq!(count, 1, "the retried span must be ignored, not duplicated");
     }
 
     #[test]

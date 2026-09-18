@@ -415,6 +415,40 @@ pub fn initialize_schema(conn: &Connection) -> Result<()> {
         conn.execute("INSERT INTO logs_fts(logs_fts) VALUES ('rebuild')", [])?;
     }
 
+    // ── Versioned migrations (PRAGMA user_version) ─────────────────────────
+    // Pre-v2 databases are at user_version 0; each block below runs exactly
+    // once per database. Fresh databases pass through the same blocks with
+    // empty tables (no-op work).
+    let version: i32 = conn
+        .query_row("PRAGMA user_version", [], |row| row.get(0))
+        .unwrap_or(0);
+    if version < 2 {
+        // v2 (#254): a span's identity is (trace_id, span_id). OTLP
+        // exporters retry a batch after a timeout while the write is still
+        // committing, so retried spans used to insert duplicate rows and
+        // inflate span-based analytics (327 duplicate groups on a
+        // production database). Drop the retry copies — the highest id in
+        // each group is the retry; the lowest is the original — before
+        // adding the constraint. One-time cost scales with table size.
+        let removed = conn.execute(
+            "DELETE FROM spans WHERE id IN (
+                 SELECT s1.id FROM spans AS s1
+                 JOIN spans AS s2
+                   ON s1.trace_id = s2.trace_id AND s1.span_id = s2.span_id
+                 WHERE s1.id > s2.id)",
+            [],
+        )?;
+        if removed > 0 {
+            tracing::info!("schema v2: dropped {removed} duplicate span rows (OTLP retry dedup)");
+        }
+        conn.execute(
+            "CREATE UNIQUE INDEX IF NOT EXISTS idx_spans_trace_span \
+             ON spans(trace_id, span_id)",
+            [],
+        )?;
+        conn.pragma_update(None, "user_version", 2)?;
+    }
+
     Ok(())
 }
 
@@ -428,6 +462,84 @@ mod tests {
         let conn = Connection::open_in_memory().unwrap();
         let result = initialize_schema(&conn);
         assert!(result.is_ok());
+    }
+
+    /// #254: the v2 migration dedups spans already retried into a pre-v2
+    /// database (duplicate `(trace_id, span_id)` rows from exporter
+    /// retries), keeps the first write, adds the uniqueness constraint,
+    /// and never re-runs.
+    #[test]
+    fn test_schema_v2_dedups_retried_spans() {
+        let conn = Connection::open_in_memory().unwrap();
+        // Simulate a pre-v2 database: a v1-shaped spans table (no unique
+        // index, user_version 0) holding a retried export — the same
+        // (trace_id, span_id) twice — plus one clean span.
+        conn.execute_batch(
+            "CREATE TABLE spans (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                trace_id TEXT NOT NULL,
+                span_id TEXT NOT NULL,
+                parent_span_id TEXT,
+                name TEXT NOT NULL,
+                kind INTEGER NOT NULL,
+                start_time INTEGER NOT NULL,
+                end_time INTEGER NOT NULL,
+                attributes TEXT,
+                events TEXT,
+                links TEXT,
+                status_code INTEGER,
+                status_message TEXT,
+                resource TEXT,
+                scope TEXT,
+                flags INTEGER,
+                created_at INTEGER NOT NULL DEFAULT (strftime('%s', 'now'))
+            );
+            INSERT INTO spans (trace_id, span_id, name, kind, start_time, end_time)
+                VALUES ('t1', 's1', 'a', 0, 1, 2),
+                       ('t1', 's1', 'a', 0, 1, 2),
+                       ('t2', 's2', 'b', 0, 3, 4);",
+        )
+        .unwrap();
+
+        initialize_schema(&conn).unwrap();
+
+        // The retry is dropped; the original (lowest id) is kept.
+        let (count, kept_id): (i64, i64) = conn
+            .query_row(
+                "SELECT COUNT(*), MIN(id) FROM spans \
+                 WHERE trace_id = 't1' AND span_id = 's1'",
+                [],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
+            .unwrap();
+        assert_eq!(count, 1);
+        assert_eq!(kept_id, 1);
+        let total: i64 = conn
+            .query_row("SELECT COUNT(*) FROM spans", [], |row| row.get(0))
+            .unwrap();
+        assert_eq!(total, 2);
+
+        // Constraint + version are set.
+        let version: i32 = conn
+            .query_row("PRAGMA user_version", [], |row| row.get(0))
+            .unwrap();
+        assert_eq!(version, 2);
+        let has_index: bool = conn
+            .query_row(
+                "SELECT COUNT(*) FROM sqlite_master \
+                 WHERE type = 'index' AND name = 'idx_spans_trace_span'",
+                [],
+                |row| Ok(row.get::<_, i64>(0)? == 1),
+            )
+            .unwrap();
+        assert!(has_index);
+
+        // Re-init is a no-op: the migration ran exactly once.
+        initialize_schema(&conn).unwrap();
+        let total_after: i64 = conn
+            .query_row("SELECT COUNT(*) FROM spans", [], |row| row.get(0))
+            .unwrap();
+        assert_eq!(total_after, 2);
     }
 
     #[test]
