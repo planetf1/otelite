@@ -11,6 +11,8 @@ have to work around), not implementation detail.
 
 ## [Unreleased]
 
+## [0.1.153] - 2026-09-18
+
 ### Fixed
 
 - The daemon's query-planner statistics refresh (`ANALYZE`) now actually
