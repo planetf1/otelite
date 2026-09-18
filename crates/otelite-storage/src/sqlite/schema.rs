@@ -70,7 +70,13 @@ pub fn initialize_schema(conn: &Connection) -> Result<()> {
          CREATE INDEX IF NOT EXISTS idx_spans_start_time ON spans(start_time);
          CREATE INDEX IF NOT EXISTS idx_spans_end_time ON spans(end_time);
          CREATE INDEX IF NOT EXISTS idx_spans_parent_span_id ON spans(parent_span_id) WHERE parent_span_id IS NOT NULL;
-         CREATE INDEX IF NOT EXISTS idx_spans_created_at ON spans(created_at);",
+         CREATE INDEX IF NOT EXISTS idx_spans_created_at ON spans(created_at);
+         -- Covering index for per-trace list summaries (#251): the
+         -- trace-list endpoint computes MIN(start_time)/MAX(end_time)/
+         -- COUNT(*)/error flag per selected trace; covering keeps that
+         -- aggregation on the index alone (2.9M-span agent traces made
+         -- the row-fetching form take ~5 s on a production database).
+         CREATE INDEX IF NOT EXISTS idx_spans_trace_agg ON spans(trace_id, start_time, end_time, status_code);",
     )?;
 
     // Partial indexes for GenAI analytics. GenAI queries filter by a

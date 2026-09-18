@@ -11,7 +11,6 @@ use otelite_core::api::{
 };
 use otelite_core::query::{Operator, QueryPredicate, QueryValue};
 use otelite_core::storage::QueryParams;
-use otelite_core::telemetry::Span;
 use serde::{Deserialize, Serialize};
 
 /// Query parameters for trace listing
@@ -215,79 +214,23 @@ pub async fn list_traces(
         }
     }
 
-    // Query spans from storage — two-step: get N most-recent trace IDs, then all their spans
-    let spans = state
+    // Per-trace summaries straight from storage (#251): the old path
+    // fetched and parsed every span of the selected traces (2.9M spans
+    // for a 1 h window on a production database) to derive these eight
+    // fields; the summaries are computed in SQL instead.
+    let mut trace_entries: Vec<TraceEntry> = state
         .storage
-        .query_spans_for_trace_list(&query, limit)
+        .query_trace_summaries(&query, limit)
         .await
         .map_err(|e| {
             (
                 StatusCode::INTERNAL_SERVER_ERROR,
-                Json(ErrorResponse::storage_error(format!("query spans: {}", e))),
+                Json(ErrorResponse::storage_error(format!(
+                    "query trace summaries: {}",
+                    e
+                ))),
             )
         })?;
-
-    // Spans carry resource attributes on the current data model; the
-    // `service` and `resource` params above filter on them via predicates.
-
-    // Group spans by trace_id
-    let mut traces_map: std::collections::HashMap<String, Vec<Span>> =
-        std::collections::HashMap::new();
-    for span in spans {
-        traces_map
-            .entry(span.trace_id.clone())
-            .or_default()
-            .push(span);
-    }
-
-    // Convert to trace entries
-    let mut trace_entries: Vec<TraceEntry> = traces_map
-        .into_iter()
-        .map(|(trace_id, spans)| {
-            let start_time = spans.iter().map(|s| s.start_time).min().unwrap_or(0);
-            let end_time = spans.iter().map(|s| s.end_time).max().unwrap_or(0);
-            let duration = end_time - start_time;
-
-            let root_span = spans
-                .iter()
-                .find(|s| s.parent_span_id.is_none())
-                .or_else(|| spans.first());
-
-            let root_span_name = root_span
-                .map(|s| s.name.clone())
-                .unwrap_or_else(|| "Unknown".to_string());
-
-            let service_names: Vec<String> = {
-                let mut names: Vec<String> = spans
-                    .iter()
-                    .filter_map(|s| s.resource.as_ref())
-                    .filter_map(|r| r.attributes.get("service.name"))
-                    .cloned()
-                    .collect::<std::collections::HashSet<_>>()
-                    .into_iter()
-                    .collect();
-                names.sort();
-                names
-            };
-
-            let has_errors = spans.iter().any(|s| {
-                matches!(
-                    s.status.code,
-                    otelite_core::telemetry::trace::StatusCode::Error
-                )
-            });
-
-            TraceEntry {
-                trace_id,
-                root_span_name,
-                start_time,
-                duration,
-                span_count: spans.len(),
-                service_names,
-                has_errors,
-            }
-        })
-        .collect();
 
     // Sort by start time (newest first)
     trace_entries.sort_by_key(|b| std::cmp::Reverse(b.start_time));

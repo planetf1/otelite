@@ -298,6 +298,18 @@ impl StorageBackend for SqliteBackend {
         .await
     }
 
+    async fn query_trace_summaries(
+        &self,
+        params: &QueryParams,
+        trace_limit: usize,
+    ) -> Result<Vec<otelite_core::api::TraceEntry>> {
+        let params = params.clone();
+        self.read_query(move |conn| {
+            reader::query_trace_summaries(conn, &params, trace_limit).map_err(StorageError::from)
+        })
+        .await
+    }
+
     async fn query_metrics(&self, params: &QueryParams) -> Result<Vec<Metric>> {
         let params = params.clone();
         self.read_query(move |conn| {

@@ -122,6 +122,128 @@ pub fn query_spans(conn: &Connection, params: &QueryParams) -> Result<Vec<Span>>
     Ok(spans)
 }
 
+/// Phase 1 of the trace-list queries: find the trace IDs of the N
+/// most-recent traces matching the filters.
+///
+/// Scanning spans by start_time DESC, a trace_id's FIRST encounter is
+/// exactly its MAX(start_time) — any span with a later start_time would
+/// have been seen earlier in the scan. So the first N distinct trace IDs
+/// encountered are precisely the N traces with the largest MAX(start_time)
+/// (the old GROUP BY + ORDER BY MAX result), but the scan can stop at the
+/// Nth distinct value instead of reading the whole time window: on a
+/// one-day window that is a few hundred rows instead of 2M+ (90s -> ms).
+fn select_recent_trace_ids(
+    conn: &Connection,
+    params: &QueryParams,
+    trace_limit: usize,
+) -> Result<Vec<String>> {
+    if let Some(ref trace_id) = params.trace_id {
+        // A specific trace may be old; seeking it directly via the
+        // trace_id index beats scanning backwards from the newest. The
+        // window still has to match the old semantics: the trace only
+        // qualifies if it has at least one span inside it.
+        let mut check_sql = String::from("SELECT 1 FROM spans WHERE trace_id = ?");
+        let mut check_params: Vec<Box<dyn rusqlite::ToSql>> =
+            vec![Box::new(trace_id.clone()) as Box<dyn rusqlite::ToSql>];
+        if let Some(start) = params.start_time {
+            check_sql.push_str(" AND start_time >= ?");
+            check_params.push(Box::new(start));
+        }
+        if let Some(end) = params.end_time {
+            check_sql.push_str(" AND end_time <= ?");
+            check_params.push(Box::new(end));
+        }
+        // The trace only qualifies if a span inside the window also
+        // matches the structured predicates, mirroring the span-list
+        // query's WHERE clause.
+        append_predicates(
+            "spans",
+            &params.predicates,
+            &mut check_sql,
+            &mut check_params,
+        )?;
+        check_sql.push_str(" LIMIT 1");
+        let mut stmt = conn
+            .prepare(&check_sql)
+            .map_err(|e| StorageError::QueryError(format!("Failed to prepare query: {}", e)))?;
+        let refs: Vec<&dyn rusqlite::ToSql> = check_params.iter().map(|p| p.as_ref()).collect();
+        match stmt.query_row(refs.as_slice(), |row| row.get::<_, i64>(0)) {
+            Ok(_) => Ok(vec![trace_id.clone()]),
+            // No span of this trace inside the window: the old query
+            // returned an empty list in that case.
+            Err(rusqlite::Error::QueryReturnedNoRows) => Ok(Vec::new()),
+            Err(e) => Err(StorageError::QueryError(format!(
+                "Failed to check trace window: {}",
+                e
+            ))),
+        }
+    } else if trace_limit == 0 {
+        Ok(Vec::new())
+    } else {
+        let mut sql = String::from("SELECT trace_id, start_time FROM spans WHERE 1=1");
+        let mut scan_params: Vec<Box<dyn rusqlite::ToSql>> = Vec::new();
+        // The window's LOWER bound is deliberately NOT in the WHERE
+        // clause. With `start_time >= ?` present, the plan for this
+        // shape is statistics-dependent: under some ANALYZE states
+        // the planner picks a forward range scan over the whole
+        // window plus a full sort before the first row is produced
+        // (observed on the live 35 GB DB on 2026-09-08: 1.9 s
+        // measured; 2.7 s warm / 11.7 s cold via the API), which
+        // makes the early exit below useless. Without the lower
+        // bound the only viable plan is a pure reverse walk of
+        // idx_spans_start_time — stable across statistics — and the
+        // walk stops at the Nth distinct trace: a few hundred rows
+        // instead of the whole window. Window semantics are
+        // preserved: the walk is start_time DESC, so the first row
+        // below the window start is the last row any selected trace
+        // could qualify with; spans older than that are never seen.
+        if let Some(end) = params.end_time {
+            sql.push_str(" AND end_time <= ?");
+            scan_params.push(Box::new(end));
+        }
+        // Structured predicates (session.id / gen_ai.* / attributes)
+        // must constrain trace SELECTION exactly as they constrain
+        // the span list — otherwise a trace filtered out of /spans
+        // would still be picked here and its spans returned.
+        append_predicates("spans", &params.predicates, &mut sql, &mut scan_params)?;
+        sql.push_str(" ORDER BY start_time DESC");
+
+        let mut stmt = conn
+            .prepare(&sql)
+            .map_err(|e| StorageError::QueryError(format!("Failed to prepare query: {}", e)))?;
+        let refs: Vec<&dyn rusqlite::ToSql> = scan_params.iter().map(|p| p.as_ref()).collect();
+        let rows = stmt
+            .query_map(refs.as_slice(), |row| {
+                Ok((row.get::<_, String>(0)?, row.get::<_, i64>(1)?))
+            })
+            .map_err(|e| StorageError::QueryError(format!("Failed to execute query: {}", e)))?;
+
+        let window_start = params.start_time;
+        let mut seen: Vec<String> = Vec::new();
+        let mut seen_set: std::collections::HashSet<String> =
+            std::collections::HashSet::with_capacity(trace_limit);
+        for row in rows {
+            let (tid, start) = row
+                .map_err(|e| StorageError::QueryError(format!("Failed to parse results: {}", e)))?;
+            // Ordered walk: once start times drop below the window
+            // start, every later row is older — the window's lower
+            // bound, applied here instead of in the WHERE clause.
+            if let Some(ws) = window_start {
+                if start < ws {
+                    break;
+                }
+            }
+            if seen_set.insert(tid.clone()) {
+                seen.push(tid);
+                if seen.len() >= trace_limit {
+                    break;
+                }
+            }
+        }
+        Ok(seen)
+    }
+}
+
 /// Query all spans belonging to the N most-recent traces matching the filters.
 /// Avoids the "big trace eats the span budget" problem in list_traces.
 pub fn query_spans_for_trace_list(
@@ -129,125 +251,8 @@ pub fn query_spans_for_trace_list(
     params: &QueryParams,
     trace_limit: usize,
 ) -> Result<Vec<Span>> {
-    // Phase 1: find the trace IDs of the N most-recent traces.
-    //
-    // Scanning spans by start_time DESC, a trace_id's FIRST encounter is
-    // exactly its MAX(start_time) — any span with a later start_time would
-    // have been seen earlier in the scan. So the first N distinct trace IDs
-    // encountered are precisely the N traces with the largest MAX(start_time)
-    // (the old GROUP BY + ORDER BY MAX result), but the scan can stop at the
-    // Nth distinct value instead of reading the whole time window: on a
-    // one-day window that is a few hundred rows instead of 2M+ (90s -> ms).
-    let (trace_ids, mut outer_params): (Vec<String>, Vec<Box<dyn rusqlite::ToSql>>) =
-        if let Some(ref trace_id) = params.trace_id {
-            // A specific trace may be old; seeking it directly via the
-            // trace_id index beats scanning backwards from the newest. The
-            // window still has to match the old semantics: the trace only
-            // qualifies if it has at least one span inside it.
-            let mut check_sql = String::from("SELECT 1 FROM spans WHERE trace_id = ?");
-            let mut check_params: Vec<Box<dyn rusqlite::ToSql>> =
-                vec![Box::new(trace_id.clone()) as Box<dyn rusqlite::ToSql>];
-            if let Some(start) = params.start_time {
-                check_sql.push_str(" AND start_time >= ?");
-                check_params.push(Box::new(start));
-            }
-            if let Some(end) = params.end_time {
-                check_sql.push_str(" AND end_time <= ?");
-                check_params.push(Box::new(end));
-            }
-            // The trace only qualifies if a span inside the window also
-            // matches the structured predicates, mirroring the span-list
-            // query's WHERE clause.
-            append_predicates(
-                "spans",
-                &params.predicates,
-                &mut check_sql,
-                &mut check_params,
-            )?;
-            check_sql.push_str(" LIMIT 1");
-            let mut stmt = conn
-                .prepare(&check_sql)
-                .map_err(|e| StorageError::QueryError(format!("Failed to prepare query: {}", e)))?;
-            let refs: Vec<&dyn rusqlite::ToSql> = check_params.iter().map(|p| p.as_ref()).collect();
-            match stmt.query_row(refs.as_slice(), |row| row.get::<_, i64>(0)) {
-                Ok(_) => {},
-                // No span of this trace inside the window: the old query
-                // returned an empty list in that case.
-                Err(rusqlite::Error::QueryReturnedNoRows) => return Ok(Vec::new()),
-                Err(e) => {
-                    return Err(StorageError::QueryError(format!(
-                        "Failed to check trace window: {}",
-                        e
-                    )))
-                },
-            }
-            (vec![trace_id.clone()], Vec::new())
-        } else if trace_limit == 0 {
-            (Vec::new(), Vec::new())
-        } else {
-            let mut sql = String::from("SELECT trace_id, start_time FROM spans WHERE 1=1");
-            let mut scan_params: Vec<Box<dyn rusqlite::ToSql>> = Vec::new();
-            // The window's LOWER bound is deliberately NOT in the WHERE
-            // clause. With `start_time >= ?` present, the plan for this
-            // shape is statistics-dependent: under some ANALYZE states
-            // the planner picks a forward range scan over the whole
-            // window plus a full sort before the first row is produced
-            // (observed on the live 35 GB DB on 2026-09-08: 1.9 s
-            // measured; 2.7 s warm / 11.7 s cold via the API), which
-            // makes the early exit below useless. Without the lower
-            // bound the only viable plan is a pure reverse walk of
-            // idx_spans_start_time — stable across statistics — and the
-            // walk stops at the Nth distinct trace: a few hundred rows
-            // instead of the whole window. Window semantics are
-            // preserved: the walk is start_time DESC, so the first row
-            // below the window start is the last row any selected trace
-            // could qualify with; spans older than that are never seen.
-            if let Some(end) = params.end_time {
-                sql.push_str(" AND end_time <= ?");
-                scan_params.push(Box::new(end));
-            }
-            // Structured predicates (session.id / gen_ai.* / attributes)
-            // must constrain trace SELECTION exactly as they constrain
-            // the span list — otherwise a trace filtered out of /spans
-            // would still be picked here and its spans returned.
-            append_predicates("spans", &params.predicates, &mut sql, &mut scan_params)?;
-            sql.push_str(" ORDER BY start_time DESC");
-
-            let mut stmt = conn
-                .prepare(&sql)
-                .map_err(|e| StorageError::QueryError(format!("Failed to prepare query: {}", e)))?;
-            let refs: Vec<&dyn rusqlite::ToSql> = scan_params.iter().map(|p| p.as_ref()).collect();
-            let rows = stmt
-                .query_map(refs.as_slice(), |row| {
-                    Ok((row.get::<_, String>(0)?, row.get::<_, i64>(1)?))
-                })
-                .map_err(|e| StorageError::QueryError(format!("Failed to execute query: {}", e)))?;
-
-            let window_start = params.start_time;
-            let mut seen: Vec<String> = Vec::new();
-            let mut seen_set: std::collections::HashSet<String> =
-                std::collections::HashSet::with_capacity(trace_limit);
-            for row in rows {
-                let (tid, start) = row.map_err(|e| {
-                    StorageError::QueryError(format!("Failed to parse results: {}", e))
-                })?;
-                // Ordered walk: once start times drop below the window
-                // start, every later row is older — the window's lower
-                // bound, applied here instead of in the WHERE clause.
-                if let Some(ws) = window_start {
-                    if start < ws {
-                        break;
-                    }
-                }
-                if seen_set.insert(tid.clone()) {
-                    seen.push(tid);
-                    if seen.len() >= trace_limit {
-                        break;
-                    }
-                }
-            }
-            (seen, Vec::new())
-        };
+    let trace_ids = select_recent_trace_ids(conn, params, trace_limit)?;
+    let mut outer_params: Vec<Box<dyn rusqlite::ToSql>> = Vec::new();
 
     if trace_ids.is_empty() {
         return Ok(Vec::new());
@@ -279,6 +284,170 @@ pub fn query_spans_for_trace_list(
         .map_err(|e| StorageError::QueryError(format!("Failed to parse results: {}", e)))?;
 
     Ok(spans)
+}
+
+/// Per-trace summaries for the N most-recent traces matching the filters,
+/// computed in SQL instead of materialising every span of those traces
+/// (#251). A single 1 h window on a production-scale database sits behind
+/// 2.9M spans for the top-50 traces; the old phase-2 fetched and parsed
+/// all of them to derive eight aggregate fields per trace.
+///
+/// Aggregates (start/end/count/error flag) come from the covering
+/// `idx_spans_trace_agg` index; the root name is looked up per selected
+/// trace and service names are sampled from each trace's boundary rows
+/// (resources are per-process — see the implementation note). The result
+/// carries the same semantics the spans-based grouping produced: root =
+/// newest span without a parent (fallback: newest span), service names
+/// de-duplicated and sorted, spans outside the window included for
+/// selected traces.
+pub fn query_trace_summaries(
+    conn: &Connection,
+    params: &QueryParams,
+    trace_limit: usize,
+) -> Result<Vec<otelite_core::api::TraceEntry>> {
+    use otelite_core::api::TraceEntry;
+
+    let trace_ids = select_recent_trace_ids(conn, params, trace_limit)?;
+    if trace_ids.is_empty() {
+        return Ok(Vec::new());
+    }
+    let placeholders = vec!["?"; trace_ids.len()].join(", ");
+    let refs: Vec<&dyn rusqlite::ToSql> = trace_ids
+        .iter()
+        .map(|t| t as &dyn rusqlite::ToSql)
+        .collect();
+
+    // Exact aggregates, index-only via idx_spans_trace_agg. The rowid
+    // bounds feed the sampled service-name pass below.
+    let agg_sql = format!(
+        "SELECT trace_id, MIN(start_time), MAX(end_time), COUNT(*), \
+         MAX(CASE WHEN status_code = 2 THEN 1 ELSE 0 END), MIN(rowid), MAX(rowid) \
+         FROM spans WHERE trace_id IN ({placeholders}) GROUP BY trace_id"
+    );
+    let mut stmt = conn.prepare(&agg_sql).map_err(|e| {
+        StorageError::QueryError(format!("Failed to prepare trace summary query: {}", e))
+    })?;
+    let mut entries: std::collections::HashMap<String, TraceEntry> =
+        std::collections::HashMap::new();
+    let mut rowid_bounds: std::collections::HashMap<String, (i64, i64)> =
+        std::collections::HashMap::new();
+    let rows = stmt
+        .query_map(refs.as_slice(), |row| {
+            Ok((
+                row.get::<_, String>(0)?,
+                row.get::<_, i64>(1)?,
+                row.get::<_, i64>(2)?,
+                row.get::<_, i64>(3)?,
+                row.get::<_, i64>(4)?,
+                row.get::<_, i64>(5)?,
+                row.get::<_, i64>(6)?,
+            ))
+        })
+        .map_err(|e| {
+            StorageError::QueryError(format!("Failed to execute trace summary query: {}", e))
+        })?;
+    for row in rows {
+        let (trace_id, start_time, end_time, count, has_errors, min_rowid, max_rowid) = row
+            .map_err(|e| {
+                StorageError::QueryError(format!("Failed to parse trace summary: {}", e))
+            })?;
+        rowid_bounds.insert(trace_id.clone(), (min_rowid, max_rowid));
+        entries.insert(
+            trace_id.clone(),
+            TraceEntry {
+                trace_id,
+                root_span_name: String::new(),
+                start_time,
+                duration: end_time - start_time,
+                span_count: count as usize,
+                service_names: Vec::new(),
+                has_errors: has_errors == 1,
+            },
+        );
+    }
+    drop(stmt);
+
+    // Root name per trace: newest span without a parent; fallback newest
+    // span; "Unknown" if the trace has no spans (not reachable via
+    // select_recent_trace_ids, but keep the old guard).
+    let mut root_stmt = conn
+        .prepare(
+            "SELECT COALESCE(\
+                (SELECT r.name FROM spans r WHERE r.trace_id = ?1 AND r.parent_span_id IS NULL \
+                 ORDER BY r.start_time DESC LIMIT 1), \
+                (SELECT f.name FROM spans f WHERE f.trace_id = ?1 ORDER BY f.start_time DESC LIMIT 1) \
+             )",
+        )
+        .map_err(|e| StorageError::QueryError(format!("Failed to prepare root span query: {}", e)))?;
+    for trace_id in &trace_ids {
+        let root: Option<String> = root_stmt
+            .query_row([trace_id.as_str()], |row| row.get(0))
+            .ok()
+            .flatten();
+        if let Some(entry) = entries.get_mut(trace_id) {
+            entry.root_span_name = root.unwrap_or_else(|| "Unknown".to_string());
+        }
+    }
+    drop(root_stmt);
+
+    // Distinct service names per trace, sampled from each trace's boundary
+    // rows (#251). Resources are per-process, so the services a trace spans
+    // are carried by its oldest/newest spans; the exact full scan of 2.9M
+    // spans for json_extract took ~1.3 s, the ~500-row boundary sample
+    // ~ms. A trace whose MIDDLE spans come from a third process is the
+    // documented loss case (its service would be missing from the badge).
+    // (Resources serialise as {"attributes": {...}}.)
+    let mut sample_rowids: Vec<i64> = Vec::new();
+    for (min_r, max_r) in rowid_bounds.values() {
+        for d in 0..5 {
+            if *min_r + d >= 1 {
+                sample_rowids.push(*min_r + d);
+            }
+            if *max_r - d >= 1 {
+                sample_rowids.push(*max_r - d);
+            }
+        }
+    }
+    sample_rowids.sort();
+    sample_rowids.dedup();
+    if !sample_rowids.is_empty() {
+        let row_ph = vec!["?"; sample_rowids.len()].join(", ");
+        let svc_sql = format!(
+            "SELECT DISTINCT trace_id, json_extract(resource, '$.attributes.\"service.name\"') \
+             FROM spans WHERE rowid IN ({row_ph}) \
+             AND json_valid(resource) \
+             AND json_extract(resource, '$.attributes.\"service.name\"') IS NOT NULL"
+        );
+        let svc_refs: Vec<&dyn rusqlite::ToSql> = sample_rowids
+            .iter()
+            .map(|r| r as &dyn rusqlite::ToSql)
+            .collect();
+        let mut svc_stmt = conn.prepare(&svc_sql).map_err(|e| {
+            StorageError::QueryError(format!("Failed to prepare service name query: {}", e))
+        })?;
+        let svc_rows = svc_stmt
+            .query_map(svc_refs.as_slice(), |row| {
+                Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+            })
+            .map_err(|e| {
+                StorageError::QueryError(format!("Failed to execute service name query: {}", e))
+            })?;
+        for row in svc_rows {
+            let (trace_id, service) = row.map_err(|e| {
+                StorageError::QueryError(format!("Failed to parse service name row: {}", e))
+            })?;
+            if let Some(entry) = entries.get_mut(&trace_id) {
+                if !entry.service_names.contains(&service) {
+                    entry.service_names.push(service);
+                }
+            }
+        }
+    }
+    for entry in entries.values_mut() {
+        entry.service_names.sort();
+    }
+
+    Ok(entries.into_values().collect())
 }
 
 /// Query metrics from the database
@@ -10396,6 +10565,128 @@ mod tests {
         let got = query_spans_for_trace_list(&conn, &params, 10).unwrap();
         assert_eq!(got.len(), 1);
         assert_eq!(got[0].trace_id, "t1");
+    }
+
+    /// #251: the per-trace summaries must carry exactly what the old
+    /// spans-based grouping in the API handler computed: min start / max
+    /// end, exact span count, newest root (fallback: newest span),
+    /// de-duplicated sorted service names, and the error flag.
+    #[test]
+    fn test_trace_summaries_semantics() {
+        let conn = setup_test_db();
+        let span = |trace: &str,
+                    id: &str,
+                    parent: Option<&str>,
+                    name: &str,
+                    start: i64,
+                    end: i64,
+                    status: i32,
+                    resource: &str| {
+            conn.execute(
+                "INSERT INTO spans (trace_id, span_id, parent_span_id, name, kind, start_time, end_time,
+                                    attributes, events, resource, status_code)
+                 VALUES (?1, ?2, ?3, ?4, 0, ?5, ?6, '{}', '[]', ?7, ?8)",
+                rusqlite::params![trace, id, parent, name, start, end, resource, status],
+            )
+            .unwrap()
+        };
+        // t1: root + error leaf + two distinct services.
+        span(
+            "t1",
+            "a",
+            None,
+            "root-op",
+            100,
+            500,
+            0,
+            r#"{"attributes":{"service.name":"svc-a"}}"#,
+        );
+        span(
+            "t1",
+            "b",
+            Some("a"),
+            "mid",
+            110,
+            200,
+            2,
+            r#"{"attributes":{"service.name":"svc-b"}}"#,
+        );
+        span(
+            "t1",
+            "c",
+            Some("a"),
+            "leaf",
+            120,
+            130,
+            0,
+            r#"{"attributes":{"service.name":"svc-a"}}"#,
+        );
+        // t2: no span without a parent -> root falls back to the newest span.
+        span("t2", "x", Some("zz"), "older", 200, 210, 0, "{}");
+        span("t2", "y", Some("zz"), "newest-leaf", 220, 230, 1, "{}");
+        // t3: a single root, no services, no errors.
+        span("t3", "p", None, "solo", 300, 310, 0, "{}");
+
+        let summaries = query_trace_summaries(&conn, &QueryParams::default(), 10).unwrap();
+        assert_eq!(summaries.len(), 3);
+        let by_id: std::collections::HashMap<&str, &otelite_core::api::TraceEntry> =
+            summaries.iter().map(|e| (e.trace_id.as_str(), e)).collect();
+
+        let t1 = by_id["t1"];
+        assert_eq!(t1.start_time, 100);
+        assert_eq!(t1.duration, 400, "max end (500) - min start (100)");
+        assert_eq!(t1.span_count, 3);
+        assert_eq!(t1.root_span_name, "root-op");
+        assert_eq!(t1.service_names, vec!["svc-a", "svc-b"], "deduped + sorted");
+        assert!(t1.has_errors, "status_code 2 = Error");
+
+        let t2 = by_id["t2"];
+        assert_eq!(t2.start_time, 200);
+        assert_eq!(t2.duration, 30);
+        assert_eq!(t2.span_count, 2);
+        assert_eq!(
+            t2.root_span_name, "newest-leaf",
+            "no null-parent span -> newest span"
+        );
+        assert!(t2.service_names.is_empty());
+        assert!(!t2.has_errors, "status_code 1 = Ok is not an error");
+
+        let t3 = by_id["t3"];
+        assert_eq!(t3.start_time, 300);
+        assert_eq!(t3.duration, 10);
+        assert_eq!(t3.span_count, 1);
+        assert_eq!(t3.root_span_name, "solo");
+        assert!(!t3.has_errors);
+    }
+
+    /// Planner contract (#251): the summary aggregate must run on the
+    /// covering index, never fetch span rows.
+    #[test]
+    fn test_trace_summaries_aggregate_uses_covering_index() {
+        let conn = setup_test_db();
+        conn.execute(
+            "INSERT INTO spans (trace_id, span_id, name, kind, start_time, end_time,
+                                attributes, events, resource, status_code)
+             VALUES ('t1', 's1', 'n', 0, 100, 110, '{}', '[]', '{}', 0)",
+            [],
+        )
+        .unwrap();
+        let plan: String = conn
+            .prepare(
+                "EXPLAIN QUERY PLAN SELECT trace_id, MIN(start_time), MAX(end_time), COUNT(*), \
+                 MAX(CASE WHEN status_code = 2 THEN 1 ELSE 0 END), MIN(rowid), MAX(rowid) \
+                 FROM spans WHERE trace_id IN (?, ?, ?) GROUP BY trace_id",
+            )
+            .unwrap()
+            .query_map(["t1", "t2", "t3"], |row| row.get::<_, String>(3))
+            .unwrap()
+            .collect::<std::result::Result<Vec<_>, _>>()
+            .unwrap()
+            .join("\n");
+        assert!(
+            plan.contains("idx_spans_trace_agg"),
+            "trace summary aggregate must use the covering index:\n{plan}"
+        );
     }
 
     #[test]

@@ -103,6 +103,13 @@ impl StorageBackend for FailingStorage {
     ) -> Result<Vec<Span>> {
         Err(query_not_supported())
     }
+    async fn query_trace_summaries(
+        &self,
+        _params: &QueryParams,
+        _trace_limit: usize,
+    ) -> Result<Vec<otelite_core::api::TraceEntry>> {
+        Err(query_not_supported())
+    }
     async fn query_metrics(&self, _params: &QueryParams) -> Result<Vec<Metric>> {
         Err(query_not_supported())
     }

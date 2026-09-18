@@ -17,7 +17,7 @@ use crate::api::{
     ProviderMixResponse, ReasoningShareResponse, RecentErrorsResponse, RequestParamProfile,
     RetrievalStats, RetryIncident, RetryStats, SessionContextResponse, SessionCostRow,
     SessionCostStorage, SystemUsage, TokenUsageSummary, ToolUsage, TopSpan, TopSpanSort,
-    TruncationRateByModel,
+    TraceEntry, TruncationRateByModel,
 };
 use crate::filters::GenAiFilters;
 // New types referenced via crate::api:: in the trait methods below.
@@ -204,6 +204,14 @@ pub trait StorageBackend: Send + Sync {
         params: &QueryParams,
         trace_limit: usize,
     ) -> Result<Vec<Span>>;
+    /// Per-trace summaries (root name, start/duration, span count, error
+    /// flag, service names) for the N most-recent distinct traces, computed
+    /// in SQL without materialising the traces' spans (#251).
+    async fn query_trace_summaries(
+        &self,
+        params: &QueryParams,
+        trace_limit: usize,
+    ) -> Result<Vec<TraceEntry>>;
     /// Query metrics (raw time-series rows, latest first).
     async fn query_metrics(&self, params: &QueryParams) -> Result<Vec<Metric>>;
     /// Query metrics returning the single most-recent data point per unique name.
