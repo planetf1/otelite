@@ -11,6 +11,34 @@ have to work around), not implementation detail.
 
 ## [Unreleased]
 
+### Changed
+
+- Trace list (`otelite traces` / `/api/traces`): a trace now qualifies for a
+  time window when its newest span *starts* inside the window, so long agent
+  runs that cross the window's end are included instead of silently dropping
+  out (#251)
+- Daily tool mix (`/api/genai/daily_tool_mix`): time windows now apply at
+  day granularity — the report's natural unit — so the first and last days of
+  a window are counted in full (#251)
+
+### Fixed
+
+- Daily tool mix (`/api/genai/daily_tool_mix`): the per-day tool and model
+  breakdown now reads small write-maintained daily rollups instead of
+  re-scanning every metric datapoint and LLM span in the window — a 30-day
+  query on a production-scale database drops from ~40 s to well under 1 s
+  (#251)
+- Trace list (`/api/traces`): selecting the most recent N traces now reads a
+  write-maintained newest-span-per-trace rollup instead of walking spans
+  newest-first through multi-million-span agent traces, and each listed
+  trace's root-span name is a direct index seek — a 1-hour top-50 query drops
+  from ~16 s to well under 2 s (#251)
+- Database upgrade: the 0.1.149 "latest value per metric" backfill is now
+  idempotent and every schema migration runs inside a transaction, so an
+  interrupted upgrade (or two daemon processes upgrading at once) can no
+  longer corrupt the migration state or crash-loop the daemon on startup
+  (#251)
+
 ## [0.1.150] - 2026-09-18
 
 ### Fixed

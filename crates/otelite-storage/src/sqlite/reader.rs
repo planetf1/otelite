@@ -180,6 +180,56 @@ fn select_recent_trace_ids(
     } else if trace_limit == 0 {
         Ok(Vec::new())
     } else {
+        // Fast path: no structured predicates → the v4 trace_latest
+        // rollup answers in O(limit): an ordered seek over
+        // idx_trace_latest_start_time. The old plan — a reverse walk of
+        // idx_spans_start_time stopping at the Nth distinct trace — is
+        // O(spans newer than the Nth-newest trace), which on an active
+        // machine where a handful of multi-million-span agent traces
+        // dominate the newest hour is several million rows (41 s
+        // measured on the 2026-09-18 production DB, #251).
+        //
+        // Semantics: a trace qualifies when its newest span lies in the
+        // window. Identical to the walk for end_time = now (the common
+        // case); for backdated windows the ordering uses the trace's
+        // global newest span rather than its newest in-window span (the
+        // window's end still filters out traces whose newest span is
+        // after it).
+        if params.predicates.is_empty() {
+            let mut sql = String::from("SELECT trace_id FROM trace_latest");
+            let mut rollup_params: Vec<Box<dyn rusqlite::ToSql>> = Vec::new();
+            if let Some(end) = params.end_time {
+                sql.push_str(" WHERE last_start_time <= ?");
+                rollup_params.push(Box::new(end));
+            }
+            if let Some(start) = params.start_time {
+                sql.push_str(if sql.contains(" WHERE ") {
+                    " AND last_start_time >= ?"
+                } else {
+                    " WHERE last_start_time >= ?"
+                });
+                rollup_params.push(Box::new(start));
+            }
+            sql.push_str(" ORDER BY last_start_time DESC LIMIT ?");
+            rollup_params.push(Box::new(trace_limit as i64));
+
+            let mut stmt = conn
+                .prepare(&sql)
+                .map_err(|e| StorageError::QueryError(format!("Failed to prepare query: {}", e)))?;
+            let refs: Vec<&dyn rusqlite::ToSql> =
+                rollup_params.iter().map(|p| p.as_ref()).collect();
+            return stmt
+                .query_map(refs.as_slice(), |row| row.get::<_, String>(0))
+                .map_err(|e| StorageError::QueryError(format!("Failed to execute query: {}", e)))?
+                .collect::<std::result::Result<Vec<_>, _>>()
+                .map_err(StorageError::from);
+        }
+
+        // Predicate path: the rollup carries no span attributes, so a
+        // structured filter must constrain trace SELECTION via the spans
+        // table exactly as it constrains the span list — otherwise a
+        // trace filtered out of /spans would still be picked here and
+        // its spans returned.
         let mut sql = String::from("SELECT trace_id, start_time FROM spans WHERE 1=1");
         let mut scan_params: Vec<Box<dyn rusqlite::ToSql>> = Vec::new();
         // The window's LOWER bound is deliberately NOT in the WHERE
@@ -192,8 +242,7 @@ fn select_recent_trace_ids(
         // makes the early exit below useless. Without the lower
         // bound the only viable plan is a pure reverse walk of
         // idx_spans_start_time — stable across statistics — and the
-        // walk stops at the Nth distinct trace: a few hundred rows
-        // instead of the whole window. Window semantics are
+        // walk stops at the Nth distinct trace. Window semantics are
         // preserved: the walk is start_time DESC, so the first row
         // below the window start is the last row any selected trace
         // could qualify with; spans older than that are never seen.
@@ -10702,6 +10751,127 @@ mod tests {
         );
     }
 
+    /// Planner contract (#251): trace SELECTION must hit the v4
+    /// trace_latest rollup (an ordered LIMIT seek), not reverse-walk
+    /// idx_spans_start_time — the walk is O(spans since the Nth-newest
+    /// trace), multi-million rows on an active machine.
+    #[test]
+    fn test_trace_selection_uses_trace_latest_rollup() {
+        let conn = setup_test_db();
+        let plan: String = conn
+            .prepare(
+                "EXPLAIN QUERY PLAN SELECT trace_id FROM trace_latest \
+                 WHERE last_start_time <= ? AND last_start_time >= ? \
+                 ORDER BY last_start_time DESC LIMIT ?",
+            )
+            .unwrap()
+            .query_map([1000, 0, 50], |row| row.get::<_, String>(3))
+            .unwrap()
+            .collect::<std::result::Result<Vec<_>, _>>()
+            .unwrap()
+            .join("\n");
+        assert!(
+            plan.contains("idx_trace_latest_start_time"),
+            "trace selection must use the rollup index:\n{plan}"
+        );
+    }
+
+    /// Planner contract (#251): daily_tool_mix source 1 must read the v4
+    /// metrics_daily_tool rollup, never the raw metrics table (the raw
+    /// 30-day window holds ~5M datapoints on the production DB).
+    #[test]
+    fn test_daily_tool_mix_source1_uses_rollup() {
+        let conn = setup_test_db();
+        let plan: String = conn
+            .prepare(
+                "EXPLAIN QUERY PLAN SELECT day, tool, datapoints \
+                 FROM metrics_daily_tool \
+                 WHERE day >= ? AND day <= ? \
+                 ORDER BY day ASC, tool ASC",
+            )
+            .unwrap()
+            .query_map(["2026-01-01", "2026-01-31"], |row| row.get::<_, String>(3))
+            .unwrap()
+            .collect::<std::result::Result<Vec<_>, _>>()
+            .unwrap()
+            .join("\n");
+        assert!(
+            plan.contains("metrics_daily_tool"),
+            "source 1 must scan the rollup:\n{plan}"
+        );
+        assert!(
+            !plan.contains("SCAN metrics"),
+            "source 1 must never scan the raw metrics table:\n{plan}"
+        );
+    }
+
+    /// Planner contract (#251): daily_tool_mix source 2 (the LLM-span
+    /// token rollup) must read the v4 `spans_daily_llm` table — never the
+    /// raw spans table (the raw per-row form costs a table fetch plus JSON
+    /// parsing per LLM span, and the planner demonstrably does not prefer
+    /// a covering expression index for this query shape on real data).
+    #[test]
+    fn test_daily_tool_mix_source2_uses_rollup() {
+        let conn = setup_test_db();
+        let plan: String = conn
+            .prepare(
+                "EXPLAIN QUERY PLAN SELECT day, tool, model,
+                   input_tokens, output_tokens,
+                   cache_creation_tokens, cache_read_tokens
+                 FROM spans_daily_llm
+                 WHERE day >= ? AND day <= ?
+                 ORDER BY day ASC, tool ASC, model ASC",
+            )
+            .unwrap()
+            .query_map(["2026-01-01", "2026-01-31"], |row| row.get::<_, String>(3))
+            .unwrap()
+            .collect::<std::result::Result<Vec<_>, _>>()
+            .unwrap()
+            .join("\n");
+        assert!(
+            plan.contains("spans_daily_llm"),
+            "source 2 must scan the rollup:\n{plan}"
+        );
+        assert!(
+            !plan.contains("SCAN spans"),
+            "source 2 must never scan the raw spans table:\n{plan}"
+        );
+    }
+
+    /// Planner contract (#251): a trace's root span (newest null-parent
+    /// span, name included) must be a seek on the partial covering index
+    /// idx_spans_root_name — the old plan walked a giant trace's whole
+    /// index range with table fetches per row.
+    #[test]
+    fn test_root_name_subquery_uses_partial_covering_index() {
+        let conn = setup_test_db();
+        let plan: String = conn
+            .prepare(
+                "EXPLAIN QUERY PLAN SELECT name FROM spans \
+                 WHERE trace_id = ? AND parent_span_id IS NULL \
+                 ORDER BY start_time DESC LIMIT 1",
+            )
+            .unwrap()
+            .query_map(["t1"], |row| row.get::<_, String>(3))
+            .unwrap()
+            .collect::<std::result::Result<Vec<_>, _>>()
+            .unwrap()
+            .join("\n");
+        // A seek-shaped plan (trace_id=?) is what the partial index gives;
+        // SQLite only prints the "COVERING" label on SCAN-shaped plans, so
+        // the contract is the index itself: its columns (trace_id,
+        // start_time, name) serve the WHERE, the ORDER BY and the
+        // projection with zero table fetches.
+        assert!(
+            plan.contains("idx_spans_root_name"),
+            "root-name lookup must use the partial covering index:\n{plan}"
+        );
+        assert!(
+            plan.contains("trace_id=?"),
+            "root-name lookup must seek by trace_id, not walk the trace:\n{plan}"
+        );
+    }
+
     #[test]
     fn test_trace_list_predicates_constrain_trace_selection() {
         let conn = setup_test_db();
@@ -13223,12 +13393,12 @@ mod tests {
 
     #[test]
     fn test_trace_list_early_exit_matches_windowed_group_by() {
-        // #196 regression: phase 1 walks idx_spans_start_time WITHOUT the
-        // window's lower bound (applied as the Rust early-exit) and must
-        // select exactly the traces the windowed GROUP BY MAX(start_time)
-        // selects, in the same order — including rows the unbounded scan
-        // sees but the window excludes (below the start, above the end,
-        // crossing the end).
+        // #196/#251 regression: phase 1 selects exactly the traces the
+        // windowed GROUP BY MAX(start_time) selects, in the same order.
+        // Selection semantics (v4 rollup, #251): a trace qualifies when
+        // its newest span STARTS inside [start, end] — a trace whose span
+        // starts in the window but ends after it (t6) qualifies; a trace
+        // whose newest span starts after the window (t5) does not.
         let conn = setup_test_db();
         // (trace_id, start, end); window is [100, 500]
         let rows: &[(&str, i64, i64)] = &[
@@ -13236,9 +13406,9 @@ mod tests {
             ("t1", 250, 260),
             ("t2", 300, 310),
             ("t3", 400, 410),
-            ("t4", 90, 95),   // below window start — visible to the unbounded scan
-            ("t5", 600, 610), // above window end
-            ("t6", 350, 700), // crosses the window end
+            ("t4", 90, 95),   // below window start — excluded
+            ("t5", 600, 610), // starts above window end — excluded
+            ("t6", 350, 700), // starts in window, ends after — included
             ("t7", 120, 130),
             ("t7", 80, 90), // older sibling of a selected trace
         ];
@@ -13258,27 +13428,26 @@ mod tests {
         };
         let spans = query_spans_for_trace_list(&conn, &params, 3).unwrap();
 
-        // Selection order: newest qualifying trace first (first
-        // encounter in the start-DESC walk).
+        // Selection order: newest qualifying trace first.
         let mut got: Vec<&str> = Vec::new();
         for s in &spans {
             if !got.contains(&s.trace_id.as_str()) {
                 got.push(&s.trace_id);
             }
         }
-        assert_eq!(got, vec!["t3", "t2", "t1"]);
+        assert_eq!(got, vec!["t3", "t6", "t2"]);
         // Phase 2 returns only spans of the selected traces.
         assert!(spans
             .iter()
-            .all(|s| matches!(s.trace_id.as_str(), "t1" | "t2" | "t3")));
-        assert_eq!(spans.len(), 4);
+            .all(|s| matches!(s.trace_id.as_str(), "t2" | "t3" | "t6")));
+        assert_eq!(spans.len(), 3);
 
-        // Equivalence with the windowed GROUP BY the early exit exists to
-        // replicate (the comment's original claim).
+        // Equivalence with the windowed GROUP BY the rollup exists to
+        // replicate.
         let eq: Vec<String> = {
             let mut stmt = conn
                 .prepare(
-                    "SELECT trace_id FROM spans WHERE start_time >= 100 AND end_time <= 500
+                    "SELECT trace_id FROM spans WHERE start_time >= 100 AND start_time <= 500
                      GROUP BY trace_id ORDER BY MAX(start_time) DESC LIMIT 3",
                 )
                 .unwrap();
@@ -15212,50 +15381,57 @@ pub fn query_tool_failure_rates(
 ///
 /// A (day, tool) pair present in only one source still gets a row (the
 /// other source's figures are 0 / `None`).
+/// UTC calendar day (YYYY-MM-DD) of a nanosecond timestamp — the same
+/// bucketing as the SQL
+/// `strftime('%Y-%m-%d', datetime(ts / 1000000000, 'unixepoch'))` used by
+/// the v4 `metrics_daily_tool` triggers and backfill (schema.rs).
+fn day_of_nanosecond(ts_ns: i64) -> String {
+    chrono::DateTime::<chrono::Utc>::from_timestamp(ts_ns.div_euclid(1_000_000_000), 0)
+        .map(|d| d.format("%Y-%m-%d").to_string())
+        .unwrap_or_else(|| "1970-01-01".to_string())
+}
+
 pub fn query_daily_tool_mix(
     conn: &Connection,
     start_time: Option<i64>,
     end_time: Option<i64>,
 ) -> Result<otelite_core::api::DailyToolMixResponse> {
     use otelite_core::api::{DailyToolMixModelRow, DailyToolMixResponse, DailyToolMixRow};
-    use otelite_core::semconv;
     use std::collections::BTreeMap;
 
-    // ── Source 1: metric datapoints (original query, unchanged) ──────────
-    // Map otel.scope.name → short label.
-    let mut where_clause = String::from(
-        r#"WHERE json_valid(scope)
-           AND json_extract(scope,'$.name') IN (
-               'com.anthropic.claude_code',
-               'com.opencode',
-               'codex'
-           )"#,
-    );
+    // ── Source 1: metric datapoints, via the write-maintained daily rollup ─
+    // The raw 30-day window holds ~5M tool-scoped datapoints on the
+    // production database; per-row GROUP BY (even index-covered) measured
+    // 9.6 s — the <1 s bar needs the v4 `metrics_daily_tool` rollup
+    // (schema.rs), a primary-key range scan over ~30 rows per month
+    // (#251). Granularity note: the window's edge days are counted in
+    // full — the report is a per-day breakdown, so every day row is exact;
+    // only the partial first/last days differ from the old in-window count.
+    let mut where_clause = String::new();
     let mut params: Vec<Box<dyn rusqlite::ToSql>> = Vec::new();
 
     if let Some(s) = start_time {
-        where_clause.push_str(" AND timestamp >= ?");
-        params.push(Box::new(s));
+        where_clause.push_str("WHERE day >= ?");
+        params.push(Box::new(day_of_nanosecond(s)));
     }
     if let Some(e) = end_time {
-        where_clause.push_str(" AND timestamp <= ?");
-        params.push(Box::new(e));
+        where_clause.push_str(if where_clause.is_empty() {
+            " WHERE day <= ?"
+        } else {
+            " AND day <= ?"
+        });
+        // The window's last moment is `e`, so the last full/partial day in
+        // the window is the day of `e - 1ns` — not the day of `e` (which
+        // would pull in the whole following day when `e` sits on a
+        // midnight boundary).
+        params.push(Box::new(day_of_nanosecond(e.saturating_sub(1))));
     }
 
     let sql = format!(
         r#"
-        SELECT
-          strftime('%Y-%m-%d', datetime(timestamp / 1000000000, 'unixepoch')) AS day,
-          CASE json_extract(scope,'$.name')
-            WHEN 'com.anthropic.claude_code' THEN 'claude_code'
-            WHEN 'com.opencode'              THEN 'opencode'
-            WHEN 'codex'                     THEN 'codex'
-            ELSE json_extract(scope,'$.name')
-          END AS tool,
-          COUNT(*) AS datapoints
-        FROM metrics
+        SELECT day, tool, datapoints
+        FROM metrics_daily_tool
         {where_clause}
-        GROUP BY day, tool
         ORDER BY day ASC, tool ASC
         "#
     );
@@ -15276,54 +15452,38 @@ pub fn query_daily_tool_mix(
         .collect::<std::result::Result<BTreeMap<_, _>, _>>()
         .map_err(|e| StorageError::QueryError(format!("{e}")))?;
 
-    // ── Source 2: LLM-span tokens per (day, tool, model) (#179) ──────────
-    let llm_guard = semconv::llm_span_guard("attributes");
-    let input_expr =
-        semconv::coalesce_extract_cast("attributes", semconv::INPUT_TOKEN_KEYS, "INTEGER");
-    let output_expr =
-        semconv::coalesce_extract_cast("attributes", semconv::OUTPUT_TOKEN_KEYS, "INTEGER");
-    let cache_creation_expr =
-        semconv::coalesce_extract_cast("attributes", semconv::CACHE_CREATION_TOKEN_KEYS, "INTEGER");
-    let cache_read_expr =
-        semconv::coalesce_extract_cast("attributes", semconv::CACHE_READ_TOKEN_KEYS, "INTEGER");
-    // Tool mapping: identical to query_model_selection_heatmap so the report
-    // and the heatmap agree on tool labels.
-    let tool_expr = r#"CASE
-        WHEN json_extract(scope,'$.name') LIKE '%claude_code%'   THEN 'claude_code'
-        WHEN json_extract(scope,'$.name') = 'com.opencode'       THEN 'opencode'
-        WHEN json_extract(scope,'$.name') LIKE '%opencode%'      THEN 'opencode'
-        WHEN json_extract(scope,'$.name') = 'pi-otel'            THEN 'pi'
-        WHEN json_extract(scope,'$.name') LIKE '%codex%'         THEN 'codex'
-        WHEN json_extract(scope,'$.name') LIKE '%deekseek%'      THEN 'deepseek'
-        ELSE COALESCE(json_extract(scope,'$.name'), 'unknown')
-    END"#;
-    let model_expr = r#"COALESCE(json_extract(attributes,'$."gen_ai.request.model"'),
-        json_extract(attributes,'$."model"'), '(unknown)')"#;
-
-    let mut spans_where = format!("WHERE {llm_guard}");
+    // ── Source 2: LLM-span tokens per (day, tool, model) (#179/#251) ────
+    // Via the write-maintained v4 `spans_daily_llm` rollup: the raw 30-day
+    // window holds ~34k LLM spans on the production database, and the raw
+    // per-row query costs a table fetch plus JSON parsing per span with no
+    // index the planner reliably prefers for this shape (31 s cold,
+    // measured 2026-09-18). The rollup keeps a few thousand
+    // (day, tool, model) rows, making this a primary-key range scan.
+    // Granularity note: as with source 1, the window's edge days are
+    // counted in full — the report is a per-day breakdown.
+    let mut token_where = String::new();
     let mut spans_params: Vec<Box<dyn rusqlite::ToSql>> = Vec::new();
     if let Some(s) = start_time {
-        spans_where.push_str(" AND start_time >= ?");
-        spans_params.push(Box::new(s));
+        token_where.push_str("WHERE day >= ?");
+        spans_params.push(Box::new(day_of_nanosecond(s)));
     }
     if let Some(e) = end_time {
-        spans_where.push_str(" AND start_time <= ?");
-        spans_params.push(Box::new(e));
+        token_where.push_str(if token_where.is_empty() {
+            " WHERE day <= ?"
+        } else {
+            " AND day <= ?"
+        });
+        // Same last-moment boundary as source 1: day of `e - 1ns`.
+        spans_params.push(Box::new(day_of_nanosecond(e.saturating_sub(1))));
     }
 
     let token_sql = format!(
         r#"
-        SELECT
-          strftime('%Y-%m-%d', datetime(start_time / 1000000000, 'unixepoch')) AS day,
-          {tool_expr} AS tool,
-          {model_expr} AS model,
-          COALESCE(SUM({input_expr}), 0) AS input_tokens,
-          COALESCE(SUM({output_expr}), 0) AS output_tokens,
-          COALESCE(SUM({cache_creation_expr}), 0) AS cache_creation_tokens,
-          COALESCE(SUM({cache_read_expr}), 0) AS cache_read_tokens
-        FROM spans
-        {spans_where}
-        GROUP BY day, tool, model
+        SELECT day, tool, model,
+               input_tokens, output_tokens,
+               cache_creation_tokens, cache_read_tokens
+        FROM spans_daily_llm
+        {token_where}
         ORDER BY day ASC, tool ASC, model ASC
         "#
     );
@@ -16677,9 +16837,34 @@ mod new_insight_tests_2 {
                 scope TEXT,
                 flags INTEGER,
                 created_at INTEGER NOT NULL DEFAULT (strftime('%s','now'))
+            );
+            CREATE TABLE trace_latest (
+                trace_id TEXT PRIMARY KEY,
+                last_start_time INTEGER NOT NULL
+            );
+            CREATE TABLE metrics_daily_tool (
+                day TEXT NOT NULL,
+                tool TEXT NOT NULL,
+                datapoints INTEGER NOT NULL DEFAULT 0,
+                PRIMARY KEY (day, tool)
+            );
+            CREATE TABLE spans_daily_llm (
+                day TEXT NOT NULL,
+                tool TEXT NOT NULL,
+                model TEXT NOT NULL,
+                input_tokens INTEGER NOT NULL DEFAULT 0,
+                output_tokens INTEGER NOT NULL DEFAULT 0,
+                cache_creation_tokens INTEGER NOT NULL DEFAULT 0,
+                cache_read_tokens INTEGER NOT NULL DEFAULT 0,
+                PRIMARY KEY (day, tool, model)
             );",
         )
         .unwrap();
+        // The same sync triggers the v4 migration arms in production
+        // (schema::v4_sync_triggers): tests that query the rollups see
+        // trigger-maintained data, not a stale backfill.
+        conn.execute_batch(&super::super::schema::v4_sync_triggers())
+            .unwrap();
         conn
     }
 

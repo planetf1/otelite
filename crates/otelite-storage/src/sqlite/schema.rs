@@ -4,6 +4,160 @@ use crate::error::Result;
 use rusqlite::Connection;
 
 /// Initialize the database schema
+const V4_BASE_TRIGGERS: &str = "
+CREATE TRIGGER IF NOT EXISTS trg_trace_latest_ai AFTER INSERT ON spans
+                 BEGIN
+                     INSERT INTO trace_latest(trace_id, last_start_time)
+                     VALUES (new.trace_id, new.start_time)
+                     ON CONFLICT(trace_id) DO UPDATE SET
+                         last_start_time = MAX(excluded.last_start_time,
+                                               trace_latest.last_start_time);
+                 END;
+                 CREATE TRIGGER IF NOT EXISTS trg_trace_latest_ad AFTER DELETE ON spans
+                 WHEN old.start_time =
+                      (SELECT last_start_time FROM trace_latest WHERE trace_id = old.trace_id)
+                 BEGIN
+                     DELETE FROM trace_latest WHERE trace_id = old.trace_id;
+                     INSERT INTO trace_latest(trace_id, last_start_time)
+                     SELECT trace_id, MAX(start_time) FROM spans
+                     WHERE trace_id = old.trace_id
+                     HAVING MAX(start_time) IS NOT NULL;
+                 END;
+                 CREATE TRIGGER IF NOT EXISTS trg_metrics_daily_tool_ai AFTER INSERT ON metrics
+                 WHEN json_valid(new.scope)
+                  AND json_extract(new.scope,'$.name') IN (
+                      'com.anthropic.claude_code', 'com.opencode', 'codex')
+                 BEGIN
+                     INSERT INTO metrics_daily_tool(day, tool, datapoints)
+                     VALUES (
+                         strftime('%Y-%m-%d',
+                            datetime(new.timestamp / 1000000000, 'unixepoch')),
+                         CASE json_extract(new.scope,'$.name')
+                             WHEN 'com.anthropic.claude_code' THEN 'claude_code'
+                             WHEN 'com.opencode' THEN 'opencode'
+                             WHEN 'codex' THEN 'codex'
+                             ELSE json_extract(new.scope,'$.name') END,
+                         1)
+                     ON CONFLICT(day, tool) DO UPDATE SET
+                         datapoints = metrics_daily_tool.datapoints + 1;
+                 END;
+                 CREATE TRIGGER IF NOT EXISTS trg_metrics_daily_tool_ad AFTER DELETE ON metrics
+                 WHEN json_valid(old.scope)
+                  AND json_extract(old.scope,'$.name') IN (
+                      'com.anthropic.claude_code', 'com.opencode', 'codex')
+                 BEGIN
+                     UPDATE metrics_daily_tool
+                     SET datapoints = datapoints - 1
+                     WHERE day = strftime('%Y-%m-%d',
+                               datetime(old.timestamp / 1000000000, 'unixepoch'))
+                       AND tool = CASE json_extract(old.scope,'$.name')
+                               WHEN 'com.anthropic.claude_code' THEN 'claude_code'
+                               WHEN 'com.opencode' THEN 'opencode'
+                               WHEN 'codex' THEN 'codex'
+                               ELSE json_extract(old.scope,'$.name') END;
+                     DELETE FROM metrics_daily_tool WHERE datapoints <= 0;
+                 END;
+                 ";
+
+/// The full v4 sync-trigger set: the literal rollup triggers above plus the
+/// LLM-token rollup triggers, whose guard and label expressions are
+/// generated from the same semconv functions the backfill and (historically)
+/// the queries use, so trigger and backfill cannot drift apart. The `name`
+/// column reference is explicit (`new.name` / `old.name`) because
+/// unqualified names are ambiguous inside trigger bodies.
+pub(crate) fn v4_sync_triggers() -> String {
+    use otelite_core::semconv;
+    // The LLM guard is total (json_valid-gated), but it can match via a
+    // vendor span-name prefix with *corrupt* attributes — the trigger
+    // bodies then json_extract those attributes, which raises on malformed
+    // JSON and would reject the span INSERT. The validity conjuncts keep
+    // corrupt-attribute (or corrupt-scope) rows out of the rollup entirely
+    // instead ("corrupt rows contribute nothing"), mirroring the query-side
+    // total-extraction semantics.
+    let ins_validity = "(new.attributes IS NULL OR json_valid(new.attributes)) \
+                        AND (new.scope IS NULL OR json_valid(new.scope))";
+    let del_validity = "(old.attributes IS NULL OR json_valid(old.attributes)) \
+                        AND (old.scope IS NULL OR json_valid(old.scope))";
+    format!(
+        "{base}
+CREATE TRIGGER IF NOT EXISTS trg_spans_daily_llm_ai AFTER INSERT ON spans
+WHEN {ins_guard} AND {ins_validity}
+BEGIN
+    INSERT INTO spans_daily_llm(
+        day, tool, model,
+        input_tokens, output_tokens, cache_creation_tokens, cache_read_tokens)
+    VALUES (
+        strftime('%Y-%m-%d', datetime(new.start_time / 1000000000, 'unixepoch')),
+        {tool_new},
+        {model_new},
+        COALESCE({in_new}, 0),
+        COALESCE({out_new}, 0),
+        COALESCE({cc_new}, 0),
+        COALESCE({cr_new}, 0))
+    ON CONFLICT(day, tool, model) DO UPDATE SET
+        input_tokens = input_tokens + excluded.input_tokens,
+        output_tokens = output_tokens + excluded.output_tokens,
+        cache_creation_tokens = cache_creation_tokens + excluded.cache_creation_tokens,
+        cache_read_tokens = cache_read_tokens + excluded.cache_read_tokens;
+END;
+CREATE TRIGGER IF NOT EXISTS trg_spans_daily_llm_ad AFTER DELETE ON spans
+WHEN {del_guard} AND {del_validity}
+BEGIN
+    UPDATE spans_daily_llm
+    SET input_tokens = input_tokens - COALESCE({in_old}, 0),
+        output_tokens = output_tokens - COALESCE({out_old}, 0),
+        cache_creation_tokens = cache_creation_tokens - COALESCE({cc_old}, 0),
+        cache_read_tokens = cache_read_tokens - COALESCE({cr_old}, 0)
+    WHERE day = strftime('%Y-%m-%d', datetime(old.start_time / 1000000000, 'unixepoch'))
+      AND tool = {tool_old}
+      AND model = {model_old};
+    DELETE FROM spans_daily_llm
+    WHERE day = strftime('%Y-%m-%d', datetime(old.start_time / 1000000000, 'unixepoch'))
+      AND tool = {tool_old}
+      AND model = {model_old}
+      AND input_tokens <= 0 AND output_tokens <= 0
+      AND cache_creation_tokens <= 0 AND cache_read_tokens <= 0;
+END;",
+        base = V4_BASE_TRIGGERS,
+        ins_validity = ins_validity,
+        del_validity = del_validity,
+        ins_guard = semconv::llm_span_guard_cols("new.attributes", "new.name"),
+        del_guard = semconv::llm_span_guard_cols("old.attributes", "old.name"),
+        tool_new = semconv::scope_tool_expr("new.scope"),
+        tool_old = semconv::scope_tool_expr("old.scope"),
+        model_new = semconv::model_expr("new.attributes"),
+        model_old = semconv::model_expr("old.attributes"),
+        in_new =
+            semconv::coalesce_extract_cast("new.attributes", semconv::INPUT_TOKEN_KEYS, "INTEGER"),
+        out_new =
+            semconv::coalesce_extract_cast("new.attributes", semconv::OUTPUT_TOKEN_KEYS, "INTEGER"),
+        cc_new = semconv::coalesce_extract_cast(
+            "new.attributes",
+            semconv::CACHE_CREATION_TOKEN_KEYS,
+            "INTEGER"
+        ),
+        cr_new = semconv::coalesce_extract_cast(
+            "new.attributes",
+            semconv::CACHE_READ_TOKEN_KEYS,
+            "INTEGER"
+        ),
+        in_old =
+            semconv::coalesce_extract_cast("old.attributes", semconv::INPUT_TOKEN_KEYS, "INTEGER"),
+        out_old =
+            semconv::coalesce_extract_cast("old.attributes", semconv::OUTPUT_TOKEN_KEYS, "INTEGER"),
+        cc_old = semconv::coalesce_extract_cast(
+            "old.attributes",
+            semconv::CACHE_CREATION_TOKEN_KEYS,
+            "INTEGER"
+        ),
+        cr_old = semconv::coalesce_extract_cast(
+            "old.attributes",
+            semconv::CACHE_READ_TOKEN_KEYS,
+            "INTEGER"
+        ),
+    )
+}
+
 pub fn initialize_schema(conn: &Connection) -> Result<()> {
     // Enable WAL mode for better concurrency
     conn.execute_batch("PRAGMA journal_mode=WAL;")?;
@@ -353,6 +507,73 @@ pub fn initialize_schema(conn: &Connection) -> Result<()> {
                 IN ('com.anthropic.claude_code','com.opencode','codex');",
     )?;
 
+    // Write-maintained rollups for the two list endpoints that outgrew
+    // index-only scans on the production database (#251, 2026-09-18, 52 GB):
+    //
+    //  * `metrics_daily_tool` — per-(day, tool) datapoint counts. The raw
+    //    30-day window holds ~5M tool-scoped datapoints; a per-row GROUP BY
+    //    (even fully index-covered) measured 9.6 s, nowhere near the <1 s
+    //    bar. The rollup keeps ~30 rows per month and the query is a
+    //    primary-key range scan.
+    //  * `trace_latest` — newest span start per trace. The traces-list
+    //    phase-1 reverse walk over idx_spans_start_time is O(spans since
+    //    the 50th-newest trace); on a machine where a handful of
+    //    multi-million-span agent traces dominate the newest hour that is
+    //    ~3M rows (41 s measured). The rollup makes phase 1 an ordered
+    //    LIMIT seek.
+    //
+    // Tables only here: the sync triggers are created by the v4 migration
+    // AFTER the one-time backfill, inside one write transaction, so live
+    // ingest can neither double-count against the backfill snapshot nor
+    // race it (the same ordering bug that bricked the v3 metric_latest
+    // backfill in production, 2026-09-18).
+    conn.execute_batch(
+        "CREATE TABLE IF NOT EXISTS trace_latest (
+            trace_id TEXT PRIMARY KEY,
+            last_start_time INTEGER NOT NULL
+        );
+         CREATE INDEX IF NOT EXISTS idx_trace_latest_start_time
+             ON trace_latest(last_start_time, trace_id);
+         CREATE TABLE IF NOT EXISTS metrics_daily_tool (
+            day TEXT NOT NULL,
+            tool TEXT NOT NULL,
+            datapoints INTEGER NOT NULL DEFAULT 0,
+            PRIMARY KEY (day, tool)
+        );",
+    )?;
+
+    // Covering partial index: a trace's root span (newest null-parent
+    // span) is a one-entry seek with the name served from the index —
+    // the per-trace root-name subqueries in query_trace_summaries used to
+    // walk a giant trace's whole index range with table fetches (#251).
+    conn.execute_batch(
+        "CREATE INDEX IF NOT EXISTS idx_spans_root_name ON spans(trace_id, start_time, name)
+         WHERE parent_span_id IS NULL;",
+    )?;
+
+    // Write-maintained per-(day, tool, model) LLM token rollup for
+    // query_daily_tool_mix source 2 (#251, 2026-09-18, 52 GB production
+    // DB): the raw 30-day window holds ~34k LLM spans, and the raw query
+    // (even index-assisted) costs a table fetch plus JSON parsing per
+    // span — 31 s cold, and the planner demonstrably does not prefer a
+    // covering expression index over the existing start_time partial
+    // indexes for this query shape. The rollup makes source 2 a
+    // primary-key range scan over a few thousand rows. Sync triggers
+    // are armed by the v4 migration (see V4 triggers below), after the
+    // one-time backfill, in the same write transaction.
+    conn.execute_batch(
+        "CREATE TABLE IF NOT EXISTS spans_daily_llm (
+            day TEXT NOT NULL,
+            tool TEXT NOT NULL,
+            model TEXT NOT NULL,
+            input_tokens INTEGER NOT NULL DEFAULT 0,
+            output_tokens INTEGER NOT NULL DEFAULT 0,
+            cache_creation_tokens INTEGER NOT NULL DEFAULT 0,
+            cache_read_tokens INTEGER NOT NULL DEFAULT 0,
+            PRIMARY KEY (day, tool, model)
+        );",
+    )?;
+
     // Expression index for Codex cwd-based project rollup (#160/#164).
     // Covers run_sampling_request spans only; the cwd value and start_time
     // let project-rollup and busy/idle breakdown queries seek by project
@@ -457,6 +678,12 @@ pub fn initialize_schema(conn: &Connection) -> Result<()> {
     // Pre-v2 databases are at user_version 0; each block below runs exactly
     // once per database. Fresh databases pass through the same blocks with
     // empty tables (no-op work).
+    //
+    // Each migration runs as one explicit write transaction: the work and
+    // its version stamp commit or roll back together, so a crash mid-
+    // migration re-runs the block on next boot instead of leaving a
+    // half-migrated database. (The v3 block additionally had to become
+    // idempotent — see below.)
     let version: i32 = conn
         .query_row("PRAGMA user_version", [], |row| row.get(0))
         .unwrap_or(0);
@@ -468,39 +695,198 @@ pub fn initialize_schema(conn: &Connection) -> Result<()> {
         // production database). Drop the retry copies — the highest id in
         // each group is the retry; the lowest is the original — before
         // adding the constraint. One-time cost scales with table size.
-        let removed = conn.execute(
-            "DELETE FROM spans WHERE id IN (
-                 SELECT s1.id FROM spans AS s1
-                 JOIN spans AS s2
-                   ON s1.trace_id = s2.trace_id AND s1.span_id = s2.span_id
-                 WHERE s1.id > s2.id)",
-            [],
-        )?;
-        if removed > 0 {
-            tracing::info!("schema v2: dropped {removed} duplicate span rows (OTLP retry dedup)");
+        conn.execute("BEGIN IMMEDIATE", [])?;
+        let result: rusqlite::Result<usize> = (|| {
+            let removed = conn.execute(
+                "DELETE FROM spans WHERE id IN (
+                     SELECT s1.id FROM spans AS s1
+                     JOIN spans AS s2
+                       ON s1.trace_id = s2.trace_id AND s1.span_id = s2.span_id
+                     WHERE s1.id > s2.id)",
+                [],
+            )?;
+            conn.execute(
+                "CREATE UNIQUE INDEX IF NOT EXISTS idx_spans_trace_span \
+                 ON spans(trace_id, span_id)",
+                [],
+            )?;
+            conn.pragma_update(None, "user_version", 2)?;
+            Ok(removed)
+        })();
+        match result {
+            Ok(removed) => {
+                conn.execute("COMMIT", [])?;
+                if removed > 0 {
+                    tracing::info!(
+                        "schema v2: dropped {removed} duplicate span rows (OTLP retry dedup)"
+                    );
+                }
+            },
+            Err(e) => {
+                let _ = conn.execute("ROLLBACK", []);
+                return Err(e.into());
+            },
         }
-        conn.execute(
-            "CREATE UNIQUE INDEX IF NOT EXISTS idx_spans_trace_span \
-             ON spans(trace_id, span_id)",
-            [],
-        )?;
-        conn.pragma_update(None, "user_version", 2)?;
     }
     if version < 3 {
         // v3 (#251): backfill metric_latest for databases that predate the
         // write-maintained table. One-time cost scales with the metrics
         // table (same GROUP BY the old all-time list ran per query).
-        let names = conn.execute(
-            "INSERT INTO metric_latest(name, timestamp, id) \
-             SELECT name, MAX(timestamp), MAX(id) FROM metrics GROUP BY name",
-            [],
-        )?;
-        if names > 0 {
-            tracing::info!(
-                "schema v3: backfilled metric_latest for {names} metric names (one-time)"
-            );
+        //
+        // The backfill must be a merge, not a plain INSERT (production
+        // incident, 2026-09-18): the metric_latest write trigger is active
+        // during the backfill, so concurrent ingest — or a re-run after a
+        // crash between the INSERT and the version stamp — collided with
+        // already-present rows and failed with
+        // "UNIQUE constraint failed: metric_latest.name", brick-ing
+        // startup on every launchd restart. The ON CONFLICT merge makes
+        // the backfill idempotent under both races; the transaction
+        // (above) makes backfill + stamp atomic.
+        conn.execute("BEGIN IMMEDIATE", [])?;
+        let result: rusqlite::Result<usize> = (|| {
+            let names = conn.execute(
+                "INSERT INTO metric_latest(name, timestamp, id) \
+                 SELECT name, MAX(timestamp), MAX(id) FROM metrics GROUP BY name \
+                 ON CONFLICT(name) DO UPDATE SET \
+                     timestamp = MAX(excluded.timestamp, metric_latest.timestamp), \
+                     id = CASE WHEN excluded.timestamp > metric_latest.timestamp \
+                               THEN excluded.id ELSE metric_latest.id END",
+                [],
+            )?;
+            conn.pragma_update(None, "user_version", 3)?;
+            Ok(names)
+        })();
+        match result {
+            Ok(names) => {
+                conn.execute("COMMIT", [])?;
+                if names > 0 {
+                    tracing::info!(
+                        "schema v3: backfilled metric_latest for {names} metric names (one-time)"
+                    );
+                }
+            },
+            Err(e) => {
+                let _ = conn.execute("ROLLBACK", []);
+                return Err(e.into());
+            },
         }
-        conn.pragma_update(None, "user_version", 3)?;
+    }
+    if version < 4 {
+        // v4 (#251): backfill the three write-maintained rollups (tables
+        // are created in the base DDL) and arm their sync triggers — in
+        // this order, inside one write transaction. The transaction holds
+        // the write lock for the whole backfill, so live ingest cannot
+        // commit between the snapshot and the trigger arming: no
+        // double-count (trigger + backfill both counting the same rows)
+        // and no gap (rows landing after the snapshot are covered by the
+        // triggers, which are active by the time the lock releases). All
+        // backfills merge on conflict, so a re-run after a failed
+        // migration is safe.
+        //
+        // One-time cost on a production-scale database: the trace
+        // backfill walks idx_spans_trace_agg (~42M entries), the tool
+        // backfill groups ~5.5M tool-scoped metric rows, and the LLM
+        // token backfill groups ~5M LLM spans. The completion log is
+        // conditional on rows moved: on a fresh database the backfills
+        // touch nothing, and CLI commands must keep stdout clean for
+        // their JSON output (tracing reaches stdout in a CLI process —
+        // same discipline as the v2 log).
+        conn.execute("BEGIN IMMEDIATE", [])?;
+        let result: rusqlite::Result<(usize, usize, usize)> = (|| {
+            let trace_rows = conn.execute(
+                "INSERT INTO trace_latest(trace_id, last_start_time)
+                 SELECT trace_id, MAX(start_time) FROM spans GROUP BY trace_id
+                 ON CONFLICT(trace_id) DO UPDATE SET
+                     last_start_time = MAX(excluded.last_start_time,
+                                           trace_latest.last_start_time)",
+                [],
+            )?;
+            let tool_rows = conn.execute(
+                "INSERT INTO metrics_daily_tool(day, tool, datapoints)
+                 SELECT strftime('%Y-%m-%d', datetime(timestamp / 1000000000, 'unixepoch')),
+                        CASE json_extract(scope,'$.name')
+                            WHEN 'com.anthropic.claude_code' THEN 'claude_code'
+                            WHEN 'com.opencode' THEN 'opencode'
+                            WHEN 'codex' THEN 'codex'
+                            ELSE json_extract(scope,'$.name') END,
+                        COUNT(*)
+                 FROM metrics
+                 WHERE json_valid(scope)
+                   AND json_extract(scope,'$.name') IN (
+                       'com.anthropic.claude_code', 'com.opencode', 'codex')
+                 GROUP BY 1, 2
+                 ON CONFLICT(day, tool) DO UPDATE SET datapoints = excluded.datapoints",
+                [],
+            )?;
+            let llm_rows = conn.execute(
+                &format!(
+                    "INSERT INTO spans_daily_llm(
+                        day, tool, model,
+                        input_tokens, output_tokens,
+                        cache_creation_tokens, cache_read_tokens)
+                     SELECT strftime('%Y-%m-%d', datetime(start_time / 1000000000, 'unixepoch')),
+                            {tool},
+                            {model},
+                            COALESCE(SUM({input}), 0),
+                            COALESCE(SUM({output}), 0),
+                            COALESCE(SUM({cc}), 0),
+                            COALESCE(SUM({cr}), 0)
+                     FROM spans
+                     WHERE {guard}
+                       AND (attributes IS NULL OR json_valid(attributes))
+                       AND (scope IS NULL OR json_valid(scope))
+                     GROUP BY 1, 2, 3
+                     ON CONFLICT(day, tool, model) DO UPDATE SET
+                         input_tokens = excluded.input_tokens,
+                         output_tokens = excluded.output_tokens,
+                         cache_creation_tokens = excluded.cache_creation_tokens,
+                         cache_read_tokens = excluded.cache_read_tokens",
+                    tool = otelite_core::semconv::scope_tool_expr("scope"),
+                    model = otelite_core::semconv::model_expr("attributes"),
+                    input = otelite_core::semconv::coalesce_extract_cast(
+                        "attributes",
+                        otelite_core::semconv::INPUT_TOKEN_KEYS,
+                        "INTEGER",
+                    ),
+                    output = otelite_core::semconv::coalesce_extract_cast(
+                        "attributes",
+                        otelite_core::semconv::OUTPUT_TOKEN_KEYS,
+                        "INTEGER",
+                    ),
+                    cc = otelite_core::semconv::coalesce_extract_cast(
+                        "attributes",
+                        otelite_core::semconv::CACHE_CREATION_TOKEN_KEYS,
+                        "INTEGER",
+                    ),
+                    cr = otelite_core::semconv::coalesce_extract_cast(
+                        "attributes",
+                        otelite_core::semconv::CACHE_READ_TOKEN_KEYS,
+                        "INTEGER",
+                    ),
+                    guard = otelite_core::semconv::llm_span_guard("attributes"),
+                ),
+                [],
+            )?;
+            conn.execute_batch(&v4_sync_triggers())?;
+            conn.pragma_update(None, "user_version", 4)?;
+            Ok((trace_rows, tool_rows, llm_rows))
+        })();
+        match result {
+            Ok((trace_rows, tool_rows, llm_rows)) => {
+                conn.execute("COMMIT", [])?;
+                if trace_rows > 0 || tool_rows > 0 || llm_rows > 0 {
+                    tracing::info!(
+                        "schema v4: backfilled rollups (trace_latest {trace_rows} rows, \
+                         metrics_daily_tool {tool_rows} rows, spans_daily_llm {llm_rows} rows) \
+                         and armed sync triggers (one-time)"
+                    );
+                }
+            },
+            Err(e) => {
+                let _ = conn.execute("ROLLBACK", []);
+                return Err(e.into());
+            },
+        }
     }
 
     Ok(())
@@ -573,12 +959,12 @@ mod tests {
             .unwrap();
         assert_eq!(total, 2);
 
-        // Constraint + version are set (v3 = latest; the v2 block ran
-        // inside it).
+        // Constraint + version are set (v4 = latest; the v2/v3/v4 blocks
+        // all ran inside initialize_schema).
         let version: i32 = conn
             .query_row("PRAGMA user_version", [], |row| row.get(0))
             .unwrap();
-        assert_eq!(version, 3);
+        assert_eq!(version, 4);
         let has_index: bool = conn
             .query_row(
                 "SELECT COUNT(*) FROM sqlite_master \
@@ -704,7 +1090,8 @@ mod tests {
         let version: i32 = conn
             .query_row("PRAGMA user_version", [], |row| row.get(0))
             .unwrap();
-        assert_eq!(version, 3);
+        // v3 and v4 both ran (the simulated DB was at v2).
+        assert_eq!(version, 4);
         let rows: Vec<(String, i64)> = conn
             .prepare("SELECT name, timestamp FROM metric_latest ORDER BY name")
             .unwrap()
@@ -803,5 +1190,333 @@ mod tests {
             .unwrap();
         let count: i32 = stmt.query_map([], |_| Ok(1)).unwrap().count() as i32;
         assert_eq!(count, 3); // insert, delete, update triggers
+    }
+
+    // ── #251 v3/v4 migration hardening ────────────────────────────────────
+
+    /// Production crash loop (2026-09-18): the v3 backfill was a plain
+    /// INSERT while metric_latest's write trigger was already active — a
+    /// concurrent ingest (or a re-run after a crashed backfill) collided
+    /// with an existing row and bricked startup with
+    /// "UNIQUE constraint failed: metric_latest.name" on every launchd
+    /// restart. The merge backfill must tolerate trigger-maintained rows.
+    #[test]
+    fn test_schema_v3_backfill_is_idempotent_under_trigger_rows() {
+        let conn = Connection::open_in_memory().unwrap();
+        initialize_schema(&conn).unwrap();
+
+        // Ingest one metric row: the trigger arms a metric_latest row.
+        conn.execute(
+            "INSERT INTO metrics (name, metric_type, timestamp, value_int) \
+             VALUES ('m.live', 0, 500, 1)",
+            [],
+        )
+        .unwrap();
+
+        // Simulate a database stuck pre-v3 with a trigger-maintained row
+        // already present (the crash-loop state).
+        conn.pragma_update(None, "user_version", 2).unwrap();
+
+        initialize_schema(&conn).unwrap(); // must not UNIQUE-fail
+
+        let version: i32 = conn
+            .query_row("PRAGMA user_version", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(version, 4, "v3 + v4 run to completion");
+
+        // The merge keeps the trigger's row (same values here).
+        let latest_ts: i64 = conn
+            .query_row(
+                "SELECT timestamp FROM metric_latest WHERE name = 'm.live'",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(latest_ts, 500);
+    }
+
+    /// The v4 rollups backfill from pre-v4 history and their triggers
+    /// keep them in sync: trace_latest is a MAX-merge (an older span must
+    /// not rewind the newest start), metrics_daily_tool counts only the
+    /// three tool scopes, and deletes decrement to row removal.
+    #[test]
+    fn test_schema_v4_rollups_backfill_and_stay_in_sync() {
+        let conn = Connection::open_in_memory().unwrap();
+        initialize_schema(&conn).unwrap();
+
+        // Build the pre-v4 state: drop the armed triggers (inserts below
+        // are "history" the backfill, not the triggers, must count),
+        // clear the rollups, stamp back to v3.
+        conn.execute("DELETE FROM trace_latest", []).unwrap();
+        conn.execute("DELETE FROM metrics_daily_tool", []).unwrap();
+        for t in [
+            "trg_trace_latest_ai",
+            "trg_trace_latest_ad",
+            "trg_metrics_daily_tool_ai",
+            "trg_metrics_daily_tool_ad",
+            "trg_spans_daily_llm_ai",
+            "trg_spans_daily_llm_ad",
+        ] {
+            conn.execute(&format!("DROP TRIGGER {t}"), []).unwrap();
+        }
+        conn.pragma_update(None, "user_version", 3).unwrap();
+
+        // History: two traces; two claude_code + one opencode datapoints
+        // on 2026-01-01/02; one non-tool-scope datapoint.
+        conn.execute(
+            "INSERT INTO spans (trace_id, span_id, name, kind, start_time, end_time,
+                                attributes, events, resource, status_code)
+             VALUES ('t1', 'a', 's', 0, 100, 110, '{}', '[]', '{}', 0),
+                    ('t1', 'b', 's', 0, 200, 210, '{}', '[]', '{}', 0),
+                    ('t2', 'c', 's', 0, 300, 310, '{}', '[]', '{}', 0),
+                    ('t3', 'x1', 's', 0, 100, 110, '{}', '[]', '{}', 0),
+                    ('t3', 'x2', 's', 0, 200, 210, '{}', '[]', '{}', 0)",
+            [],
+        )
+        .unwrap();
+        let d1 = 1_767_225_600_000_000_000i64; // 2026-01-01 UTC
+        let d2 = 1_767_312_000_000_000_000i64; // 2026-01-02 UTC
+        for (ts, scope) in [
+            (d1, r#"{"name":"com.anthropic.claude_code"}"#),
+            (d1, r#"{"name":"com.anthropic.claude_code"}"#),
+            (d2, r#"{"name":"com.opencode"}"#),
+            (d1, r#"{"name":"other.scope"}"#),
+        ] {
+            conn.execute(
+                "INSERT INTO metrics (name, metric_type, timestamp, value_int, scope)
+                 VALUES ('m', 0, ?, 1, ?)",
+                rusqlite::params![ts, scope],
+            )
+            .unwrap();
+        }
+        // LLM-span history for the token rollup (two m1 spans on day 1,
+        // one m2 span on day 2, one corrupt-attribute span on day 2 that
+        // matches the guard via its vendor name; scope unset → tool label
+        // 'unknown').
+        conn.execute(
+            "INSERT INTO spans (trace_id, span_id, name, kind, start_time, end_time,
+                                attributes, events, resource, status_code)
+             VALUES ('t1', 'llm1', 'x', 0, ?, ?+100,
+                     '{\"gen_ai.system\":\"anthropic\",\"gen_ai.usage.input_tokens\":10,\
+                       \"gen_ai.usage.output_tokens\":4,\"gen_ai.request.model\":\"m1\"}',
+                     '[]', '{}', 0),
+                    ('t1', 'llm2', 'x', 0, ?+200, ?+260,
+                     '{\"gen_ai.system\":\"anthropic\",\"gen_ai.usage.input_tokens\":6,\
+                       \"gen_ai.usage.output_tokens\":2,\"gen_ai.request.model\":\"m1\"}',
+                     '[]', '{}', 0),
+                    ('t2', 'llm3', 'x', 0, ?+400, ?+460,
+                     '{\"gen_ai.system\":\"anthropic\",\"gen_ai.usage.input_tokens\":1,\
+                       \"gen_ai.usage.output_tokens\":1,\"gen_ai.request.model\":\"m2\"}',
+                     '[]', '{}', 0),
+                    ('t2', 'llm4c', 'claude_code.llm_request', 0, ?+500, ?+560,
+                     '{corrupt', '[]', '{}', 0)",
+            rusqlite::params![d1, d1, d1, d1, d2, d2, d2, d2],
+        )
+        .unwrap();
+
+        initialize_schema(&conn).unwrap();
+
+        let t1: i64 = conn
+            .query_row(
+                "SELECT last_start_time FROM trace_latest WHERE trace_id = 't1'",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(
+            t1,
+            d1 + 200,
+            "backfill keeps the newest span start (the llm2 span)"
+        );
+        let t2: i64 = conn
+            .query_row(
+                "SELECT last_start_time FROM trace_latest WHERE trace_id = 't2'",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(
+            t2,
+            d2 + 500,
+            "t2's newest span is the corrupt-attribute span (still a span)"
+        );
+
+        let counts: Vec<(String, String, i64)> = conn
+            .prepare("SELECT day, tool, datapoints FROM metrics_daily_tool ORDER BY day, tool")
+            .unwrap()
+            .query_map([], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))
+            .unwrap()
+            .collect::<std::result::Result<_, _>>()
+            .unwrap();
+        assert_eq!(
+            counts,
+            vec![
+                ("2026-01-01".to_string(), "claude_code".to_string(), 2),
+                ("2026-01-02".to_string(), "opencode".to_string(), 1),
+            ],
+            "non-tool-scope datapoints must not enter the rollup"
+        );
+
+        // LLM token rollup: backfill grouped the history per
+        // (day, tool, model); the two m1 spans summed into one row.
+        let llm: Vec<(String, String, i64, i64)> = conn
+            .prepare(
+                "SELECT day, model, input_tokens, output_tokens
+                 FROM spans_daily_llm ORDER BY day, model",
+            )
+            .unwrap()
+            .query_map([], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?)))
+            .unwrap()
+            .collect::<std::result::Result<_, _>>()
+            .unwrap();
+        assert_eq!(
+            llm,
+            vec![
+                ("2026-01-01".to_string(), "m1".to_string(), 16, 6),
+                ("2026-01-02".to_string(), "m2".to_string(), 1, 1),
+            ],
+            "the token rollup must group and sum the LLM span history, \
+             excluding the corrupt-attribute span"
+        );
+
+        // Triggers armed (on t3, whose history is small-value starts): a
+        // newer span advances, an older span does not rewind, deleting the
+        // newest recomputes.
+        conn.execute(
+            "INSERT INTO spans (trace_id, span_id, name, kind, start_time, end_time,
+                                attributes, events, resource, status_code)
+             VALUES ('t3', 'd', 's', 0, 400, 410, '{}', '[]', '{}', 0),
+                    ('t3', 'e', 's', 0, 50, 60, '{}', '[]', '{}', 0)",
+            [],
+        )
+        .unwrap();
+        let t3: i64 = conn
+            .query_row(
+                "SELECT last_start_time FROM trace_latest WHERE trace_id = 't3'",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(t3, 400, "older span must not rewind the rollup");
+
+        let newest_id: i64 = conn
+            .query_row("SELECT id FROM spans WHERE span_id = 'd'", [], |r| r.get(0))
+            .unwrap();
+        conn.execute(
+            "DELETE FROM spans WHERE id = ?1",
+            rusqlite::params![newest_id],
+        )
+        .unwrap();
+        let t3: i64 = conn
+            .query_row(
+                "SELECT last_start_time FROM trace_latest WHERE trace_id = 't3'",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(t3, 200, "deleting the newest span recomputes the rollup");
+
+        // Metrics rollup: insert increments; deleting the last datapoint
+        // of a (day, tool) removes the row.
+        let cc: i64 = conn
+            .query_row(
+                "SELECT datapoints FROM metrics_daily_tool \
+                 WHERE day = '2026-01-01' AND tool = 'claude_code'",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(cc, 2);
+        conn.execute(
+            "INSERT INTO metrics (name, metric_type, timestamp, value_int, scope)
+             VALUES ('m', 0, ?, 1, ?)",
+            rusqlite::params![d1, r#"{"name":"com.anthropic.claude_code"}"#],
+        )
+        .unwrap();
+        let cc: i64 = conn
+            .query_row(
+                "SELECT datapoints FROM metrics_daily_tool \
+                 WHERE day = '2026-01-01' AND tool = 'claude_code'",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(cc, 3, "trigger insert increments the day count");
+
+        let oc_id: i64 = conn
+            .query_row(
+                "SELECT id FROM metrics WHERE scope = ?1 ORDER BY id DESC LIMIT 1",
+                [r#"{"name":"com.opencode"}"#],
+                |r| r.get(0),
+            )
+            .unwrap();
+        conn.execute(
+            "DELETE FROM metrics WHERE id = ?1",
+            rusqlite::params![oc_id],
+        )
+        .unwrap();
+        let gone: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM metrics_daily_tool \
+                 WHERE day = '2026-01-02' AND tool = 'opencode'",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(
+            gone, 0,
+            "the last datapoint of a (day, tool) removes the row"
+        );
+
+        // Token rollup trigger: a new LLM span increments the
+        // (day, model) totals.
+        conn.execute(
+            "INSERT INTO spans (trace_id, span_id, name, kind, start_time, end_time,
+                                attributes, events, resource, status_code)
+             VALUES ('t1', 'llm4', 'x', 0, ?, ?+100,
+                     '{\"gen_ai.system\":\"anthropic\",\"gen_ai.usage.input_tokens\":5,\
+                       \"gen_ai.usage.output_tokens\":3,\"gen_ai.request.model\":\"m1\"}',
+                     '[]', '{}', 0)",
+            rusqlite::params![d1, d1],
+        )
+        .unwrap();
+        let (input, output): (i64, i64) = conn
+            .query_row(
+                "SELECT input_tokens, output_tokens FROM spans_daily_llm \
+                 WHERE day = '2026-01-01' AND model = 'm1'",
+                [],
+                |r| Ok((r.get(0)?, r.get(1)?)),
+            )
+            .unwrap();
+        assert_eq!(
+            (input, output),
+            (21, 9),
+            "the trigger must add the new span's tokens"
+        );
+
+        // A corrupt-attribute span matching the guard via its vendor name
+        // must insert cleanly (trigger body must not raise on malformed
+        // JSON) and contribute nothing to the rollup.
+        conn.execute(
+            "INSERT INTO spans (trace_id, span_id, name, kind, start_time, end_time,
+                                attributes, events, resource, status_code)
+             VALUES ('t1', 'llm5c', 'claude_code.llm_request', 0, ?, ?+100,
+                     '{corrupt', '[]', '{}', 0)",
+            rusqlite::params![d1, d1],
+        )
+        .unwrap();
+        let (input, output): (i64, i64) = conn
+            .query_row(
+                "SELECT input_tokens, output_tokens FROM spans_daily_llm \
+                 WHERE day = '2026-01-01' AND model = 'm1'",
+                [],
+                |r| Ok((r.get(0)?, r.get(1)?)),
+            )
+            .unwrap();
+        assert_eq!(
+            (input, output),
+            (21, 9),
+            "corrupt rows must not enter the rollup"
+        );
     }
 }

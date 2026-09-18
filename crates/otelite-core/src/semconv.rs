@@ -107,6 +107,38 @@ pub const LLM_SPAN_MARKER_KEYS: &[&str] = &[
 /// OpenInference span-kind values that count as LLM activity for analytics.
 pub const OPENINFERENCE_LLM_KINDS: &[&str] = &["LLM", "EMBEDDING"];
 
+/// Scope-name → short tool label, over the metrics/spans `scope` column.
+///
+/// `scope_col` is the column reference — bare `scope` in queries and
+/// `new.scope` / `old.scope` inside the v4 rollup triggers (schema.rs).
+/// The generated expression and the `spans_daily_llm` backfill must stay
+/// in lockstep (planner/data contract, #251).
+pub fn scope_tool_expr(scope_col: &str) -> String {
+    format!(
+        r#"CASE
+    WHEN json_extract({c},'$.name') LIKE '%claude_code%'   THEN 'claude_code'
+    WHEN json_extract({c},'$.name') = 'com.opencode'       THEN 'opencode'
+    WHEN json_extract({c},'$.name') LIKE '%opencode%'      THEN 'opencode'
+    WHEN json_extract({c},'$.name') = 'pi-otel'            THEN 'pi'
+    WHEN json_extract({c},'$.name') LIKE '%codex%'         THEN 'codex'
+    WHEN json_extract({c},'$.name') LIKE '%deekseek%'      THEN 'deepseek'
+    ELSE COALESCE(json_extract({c},'$.name'), 'unknown')
+END"#,
+        c = scope_col,
+    )
+}
+
+/// Model label over an attributes column (request model, then generic
+/// model, then '(unknown)'). Same `scope_col`-style parameterisation as
+/// [`scope_tool_expr`] for the v4 rollup triggers.
+pub fn model_expr(attributes_col: &str) -> String {
+    format!(
+        "COALESCE(json_extract({c},'$.\"gen_ai.request.model\"'),
+    json_extract({c},'$.\"model\"'), '(unknown)')",
+        c = attributes_col,
+    )
+}
+
 /// Span name prefixes for instrumentations that don't use the standard GenAI
 /// attribute markers. Each entry is used as a LIKE pattern (`<prefix>%`).
 ///
@@ -233,6 +265,14 @@ fn coalesce_inner(attributes_col: &str, keys: &[&str], cast: Option<&str>) -> St
 /// - without it, one corrupt row inside a time window would make every GenAI
 ///   analytics query over that window fail.
 pub fn llm_span_guard(attributes_col: &str) -> String {
+    llm_span_guard_cols(attributes_col, "name")
+}
+
+/// Same guard with an explicit column reference for the span-name `LIKE`
+/// clauses. Query call sites use the bare `name`; the v4 rollup triggers
+/// (schema.rs) must use `new.name` / `old.name` because unqualified names
+/// are ambiguous inside trigger bodies.
+pub fn llm_span_guard_cols(attributes_col: &str, name_col: &str) -> String {
     let mut clauses: Vec<String> = LLM_SPAN_MARKER_KEYS
         .iter()
         .map(|k| {
@@ -254,7 +294,7 @@ pub fn llm_span_guard(attributes_col: &str) -> String {
         kinds = kinds
     ));
     for prefix in VENDOR_SPAN_NAME_PREFIXES {
-        clauses.push(format!("name LIKE '{}%'", prefix));
+        clauses.push(format!("{name_col} LIKE '{}%'", prefix));
     }
     format!("({})", clauses.join(" OR "))
 }
