@@ -131,9 +131,10 @@ pub fn is_small_database(conn: &Connection) -> Result<bool> {
 }
 
 /// Decide whether the statistics should be refreshed right now: stale, and
-/// the database is quiet, and either small (cheap ANALYZE) or inside the
-/// nightly maintenance window (02:00–04:30 local, after the 02:00 purge).
-/// Pure decision — the caller performs the refresh.
+/// either a small database at a quiet moment (ANALYZE there is <1 s) or a
+/// large database inside the nightly maintenance window (02:00–04:30
+/// local, after the 02:00 purge) — no silence required in the window
+/// (#264). Pure decision — the caller performs the refresh.
 pub fn should_refresh_now(conn: &mut Connection) -> Result<bool> {
     should_refresh_now_at(conn, chrono::Local::now())
 }
@@ -145,12 +146,20 @@ pub fn should_refresh_now_at(
     if !stats_are_stale(conn, STATS_MAX_AGE)? {
         return Ok(false);
     }
-    if !database_is_quiet_at(conn, now.into(), Duration::minutes(1))? {
-        return Ok(false);
-    }
     if is_small_database(conn)? {
-        return Ok(true);
+        // ANALYZE on a small database is well under a second, so any quiet
+        // moment suffices — the quiet check keeps it clear of in-flight
+        // ingest.
+        return database_is_quiet_at(conn, now.into(), Duration::minutes(1));
     }
+    // Large database: the nightly window is the guard, and it is the ONLY
+    // guard (#264). The old gate additionally demanded 60 s of no
+    // ingest, which an always-active database never provides — the
+    // refresh therefore never ran and `sqlite_stat1` stayed stale
+    // indefinitely, silently degrading planner choices. Since #256's
+    // maintenance gate, writes fail fast and retry while `ANALYZE`
+    // holds the write lock, so overlapping a busy ingest inside the
+    // window is a brief retryable deferral (~minutes), not a 500 race.
     Ok((2..4).contains(&now.hour()) || (now.hour() == 4 && now.minute() < 30))
 }
 
@@ -400,6 +409,47 @@ mod tests {
         assert!(
             !should_refresh_now_at(&mut conn, local_at(4, 45)).unwrap(),
             "04:45 is outside the nightly window"
+        );
+
+        // 5. (#264) Stale + NOT quiet + large → still only the window
+        // decides: an always-active database never produces a 60-s
+        // silence, so the old gate's extra quietness demand meant the
+        // refresh never ran. Ingest one second before each candidate
+        // `now` — the database is active at every one of them.
+        let mut conn = conn_with_data();
+        conn.execute(
+            "INSERT INTO spans (id, name, start_time) VALUES (600000, 'x', 1)",
+            [],
+        )
+        .unwrap();
+        let active_at =
+            |h: u32, m: u32| -> i64 { local_at(h, m).with_timezone(&chrono::Utc).timestamp() - 1 };
+        conn.execute(
+            "UPDATE spans SET created_at = ? WHERE id = 1",
+            [active_at(12, 0)],
+        )
+        .unwrap();
+        assert!(
+            !should_refresh_now_at(&mut conn, local_at(12, 0)).unwrap(),
+            "active at noon (out of window) must stay deferred"
+        );
+        conn.execute(
+            "UPDATE spans SET created_at = ? WHERE id = 1",
+            [active_at(2, 15)],
+        )
+        .unwrap();
+        assert!(
+            should_refresh_now_at(&mut conn, local_at(2, 15)).unwrap(),
+            "active INSIDE the nightly window must refresh (the #264 fix)"
+        );
+        conn.execute(
+            "UPDATE spans SET created_at = ? WHERE id = 1",
+            [active_at(4, 45)],
+        )
+        .unwrap();
+        assert!(
+            !should_refresh_now_at(&mut conn, local_at(4, 45)).unwrap(),
+            "active at 04:45 (out of window) must stay deferred"
         );
     }
 }

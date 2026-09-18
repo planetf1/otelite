@@ -11,6 +11,17 @@ have to work around), not implementation detail.
 
 ## [Unreleased]
 
+### Fixed
+
+- The daemon's query-planner statistics refresh (`ANALYZE`) now actually
+  runs on always-active databases: the previous requirement for a 60-second
+  silence in the ingest stream was never met on a busy machine, so the
+  statistics stayed stale indefinitely and query performance silently
+  degraded. Large databases now refresh in the nightly 02:00–04:30 window
+  regardless of activity (writes during that window are briefly deferred
+  and retried, as since v0.1.152), and the daemon logs when a refresh is
+  pending but deferred instead of staying silent about it (#264)
+
 ## [0.1.152] - 2026-09-18
 
 ### Changed

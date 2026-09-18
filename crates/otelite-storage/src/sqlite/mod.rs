@@ -1573,14 +1573,15 @@ impl SqliteBackend {
     /// Background planner-statistics maintenance (issue #191): a dedicated
     /// connection (ANALYZE must not hold the main-connection mutex) that
     /// refreshes `sqlite_stat1` when it is stale — checked every 60 s, and
-    /// performed only when [`stats::should_refresh_now`] holds: the database
-    /// must be quiet (no ingest/purge in the last minute) and either small
-    /// (ANALYZE takes <1 s) or in the nightly 02:00–04:30 window after the
-    /// 02:00 purge. On a large active database the first refresh therefore
-    /// happens at the next quiet nightly window — deliberately, because
-    /// `ANALYZE` holds the write lock for its whole duration (up to ~96 s on
-    /// a 35 GB database, far beyond a writer's busy timeout) and must never
-    /// race with ingest.
+    /// performed only when [`stats::should_refresh_now`] holds: the
+    /// database must be small (ANALYZE takes <1 s) and quiet (no
+    /// ingest/purge in the last minute), OR large and inside the nightly
+    /// 02:00–04:30 window after the 02:00 purge — no silence required for
+    /// large databases (#264): since #256 the maintenance gate makes writes
+    /// fail fast and retry while ANALYZE holds the write lock, so
+    /// overlapping an active ingest inside the window is a brief
+    /// retryable deferral, and demanding a 60-s silence was what kept
+    /// always-active databases from ever refreshing.
     ///
     /// All SQLite work runs on the blocking pool (`spawn_blocking`), like
     /// [`Self::write_in_transaction`]: a rusqlite busy-handler wait must
@@ -1609,6 +1610,10 @@ impl SqliteBackend {
                 Err(_) => return,
             };
 
+            // Edge-triggered "refresh deferred" flag (#264): log once per
+            // stale period, not once per 60-s tick.
+            let mut deferred_logged = false;
+
             loop {
                 tokio::time::sleep(std::time::Duration::from_secs(60)).await;
 
@@ -1619,16 +1624,20 @@ impl SqliteBackend {
                 // write path fails fast instead of contending for the lock
                 // the refresh holds (#256).
                 let maintenance = maintenance_active.clone();
-                conn = match tokio::task::spawn_blocking(move || {
+                let (c, stale, refreshed) = match tokio::task::spawn_blocking(move || {
                     let mut c = conn;
+                    let mut stale = false;
+                    let mut refreshed = false;
                     match stats::should_refresh_now(&mut c) {
                         Ok(true) => {
+                            stale = true;
                             maintenance.store(true, Ordering::SeqCst);
                             let refresh =
                                 stats::maybe_refresh_planner_stats(&mut c, stats::STATS_MAX_AGE);
                             maintenance.store(false, Ordering::SeqCst);
                             match refresh {
                                 Ok(true) => {
+                                    refreshed = true;
                                     tracing::info!(
                                         "Planner statistics refreshed (ANALYZE, maintenance window)"
                                     );
@@ -1639,18 +1648,39 @@ impl SqliteBackend {
                                 },
                             }
                         },
-                        Ok(false) => {},
+                        // Report staleness so the loop can log a deferred
+                        // refresh (edge-triggered, #264) — the silent gate
+                        // was half the bug: nothing observable happened
+                        // while stats went stale indefinitely.
+                        Ok(false) => {
+                            stale = stats::stats_are_stale(&mut c, stats::STATS_MAX_AGE)
+                                .unwrap_or(false);
+                        },
                         Err(e) => {
                             tracing::warn!("Stats maintenance: refresh check failed: {e}");
                         },
                     }
-                    c
+                    (c, stale, refreshed)
                 })
                 .await
                 {
-                    Ok(c) => c,
+                    Ok(t) => t,
                     Err(_) => return,
                 };
+                conn = c;
+                if refreshed {
+                    deferred_logged = false;
+                } else if stale && !deferred_logged {
+                    tracing::info!(
+                        "Planner statistics are stale (older than 7 days) but the \
+                         refresh is deferred: large databases refresh in the \
+                         02:00-04:30 nightly window, small databases at the next \
+                         quiet moment"
+                    );
+                    deferred_logged = true;
+                } else if !stale {
+                    deferred_logged = false;
+                }
             }
         });
 
