@@ -11,6 +11,8 @@ have to work around), not implementation detail.
 
 ## [Unreleased]
 
+## [0.1.150] - 2026-09-18
+
 ### Fixed
 
 - Token usage endpoint (`otelite usage` / `/api/genai/usage`): the four
