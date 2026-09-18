@@ -11,6 +11,8 @@ have to work around), not implementation detail.
 
 ## [Unreleased]
 
+## [0.1.147] - 2026-09-18
+
 ### Fixed
 
 - OTLP/JSON ingest: histogram and summary exports with spec-compliant
