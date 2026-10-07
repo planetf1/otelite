@@ -30,6 +30,22 @@ fn insert_metric_row(conn: &Connection, name: &str, timestamp: i64, value: i64, 
     .unwrap();
 }
 
+/// Insert a counter row with a double-typed value in value_double (#270).
+fn insert_double_metric_row(
+    conn: &Connection,
+    name: &str,
+    timestamp: i64,
+    value: f64,
+    attributes: &str,
+) {
+    conn.execute(
+        "INSERT INTO metrics (name, metric_type, timestamp, value_double, attributes)
+         VALUES (?1, 1, ?2, ?3, ?4)",
+        rusqlite::params![name, timestamp, value, attributes],
+    )
+    .unwrap();
+}
+
 /// Insert a histogram metric row with explicit count and sum.
 #[allow(clippy::too_many_arguments)]
 fn insert_histogram_row(
@@ -382,6 +398,63 @@ fn agent_rollup_window_excludes_out_of_window_activity() {
         agents.is_empty(),
         "no in-window activity -> agent omitted: {agents:?}"
     );
+}
+
+#[test]
+fn agent_rollup_double_typed_values_in_value_double() {
+    let conn = setup_test_db();
+
+    // claude: one int-stored and one double-stored token row; SUM over a
+    // mixed int/real column is REAL and must not fail the i64-era fetch.
+    insert_double_metric_row(
+        &conn,
+        "claude_code.session.count",
+        T1,
+        1.0,
+        r#"{"session.id":"s1"}"#,
+    );
+    insert_metric_row(
+        &conn,
+        "claude_code.token.usage",
+        T1,
+        1000,
+        r#"{"session.id":"s1","model":"k1","type":"input"}"#,
+    );
+    insert_double_metric_row(
+        &conn,
+        "claude_code.token.usage",
+        T1,
+        250.0,
+        r#"{"session.id":"s1","model":"k1","type":"input"}"#,
+    );
+
+    // codex: all three per-event counters double-stored.
+    insert_double_metric_row(
+        &conn,
+        "codex.thread.started",
+        T1,
+        3.0,
+        r#"{"session_source":"cli"}"#,
+    );
+    insert_double_metric_row(&conn, "codex.tool.call", T1, 2.0, r#"{"tool":"shell"}"#);
+    insert_double_metric_row(
+        &conn,
+        "codex.api_request",
+        T1,
+        1.0,
+        r#"{"success":"false"}"#,
+    );
+
+    let agents = reader::query_agent_rollup(&conn, Some(T1), Some(T1), 1).unwrap();
+
+    let cl = find(&agents, "claude");
+    let k1 = cl.models.iter().find(|(m, _)| m == "k1").unwrap().1;
+    assert_eq!(k1.input, 1250, "int + double addends must sum");
+
+    let cx = find(&agents, "codex");
+    assert_eq!(cx.sessions, 3);
+    assert_eq!(cx.tool_calls, 2);
+    assert_eq!(cx.retries, Some(1));
 }
 
 #[test]

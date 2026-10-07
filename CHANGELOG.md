@@ -11,6 +11,13 @@ have to work around), not implementation detail.
 
 ## [Unreleased]
 
+### Fixed
+
+- `otelite agents` works again when token or event metrics were stored in
+  the double column: previously any `claude_code.token.usage` row (and, once
+  they arrive, codex counters) stored as a double made the whole per-harness
+  rollup fail with an "Invalid column type" API error (#270)
+
 ## [0.1.153] - 2026-09-18
 
 ### Fixed

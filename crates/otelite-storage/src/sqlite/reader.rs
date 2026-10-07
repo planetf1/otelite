@@ -5919,7 +5919,9 @@ pub fn query_agent_rollup(
                     row.get::<_, Option<String>>(0)?,
                     row.get::<_, Option<String>>(1)?,
                     row.get::<_, i64>(2)?,
-                    row.get::<_, i64>(3)?,
+                    // SUM returns REAL as soon as any addend lives in
+                    // value_double (#270), so fetch as f64.
+                    row.get::<_, f64>(3)?,
                 ))
             })
             .map_err(|e| {
@@ -5936,7 +5938,7 @@ pub fn query_agent_rollup(
                 model,
                 token_type.as_deref(),
                 bucket,
-                total as f64,
+                total,
             );
         }
 
@@ -6292,7 +6294,9 @@ fn codex_event_totals(
         "CASE WHEN json_valid(attributes) THEN json_extract(attributes, '{}') END",
         lbl::SESSION_SOURCE
     );
-    let sessions: i64 = conn
+    // f64 fetches: SUM returns REAL as soon as any addend lives in
+    // value_double (#270), and the rusqlite integer fetch rejects that.
+    let sessions: f64 = conn
         .query_row(
             &format!(
                 "SELECT COALESCE(SUM(COALESCE(value_int, value_double)), 0) \
@@ -6306,7 +6310,7 @@ fn codex_event_totals(
             StorageError::QueryError(format!("Failed to count codex thread starts: {e}"))
         })?;
 
-    let tool_calls: i64 = conn
+    let tool_calls: f64 = conn
         .query_row(
             "SELECT COALESCE(SUM(COALESCE(value_int, value_double)), 0) \
              FROM metrics WHERE name = ?1 AND timestamp >= ?2 AND timestamp <= ?3",
@@ -6319,7 +6323,7 @@ fn codex_event_totals(
         "CASE WHEN json_valid(attributes) THEN json_extract(attributes, '{}') END",
         lbl::SUCCESS
     );
-    let retries: i64 = conn
+    let retries: f64 = conn
         .query_row(
             &format!(
                 "SELECT COALESCE(SUM(COALESCE(value_int, value_double)), 0) \
@@ -6334,9 +6338,9 @@ fn codex_event_totals(
         })?;
 
     Ok((
-        sessions.max(0) as u64,
-        tool_calls.max(0) as u64,
-        retries.max(0) as u64,
+        sessions.max(0.0) as u64,
+        tool_calls.max(0.0) as u64,
+        retries.max(0.0) as u64,
     ))
 }
 
