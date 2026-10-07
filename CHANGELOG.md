@@ -11,6 +11,8 @@ have to work around), not implementation detail.
 
 ## [Unreleased]
 
+## [0.1.154] - 2026-10-07
+
 ### Fixed
 
 - `otelite agents` works again when token or event metrics were stored in
