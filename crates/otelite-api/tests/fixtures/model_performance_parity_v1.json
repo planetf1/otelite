@@ -580,7 +580,10 @@
             },
             "metric": "ttft",
             "notes": [
-              "TTFT values are absent, sparse, invalid, or degenerate: first-response and decode-rate attribution is prevented"
+              "TTFT values are absent, sparse, invalid, or degenerate: first-response and decode-rate attribution is prevented",
+              "current-window TTFT is degenerate: 12 of 12 valid values are at least 90% of request duration (a buffering proxy reported whole-request latency as first-token latency)",
+              "preceding-window TTFT is degenerate: 12 of 12 valid values are at least 90% of request duration (a buffering proxy reported whole-request latency as first-token latency)",
+              "rolling-window TTFT is degenerate: 12 of 12 valid values are at least 90% of request duration (a buffering proxy reported whole-request latency as first-token latency)"
             ],
             "preceding_median": 950.0,
             "rolling_median": 950.0
@@ -786,7 +789,9 @@
                 "percentile": 50,
                 "value": 200.0
               }
-            ]
+            ],
+            "ttft_degenerate": false,
+            "ttft_degenerate_count": 0
           },
           "preceding": {
             "eligible_count": 12,
@@ -795,7 +800,9 @@
                 "percentile": 50,
                 "value": 200.0
               }
-            ]
+            ],
+            "ttft_degenerate": false,
+            "ttft_degenerate_count": 0
           }
         }
       },
@@ -1043,7 +1050,9 @@
                 "percentile": 50,
                 "value": 200.0
               }
-            ]
+            ],
+            "ttft_degenerate": false,
+            "ttft_degenerate_count": 0
           },
           "preceding": {
             "eligible_count": 12,
@@ -1052,7 +1061,9 @@
                 "percentile": 50,
                 "value": 200.0
               }
-            ]
+            ],
+            "ttft_degenerate": false,
+            "ttft_degenerate_count": 0
           },
           "rolling": {
             "eligible_count": 12,
@@ -1061,7 +1072,9 @@
                 "percentile": 50,
                 "value": 200.0
               }
-            ]
+            ],
+            "ttft_degenerate": false,
+            "ttft_degenerate_count": 0
           }
         }
       },
@@ -1229,7 +1242,9 @@
                 "percentile": 50,
                 "value": 200.0
               }
-            ]
+            ],
+            "ttft_degenerate": false,
+            "ttft_degenerate_count": 0
           },
           "preceding": {
             "eligible_count": 12,
@@ -1238,7 +1253,9 @@
                 "percentile": 50,
                 "value": 200.0
               }
-            ]
+            ],
+            "ttft_degenerate": false,
+            "ttft_degenerate_count": 0
           }
         }
       },
@@ -1406,7 +1423,9 @@
                 "percentile": 50,
                 "value": 200.0
               }
-            ]
+            ],
+            "ttft_degenerate": false,
+            "ttft_degenerate_count": 0
           },
           "preceding": {
             "eligible_count": 12,
@@ -1415,7 +1434,9 @@
                 "percentile": 50,
                 "value": 200.0
               }
-            ]
+            ],
+            "ttft_degenerate": false,
+            "ttft_degenerate_count": 0
           }
         }
       },
@@ -1663,7 +1684,9 @@
                 "percentile": 50,
                 "value": 200.0
               }
-            ]
+            ],
+            "ttft_degenerate": false,
+            "ttft_degenerate_count": 0
           },
           "preceding": {
             "eligible_count": 12,
@@ -1672,7 +1695,9 @@
                 "percentile": 50,
                 "value": 200.0
               }
-            ]
+            ],
+            "ttft_degenerate": false,
+            "ttft_degenerate_count": 0
           },
           "rolling": {
             "eligible_count": 12,
@@ -1681,7 +1706,9 @@
                 "percentile": 50,
                 "value": 200.0
               }
-            ]
+            ],
+            "ttft_degenerate": false,
+            "ttft_degenerate_count": 0
           }
         }
       },
@@ -1929,7 +1956,9 @@
                 "percentile": 50,
                 "value": 950.0
               }
-            ]
+            ],
+            "ttft_degenerate": true,
+            "ttft_degenerate_count": 12
           },
           "preceding": {
             "eligible_count": 12,
@@ -1938,7 +1967,9 @@
                 "percentile": 50,
                 "value": 950.0
               }
-            ]
+            ],
+            "ttft_degenerate": true,
+            "ttft_degenerate_count": 12
           },
           "rolling": {
             "eligible_count": 12,
@@ -1947,7 +1978,9 @@
                 "percentile": 50,
                 "value": 950.0
               }
-            ]
+            ],
+            "ttft_degenerate": true,
+            "ttft_degenerate_count": 12
           }
         }
       }
@@ -2567,7 +2600,10 @@
             },
             "metric": "ttft",
             "notes": [
-              "TTFT values are absent, sparse, invalid, or degenerate: first-response and decode-rate attribution is prevented"
+              "TTFT values are absent, sparse, invalid, or degenerate: first-response and decode-rate attribution is prevented",
+              "current-window TTFT is degenerate: 12 of 12 valid values are at least 90% of request duration (a buffering proxy reported whole-request latency as first-token latency)",
+              "preceding-window TTFT is degenerate: 12 of 12 valid values are at least 90% of request duration (a buffering proxy reported whole-request latency as first-token latency)",
+              "rolling-window TTFT is degenerate: 12 of 12 valid values are at least 90% of request duration (a buffering proxy reported whole-request latency as first-token latency)"
             ],
             "preceding_median": 950.0,
             "rolling_median": 950.0
@@ -2773,7 +2809,9 @@
                 "percentile": 50,
                 "value": 200.0
               }
-            ]
+            ],
+            "ttft_degenerate": false,
+            "ttft_degenerate_count": 0
           },
           "preceding": {
             "eligible_count": 12,
@@ -2782,7 +2820,9 @@
                 "percentile": 50,
                 "value": 200.0
               }
-            ]
+            ],
+            "ttft_degenerate": false,
+            "ttft_degenerate_count": 0
           }
         }
       },
@@ -3030,7 +3070,9 @@
                 "percentile": 50,
                 "value": 200.0
               }
-            ]
+            ],
+            "ttft_degenerate": false,
+            "ttft_degenerate_count": 0
           },
           "preceding": {
             "eligible_count": 12,
@@ -3039,7 +3081,9 @@
                 "percentile": 50,
                 "value": 200.0
               }
-            ]
+            ],
+            "ttft_degenerate": false,
+            "ttft_degenerate_count": 0
           },
           "rolling": {
             "eligible_count": 12,
@@ -3048,7 +3092,9 @@
                 "percentile": 50,
                 "value": 200.0
               }
-            ]
+            ],
+            "ttft_degenerate": false,
+            "ttft_degenerate_count": 0
           }
         }
       },
@@ -3216,7 +3262,9 @@
                 "percentile": 50,
                 "value": 200.0
               }
-            ]
+            ],
+            "ttft_degenerate": false,
+            "ttft_degenerate_count": 0
           },
           "preceding": {
             "eligible_count": 12,
@@ -3225,7 +3273,9 @@
                 "percentile": 50,
                 "value": 200.0
               }
-            ]
+            ],
+            "ttft_degenerate": false,
+            "ttft_degenerate_count": 0
           }
         }
       },
@@ -3393,7 +3443,9 @@
                 "percentile": 50,
                 "value": 200.0
               }
-            ]
+            ],
+            "ttft_degenerate": false,
+            "ttft_degenerate_count": 0
           },
           "preceding": {
             "eligible_count": 12,
@@ -3402,7 +3454,9 @@
                 "percentile": 50,
                 "value": 200.0
               }
-            ]
+            ],
+            "ttft_degenerate": false,
+            "ttft_degenerate_count": 0
           }
         }
       },
@@ -3650,7 +3704,9 @@
                 "percentile": 50,
                 "value": 200.0
               }
-            ]
+            ],
+            "ttft_degenerate": false,
+            "ttft_degenerate_count": 0
           },
           "preceding": {
             "eligible_count": 12,
@@ -3659,7 +3715,9 @@
                 "percentile": 50,
                 "value": 200.0
               }
-            ]
+            ],
+            "ttft_degenerate": false,
+            "ttft_degenerate_count": 0
           },
           "rolling": {
             "eligible_count": 12,
@@ -3668,7 +3726,9 @@
                 "percentile": 50,
                 "value": 200.0
               }
-            ]
+            ],
+            "ttft_degenerate": false,
+            "ttft_degenerate_count": 0
           }
         }
       },
@@ -3916,7 +3976,9 @@
                 "percentile": 50,
                 "value": 950.0
               }
-            ]
+            ],
+            "ttft_degenerate": true,
+            "ttft_degenerate_count": 12
           },
           "preceding": {
             "eligible_count": 12,
@@ -3925,7 +3987,9 @@
                 "percentile": 50,
                 "value": 950.0
               }
-            ]
+            ],
+            "ttft_degenerate": true,
+            "ttft_degenerate_count": 12
           },
           "rolling": {
             "eligible_count": 12,
@@ -3934,7 +3998,9 @@
                 "percentile": 50,
                 "value": 950.0
               }
-            ]
+            ],
+            "ttft_degenerate": true,
+            "ttft_degenerate_count": 12
           }
         }
       }

@@ -1240,6 +1240,72 @@ fn test_model_performance_zero_baseline_reports_percentage_unavailable() {
 }
 
 #[test]
+fn test_model_performance_ttft_reports_degenerate_population() {
+    let conn = setup_test_db();
+    // Current window: [100s, 200s); preceding: [0s, 100s).
+    // Preceding: three requests with genuine 50 ms TTFT in 1000 ms
+    // requests. Current: twelve requests whose TTFT is 95% of the 1000 ms
+    // duration (buffering-proxy shape) — enough samples for the
+    // >= 10 && >= 90% degenerate rule (#273).
+    for i in 0..3 {
+        mp_span(
+            &conn,
+            &format!("p{i}"),
+            i as i64 * 10_000_000_000,
+            1000,
+            Some("100"),
+            Some("0.05"),
+            "10",
+            0,
+        );
+    }
+    for i in 0..12 {
+        mp_span(
+            &conn,
+            &format!("c{i}"),
+            100_000_000_000 + i as i64 * 1_000_000_000,
+            1000,
+            Some("100"),
+            Some("0.95"),
+            "10",
+            0,
+        );
+    }
+
+    let resp = reader::query_model_performance(
+        &conn,
+        &ModelPerformanceQuery {
+            current: ModelPerformanceWindow {
+                start_time: 100_000_000_000,
+                end_time: 200_000_000_000,
+            },
+            rolling: None,
+            model: None,
+            provider: None,
+        },
+    )
+    .unwrap();
+
+    let id = resp.identities.first().unwrap();
+    let cur = id.ttft.current.as_ref().unwrap();
+    assert_eq!(cur.eligible_count, 12);
+    assert_eq!(cur.ttft_degenerate_count, Some(12));
+    assert_eq!(cur.ttft_degenerate, Some(true));
+    // Degenerate values stay in the percentiles, flagged — the same
+    // contract as the latency-stats path.
+    let p50 = cur.percentiles.iter().find(|p| p.percentile == 50).unwrap();
+    assert_eq!(p50.value, 950.0);
+    let pre = id.ttft.preceding.as_ref().unwrap();
+    assert_eq!(pre.eligible_count, 3);
+    assert_eq!(pre.ttft_degenerate_count, Some(0));
+    assert_eq!(pre.ttft_degenerate, Some(false));
+    // Non-TTFT metrics never carry the TTFT-only annotation.
+    let dur = id.duration.current.as_ref().unwrap();
+    assert_eq!(dur.ttft_degenerate_count, None);
+    assert_eq!(dur.ttft_degenerate, None);
+}
+
+#[test]
 fn test_model_performance_rejects_invalid_windows() {
     let conn = setup_test_db();
     let bad_current = ModelPerformanceQuery {

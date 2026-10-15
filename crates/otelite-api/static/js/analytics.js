@@ -4404,9 +4404,18 @@ class AnalyticsView {
         } else {
             const rows = data.rows || [];
             if (!rows.length) {
-                inner = '<div class="empty-state-hint">No TTFT span data in this window. Only Claude Code and opencode spans carry ttft_ms.</div>';
+                inner = '<div class="empty-state-hint">No TTFT span data in this window. Only Claude Code and opencode spans carry a TTFT attribute.</div>';
             } else {
                 const fmtMs = v => v != null ? `${Math.round(v).toLocaleString()} ms` : '—';
+                // Same "buffered" annotation as the latency table (#273): a
+                // degenerate row reports whole-request duration, not TTFT.
+                const bufferedOf = r => r.degenerate
+                    ? `buffered (${Math.round((r.degenerate_count || 0) * 100 / r.count)}%)`
+                    : null;
+                const cell = (r, v) => {
+                    const b = bufferedOf(r);
+                    return b != null ? this._esc(b) : (v != null ? fmtMs(v) : '<span class="dim">n/a</span>');
+                };
                 let html = '<div class="analytics-table-wrap"><table class="analytics-table"><thead><tr>' +
                     '<th>Tool</th><th>Model</th><th>Count</th><th>Avg TTFT</th><th>Min</th><th>p90</th><th>Max</th>' +
                     '</tr></thead><tbody>';
@@ -4415,14 +4424,15 @@ class AnalyticsView {
                         <td>${this._esc(r.tool)}</td>
                         <td>${this._esc(r.model)}</td>
                         <td>${Number(r.count).toLocaleString()}</td>
-                        <td>${fmtMs(r.avg_ms)}</td>
-                        <td>${fmtMs(r.min_ms)}</td>
-                        <td>${r.p90_ms != null ? fmtMs(r.p90_ms) : '<span class="dim">n/a</span>'}</td>
-                        <td>${fmtMs(r.max_ms)}</td>
+                        <td class="num">${cell(r, r.avg_ms)}</td>
+                        <td class="num">${cell(r, r.min_ms)}</td>
+                        <td class="num">${cell(r, r.p90_ms)}</td>
+                        <td class="num">${cell(r, r.max_ms)}</td>
                     </tr>`;
                 }
                 html += '</tbody></table></div>';
                 if (rows.length > 60) html += `<p class="empty-state-hint">Showing top 60 of ${rows.length} rows.</p>`;
+                if (rows.some(r => r.degenerate)) html += '<p class="empty-state-hint">“Buffered” rows: most first-token values were near full request duration, so no stream was observed — those numbers are request duration, not TTFT.</p>';
                 inner = html;
             }
         }

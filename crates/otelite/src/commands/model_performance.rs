@@ -361,6 +361,8 @@ mod tests {
                 delta_vs_preceding: None,
                 delta_vs_rolling: None,
             }],
+            ttft_degenerate_count: None,
+            ttft_degenerate: None,
         }
     }
 

@@ -11,6 +11,18 @@ have to work around), not implementation detail.
 
 ## [Unreleased]
 
+### Fixed
+
+- Cross-tool TTFT numbers are real first-token latencies again: spans
+  whose `ttft_ms` is essentially the whole request duration (a buffering
+  proxy that delivers the full response as the "first token") no longer
+  show up as genuine TTFT in the TTFT report and model-performance
+  diagnosis. Both read paths now use the same normaliser and quality
+  classifier as the latency report, flag affected tools as
+  "buffered (N%)" instead of presenting request duration as TTFT, and
+  the model-performance JSON carries `ttft_degenerate_count` /
+  `ttft_degenerate` per window (#273)
+
 ## [0.1.154] - 2026-10-07
 
 ### Fixed

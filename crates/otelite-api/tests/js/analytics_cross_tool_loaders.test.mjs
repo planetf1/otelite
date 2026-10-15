@@ -93,6 +93,28 @@ test('ttft loader renders both empty states with no data', async () => {
     assert.match(body, /No TTFT span data in this window/);
 });
 
+test('ttft cross-tool block annotates degenerate (buffered) rows (#273)', async () => {
+    const view = makeView();
+    view.api = {
+        getCodexTtft: async () => ({ models: [] }),
+        getCrossToolTtft: async () => ({
+            rows: [
+                { tool: 'claude_code', model: 'genuine', count: 5, avg_ms: 800, min_ms: 100, p90_ms: 1500, max_ms: 2000 },
+                { tool: 'claude_code', model: 'buffered', count: 40, avg_ms: 19000, min_ms: 18000, p90_ms: 19500, max_ms: 20000, degenerate_count: 38, degenerate: true },
+            ],
+        }),
+    };
+    await view._loadTtftSection();
+    const body = view._bodies['ttft'];
+    // The degenerate row shows the buffered annotation instead of its
+    // (misleading) numbers, and carries the explanatory footnote.
+    assert.match(body, /buffered \(95%\)/);
+    assert.doesNotMatch(body, /19,000 ms/, 'degenerate averages must not render as TTFT');
+    assert.match(body, /request duration, not TTFT/);
+    // The clean row still renders its numbers.
+    assert.match(body, /800 ms/);
+});
+
 test('hook_overhead loader queries the API with the standard time window', async () => {
     const view = makeView();
     const calls = [];

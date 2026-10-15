@@ -1276,7 +1276,6 @@ pub fn query_model_performance(
         ModelPerformanceErrorValue, ModelPerformanceIdentity, ModelPerformanceMetric,
         ModelPerformancePercentile, ModelPerformanceResponse, ModelPerformanceSample,
     };
-    use otelite_core::telemetry::{classify_ttft_value, TtftValueQuality};
 
     let current = query.current;
     if current.end_time <= current.start_time {
@@ -1397,7 +1396,7 @@ pub fn query_model_performance(
         errors: usize,
         durations_ms: Vec<i64>,
         throughputs: Vec<f64>,
-        ttft_ms: Vec<i64>,
+        ttft: TtftAccum,
         input_tokens: Vec<i64>,
         cache_creation: Vec<i64>,
         cache_read: Vec<i64>,
@@ -1474,19 +1473,16 @@ pub fn query_model_performance(
         ) {
             agg.throughputs.push(rate);
         }
-        if let Some(Ok(ttft_secs)) = normalized_ttft_secs(
-            attrs
-                .get("gen_ai.server.time_to_first_token")
-                .map(String::as_str),
-            attrs.get("llm.time_to_first_token").map(String::as_str),
-            attrs.get("ttft_ms").map(String::as_str),
-        ) {
-            if classify_ttft_value(Some(ttft_secs), duration_ms as f64 / 1000.0)
-                == TtftValueQuality::Valid
-            {
-                agg.ttft_ms.push((ttft_secs * 1000.0).round() as i64);
-            }
-        }
+        agg.ttft.record(
+            duration_ms,
+            normalized_ttft_secs(
+                attrs
+                    .get("gen_ai.server.time_to_first_token")
+                    .map(String::as_str),
+                attrs.get("llm.time_to_first_token").map(String::as_str),
+                attrs.get("ttft_ms").map(String::as_str),
+            ),
+        );
         let token_of = |keys: &[&str]| -> Option<i64> {
             first_semconv_attribute(attrs, keys).and_then(|v| v.parse::<i64>().ok())
         };
@@ -1565,6 +1561,8 @@ pub fn query_model_performance(
                 Some(ModelPerformanceSample {
                     eligible_count: sorted.len(),
                     percentiles: percentiles(&sorted),
+                    ttft_degenerate_count: None,
+                    ttft_degenerate: None,
                 })
             };
             let mut metric = ModelPerformanceMetric {
@@ -1641,6 +1639,8 @@ pub fn query_model_performance(
                 Some(ModelPerformanceSample {
                     eligible_count: sorted.len(),
                     percentiles: p10_p50(&sorted),
+                    ttft_degenerate_count: None,
+                    ttft_degenerate: None,
                 })
             };
             let current_values = current_agg
@@ -1701,12 +1701,33 @@ pub fn query_model_performance(
                     p50_i64,
                 )
             };
-        let ttft = build_metric(
-            current_agg.map(|a| a.ttft_ms.clone()).unwrap_or_default(),
-            preceding_agg.map(|a| a.ttft_ms.clone()).unwrap_or_default(),
-            rolling_agg.map(|a| a.ttft_ms.clone()),
-            p50_i64,
-        );
+        let ttft = {
+            // TtftAccum keeps the degenerate population visible alongside
+            // the percentiles (#273): the values still feed p50, but each
+            // window's sample carries the degenerate count/flag the
+            // latency-stats path reports.
+            let mut metric = build_metric(
+                current_agg
+                    .map(|a| a.ttft.values_ms.clone())
+                    .unwrap_or_default(),
+                preceding_agg
+                    .map(|a| a.ttft.values_ms.clone())
+                    .unwrap_or_default(),
+                rolling_agg.map(|a| a.ttft.values_ms.clone()),
+                p50_i64,
+            );
+            let decorate = |sample: &mut Option<ModelPerformanceSample>,
+                            agg: Option<&WindowAgg>| {
+                if let (Some(sample), Some(accum)) = (sample.as_mut(), agg.map(|a| &a.ttft)) {
+                    sample.ttft_degenerate_count = Some(accum.degenerate_count);
+                    sample.ttft_degenerate = Some(accum.is_degenerate());
+                }
+            };
+            decorate(&mut metric.current, current_agg);
+            decorate(&mut metric.preceding, preceding_agg);
+            decorate(&mut metric.rolling, rolling_agg);
+            metric
+        };
         let input_tokens = token_metric(&|a: &WindowAgg| &a.input_tokens);
         let cache_creation_tokens = token_metric(&|a: &WindowAgg| &a.cache_creation);
         let cache_read_tokens = token_metric(&|a: &WindowAgg| &a.cache_read);
@@ -14171,12 +14192,19 @@ mod tests {
 
 // ── New insight queries ───────────────────────────────────────────────────────
 
-/// Cross-tool TTFT comparison from span-level `ttft_ms` attribute.
+/// Cross-tool TTFT comparison from span-level TTFT attributes.
 ///
-/// Reads `ttft_ms` from every span that carries it, normalises the
-/// `otel.scope.name` to a short tool label, and returns per-(tool, model)
-/// aggregates. Codex TTFT comes from the separate `query_codex_ttft` histogram
-/// path and is NOT included here (those spans lack a `ttft_ms` attribute).
+/// Every span's TTFT goes through the canonical normaliser and classifier
+/// (#273): the source-attribute priority
+/// (`gen_ai.server.time_to_first_token` / `llm.time_to_first_token` /
+/// `ttft_ms`), unit handling and `ttft > duration` rejection are identical
+/// to the latency-stats path, and near-duration (buffering-proxy) values
+/// are flagged via the same `TTFT_DEGENERATE_RATIO` rule instead of
+/// masquerading as first-token latency. The `otel.scope.name` is
+/// normalised to a short tool label, and the per-(tool, model) aggregates
+/// are computed in Rust from the classified values. Codex TTFT comes from
+/// the separate `query_codex_ttft` histogram path and is NOT included
+/// here (those spans lack a TTFT attribute).
 pub fn query_cross_tool_ttft(
     conn: &Connection,
     start_time: Option<i64>,
@@ -14184,22 +14212,24 @@ pub fn query_cross_tool_ttft(
 ) -> Result<otelite_core::api::CrossToolTtftResponse> {
     use otelite_core::api::{CrossToolTtftResponse, CrossToolTtftRow};
 
-    let mut where_parts = vec!["json_valid(attributes)".to_string()];
+    // Only spans that actually carry one of the three TTFT attributes;
+    // the normaliser applies the priority order, so the population is not
+    // limited to the custom `ttft_ms` key.
+    let mut where_clause = String::from(
+        "WHERE json_valid(attributes) \
+         AND (json_extract(attributes, '$.\"gen_ai.server.time_to_first_token\"') IS NOT NULL \
+              OR json_extract(attributes, '$.\"llm.time_to_first_token\"') IS NOT NULL \
+              OR json_extract(attributes, '$.\"ttft_ms\"') IS NOT NULL)",
+    );
     let mut params: Vec<Box<dyn rusqlite::ToSql>> = Vec::new();
-
-    // Only spans that actually carry ttft_ms with a positive value
-    where_parts.push("CAST(json_extract(attributes,'$.\"ttft_ms\"') AS REAL) > 0".to_string());
-
     if let Some(s) = start_time {
-        where_parts.push("start_time >= ?".to_string());
+        where_clause.push_str(" AND start_time >= ?");
         params.push(Box::new(s));
     }
     if let Some(e) = end_time {
-        where_parts.push("start_time <= ?".to_string());
+        where_clause.push_str(" AND start_time <= ?");
         params.push(Box::new(e));
     }
-
-    let where_clause = format!("WHERE {}", where_parts.join(" AND "));
 
     let sql = format!(
         r#"
@@ -14212,15 +14242,12 @@ pub fn query_cross_tool_ttft(
             ELSE COALESCE(json_extract(attributes,'$."otel.scope.name"'), 'unknown')
           END AS tool,
           COALESCE(json_extract(attributes,'$."model"'), '(unknown)') AS model,
-          COUNT(*) AS cnt,
-          AVG(CAST(json_extract(attributes,'$."ttft_ms"') AS REAL)) AS avg_ms,
-          MIN(CAST(json_extract(attributes,'$."ttft_ms"') AS REAL)) AS min_ms,
-          MAX(CAST(json_extract(attributes,'$."ttft_ms"') AS REAL)) AS max_ms
+          (end_time - start_time) / 1000000 AS duration_ms,
+          json_extract(attributes, '$."gen_ai.server.time_to_first_token"') AS otel_ttft_secs,
+          json_extract(attributes, '$."llm.time_to_first_token"') AS llm_ttft_secs,
+          json_extract(attributes, '$."ttft_ms"') AS custom_ttft_ms
         FROM spans
         {where_clause}
-        GROUP BY tool, model
-        HAVING cnt > 0
-        ORDER BY tool ASC, avg_ms ASC
         "#
     );
 
@@ -14228,72 +14255,80 @@ pub fn query_cross_tool_ttft(
     let mut stmt = conn.prepare(&sql).map_err(|e| {
         StorageError::QueryError(format!("Failed to prepare cross_tool_ttft query: {e}"))
     })?;
-
-    // We also need individual values to compute p90; do a second pass per group.
-    let rows: Vec<CrossToolTtftRow> = stmt
+    let rows = stmt
         .query_map(param_refs.as_slice(), |r| {
             Ok((
                 r.get::<_, String>(0)?,
                 r.get::<_, String>(1)?,
-                r.get::<_, i64>(2)? as u64,
-                r.get::<_, f64>(3)?,
-                r.get::<_, f64>(4)?,
-                r.get::<_, f64>(5)?,
+                r.get::<_, i64>(2)?,
+                r.get::<_, Option<String>>(3)?,
+                r.get::<_, Option<String>>(4)?,
+                r.get::<_, Option<String>>(5)?,
             ))
         })
-        .map_err(|e| StorageError::QueryError(format!("{e}")))?
+        .map_err(|e| {
+            StorageError::QueryError(format!("Failed to execute cross_tool_ttft query: {e}"))
+        })?
         .collect::<std::result::Result<Vec<_>, _>>()
-        .map_err(|e| StorageError::QueryError(format!("{e}")))?
-        .into_iter()
-        .map(|(tool, model, count, avg_ms, min_ms, max_ms)| {
-            // p90: fetch sorted ttft values for this model and compute in Rust.
-            // Only when there are enough samples; inline model into SQL to avoid
-            // closure-lifetime issues with the existing params Vec.
-            let p90_ms = if count >= 10 {
-                let values_sql = format!(
-                    r#"
-                    SELECT CAST(json_extract(attributes,'$."ttft_ms"') AS REAL)
-                    FROM spans
-                    {where_clause}
-                      AND COALESCE(json_extract(attributes,'$."model"'), '(unknown)') = '{model}'
-                    ORDER BY CAST(json_extract(attributes,'$."ttft_ms"') AS REAL) ASC
-                    "#
-                );
-                if let Ok(mut vstmt) = conn.prepare(&values_sql) {
-                    if let Ok(vals) = vstmt
-                        .query_map(param_refs.as_slice(), |r| r.get::<_, f64>(0))
-                        .and_then(|rows| rows.collect::<std::result::Result<Vec<_>, _>>())
-                    {
-                        if !vals.is_empty() {
-                            let idx = ((vals.len() as f64 * 0.90) as usize).min(vals.len() - 1);
-                            Some(vals[idx])
-                        } else {
-                            None
-                        }
-                    } else {
-                        None
-                    }
-                } else {
-                    None
-                }
-            } else {
-                None
-            };
+        .map_err(|e| {
+            StorageError::QueryError(format!("Failed to parse cross_tool_ttft rows: {e}"))
+        })?;
 
-            CrossToolTtftRow {
+    // Per-(tool, model) accumulation with the canonical classifier:
+    // valid values feed the aggregates, rejected values are counted, and
+    // near-duration values set the degenerate flag (same rule as the
+    // latency-stats path).
+    let mut groups: BTreeMap<(String, String), TtftAccum> = BTreeMap::new();
+    for (tool, model, duration_ms, otel, llm, custom) in rows {
+        groups.entry((tool, model)).or_default().record(
+            duration_ms,
+            normalized_ttft_secs(otel.as_deref(), llm.as_deref(), custom.as_deref()),
+        );
+    }
+
+    let mut out: Vec<CrossToolTtftRow> = groups
+        .into_iter()
+        .filter_map(|((tool, model), mut accum)| {
+            let is_degenerate = accum.is_degenerate();
+            let mut sorted = std::mem::take(&mut accum.values_ms);
+            if sorted.is_empty() {
+                // No usable value in the window: the group cannot join a
+                // TTFT comparison (the capability report and latency
+                // stats surface the rejection reasons per model).
+                return None;
+            }
+            sorted.sort_unstable();
+            let count = sorted.len();
+            let avg_ms = sorted.iter().sum::<i64>() as f64 / count as f64;
+            // Same nearest-rank p90 the previous per-group second pass
+            // computed, only when there are enough samples for it to be
+            // meaningful.
+            let p90_ms = (count >= 10).then(|| {
+                let idx = ((count as f64 * 0.90) as usize).min(count - 1);
+                sorted[idx] as f64
+            });
+            Some(CrossToolTtftRow {
                 tool,
                 model,
-                count,
+                count: count as u64,
+                invalid_count: accum.invalid_count,
+                degenerate_count: accum.degenerate_count,
+                degenerate: is_degenerate,
                 avg_ms,
-                min_ms,
+                min_ms: sorted[0] as f64,
                 p90_ms,
-                max_ms,
-            }
+                max_ms: sorted[count - 1] as f64,
+            })
         })
         .collect();
+    out.sort_by(|a, b| {
+        (a.tool.as_str(), a.avg_ms)
+            .partial_cmp(&(b.tool.as_str(), b.avg_ms))
+            .unwrap_or(std::cmp::Ordering::Equal)
+    });
 
     Ok(CrossToolTtftResponse {
-        rows,
+        rows: out,
         filters_applied: Vec::new(),
     })
 }
@@ -15209,6 +15244,110 @@ mod new_insight_tests {
         let conn = setup_db();
         let result = query_cross_tool_ttft(&conn, None, None).unwrap();
         assert!(result.rows.is_empty());
+    }
+
+    /// #273: cross-tool TTFT must go through the canonical normaliser
+    /// (attribute priority + units) and the canonical classifier
+    /// (ttft > duration rejection, degenerate ratio), instead of reading
+    /// `ttft_ms` raw in SQL.
+    #[test]
+    fn test_query_cross_tool_ttft_normalises_and_flags_degenerate() {
+        let conn = setup_db();
+        // claude_code tool label; per-model populations:
+        // - model-genuine: one 800 ms TTFT inside a 20 s request
+        // - model-buffered: twelve spans whose ttft_ms is 99.9% of the
+        //   20 s duration (buffering-proxy shape) — enough samples for
+        //   the >= 10 && >= 90% degenerate rule
+        // - model-mixed: one valid 500 ms value plus one ttft > duration
+        //   rejection
+        // - model-priority: both gen_ai.server.time_to_first_token
+        //   ("0.5", seconds) and ttft_ms ("5000") present — the canonical
+        //   priority must pick the otel key and treat it as seconds
+        let insert = |span_id: &str, model: &str, ttft_ms: &str, dur_ms: i64| {
+            conn.execute(
+                "INSERT INTO spans (trace_id, span_id, name, kind, start_time, end_time, attributes, status_code)
+                 VALUES ('t', ?1, 'claude_code.llm_request', 0, 1000000000, ?2, ?3, 1)",
+                rusqlite::params![
+                    span_id,
+                    1000000000 + dur_ms * 1_000_000,
+                    format!(
+                        "{{\"otel.scope.name\":\"com.anthropic.claude_code\",\"model\":\"{model}\",\"ttft_ms\":\"{ttft_ms}\"}}"
+                    ),
+                ],
+            )
+            .unwrap();
+        };
+        insert("g1", "model-genuine", "800", 20_000);
+        for i in 0..12 {
+            insert(&format!("b{i}"), "model-buffered", "19980", 20_000);
+        }
+        insert("m1", "model-mixed", "500", 20_000);
+        insert("m2", "model-mixed", "25000", 20_000); // ttft > duration
+        conn.execute(
+            "INSERT INTO spans (trace_id, span_id, name, kind, start_time, end_time, attributes, status_code)
+             VALUES ('t', 'p1', 'claude_code.llm_request', 0, 1000000000, 10200000000, ?1, 1)",
+            rusqlite::params![
+                "{\"otel.scope.name\":\"com.anthropic.claude_code\",\"model\":\"model-priority\",\"gen_ai.server.time_to_first_token\":\"0.5\",\"ttft_ms\":\"5000\"}"
+            ],
+        )
+        .unwrap();
+
+        let result = query_cross_tool_ttft(&conn, None, None).unwrap();
+        let row_of = |model: &str| {
+            result
+                .rows
+                .iter()
+                .find(|r| r.model == model && r.tool == "claude_code")
+                .unwrap_or_else(|| panic!("missing row for {model}"))
+        };
+
+        let genuine = row_of("model-genuine");
+        assert_eq!(genuine.count, 1);
+        assert_eq!(genuine.degenerate_count, 0);
+        assert!(!genuine.degenerate);
+        assert_eq!(genuine.avg_ms, 800.0);
+
+        let buffered = row_of("model-buffered");
+        assert_eq!(buffered.count, 12);
+        assert_eq!(buffered.degenerate_count, 12);
+        assert!(buffered.degenerate, "12 of 12 values >= 90% of duration");
+        // Degenerate values stay in the aggregates, flagged — the same
+        // contract as the latency-stats path.
+        assert_eq!(buffered.avg_ms, 19980.0);
+        assert_eq!(buffered.min_ms, 19980.0);
+        assert_eq!(buffered.max_ms, 19980.0);
+
+        let mixed = row_of("model-mixed");
+        assert_eq!(mixed.count, 1, "ttft > duration is rejected, not averaged");
+        assert_eq!(mixed.invalid_count, 1);
+        assert_eq!(mixed.avg_ms, 500.0);
+
+        let priority = row_of("model-priority");
+        assert_eq!(
+            priority.avg_ms, 500.0,
+            "gen_ai.server.time_to_first_token (seconds) must win over ttft_ms"
+        );
+    }
+
+    /// #273: a group whose every TTFT value is rejected has nothing to
+    /// compare and must not appear as a zero-count row.
+    #[test]
+    fn test_query_cross_tool_ttft_all_invalid_group_is_dropped() {
+        let conn = setup_db();
+        conn.execute(
+            "INSERT INTO spans (trace_id, span_id, name, kind, start_time, end_time, attributes, status_code)
+             VALUES ('t', 'x1', 'claude_code.llm_request', 0, 1000000000, 11000000000, ?1, 1)",
+            rusqlite::params![
+                "{\"otel.scope.name\":\"com.anthropic.claude_code\",\"model\":\"model-x\",\"ttft_ms\":\"abc\"}"
+            ],
+        )
+        .unwrap();
+        let result = query_cross_tool_ttft(&conn, None, None).unwrap();
+        assert!(
+            result.rows.is_empty(),
+            "unparsable ttft_ms must not produce a row: {:?}",
+            result.rows
+        );
     }
 
     #[test]

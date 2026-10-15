@@ -609,6 +609,25 @@ pub fn assess_identity(
                 .to_string(),
         );
     }
+    // #273: report the buffering-proxy population alongside the
+    // percentiles — the values still feed them, so a degenerate window
+    // must say so instead of presenting request duration as TTFT.
+    let mut degenerate_note = |label: &str, sample: Option<&ModelPerformanceSample>| {
+        if let Some(sample) = sample {
+            if sample.ttft_degenerate == Some(true) {
+                ttft.notes.push(format!(
+                    "{label} TTFT is degenerate: {} of {} valid values are at least 90% of \
+                     request duration (a buffering proxy reported whole-request latency as \
+                     first-token latency)",
+                    sample.ttft_degenerate_count.unwrap_or(0),
+                    sample.eligible_count
+                ));
+            }
+        }
+    };
+    degenerate_note("current-window", identity.ttft.current.as_ref());
+    degenerate_note("preceding-window", identity.ttft.preceding.as_ref());
+    degenerate_note("rolling-window", identity.ttft.rolling.as_ref());
 
     // Error rate assessed on its own terms (percentage points, Up = worse).
     let mut error_rate = classify(
@@ -680,6 +699,8 @@ fn sample_from_error_value(
             delta_vs_preceding: None,
             delta_vs_rolling: None,
         }],
+        ttft_degenerate_count: None,
+        ttft_degenerate: None,
     })
 }
 
@@ -793,6 +814,8 @@ mod tests {
         ModelPerformanceSample {
             eligible_count: count,
             percentiles,
+            ttft_degenerate_count: None,
+            ttft_degenerate: None,
         }
     }
     fn metric(
@@ -1114,6 +1137,34 @@ mod tests {
             .notes
             .iter()
             .any(|n| n.contains("attribution is prevented")));
+    }
+
+    #[test]
+    fn degenerate_ttft_sample_is_annotated() {
+        // #273: a degenerate TTFT population (buffering proxy) must be
+        // reported alongside the percentiles, per window, even when the
+        // capability-derived trust gate says Reliable.
+        let mut id = flat_identity();
+        let mut degenerate_current = sample(12, p50(950.0));
+        degenerate_current.ttft_degenerate_count = Some(11);
+        degenerate_current.ttft_degenerate = Some(true);
+        let mut clean_preceding = sample(12, p50(50.0));
+        clean_preceding.ttft_degenerate_count = Some(0);
+        clean_preceding.ttft_degenerate = Some(false);
+        id.ttft = metric(Some(degenerate_current), Some(clean_preceding));
+        let a = assess_identity(&id, TtftTrust::Reliable, false);
+        let ttft = &a.metrics[2];
+        assert!(
+            ttft.notes
+                .iter()
+                .any(|n| n.contains("current-window TTFT is degenerate: 11 of 12 valid values")),
+            "degenerate population documented: {:?}",
+            ttft.notes
+        );
+        assert!(!ttft
+            .notes
+            .iter()
+            .any(|n| n.contains("preceding-window TTFT is degenerate")));
     }
 
     #[test]

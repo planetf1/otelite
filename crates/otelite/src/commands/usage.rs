@@ -3910,7 +3910,7 @@ fn display_human_latency(resp: &otelite_core::api::HumanResponseLatencyResponse)
 
 fn display_cross_tool_ttft(resp: &otelite_core::api::CrossToolTtftResponse) {
     if resp.rows.is_empty() {
-        println!("Cross-Tool TTFT: no span-level ttft_ms data in range");
+        println!("Cross-Tool TTFT: no span-level TTFT data in range");
         return;
     }
     let mut table = Table::new();
@@ -3942,23 +3942,32 @@ fn display_cross_tool_ttft(resp: &otelite_core::api::CrossToolTtftResponse) {
                 .collect::<String>()
         )
     };
-    let fmt_opt = |v: Option<f64>| match v {
-        Some(x) => fmt_ms(x),
-        None => "—".to_string(),
-    };
     for r in &resp.rows {
+        // Same "buffered" annotation as the latency table (#273): a
+        // degenerate row reports whole-request duration, not TTFT.
+        let buffered = ttft_stream_status(r.count as usize, r.degenerate_count, r.degenerate);
+        let stat = |v: Option<f64>| match (&buffered, v) {
+            (Some(status), _) => status.clone(),
+            (None, Some(x)) => fmt_ms(x),
+            (None, None) => "—".to_string(),
+        };
         table.add_row(vec![
             r.tool.as_str(),
             r.model.as_str(),
             &r.count.to_string(),
-            &fmt_ms(r.avg_ms),
-            &fmt_ms(r.min_ms),
-            &fmt_opt(r.p90_ms),
-            &fmt_ms(r.max_ms),
+            &stat(Some(r.avg_ms)),
+            &stat(Some(r.min_ms)),
+            &stat(r.p90_ms),
+            &stat(Some(r.max_ms)),
         ]);
     }
     println!("Cross-Tool First-Token Latency (span-level):");
     println!("{}", table);
+    if resp.rows.iter().any(|r| r.degenerate) {
+        println!(
+            "TTFT is emitter-supplied. “buffered” means most first-token values were near full request duration, so no stream was observed."
+        );
+    }
 }
 
 fn display_hook_overhead(resp: &otelite_core::api::HookOverheadResponse) {

@@ -986,6 +986,15 @@ pub struct ModelPerformanceSample {
     /// Request spans eligible for this metric in the window.
     pub eligible_count: usize,
     pub percentiles: Vec<ModelPerformancePercentile>,
+    /// TTFT metric only: valid values at least 90% of the request
+    /// duration in this window (buffering-proxy shape). `None` on every
+    /// other metric.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub ttft_degenerate_count: Option<usize>,
+    /// TTFT metric only: true when at least 10 valid values exist and 90%
+    /// are near complete duration. `None` on every other metric.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub ttft_degenerate: Option<bool>,
 }
 
 /// Canonical request counts per window for one identity.
@@ -2765,7 +2774,21 @@ pub struct CrossToolTtftRow {
     /// (e.g. "claude_code", "opencode", "codex").
     pub tool: String,
     pub model: String,
+    /// Valid TTFT samples behind the aggregates (normalised via the
+    /// canonical normaliser; rejected values are not counted).
     pub count: u64,
+    /// Emitted TTFT values that could not represent first-token latency
+    /// (unparsable, negative, or exceeding the span duration).
+    #[serde(default)]
+    pub invalid_count: usize,
+    /// Valid values at least 90% of the complete request duration
+    /// (buffering-proxy shape: the "first token" is the whole response).
+    #[serde(default)]
+    pub degenerate_count: usize,
+    /// True when at least 10 valid values exist and 90% are near complete
+    /// duration — the row's numbers are request duration, not TTFT.
+    #[serde(default)]
+    pub degenerate: bool,
     /// Average TTFT in milliseconds.
     pub avg_ms: f64,
     /// Minimum TTFT in milliseconds.
