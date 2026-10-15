@@ -11,6 +11,8 @@ have to work around), not implementation detail.
 
 ## [Unreleased]
 
+## [0.1.155] - 2026-10-15
+
 ### Added
 
 - Ad-hoc `sqlite3` probes over LLM spans can now query the `llm_spans`
