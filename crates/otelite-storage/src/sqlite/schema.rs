@@ -240,6 +240,15 @@ pub fn initialize_schema(conn: &Connection) -> Result<()> {
     // functions the queries use, so index and query can never drift apart.
     // A partial index is only eligible when the query's WHERE contains the
     // index WHERE verbatim as a conjunct — which the reader queries do.
+    //
+    // The same guard also ships as a read-only view (#274): manual
+    // sqlite3 probes over LLM spans get the partial-index plan (view
+    // flattening merges the guard into the outer query) without
+    // transcribing the seven-branch OR from the DDL. Generated from the
+    // same `llm_guard` string as the index, so the two cannot drift apart
+    // at creation time. Created here (idempotent DDL, runs on every boot)
+    // so existing databases pick it up on the next startup — the same
+    // mechanism the partial indexes above used.
     {
         use otelite_core::semconv;
         let llm_guard = semconv::llm_span_guard("attributes");
@@ -253,6 +262,12 @@ pub fn initialize_schema(conn: &Connection) -> Result<()> {
         conn.execute(
             &format!(
                 "CREATE INDEX IF NOT EXISTS idx_spans_llm_request ON spans(start_time) WHERE {request_guard}"
+            ),
+            [],
+        )?;
+        conn.execute(
+            &format!(
+                "CREATE VIEW IF NOT EXISTS llm_spans AS SELECT * FROM spans WHERE {llm_guard}"
             ),
             [],
         )?;
@@ -902,6 +917,106 @@ mod tests {
         let conn = Connection::open_in_memory().unwrap();
         let result = initialize_schema(&conn);
         assert!(result.is_ok());
+    }
+
+    /// #274: the `llm_spans` view carries the same guard as the
+    /// `idx_spans_llm` partial index, returns exactly the guard-matching
+    /// rows, and reappears on re-init (the idempotent-DDL mechanism that
+    /// upgrades existing databases).
+    #[test]
+    fn test_llm_spans_view_matches_guard_and_survives_reinit() {
+        let conn = Connection::open_in_memory().unwrap();
+        initialize_schema(&conn).unwrap();
+        // One span per guard branch shape: marker attribute, vendor span
+        // name, and one non-LLM span that must stay invisible.
+        conn.execute(
+            "INSERT INTO spans (trace_id, span_id, name, kind, start_time, end_time, attributes)
+             VALUES ('t', 'marker', 'llm.call', 0, 1000, 2000, ?1)",
+            rusqlite::params![r#"{"gen_ai.system":"openai","model":"m1"}"#],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO spans (trace_id, span_id, name, kind, start_time, end_time, attributes)
+             VALUES ('t', 'vendor', 'claude_code.llm_request', 0, 3000, 4000, ?1)",
+            rusqlite::params![r#"{"model":"m2"}"#],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO spans (trace_id, span_id, name, kind, start_time, end_time, attributes)
+             VALUES ('t', 'other', 'tool.call', 0, 5000, 6000, ?1)",
+            rusqlite::params![r#"{"model":"m3"}"#],
+        )
+        .unwrap();
+
+        let view_ids: Vec<String> = conn
+            .prepare("SELECT span_id FROM llm_spans ORDER BY span_id")
+            .unwrap()
+            .query_map([], |row| row.get(0))
+            .unwrap()
+            .collect::<rusqlite::Result<Vec<_>>>()
+            .unwrap();
+        assert_eq!(
+            view_ids,
+            vec!["marker".to_string(), "vendor".to_string()],
+            "the view must return exactly the llm_span_guard population"
+        );
+
+        // Simulate a pre-#274 database (view absent, migration version
+        // already current): re-running the idempotent base DDL must
+        // create the view — the existing-database upgrade path.
+        conn.execute("DROP VIEW llm_spans", []).unwrap();
+        initialize_schema(&conn).unwrap();
+        let view_exists: bool = conn
+            .query_row(
+                "SELECT COUNT(*) FROM sqlite_master \
+                 WHERE type = 'view' AND name = 'llm_spans'",
+                [],
+                |row| Ok(row.get::<_, i64>(0)? == 1),
+            )
+            .unwrap();
+        assert!(view_exists, "re-init must recreate the llm_spans view");
+    }
+
+    /// #274: querying through the view must plan as a partial-index search
+    /// (view flattening merges the guard into the outer query), while the
+    /// equivalent guard-free direct query cannot use the partial index.
+    #[test]
+    fn test_llm_spans_view_gets_partial_index_plan() {
+        let conn = Connection::open_in_memory().unwrap();
+        initialize_schema(&conn).unwrap();
+        conn.execute(
+            "INSERT INTO spans (trace_id, span_id, name, kind, start_time, end_time, attributes)
+             VALUES ('t', 's1', 'llm.call', 0, 1000, 2000, ?1)",
+            rusqlite::params![r#"{"gen_ai.system":"openai","model":"m1"}"#],
+        )
+        .unwrap();
+
+        let plan = |sql: &str| -> String {
+            let mut stmt = conn.prepare(sql).unwrap();
+            let mut rows = stmt.query([]).unwrap();
+            let mut detail = String::new();
+            while let Some(row) = rows.next().unwrap() {
+                detail.push_str(&row.get::<_, String>(3).unwrap());
+                detail.push('\n');
+            }
+            detail
+        };
+        let via_view = plan(
+            "EXPLAIN QUERY PLAN \
+            SELECT COUNT(*) FROM llm_spans WHERE start_time >= 0",
+        );
+        assert!(
+            via_view.contains("idx_spans_llm"),
+            "view flattening must make the partial index eligible: {via_view}"
+        );
+        let direct = plan(
+            "EXPLAIN QUERY PLAN \
+            SELECT COUNT(*) FROM spans WHERE start_time >= 0",
+        );
+        assert!(
+            !direct.contains("idx_spans_llm"),
+            "guard-free direct query must not use the partial index: {direct}"
+        );
     }
 
     /// #254: the v2 migration dedups spans already retried into a pre-v2

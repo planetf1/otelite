@@ -11,6 +11,16 @@ have to work around), not implementation detail.
 
 ## [Unreleased]
 
+### Added
+
+- Ad-hoc `sqlite3` probes over LLM spans can now query the `llm_spans`
+  view to get the fast partial-index plan without copying the long
+  LLM-span predicate out of the schema DDL: manual questions like
+  per-model duration over a window go from tens of seconds (or a timed-out
+  full scan) to sub-second, read-only alongside the live daemon. See the
+  new "Slow Manual sqlite3 Probes" section in docs/troubleshooting.md
+  for probe-safe query shapes (#274)
+
 ### Fixed
 
 - Cross-tool TTFT numbers are real first-token latencies again: spans

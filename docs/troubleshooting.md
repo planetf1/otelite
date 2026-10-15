@@ -359,6 +359,47 @@ Otelite has no rate-limiting knobs. Usual culprits, in order:
 3. **Use aggregations**: Pre-aggregate data for common queries
 4. **Enable caching**: Cache frequently accessed data
 
+### Slow Manual sqlite3 Probes
+
+**Problem**: A direct `sqlite3` query against the database takes tens of
+seconds (or times out) even though the dashboard answers the same
+question quickly
+
+**Diagnosis**:
+The GenAI partial indexes are only eligible when the query's `WHERE`
+contains the index predicate verbatim. A probe like
+`SELECT COUNT(*) FROM spans WHERE name='pi.llm_request' AND start_time >= X`
+cannot use them, so the planner scans the whole time window and pays a
+table lookup per row (measured: 34 s on a large database, vs 0.1 s with
+the predicate included).
+
+**Solution**:
+Query the `llm_spans` view instead of transcribing the guard from the
+DDL — it carries the LLM-span predicate, and view flattening supplies it
+to the planner for you:
+
+```bash
+# Read-only, safe alongside the live daemon
+sqlite3 -readonly ~/.otelite/data/otelite.db \
+  "SELECT COUNT(*) FROM llm_spans WHERE name='pi.llm_request' AND start_time >= 1790000000000000000;"
+
+# Per-model duration over a bounded window
+sqlite3 -readonly ~/.otelite/data/otelite.db \
+  "SELECT json_extract(attributes,'$."model"') AS model, COUNT(*),
+          AVG((end_time - start_time) / 1000000)
+   FROM llm_spans WHERE start_time >= 1790000000000000000 GROUP BY 1;"
+```
+
+Rules of thumb for ad-hoc probes:
+1. **Always bound `start_time`** (nanoseconds since the epoch) — even an
+   indexed plan walks every row in the window.
+2. **Prefer `llm_spans`** over copying the guard out of the DDL — the
+   guard is a seven-branch `OR` over `json_extract` expressions and easy
+   to get subtly wrong.
+3. **Avoid unbounded `MIN`/`MAX` with attribute filters** — they can walk
+   the entire table seeking the first match (measured: over a five-minute
+   timeout on a large database).
+
 ## Network Issues
 
 ### Connection Refused
