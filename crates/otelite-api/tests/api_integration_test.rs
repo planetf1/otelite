@@ -359,6 +359,17 @@ async fn test_help_endpoint() {
 
     assert!(!help_text.is_empty());
     assert!(help_text.contains("API"));
+    // #277: the documentation section must describe endpoints that exist —
+    // the OpenAPI JSON is served at /api/openapi.json, and the Swagger UI
+    // (/docs) never had a route (the crate was never mounted).
+    assert!(
+        help_text.contains("GET /api/openapi.json"),
+        "help must point at the real OpenAPI JSON path"
+    );
+    assert!(
+        !help_text.contains("GET /docs"),
+        "help must not advertise the nonexistent Swagger UI endpoint"
+    );
 }
 
 #[tokio::test]

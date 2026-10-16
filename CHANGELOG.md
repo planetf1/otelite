@@ -11,6 +11,19 @@ have to work around), not implementation detail.
 
 ## [Unreleased]
 
+### Fixed
+
+- `GET /api/help` no longer advertises a `GET /docs` Swagger UI endpoint
+  that never existed, and points at the real OpenAPI JSON path
+  (`/api/openapi.json`) (#277)
+
+### Internal
+
+- Drop the unused `utoipa-swagger-ui` dependency: it was never mounted
+  (there is no `/docs` route) and its `zip 1.x` transitive — every 1.x
+  release is yanked — failed the security audit's yanked check, keeping
+  the Security workflow red on main and parking release PRs (#277)
+
 ## [0.1.155] - 2026-10-15
 
 ### Added

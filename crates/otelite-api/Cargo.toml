@@ -32,7 +32,6 @@ http-body = "1"
 
 # OpenAPI documentation
 utoipa = { version = "4", features = ["axum_extras"] }
-utoipa-swagger-ui = { version = "7", features = ["axum"] }
 
 # Date/time formatting for session diagnose endpoint
 chrono = { workspace = true }

@@ -86,11 +86,8 @@ GET /metrics/export?name=http_requests
   Query parameters: same as /metrics
 
 === Documentation ===
-GET /openapi.json
+GET /api/openapi.json
   OpenAPI 3.0 specification in JSON format
-
-GET /docs
-  Interactive Swagger UI documentation
 
 GET /help
   This plain-text reference guide
