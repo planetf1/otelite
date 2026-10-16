@@ -294,7 +294,16 @@ jobs:
           # Write and read notes from a file to avoid quoting breaking things
           echo "$ANNOUNCEMENT_BODY" > $RUNNER_TEMP/notes.txt
 
-          gh release create "${{ needs.plan.outputs.tag }}" --target "$RELEASE_COMMIT" $PRERELEASE_FLAG --title "$ANNOUNCEMENT_TITLE" --notes-file "$RUNNER_TEMP/notes.txt" artifacts/*
+          # Idempotent publish (#278): a second run for the same tag — the
+          # tag-push and bump-and-tag dispatch race, or a re-run after a
+          # partial publish — must not fail on the existing release.
+          # Upload any missing artifacts instead of creating it again.
+          if gh release view "${{ needs.plan.outputs.tag }}" >/dev/null 2>&1; then
+            echo "release ${{ needs.plan.outputs.tag }} already exists — uploading any missing artifacts"
+            gh release upload "${{ needs.plan.outputs.tag }}" artifacts/* --clobber
+          else
+            gh release create "${{ needs.plan.outputs.tag }}" --target "$RELEASE_COMMIT" $PRERELEASE_FLAG --title "$ANNOUNCEMENT_TITLE" --notes-file "$RUNNER_TEMP/notes.txt" artifacts/*
+          fi
 
   publish-homebrew-formula:
     needs:
@@ -343,8 +352,16 @@ jobs:
             brew style --except-cops FormulaAudit/Homepage,FormulaAudit/Desc,FormulaAuditStrict --fix "Formula/${filename}" || true
 
             git add "Formula/${filename}"
-            git commit -m "${name} ${version}"
+            # Idempotent (#278): a duplicate run for the same tag finds the
+            # formula already committed — skip the empty commit instead of
+            # failing, and rebase a concurrent run's push before pushing.
+            if git diff --cached --quiet; then
+              echo "formula ${filename} unchanged — nothing to commit"
+            else
+              git commit -m "${name} ${version}"
+            fi
           done
+          git pull --rebase
           git push
 
   announce:

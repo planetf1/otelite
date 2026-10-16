@@ -27,6 +27,13 @@ have to work around), not implementation detail.
 
 ### Internal
 
+- Release publishing is idempotent: when two `Release` runs fire for one
+  tag (the v0.1.155 tag-push and dispatch race) or a run is re-executed
+  after a partial publish, the second run uploads any missing artifacts
+  instead of failing on "a release with the same tag name already
+  exists", and the Homebrew formula commit skips when the formula is
+  unchanged — no more red X on an otherwise healthy release (#278)
+
 - Drop the unused `utoipa-swagger-ui` dependency: it was never mounted
   (there is no `/docs` route) and its `zip 1.x` transitive — every 1.x
   release is yanked — failed the security audit's yanked check, keeping
