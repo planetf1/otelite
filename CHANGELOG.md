@@ -11,6 +11,8 @@ have to work around), not implementation detail.
 
 ## [Unreleased]
 
+## [0.1.156] - 2026-10-16
+
 ### Fixed
 
 - TTFT reports no longer treat a `ttft_ms` of `0` as a genuine
