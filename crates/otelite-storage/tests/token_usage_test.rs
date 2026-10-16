@@ -1271,6 +1271,18 @@ fn test_model_performance_ttft_reports_degenerate_population() {
             0,
         );
     }
+    // #276: an exactly-zero TTFT is a failed/unset measurement — rejected
+    // by the shared classifier, so it must not become a 13th sample.
+    mp_span(
+        &conn,
+        "cz",
+        199_000_000_000,
+        1000,
+        Some("100"),
+        Some("0"),
+        "10",
+        0,
+    );
 
     let resp = reader::query_model_performance(
         &conn,
@@ -1288,7 +1300,10 @@ fn test_model_performance_ttft_reports_degenerate_population() {
 
     let id = resp.identities.first().unwrap();
     let cur = id.ttft.current.as_ref().unwrap();
-    assert_eq!(cur.eligible_count, 12);
+    assert_eq!(
+        cur.eligible_count, 12,
+        "the zero-TTFT span must be rejected, not counted"
+    );
     assert_eq!(cur.ttft_degenerate_count, Some(12));
     assert_eq!(cur.ttft_degenerate, Some(true));
     // Degenerate values stay in the percentiles, flagged — the same

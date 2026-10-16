@@ -443,6 +443,13 @@ fn ttft_evidence(
 
 /// Classify a normalised TTFT value against its enclosing span duration.
 ///
+/// An exactly-zero value is rejected alongside negative and
+/// non-finite ones: emitters use `0` for a failed or unset measurement,
+/// never a genuine sub-millisecond first token (live evidence, #276: the
+/// smallest genuine TTFT over 14 days was 725 ms while 37 spans carried
+/// `ttft_ms: "0"`). Genuine sub-millisecond values survive: this runs on
+/// the exact seconds value, before any integer-millisecond rounding.
+///
 /// Group-level degeneracy is deliberately not decided here: it requires a
 /// population of valid observations and is handled by analytics consumers.
 pub fn classify_ttft_value(ttft_secs: Option<f64>, duration_secs: f64) -> TtftValueQuality {
@@ -452,6 +459,7 @@ pub fn classify_ttft_value(ttft_secs: Option<f64>, duration_secs: f64) -> TtftVa
 
     if !ttft_secs.is_finite()
         || !duration_secs.is_finite()
+        || ttft_secs == 0.0
         || ttft_secs.is_sign_negative()
         || duration_secs.is_sign_negative()
         || ttft_secs > duration_secs
@@ -1303,6 +1311,18 @@ mod tests {
         assert_eq!(classify_ttft_value(None, 1.0), TtftValueQuality::Absent);
         assert_eq!(
             classify_ttft_value(Some(0.25), 1.0),
+            TtftValueQuality::Valid
+        );
+        // #276: exact zero is a failed/unset measurement, not a real
+        // sub-millisecond first token.
+        assert_eq!(
+            classify_ttft_value(Some(0.0), 1.0),
+            TtftValueQuality::Invalid
+        );
+        // A genuine sub-millisecond TTFT stays valid: classification runs
+        // on the exact seconds value, before integer-millisecond rounding.
+        assert_eq!(
+            classify_ttft_value(Some(0.0004), 1.0),
             TtftValueQuality::Valid
         );
         assert_eq!(

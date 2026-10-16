@@ -13,6 +13,14 @@ have to work around), not implementation detail.
 
 ### Fixed
 
+- TTFT reports no longer treat a `ttft_ms` of `0` as a genuine
+  sub-millisecond first token: emitters use zero for failed or unset
+  measurements, and those samples were flooring the cross-tool report's
+  minimum and entering model-performance percentiles. An exactly-zero
+  TTFT is now counted as invalid everywhere (capability report, latency
+  stats, cross-tool TTFT, model-performance), while real sub-millisecond
+  values still count (#276)
+
 - `GET /api/help` no longer advertises a `GET /docs` Swagger UI endpoint
   that never existed, and points at the real OpenAPI JSON path
   (`/api/openapi.json`) (#277)

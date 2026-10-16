@@ -15259,7 +15259,7 @@ mod new_insight_tests {
         //   20 s duration (buffering-proxy shape) — enough samples for
         //   the >= 10 && >= 90% degenerate rule
         // - model-mixed: one valid 500 ms value plus one ttft > duration
-        //   rejection
+        //   rejection plus one zero (failed/unset) measurement
         // - model-priority: both gen_ai.server.time_to_first_token
         //   ("0.5", seconds) and ttft_ms ("5000") present — the canonical
         //   priority must pick the otel key and treat it as seconds
@@ -15283,6 +15283,9 @@ mod new_insight_tests {
         }
         insert("m1", "model-mixed", "500", 20_000);
         insert("m2", "model-mixed", "25000", 20_000); // ttft > duration
+                                                      // #276: an exactly-zero ttft_ms is a failed/unset measurement —
+                                                      // rejected like ttft > duration, never flooring min_ms.
+        insert("m3", "model-mixed", "0", 20_000);
         conn.execute(
             "INSERT INTO spans (trace_id, span_id, name, kind, start_time, end_time, attributes, status_code)
              VALUES ('t', 'p1', 'claude_code.llm_request', 0, 1000000000, 10200000000, ?1, 1)",
@@ -15318,9 +15321,13 @@ mod new_insight_tests {
         assert_eq!(buffered.max_ms, 19980.0);
 
         let mixed = row_of("model-mixed");
-        assert_eq!(mixed.count, 1, "ttft > duration is rejected, not averaged");
-        assert_eq!(mixed.invalid_count, 1);
+        assert_eq!(
+            mixed.count, 1,
+            "ttft > duration and ttft == 0 are rejected, not averaged"
+        );
+        assert_eq!(mixed.invalid_count, 2);
         assert_eq!(mixed.avg_ms, 500.0);
+        assert_eq!(mixed.min_ms, 500.0, "zero must not floor min_ms");
 
         let priority = row_of("model-priority");
         assert_eq!(
