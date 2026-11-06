@@ -1250,6 +1250,103 @@ async fn test_export_logs_with_time_range() {
     assert_eq!(response.status(), StatusCode::OK);
 }
 
+// Regression (#269): /api/traces/export must apply the same filters as the
+// list endpoint. Previously only start_time/end_time/trace_id/limit were
+// carried into QueryParams; session_id, conversation_id, model, attrs, search,
+// service, resource, and query were dropped and never applied.
+#[tokio::test]
+async fn test_export_traces_with_service_filter() {
+    let (storage, _tmp) = setup_test_storage().await;
+
+    let with_resource = |trace_id: &str, span_id: &str, service: &str, start: i64, end: i64| {
+        let mut span = create_test_span(trace_id, span_id, "root", start, end);
+        span.resource = Some(Resource {
+            attributes: {
+                let mut attrs = HashMap::new();
+                attrs.insert("service.name".to_string(), service.to_string());
+                attrs
+            },
+        });
+        span
+    };
+    storage
+        .write_span(&with_resource("trace-a", "span1", "svc-a", 1000, 2000))
+        .await
+        .unwrap();
+    storage
+        .write_span(&with_resource("trace-b", "span2", "svc-b", 3000, 4000))
+        .await
+        .unwrap();
+
+    let app = build_test_router(storage);
+    let response = app
+        .oneshot(
+            Request::builder()
+                .uri("/api/traces/export?service=svc-b")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), StatusCode::OK);
+
+    let body = response.into_body().collect().await.unwrap().to_bytes();
+    let spans: Vec<serde_json::Value> = serde_json::from_slice(&body).unwrap();
+
+    // Only trace-b carries service.name=svc-b; the svc-a span must be filtered out.
+    assert_eq!(spans.len(), 1);
+    assert_eq!(spans[0]["trace_id"], "trace-b");
+}
+
+// Regression (#269): /api/traces/export must honour the structured `query`
+// predicate the same way the list endpoint does. Uses the `name` direct column
+// to exercise the query parser path end-to-end.
+#[tokio::test]
+async fn test_export_traces_with_query_predicate() {
+    let (storage, _tmp) = setup_test_storage().await;
+
+    let named = |trace_id: &str, span_id: &str, name: &str, start: i64, end: i64| {
+        let mut span = create_test_span(trace_id, span_id, name, start, end);
+        span.resource = Some(Resource {
+            attributes: {
+                let mut attrs = HashMap::new();
+                attrs.insert("service.name".to_string(), "svc".to_string());
+                attrs
+            },
+        });
+        span
+    };
+    storage
+        .write_span(&named("trace-a", "span1", "root", 1000, 2000))
+        .await
+        .unwrap();
+    storage
+        .write_span(&named("trace-b", "span2", "api_call", 3000, 4000))
+        .await
+        .unwrap();
+
+    let app = build_test_router(storage);
+    let response = app
+        .oneshot(
+            Request::builder()
+                .uri("/api/traces/export?query=name%20%3D%20%22api_call%22")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), StatusCode::OK);
+
+    let body = response.into_body().collect().await.unwrap().to_bytes();
+    let spans: Vec<serde_json::Value> = serde_json::from_slice(&body).unwrap();
+
+    // The structured query matches only trace-b's span name.
+    assert_eq!(spans.len(), 1);
+    assert_eq!(spans[0]["trace_id"], "trace-b");
+}
+
 // NEW TEST: GET /api/traces/export - invalid format
 #[tokio::test]
 async fn test_export_traces_invalid_format() {
