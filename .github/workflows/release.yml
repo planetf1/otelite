@@ -66,8 +66,8 @@ jobs:
       - name: Install dist
         shell: bash
         env:
-          DIST_VERSION: "v0.31.0"
-          DIST_SHA256: "e79d87e418b9d2cbe992d014985457c28a5a7c553add3da4ed1047e161c928f4"
+          DIST_VERSION: "v0.32.0"
+          DIST_SHA256: "b657cf8c04a8b7bc28f39d220f7e6dd11bbd2bdb072c552262bd9ccf597261b5"
         run: |
           curl --proto '=https' --tlsv1.2 -LsSf \
             "https://github.com/axodotdev/cargo-dist/releases/download/${DIST_VERSION}/cargo-dist-installer.sh" \
