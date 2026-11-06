@@ -11,6 +11,12 @@ have to work around), not implementation detail.
 
 ## [Unreleased]
 
+## [0.1.159] - 2026-11-06
+
+### Fixed
+
+- Apply every trace filter on `/api/traces/export`, not just `start_time`, `end_time`, and `trace_id`. `session_id`, `conversation_id`, `model`, `attrs`, `search`, `service`, `resource`, and the structured `query` parameter now narrow the exported spans the same way they narrow `/api/traces`.
+
 ## [0.1.158] - 2026-11-06
 
 ### Fixed
