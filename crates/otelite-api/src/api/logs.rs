@@ -302,14 +302,10 @@ pub async fn get_log(
 
 /// Export format for logs
 #[derive(Debug, Deserialize, utoipa::IntoParams)]
-pub struct ExportQuery {
+pub struct FormatQuery {
     /// Export format: "json" or "csv"
     #[serde(default = "default_format")]
     pub format: String,
-
-    /// Same filters as LogsQuery
-    #[serde(flatten)]
-    pub filters: LogsQuery,
 }
 
 fn default_format() -> String {
@@ -320,7 +316,10 @@ fn default_format() -> String {
 #[utoipa::path(
     get,
     path = "/api/logs/export",
-    params(ExportQuery),
+    params(
+        ("format" = String, Query, description = "Export format: json or csv"),
+        LogsQuery
+    ),
     responses(
         (status = 200, description = "Exported logs in requested format"),
         (status = 400, description = "Invalid format parameter or time range", body = ErrorResponse),
@@ -330,20 +329,21 @@ fn default_format() -> String {
 )]
 pub async fn export_logs(
     State(state): State<AppState>,
-    Query(params): Query<ExportQuery>,
+    Query(format_query): Query<FormatQuery>,
+    Query(filters): Query<LogsQuery>,
 ) -> Result<impl IntoResponse, (StatusCode, Json<ErrorResponse>)> {
-    validate_time_range(params.filters.start_time, params.filters.end_time)?;
+    validate_time_range(filters.start_time, filters.end_time)?;
 
     // Build query parameters (no limit for export, but cap at 10000)
     let mut query = QueryParams {
-        start_time: params.filters.start_time,
-        end_time: params.filters.end_time,
+        start_time: filters.start_time,
+        end_time: filters.end_time,
         limit: Some(10000),
-        search_text: params.filters.search.clone().filter(|s| !s.is_empty()),
+        search_text: filters.search.clone().filter(|s| !s.is_empty()),
         ..Default::default()
     };
 
-    if let Some(severity_str) = params.filters.severity.as_deref().filter(|s| !s.is_empty()) {
+    if let Some(severity_str) = filters.severity.as_deref().filter(|s| !s.is_empty()) {
         query.min_severity = parse_severity(severity_str);
     }
 
@@ -355,17 +355,16 @@ pub async fn export_logs(
     })?;
 
     // Filter by resource if specified (skip empty string = no filter)
-    let filtered_logs: Vec<LogRecord> = if let Some(resource_filter) =
-        params.filters.resource.as_deref().filter(|s| !s.is_empty())
-    {
-        logs.into_iter()
-            .filter(|log| matches_resource_filter(log, resource_filter))
-            .collect()
-    } else {
-        logs
-    };
+    let filtered_logs: Vec<LogRecord> =
+        if let Some(resource_filter) = filters.resource.as_deref().filter(|s| !s.is_empty()) {
+            logs.into_iter()
+                .filter(|log| matches_resource_filter(log, resource_filter))
+                .collect()
+        } else {
+            logs
+        };
 
-    match params.format.as_str() {
+    match format_query.format.as_str() {
         "json" => {
             let log_entries: Vec<LogEntry> =
                 filtered_logs.into_iter().map(LogEntry::from).collect();

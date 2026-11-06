@@ -401,14 +401,10 @@ pub struct TraceLogsQuery {
 
 /// Export format for traces
 #[derive(Debug, Deserialize, utoipa::IntoParams)]
-pub struct ExportQuery {
+pub struct FormatQuery {
     /// Export format: "json"
     #[serde(default = "default_format")]
     pub format: String,
-
-    /// Same filters as TracesQuery
-    #[serde(flatten)]
-    pub filters: TracesQuery,
 }
 
 fn default_format() -> String {
@@ -419,7 +415,10 @@ fn default_format() -> String {
 #[utoipa::path(
     get,
     path = "/api/traces/export",
-    params(ExportQuery),
+    params(
+        ("format" = String, Query, description = "Export format: json"),
+        TracesQuery
+    ),
     responses(
         (status = 200, description = "Exported traces in JSON format"),
         (status = 400, description = "Invalid format parameter or time range", body = ErrorResponse),
@@ -429,23 +428,24 @@ fn default_format() -> String {
 )]
 pub async fn export_traces(
     State(state): State<AppState>,
-    Query(params): Query<ExportQuery>,
+    Query(format_query): Query<FormatQuery>,
+    Query(filters): Query<TracesQuery>,
 ) -> Result<impl IntoResponse, (StatusCode, Json<ErrorResponse>)> {
-    validate_time_range(params.filters.start_time, params.filters.end_time)?;
+    validate_time_range(filters.start_time, filters.end_time)?;
 
     // Build query parameters (no limit for export, but cap at 10000).
     // `trace_id`, `start_time`, and `end_time` are first-class fields; the
     // remaining TracesQuery fields are applied as predicates below so the
     // export honours every filter the list endpoint does.
     let mut query = QueryParams {
-        start_time: params.filters.start_time,
-        end_time: params.filters.end_time,
+        start_time: filters.start_time,
+        end_time: filters.end_time,
         limit: Some(10000),
-        trace_id: params.filters.trace_id.clone().filter(|s| !s.is_empty()),
+        trace_id: filters.trace_id.clone().filter(|s| !s.is_empty()),
         ..Default::default()
     };
 
-    if let Some(ref sid) = params.filters.session_id {
+    if let Some(ref sid) = filters.session_id {
         if !sid.is_empty() {
             query.predicates.push(QueryPredicate {
                 field: "session.id".to_string(),
@@ -455,7 +455,7 @@ pub async fn export_traces(
         }
     }
 
-    if let Some(ref cid) = params.filters.conversation_id {
+    if let Some(ref cid) = filters.conversation_id {
         if !cid.is_empty() {
             query.predicates.push(QueryPredicate {
                 field: "gen_ai.conversation.id".to_string(),
@@ -465,7 +465,7 @@ pub async fn export_traces(
         }
     }
 
-    if let Some(ref model) = params.filters.model {
+    if let Some(ref model) = filters.model {
         if !model.is_empty() {
             query.predicates.push(QueryPredicate {
                 field: "gen_ai.request.model".to_string(),
@@ -475,7 +475,7 @@ pub async fn export_traces(
         }
     }
 
-    if let Some(ref attrs_json) = params.filters.attrs {
+    if let Some(ref attrs_json) = filters.attrs {
         if !attrs_json.is_empty() {
             #[derive(serde::Deserialize)]
             struct AttrFilter {
@@ -505,7 +505,7 @@ pub async fn export_traces(
     // `search` filters on span names and `service`/`resource` on resource
     // attributes — both via the structured-predicate path so they constrain
     // trace selection exactly as any other predicate does.
-    if let Some(ref s) = params.filters.search {
+    if let Some(ref s) = filters.search {
         if !s.is_empty() {
             query.predicates.push(QueryPredicate {
                 field: "name".to_string(),
@@ -514,7 +514,7 @@ pub async fn export_traces(
             });
         }
     }
-    if let Some(ref svc) = params.filters.service {
+    if let Some(ref svc) = filters.service {
         if !svc.is_empty() {
             query.predicates.push(QueryPredicate {
                 field: "resource.service.name".to_string(),
@@ -523,7 +523,7 @@ pub async fn export_traces(
             });
         }
     }
-    if let Some(ref kv) = params.filters.resource {
+    if let Some(ref kv) = filters.resource {
         if let Some((k, v)) = kv.split_once('=') {
             if !k.is_empty() && !v.is_empty() {
                 query.predicates.push(QueryPredicate {
@@ -537,7 +537,7 @@ pub async fn export_traces(
 
     // Structured `query` predicate(s). Parse errors are a 400, never a
     // silently-ignored filter.
-    if let Some(ref q) = params.filters.query {
+    if let Some(ref q) = filters.query {
         if !q.is_empty() {
             query.predicates.extend(super::parse_query_param(q)?);
         }
@@ -553,7 +553,7 @@ pub async fn export_traces(
         )
     })?;
 
-    match params.format.as_str() {
+    match format_query.format.as_str() {
         "json" => {
             let span_entries: Vec<SpanEntry> = spans.into_iter().map(SpanEntry::from).collect();
 
