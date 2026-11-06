@@ -1185,6 +1185,71 @@ async fn test_export_traces_with_data() {
     assert_eq!(traces.len(), 2);
 }
 
+// Regression: /api/traces/export with integer time-range query params must
+// deserialize. Previously the #[serde(flatten)] of TracesQuery broke the
+// Option<i64> start_time/end_time coercion through serde_urlencoded's flat map.
+#[tokio::test]
+async fn test_export_traces_with_time_range() {
+    let (storage, _tmp) = setup_test_storage().await;
+
+    storage
+        .write_span(&create_test_span("trace1", "span1", "root", 1_000, 2_000))
+        .await
+        .unwrap();
+    storage
+        .write_span(&create_test_span("trace2", "span2", "root", 3_000, 4_000))
+        .await
+        .unwrap();
+
+    let app = build_test_router(storage);
+
+    let response = app
+        .oneshot(
+            Request::builder()
+                .uri("/api/traces/export?start_time=0&end_time=9999999999999")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), StatusCode::OK);
+
+    let body = response.into_body().collect().await.unwrap().to_bytes();
+    let traces: Vec<serde_json::Value> = serde_json::from_slice(&body).unwrap();
+    assert_eq!(traces.len(), 2);
+}
+
+// Regression: /api/logs/export with integer time-range query params must
+// deserialize (same #[serde(flatten)] defect as the traces endpoint).
+#[tokio::test]
+async fn test_export_logs_with_time_range() {
+    let (storage, _tmp) = setup_test_storage().await;
+
+    storage
+        .write_log(&create_test_log(1_000, SeverityLevel::Info, "hello"))
+        .await
+        .unwrap();
+    storage
+        .write_log(&create_test_log(3_000, SeverityLevel::Warn, "world"))
+        .await
+        .unwrap();
+
+    let app = build_test_router(storage);
+
+    let response = app
+        .oneshot(
+            Request::builder()
+                .uri("/api/logs/export?format=json&start_time=0&end_time=9999999999999")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), StatusCode::OK);
+}
+
 // NEW TEST: GET /api/traces/export - invalid format
 #[tokio::test]
 async fn test_export_traces_invalid_format() {
