@@ -11,6 +11,12 @@ have to work around), not implementation detail.
 
 ## [Unreleased]
 
+## [0.1.157] - 2026-11-06
+
+### Fixed
+
+- Export traces and logs for a time range. `start_time` and `end_time` on `/api/traces/export` and `/api/logs/export` are accepted as integers again.
+
 ## [0.1.156] - 2026-10-16
 
 ### Fixed
