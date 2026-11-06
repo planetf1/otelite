@@ -11,6 +11,8 @@ have to work around), not implementation detail.
 
 ## [Unreleased]
 
+## [0.1.158] - 2026-11-06
+
 ### Fixed
 
 - **Apple Silicon release binaries build again**: GitHub retired the
