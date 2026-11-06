@@ -11,6 +11,15 @@ have to work around), not implementation detail.
 
 ## [Unreleased]
 
+### Fixed
+
+- **Apple Silicon release binaries build again**: GitHub retired the
+  `macos-14` arm64 runner image, which cancelled v0.1.157's
+  aarch64-apple-darwin build and left that version without GitHub release
+  binaries or a Homebrew update (it is on crates.io). That target now
+  builds on `macos-15`, so releases ship all four binaries and the
+  Homebrew formula again.
+
 ## [0.1.157] - 2026-11-06
 
 ### Fixed
