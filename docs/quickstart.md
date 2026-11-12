@@ -14,7 +14,7 @@ curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
 source "$HOME/.cargo/env"
 ```
 
-Otelite requires Rust stable (1.77+). `rustup` installs the latest stable by default.
+Otelite requires Rust stable (1.89+). `rustup` installs the latest stable by default.
 
 ## Installation
 

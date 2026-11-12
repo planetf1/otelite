@@ -1796,9 +1796,12 @@ mod tests {
                 // BEGIN IMMEDIATE takes the WAL write lock at start; the
                 // dummy write makes it stick. Commit after 500 ms.
                 conn.execute_batch("BEGIN IMMEDIATE;").unwrap();
-                conn.execute(
+                // execute_batch, not execute: with rusqlite 0.41 an
+                // execute() string with two statements fails — the INSERT
+                // prepares against a schema where lock_probe does not
+                // exist yet (observed as "no such table: lock_probe").
+                conn.execute_batch(
                     "CREATE TABLE IF NOT EXISTS lock_probe (x INTEGER); INSERT INTO lock_probe VALUES (1);",
-                    [],
                 )
                 .unwrap();
                 lock_held.store(true, Ordering::SeqCst);

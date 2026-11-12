@@ -47,7 +47,7 @@ Otelite is an OpenTelemetry receiver and local observability server for LLM deve
 
 ## Conventions & Patterns
 
-- Rust 1.77+ stable
+- Rust 1.89+ stable
 - Async via tokio; axum for HTTP; tonic for gRPC
 - `thiserror` for error types; no silent `?` swallowing
 - No agent attribution in commits — do not add Co-Authored-By, Assisted-by, or similar trailers

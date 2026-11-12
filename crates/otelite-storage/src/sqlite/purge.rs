@@ -196,7 +196,7 @@ fn delete_batch_in_transaction(
         table, table, timestamp_col
     );
 
-    tx.execute(&sql, rusqlite::params![cutoff_timestamp, batch_size])
+    tx.execute(&sql, rusqlite::params![cutoff_timestamp, batch_size as i64])
         .map(|n| n as i64)
         .map_err(|e| StorageError::WriteError(format!("Failed to delete batch: {}", e)))
 }
