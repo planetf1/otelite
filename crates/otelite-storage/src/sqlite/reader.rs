@@ -1875,7 +1875,7 @@ pub fn query_genai_capabilities(
     })?;
     let mut rows: Vec<(Span, usize)> = stmt
         .query_map(param_refs.as_slice(), |row| {
-            Ok((parse_span_row(row)?, row.get::<_, usize>(12)?))
+            Ok((parse_span_row(row)?, row.get::<_, i64>(12)? as usize))
         })
         .map_err(|error| {
             StorageError::QueryError(format!("Failed to execute GenAI capability query: {error}"))
@@ -6892,7 +6892,7 @@ pub fn query_session_context(
     let mut p: Vec<Box<dyn rusqlite::ToSql>> = vec![Box::new(session_id.to_string())];
     window("start_time", &mut q, &mut p);
     q.push_str(" ORDER BY start_time LIMIT ?");
-    p.push(Box::new(limit + 1));
+    p.push(Box::new((limit + 1) as i64));
     let mut stmt = conn
         .prepare(&q)
         .map_err(|e| StorageError::QueryError(format!("Failed to query session spans: {e}")))?;
@@ -6936,7 +6936,7 @@ pub fn query_session_context(
     let mut p: Vec<Box<dyn rusqlite::ToSql>> = vec![Box::new(session_id.to_string())];
     window("timestamp", &mut q, &mut p);
     q.push_str(" ORDER BY timestamp LIMIT ?");
-    p.push(Box::new(limit + 1));
+    p.push(Box::new((limit + 1) as i64));
     let mut stmt = conn
         .prepare(&q)
         .map_err(|e| StorageError::QueryError(format!("Failed to query session logs: {e}")))?;
@@ -17273,7 +17273,7 @@ mod new_insight_tests_2 {
             conn.execute(
                 "INSERT INTO metrics (name, metric_type, timestamp, value_int, attributes, flags, created_at)
                  VALUES (?, 1, ?, ?, ?, 0, 1000000000)",
-                rusqlite::params![name, ts, value, attrs],
+                rusqlite::params![name, ts, value as i64, attrs],
             )
             .unwrap();
         };
@@ -18155,7 +18155,7 @@ mod new_insight_tests_2 {
             conn.execute(
                 "INSERT INTO metrics (name, metric_type, timestamp, value_int, attributes, flags, created_at)
                  VALUES (?, 1, ?, ?, ?, 0, 1000000000)",
-                rusqlite::params![name, ts, value, attrs],
+                rusqlite::params![name, ts, value as i64, attrs],
             )
             .unwrap();
         };

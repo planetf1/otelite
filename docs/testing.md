@@ -527,7 +527,7 @@ Current enforced minimums:
 
 2. **Run tests in Docker** (simulates CI):
    ```bash
-   docker run --rm -v $(pwd):/workspace -w /workspace rust:1.77 cargo test
+   docker run --rm -v $(pwd):/workspace -w /workspace rust:1.89 cargo test
    ```
 
 3. **Check for race conditions**:

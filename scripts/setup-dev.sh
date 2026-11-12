@@ -61,8 +61,8 @@ main() {
     RUST_VERSION=$(rustc --version | awk '{print $2}')
     info "Found Rust version: $RUST_VERSION"
 
-    # Check minimum Rust version (1.77)
-    REQUIRED_VERSION="1.77.0"
+    # Check minimum Rust version (1.89)
+    REQUIRED_VERSION="1.89.0"
     if ! printf '%s\n' "$REQUIRED_VERSION" "$RUST_VERSION" | sort -V -C; then
         error "Rust version $RUST_VERSION is too old (minimum: $REQUIRED_VERSION)"
         echo ""

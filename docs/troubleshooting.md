@@ -17,7 +17,7 @@ Common issues and solutions for Otelite development and deployment.
 
 ### Rust Version Too Old
 
-**Problem**: Build fails with "requires rustc 1.77 or newer"
+**Problem**: Build fails with "requires rustc 1.89 or newer"
 
 **Solution**:
 ```bash
@@ -26,7 +26,7 @@ rustup update stable
 
 # Verify version
 rustc --version
-# Should show 1.77 or higher
+# Should show 1.89 or higher
 ```
 
 ### Cargo Build Fails

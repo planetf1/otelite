@@ -52,7 +52,7 @@ Common issues and solutions for the Otelite Terminal User Interface.
    cargo build --release
    ```
 
-3. Check minimum Rust version (1.77+):
+3. Check minimum Rust version (1.89+):
    ```bash
    rustc --version
    ```

@@ -15,7 +15,7 @@ repository.workspace = true
 otelite-core = { path = "../otelite-core", version = "0.1.0" }
 
 # SQLite embedded database
-rusqlite = { version = "0.31", features = ["bundled", "chrono"] }
+rusqlite = { version = "0.41", features = ["bundled", "chrono"] }
 
 # Async runtime
 tokio = { workspace = true }
@@ -46,7 +46,7 @@ dirs = "5.0"
 tempfile = { workspace = true }
 tokio-test = "0.4"
 # Raw-connection access for trigger/migration regression tests
-rusqlite = { version = "0.31", features = ["bundled"] }
+rusqlite = { version = "0.41", features = ["bundled"] }
 
 [lib]
 name = "otelite_storage"
