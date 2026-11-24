@@ -11,6 +11,12 @@ have to work around), not implementation detail.
 
 ## [Unreleased]
 
+## [0.1.161] - 2026-11-24
+
+### Fixed
+
+- The nightly Security workflow is green again: `url` is updated to 2.5.9, clearing RUSTSEC-2026-0592 (a stack overflow in `Url::origin()` on deeply nested `blob:` URLs, a denial-of-service on untrusted input), and the informational unmaintained advisories for chrono and chrono-tz are acknowledged in the audit configuration while a migration to jiff is tracked separately.
+
 ## [0.1.160] - 2026-11-12
 
 ### Changed
