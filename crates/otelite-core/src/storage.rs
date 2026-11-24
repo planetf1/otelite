@@ -261,7 +261,6 @@ pub trait StorageBackend: Send + Sync {
     ///
     /// When `truncated_only` is true, only spans whose finish reason is
     /// `max_tokens` or `length` are returned.
-    #[allow(clippy::too_many_arguments)]
     #[allow(clippy::too_many_arguments)] // filter bar (#135) pushed us past 5
     async fn query_top_spans(
         &self,
@@ -354,7 +353,6 @@ pub trait StorageBackend: Send + Sync {
 
     /// Generic distribution over a named metric cohort (issue #133):
     /// session_cost | tool_duration | llm_duration | ttft | output_tokens.
-    #[allow(clippy::too_many_arguments)]
     #[allow(clippy::too_many_arguments)] // filter bar (#135) pushed us past 5
     async fn query_distribution(
         &self,
